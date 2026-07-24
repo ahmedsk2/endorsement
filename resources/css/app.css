@@ -1,0 +1,167 @@
+@import 'tailwindcss';
+
+/* Self-hosted UI + data faces (no CDN — hospital networks may be restricted or offline).
+   IBM Plex Sans carries dense clinical forms; IBM Plex Mono is used for every clinical
+   numeral, MRN, dose and timestamp so tabular figures line up and cannot be misread. */
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-sans/700.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+
+/* Template scanning is deliberately NARROW.
+   Tailwind's automatic source detection already covers every tracked template in this repo
+   — the Vue pages under resources/js and the Blade views under resources/views — so nothing
+   app-owned needs an explicit @source.
+
+   What must NEVER be scanned is `storage/framework/views` — Laravel's Blade *compile cache*.
+   It is gitignored (so auto-detection skips it), and it holds compiled copies of FRAMEWORK
+   views we never render: the exception page, the bundled pagination components, and the
+   starter-kit welcome page. Their markup is littered with `dark:` variants, and scanning
+   that directory compiles `@media (prefers-color-scheme: dark)` blocks into a theme that
+   docs/DESIGN-TOKENS.md defines as LIGHT-ONLY.
+
+   Guard: tests/Feature/Build/CompiledCssIsLightOnlyTest.php asserts the emitted bundle
+   contains no dark-scheme rules. If you re-add an @source here, that test will tell you. */
+
+/* ============================================================================
+   Paediatric Endorsement design tokens — "Monitor, in daylight".
+   The instruments already in the room (patient monitors) have a visual language
+   the staff read fluently: cool channel traces, tiny uppercase channel tags,
+   monospaced numerals. This interface is that instrument rendered on a light
+   clinical ground.
+
+   LIGHT THEME ONLY, by design — a single theme keeps a handover screen identical
+   for the day and night staff reading it. There is no dark variant.
+   ============================================================================ */
+@theme {
+    --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+        'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    /* Neutrals — cool-shifted (sea-teal), never neutral gray. This is what stops the
+       interface reading as a default admin template. */
+    --color-ink: #0b2e33;         /* headings, primary text */
+    --color-body: #2c4f53;        /* body copy */
+    --color-muted: #6b8b8e;       /* secondary/meta text, channel tags */
+    --color-line: #cbdedc;        /* hairline borders */
+    --color-line-soft: #e0ecea;   /* subtle dividers, table stripes */
+    --color-ground: #edf4f3;      /* page ground */
+    --color-ground-deep: #e2eeec; /* sidebar, inset surfaces */
+    --color-panel: #ffffff;       /* data surfaces — maximum legibility */
+
+    /* Primary channel — a deep cyan-teal, deliberately not blue-600 / teal-600. */
+    --color-channel: #0d7c8a;      /* fills, bars, brand mark */
+    --color-channel-ink: #0a6b75;  /* text + links (AA on white) */
+    --color-channel-soft: #dff0f1; /* active nav wash, chips */
+
+    /* Signals — monitor-derived. Warmth reads as "attention" inside a cool UI. */
+    --color-ok: #0f8a6a;
+    --color-ok-soft: #dcf1ea;
+    --color-caution: #b7791f;
+    --color-caution-soft: #fbf0dc;
+    --color-critical: #b3261e;
+    --color-critical-soft: #fbe4e2;
+
+    /* Unit channels — each care unit's channel hue, so a board can be scanned by edge
+       colour alone (see .channel-bar). Four first-class units. The hues stay in the
+       cool/plum family so none collides with the ok/caution/critical signal colours. */
+    --color-unit-picu: #0d7c8a;   /* teal — the primary channel */
+    --color-unit-nicu: #5b6bbf;   /* indigo */
+    --color-unit-scbu: #8a5ba8;   /* violet */
+    --color-unit-ward: #9c5470;   /* plum */
+}
+
+@layer base {
+    html {
+        background-color: var(--color-ground);
+    }
+
+    body {
+        color: var(--color-body);
+        -webkit-font-smoothing: antialiased;
+    }
+
+    h1, h2, h3, h4 {
+        color: var(--color-ink);
+    }
+
+    /* Clinical numerals line up in columns wherever they appear. */
+    table td,
+    table th {
+        font-variant-numeric: tabular-nums;
+    }
+}
+
+@layer components {
+    /* SIGNATURE — the channel bar. A 3px left edge encoding meaning (unit or status),
+       borrowed from a monitor's channel strip. Structure, not decoration. */
+    .channel-bar { border-left: 3px solid var(--color-channel); }
+    .channel-bar-picu { border-left-color: var(--color-unit-picu); }
+    .channel-bar-nicu { border-left-color: var(--color-unit-nicu); }
+    .channel-bar-scbu { border-left-color: var(--color-unit-scbu); }
+    .channel-bar-ward { border-left-color: var(--color-unit-ward); }
+    .channel-bar-ok { border-left-color: var(--color-ok); }
+    .channel-bar-critical { border-left-color: var(--color-critical); }
+    .channel-bar-caution { border-left-color: var(--color-caution); }
+
+    /* Channel tag — the monitor's tiny uppercase label. Field labels, eyebrows,
+       column headers. */
+    .channel-tag {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        line-height: 1.2;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--color-muted);
+    }
+
+    /* Any clinical value: dose, weight, MRN, score, timestamp. */
+    .readout {
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--color-ink);
+    }
+
+    /* Handover rich text (the four contenteditable fields). Tailwind's preflight strips list
+       markers and margins from ul/ol, which would make the toolbar's bulleted/numbered list
+       buttons appear to do nothing at all. This restores the marks INSIDE handover copy only,
+       so the reset still holds everywhere else. Kept to the same tags the sanitizer
+       allow-lists. */
+    .prose-handover ul,
+    .prose-handover ol {
+        margin: 0.25rem 0;
+        padding-left: 1.25rem;
+    }
+
+    .prose-handover ul { list-style: disc outside; }
+    .prose-handover ol { list-style: decimal outside; }
+    .prose-handover li { margin: 0.1rem 0; }
+    .prose-handover b,
+    .prose-handover strong { font-weight: 600; }
+    .prose-handover p { margin: 0.15rem 0; }
+}
+
+/* Accessibility floor: visible keyboard focus, honoured reduced motion.
+
+   Deliberately UNLAYERED (outside every `@layer`). Unlayered declarations outrank
+   anything in a cascade layer regardless of specificity, so this outline survives the
+   `focus:outline-none` utilities the dense inline-edit grids use — those live in
+   Tailwind's `@layer utilities`. Do NOT move this rule inside a `@layer`: doing so
+   hands the cascade back to `focus:outline-none` and silently removes the keyboard
+   focus ring from every inline-edit cell on the endorsement sheets. */
+:focus-visible {
+    outline: 2px solid var(--color-channel);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
+}

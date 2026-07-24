@@ -8,17 +8,29 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
+     *
+     * `users` is the normalized replacement for the legacy `members` table.
+     * The FK on `institution_id` -> `institutions` is added later (in the
+     * reference-tables migration) because `institutions` is created after this file.
      */
     public function up(): void
     {
         Schema::create('users', function (Blueprint $table) {
             $table->id();
-            $table->string('name');
-            $table->string('email')->unique();
-            $table->timestamp('email_verified_at')->nullable();
+            $table->foreignId('institution_id')->nullable()->index();
+            $table->unsignedTinyInteger('position')->default(1)->index(); // role: 0=Admin,1=Nurse,2=Charge,3=Consultant,4=Resident
+            $table->string('full_name')->nullable();
+            $table->string('member_name')->unique(); // login handle
+            $table->string('member_email')->nullable()->unique();
             $table->string('password');
+            $table->boolean('active')->default(false);
+            $table->date('pass_exp_date')->nullable();
+            $table->text('two_factor_secret')->nullable();
+            $table->text('two_factor_recovery_codes')->nullable();
+            $table->timestamp('two_factor_confirmed_at')->nullable();
             $table->rememberToken();
             $table->timestamps();
+            $table->softDeletes();
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {
@@ -42,8 +54,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('users');
-        Schema::dropIfExists('password_reset_tokens');
         Schema::dropIfExists('sessions');
+        Schema::dropIfExists('password_reset_tokens');
+        Schema::dropIfExists('users');
     }
 };

@@ -18,6 +18,7 @@
         "@fontsource/ibm-plex-sans": "^5.3.0",
         "@inertiajs/vue3": "^3.6.1",
         "@vitejs/plugin-vue": "^6.0.8",
+        "qrcode": "^1.5.4",
         "vue": "^3.5.40"
     }
 }

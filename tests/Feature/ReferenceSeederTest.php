@@ -1,0 +1,59 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Unit;
+use Database\Seeders\ReferenceSeeder;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class ReferenceSeederTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_it_seeds_the_five_positions(): void
+    {
+        $this->seed(ReferenceSeeder::class);
+
+        foreach ([0 => 'Administrator', 1 => 'Nurse', 2 => 'Charge Nurse', 3 => 'Consultant', 4 => 'Resident'] as $id => $name) {
+            $this->assertDatabaseHas('positions', ['id' => $id, 'name' => $name]);
+        }
+    }
+
+    /**
+     * Four first-class units — every one of them must exist for the routing
+     * surface (/endorsement/{code}) to resolve.
+     */
+    public function test_it_seeds_all_four_units(): void
+    {
+        $this->seed(ReferenceSeeder::class);
+
+        $this->assertSame(4, Unit::count());
+        foreach (['PICU', 'NICU', 'SCBU', 'WARD'] as $code) {
+            $this->assertDatabaseHas('units', ['code' => $code]);
+        }
+    }
+
+    public function test_it_is_idempotent(): void
+    {
+        $this->seed(ReferenceSeeder::class);
+        $this->seed(ReferenceSeeder::class);
+
+        $this->assertSame(4, Unit::count());
+        $this->assertDatabaseHas('institutions', ['code' => 'QCH']);
+    }
+
+    /**
+     * The seeder must never rename or destroy a unit row somebody created by hand —
+     * updateOrCreate keys on `code`, so unrelated rows are untouched.
+     */
+    public function test_it_retains_pre_existing_extra_units(): void
+    {
+        $extra = Unit::create(['code' => 'XX', 'name' => 'Somewhere Else']);
+
+        $this->seed(ReferenceSeeder::class);
+
+        $this->assertDatabaseHas('units', ['id' => $extra->id, 'code' => 'XX', 'name' => 'Somewhere Else']);
+        $this->assertSame(5, Unit::count());
+    }
+}

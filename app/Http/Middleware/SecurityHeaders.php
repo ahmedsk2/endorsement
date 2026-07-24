@@ -46,6 +46,13 @@ class SecurityHeaders
             $response->headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
         }
 
+        // Clinical surfaces are never cacheable — not by the service worker, not by a
+        // proxy, not by the browser. A stale census read as current is the failure mode
+        // this system exists to avoid (spec §10.1).
+        if ($request->is('endorsement*')) {
+            $response->headers->set('Cache-Control', 'no-store, max-age=0');
+        }
+
         return $response;
     }
 }

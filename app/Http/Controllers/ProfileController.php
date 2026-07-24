@@ -29,6 +29,15 @@ class ProfileController extends Controller
                 'member_name' => $user->member_name,
                 'member_email' => $user->member_email,
             ],
+            // Spec §10.2 — the per-unit reminder opt-in + the public half of the VAPID
+            // pair (public by definition; the private key never leaves the server env).
+            'reminders' => [
+                'units' => \App\Models\Unit::whereIn('code', \App\Support\UnitProfile::codes())
+                    ->get(['id', 'code', 'name'])
+                    ->map(fn ($u) => ['id' => $u->id, 'code' => $u->code, 'name' => $u->name]),
+                'selected' => $user->reminderUnits()->pluck('units.id'),
+                'vapid_public_key' => (string) config('endorsement.vapid.public_key'),
+            ],
         ]);
     }
 
@@ -66,5 +75,21 @@ class ProfileController extends Controller
         );
 
         return back()->with('status', 'Profile updated.');
+    }
+
+    /**
+     * Spec 10.2 - the per-unit reminder opt-in. Replaces the whole set each submit so
+     * unchecking works; binds to the SESSION identity only.
+     */
+    public function updateReminders(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'unit_ids' => ['sometimes', 'array'],
+            'unit_ids.*' => ['integer', 'exists:units,id'],
+        ]);
+
+        $request->user()->reminderUnits()->sync($data['unit_ids'] ?? []);
+
+        return back()->with('status', 'Reminder preferences saved.');
     }
 }

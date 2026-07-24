@@ -14,7 +14,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // The push seam: tests swap in a fake; production talks VAPID web-push.
+        $this->app->bind(
+            \App\Support\Push\PushSender::class,
+            \App\Support\Push\WebPushSender::class,
+        );
     }
 
     /**

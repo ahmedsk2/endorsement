@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+    <rect width="512" height="512" rx="96" fill="#0d7c8a"/>
+    <rect x="72" y="120" width="24" height="272" rx="8" fill="#dff0f1"/>
+    <text x="300" y="330" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="220" font-weight="700" fill="#ffffff">PE</text>
+</svg>

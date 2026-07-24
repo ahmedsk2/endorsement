@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AccessControlController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\EndorsementController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PushSubscriptionController;
 use Illuminate\Support\Facades\Route;
 
 // The root lands on the endorsement surface.
@@ -20,6 +21,16 @@ Route::middleware('auth')->prefix('endorsement')->name('endorsement.')->group(fu
     // The four-unit chooser: one card per unit with today's status.
     Route::middleware('cap:endorsement.view')->get('/', [EndorsementController::class, 'root'])
         ->name('root');
+
+    // One-tap access (the PWA's start_url): the remembered unit's current sheet.
+    // Declared BEFORE the {unit} routes so `today` never binds as a unit code.
+    Route::middleware('cap:endorsement.view')->get('/today', [EndorsementController::class, 'today'])
+        ->name('today');
+
+    // The missed-days view (spec §10.3) — the system's only aggregate. Its own narrow
+    // capability, default Administrator-only, grantable per role or per named user.
+    Route::middleware('cap:endorsement.compliance')->get('/compliance', [EndorsementController::class, 'compliance'])
+        ->name('compliance');
 
     // Row edits (edit) — declared before the {unit}/{date} reads so `rows` never binds a unit.
     Route::middleware('cap:endorsement.edit')->group(function () {
@@ -86,6 +97,16 @@ Route::middleware(['auth', 'cap:users.manage'])
 Route::middleware(['auth', 'cap:profile.manage'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::patch('/profile/reminders', [ProfileController::class, 'updateReminders'])->name('profile.reminders');
+});
+
+/*
+ * This device's web-push subscription (spec §10.2). Session-bound; endpoints and keys
+ * only, no clinical data.
+ */
+Route::middleware('auth')->group(function () {
+    Route::post('/push/subscriptions', [PushSubscriptionController::class, 'store'])->name('push.store');
+    Route::delete('/push/subscriptions', [PushSubscriptionController::class, 'destroy'])->name('push.destroy');
 });
 
 require __DIR__.'/auth.php';

@@ -124,7 +124,10 @@ const nextDate = computed(() => {
         return props.date;
     }
     d.setDate(d.getDate() + 1);
-    return d.toISOString().slice(0, 10);
+    // LOCAL date parts, never toISOString(): that returns UTC, which in a positive-offset
+    // timezone (Riyadh is +03:00) rewinds local midnight to the SAME date — making the
+    // "Start next day" button a silent no-op. (Latent bug inherited from the reference.)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 });
 
 const newDay = () => {

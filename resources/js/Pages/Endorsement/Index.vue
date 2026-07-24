@@ -91,6 +91,56 @@ const carryPrompt = computed(() => {
 
     return p && p !== dismissedPrompt.value ? p : null;
 });
+
+/*
+ * GAP MARKERS (spec §10.4) — a missed day is shown exactly where residents already look.
+ * The list is newest-first; between consecutive entries, every missing calendar date gets
+ * an inline "no endorsement" row with one-tap create (which goes through the carry dialog
+ * when the gap is older than yesterday). Long gaps (e.g. pre-import history) collapse to a
+ * single summary row so the index stays readable.
+ */
+const GAP_RENDER_LIMIT = 7;
+
+// LOCAL date formatting, never toISOString(): that returns UTC, which in a positive-offset
+// timezone (Riyadh is +03:00) rewinds local midnight to YESTERDAY's date.
+const localYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const datesBetween = (newer, older) => {
+    const out = [];
+    const d = new Date(`${older}T00:00:00`);
+    d.setDate(d.getDate() + 1);
+    const end = new Date(`${newer}T00:00:00`);
+    while (d < end) {
+        out.push(localYmd(d));
+        d.setDate(d.getDate() + 1);
+    }
+    return out.reverse(); // newest first, matching the list
+};
+
+const listing = computed(() => {
+    const out = [];
+    for (let i = 0; i < props.dates.length; i++) {
+        out.push({ type: 'day', ...props.dates[i] });
+        const next = props.dates[i + 1];
+        if (!next) {
+            continue;
+        }
+        const missing = datesBetween(props.dates[i].date, next.date);
+        if (missing.length === 0) {
+            continue;
+        }
+        if (missing.length > GAP_RENDER_LIMIT) {
+            out.push({ type: 'gap-summary', count: missing.length, from: next.date, to: props.dates[i].date });
+        } else {
+            missing.forEach((date) => out.push({ type: 'gap', date }));
+        }
+    }
+    return out;
+});
+
+const createForGap = (date) => {
+    router.post(`/endorsement/${props.unit.code}/new-day`, { date }, { preserveScroll: true });
+};
 </script>
 
 <template>
@@ -152,29 +202,47 @@ const carryPrompt = computed(() => {
 
         <ul v-else class="channel-bar divide-y divide-line-soft overflow-hidden rounded-md border border-line bg-panel"
             :class="unitBarClass">
-            <li v-for="d in dates" :key="d.date" data-testid="day-row">
-                <Link :href="`/endorsement/${unit.code}/${d.date}`"
-                      class="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-ground">
-                    <span class="flex items-center gap-2">
-                        <span class="readout font-medium">{{ d.date }}</span>
-                        <!--
-                          H/GAP-5 — a signed day must be tellable from an unsigned one at a glance:
-                          an unsigned past handover is an incomplete medico-legal record, and the
-                          index is where someone goes looking for it.
-                        -->
-                        <span v-if="d.signed_off" data-testid="signed-badge"
-                              :title="signedTitle(d)"
-                              class="rounded-md border border-ok px-2 py-0.5 text-xs font-semibold text-ok">
-                            Signed off
+            <template v-for="item in listing" :key="item.type + (item.date || item.from)">
+                <li v-if="item.type === 'day'" data-testid="day-row">
+                    <Link :href="`/endorsement/${unit.code}/${item.date}`"
+                          class="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-ground">
+                        <span class="flex items-center gap-2">
+                            <span class="readout font-medium">{{ item.date }}</span>
+                            <!--
+                              A signed day must be tellable from an unsigned one at a glance:
+                              an unsigned past handover is an incomplete medico-legal record, and
+                              the index is where someone goes looking for it.
+                            -->
+                            <span v-if="item.signed_off" data-testid="signed-badge"
+                                  :title="signedTitle(item)"
+                                  class="rounded-md border border-ok px-2 py-0.5 text-xs font-semibold text-ok">
+                                Signed off
+                            </span>
+                            <span v-else data-testid="unsigned-badge"
+                                  class="rounded-md border border-line px-2 py-0.5 text-xs font-semibold text-muted">
+                                Not signed
+                            </span>
                         </span>
-                        <span v-else data-testid="unsigned-badge"
-                              class="rounded-md border border-line px-2 py-0.5 text-xs font-semibold text-muted">
-                            Not signed
-                        </span>
+                        <span class="text-xs text-muted"><span class="readout">{{ item.count }}</span> patient(s)</span>
+                    </Link>
+                </li>
+                <li v-else-if="item.type === 'gap'" data-testid="gap-row"
+                    class="channel-bar channel-bar-critical flex items-center justify-between gap-3 bg-critical-soft px-4 py-2 text-xs">
+                    <span class="text-critical">
+                        <span class="readout">{{ item.date }}</span> — no endorsement
                     </span>
-                    <span class="text-xs text-muted"><span class="readout">{{ d.count }}</span> patient(s)</span>
-                </Link>
-            </li>
+                    <button v-if="canEdit" type="button" data-testid="gap-create" @click="createForGap(item.date)"
+                            class="font-semibold text-channel-ink hover:underline">
+                        Create
+                    </button>
+                </li>
+                <li v-else data-testid="gap-summary-row"
+                    class="bg-ground px-4 py-2 text-xs text-muted">
+                    <span class="readout">{{ item.count }}</span> days without endorsement between
+                    <span class="readout">{{ item.from }}</span> and <span class="readout">{{ item.to }}</span>
+                    — use "Create sheet for date" to back-fill one.
+                </li>
+            </template>
         </ul>
     </AppLayout>
 </template>

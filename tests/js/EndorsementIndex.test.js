@@ -85,4 +85,30 @@ describe('Endorsement/Index — create a sheet for a chosen date', () => {
 
         expect(router.post).toHaveBeenCalledWith('/endorsement/PICU/new-day', {}, expect.anything());
     });
+
+    // Spec §10.4 — gap markers: a missed day is visible exactly where residents look.
+    it('renders an inline gap row for each missing date between sheets', () => {
+        const w = mountIndex({ dates: [{ date: '2026-07-14', count: 2 }, { date: '2026-07-10', count: 3 }] });
+
+        const gaps = w.findAll('[data-testid="gap-row"]');
+        expect(gaps).toHaveLength(3);
+        expect(gaps[0].text()).toContain('2026-07-13');
+        expect(gaps[2].text()).toContain('2026-07-11');
+        expect(gaps[0].text().toLowerCase()).toContain('no endorsement');
+    });
+
+    it('one-tap creates a sheet for a gap date', async () => {
+        const w = mountIndex({ dates: [{ date: '2026-07-12', count: 2 }, { date: '2026-07-10', count: 3 }] });
+
+        await w.get('[data-testid="gap-create"]').trigger('click');
+        expect(router.post).toHaveBeenCalledWith('/endorsement/PICU/new-day', { date: '2026-07-11' }, expect.anything());
+    });
+
+    it('collapses a long gap into a single summary row', () => {
+        const w = mountIndex({ dates: [{ date: '2026-07-20', count: 1 }, { date: '2026-07-01', count: 1 }] });
+
+        expect(w.findAll('[data-testid="gap-row"]')).toHaveLength(0);
+        const summary = w.get('[data-testid="gap-summary-row"]');
+        expect(summary.text()).toContain('18');
+    });
 });

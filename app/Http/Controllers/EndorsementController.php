@@ -8,6 +8,7 @@ use App\Models\HandoverSignoff;
 use App\Models\Unit;
 use App\Models\User;
 use App\Support\AccessControl;
+use App\Support\MissedDays;
 use App\Support\UnitProfile;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -130,11 +131,73 @@ class EndorsementController extends Controller
         ]);
     }
 
+    /**
+     * The missed-days view (spec §10.3): per unit, how many days in the chosen range have
+     * no signed endorsement, expandable to the missing dates themselves. Counts and dates
+     * only — the page carries no patient data. This is the system's ONLY aggregate.
+     */
+    public function compliance(Request $request): Response
+    {
+        $filters = $request->validate([
+            'from' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+            'to' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+        ]);
+
+        $from = $filters['from'] ?? now()->subDays(29)->format('Y-m-d');
+        $to = $filters['to'] ?? now()->format('Y-m-d');
+
+        $units = Unit::whereIn('code', UnitProfile::codes())
+            ->get()
+            ->sortBy(fn (Unit $u): int => (int) array_search($u->code, UnitProfile::codes(), true))
+            ->values()
+            ->map(function (Unit $u) use ($from, $to): array {
+                $result = MissedDays::forRange($u->id, $from, $to);
+
+                return [
+                    'code' => $u->code,
+                    'name' => $u->name,
+                    'bar_class' => UnitProfile::for($u->code)->barClass,
+                    'total_days' => $result['total_days'],
+                    'missed' => $result['missed'],
+                ];
+            });
+
+        return Inertia::render('Endorsement/Compliance', [
+            'units' => $units,
+            'filters' => ['from' => $from, 'to' => $to],
+        ]);
+    }
+
+    /**
+     * One-tap access (Phase 7.1): the PWA opens here; land on the remembered unit's
+     * CURRENT sheet (creating nothing), or the chooser when no unit is remembered yet.
+     */
+    public function today(Request $request): RedirectResponse
+    {
+        $unit = Unit::find($request->user()?->preferred_unit_id);
+
+        if ($unit === null || ! in_array($unit->code, UnitProfile::codes(), true)) {
+            return redirect()->route('endorsement.root');
+        }
+
+        return redirect()->route('endorsement.show', [
+            'unit' => $unit->code,
+            'date' => now()->format('Y-m-d'),
+        ]);
+    }
+
     /** The editable handover sheet for a unit + date. */
     public function show(Request $request, string $unit, string $date): Response
     {
         $u = $this->resolveUnit($unit);
         $date = $this->normalizeDate($date);
+
+        // Remember the unit so /endorsement/today lands here next time. Quiet write; not
+        // audited (a UI preference, not clinical data).
+        $user = $request->user();
+        if ($user !== null && $user->preferred_unit_id !== $u->id) {
+            $user->forceFill(['preferred_unit_id' => $u->id])->save();
+        }
 
         return Inertia::render('Endorsement/Sheet', [
             'unit' => $this->unitPayload($u),

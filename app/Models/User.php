@@ -24,6 +24,7 @@ class User extends Authenticatable
     protected $fillable = [
         'institution_id',
         'position',
+        'preferred_unit_id',
         'full_name',
         'member_name',
         'member_email',
@@ -92,6 +93,20 @@ class User extends Authenticatable
     public function routeNotificationForMail(): ?string
     {
         return $this->member_email;
+    }
+
+    /** This device-level web-push subscriptions for the user (spec §10.2).
+     * @return HasMany<PushSubscription, $this> */
+    public function pushSubscriptions(): HasMany
+    {
+        return $this->hasMany(PushSubscription::class);
+    }
+
+    /** The units this user wants handover reminders for (spec §10.2 opt-in).
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany<Unit, $this> */
+    public function reminderUnits(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(Unit::class, 'reminder_preferences')->withTimestamps();
     }
 
     /**

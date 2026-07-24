@@ -1,0 +1,18 @@
+{
+    "name": "Paediatric Endorsement",
+    "short_name": "Endorsement",
+    "description": "Shift handover for PICU, NICU, SCBU and the Pediatric Ward",
+    "start_url": "/endorsement/today",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#edf4f3",
+    "theme_color": "#0d7c8a",
+    "icons": [
+        {
+            "src": "/icons/icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any"
+        }
+    ]
+}

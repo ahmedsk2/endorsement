@@ -18,3 +18,13 @@ createInertiaApp({
     },
     progress: { color: '#0d7c8a' },
 });
+
+// PWA shell registration. The worker caches the app shell ONLY — never /endorsement data
+// (see public/sw.js). Registration is safe on http://localhost and any https origin.
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {
+            // Offline shell is an enhancement; the app works without it.
+        });
+    });
+}

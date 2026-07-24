@@ -107,6 +107,13 @@ const navClass = (active) => [
                     </Link>
                 </template>
 
+                <!-- The missed-days aggregate — its own narrow capability. -->
+                <Link v-if="can('endorsement.compliance')" href="/endorsement/compliance"
+                      :aria-current="isExactly('/endorsement/compliance') ? 'page' : undefined"
+                      :class="navClass(isExactly('/endorsement/compliance'))">
+                    Missed days
+                </Link>
+
                 <!-- Administration -->
                 <template v-if="canAdmin">
                     <p class="channel-tag px-3 pb-1 pt-4">Administration</p>

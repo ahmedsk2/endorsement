@@ -210,6 +210,12 @@ class EndorsementController extends Controller
 
         $signoff->institution_id ??= $request->user()?->institution_id;
 
+        // Ruling 5 — WARD has ONE consultant field ("Consultant Oncall"), stored in
+        // consultant_by_*. A submitted receiving consultant is dropped, not persisted.
+        if (! UnitProfile::for($u->code)->consultantPair) {
+            unset($data['consultant_to_user_id']);
+        }
+
         foreach (['endorsed_by', 'endorsed_to', 'consultant_by', 'consultant_to'] as $field) {
             if (! array_key_exists($field.'_user_id', $data)) {
                 continue;
@@ -470,6 +476,7 @@ class EndorsementController extends Controller
     {
         $u = $this->resolveUnit($unit);
         $date = $this->normalizeDate($date);
+        $this->assertDayUnlocked($u->id, $date);
 
         $data = $this->validateRow($request, UnitProfile::for($u->code));
 
@@ -490,6 +497,7 @@ class EndorsementController extends Controller
     public function updateRow(Request $request, Handover $handover): RedirectResponse
     {
         $this->assertEnabledUnitRow($handover);
+        $this->assertDayUnlocked($handover->unit_id, $handover->handover_date?->format('Y-m-d'));
 
         $data = $this->validateRow($request, UnitProfile::for((string) $handover->unit?->code));
 
@@ -504,6 +512,7 @@ class EndorsementController extends Controller
     public function deleteRow(Request $request, Handover $handover): RedirectResponse
     {
         $this->assertEnabledUnitRow($handover);
+        $this->assertDayUnlocked($handover->unit_id, $handover->handover_date?->format('Y-m-d'));
 
         $id = $handover->id;
         $handover->delete();
@@ -511,6 +520,29 @@ class EndorsementController extends Controller
         AuditLog::record('endorsement_row_delete', 'row='.$id, $request->user()?->getKey(), $request->ip());
 
         return back()->with('status', 'Row removed.');
+    }
+
+    /**
+     * Spec §6 — a SIGNED day is locked: every row write on it is refused until the day is
+     * reopened through the audited, reason-bearing path. Without this, the sign-off would
+     * attest to a sheet that can silently change afterwards.
+     */
+    private function assertDayUnlocked(?int $unitId, ?string $date): void
+    {
+        if ($unitId === null || $date === null) {
+            return;
+        }
+
+        $signed = HandoverSignoff::where('unit_id', $unitId)
+            ->whereDate('handover_date', $date)
+            ->whereNotNull('signed_off_at')
+            ->exists();
+
+        if ($signed) {
+            throw ValidationException::withMessages([
+                'sheet' => 'This handover day is signed off and locked. Reopen it (with a reason) before editing.',
+            ]);
+        }
     }
 
     /**
@@ -668,21 +700,13 @@ class EndorsementController extends Controller
      * The roles that may be named as ENDORSED BY / ENDORSED TO — the clinician who personally
      * handed over, and the one who personally received.
      *
-     * Legacy sourced both from `members WHERE position='4'` — RESIDENTS ALONE
-     * (`picu-endorsement-patients.php:397`). A consultant or charge nurse who actually did the
-     * handover therefore could not be recorded at all, so the sheet named the wrong person or
-     * nobody. Widened to Charge Nurse (2), Consultant (3) and Resident (4).
-     *
-     * NURSE (1) is deliberately EXCLUDED: the legacy server gate for every endorsement write is
-     * [0,2,3,4], which excludes Nurse, and it is carried forward as `endorsement.edit`. A role that
-     * may not write or sign this sheet must not be nameable as the clinician attesting to it.
-     * Nothing in the legacy behaviour offers a reason to include them.
-     *
-     * ADMINISTRATOR (0) is also excluded: it is an account-management role, not a bedside one.
+     * RULING 6 — RESIDENTS ALONE (position 4), exactly as legacy sourced both pickers
+     * (`members WHERE position='4'`, `picu-endorsement-patients.php:397`). The reference app
+     * had widened this to [2,3,4]; the owner ruled to keep legacy parity.
      *
      * @var list<int>
      */
-    private const ENDORSER_POSITIONS = [2, 3, 4];
+    private const ENDORSER_POSITIONS = [4];
 
     /**
      * The roles offered for the two CONSULTANT fields. These name the COVERING / RECEIVING

@@ -277,8 +277,8 @@ const submitReopen = () => {
             <dl v-if="isSigned" data-testid="signoff-summary" class="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
                 <div class="flex gap-2"><dt class="channel-tag">Endorsed by</dt><dd class="text-ink">{{ signoff.endorsed_by_name || '—' }}</dd></div>
                 <div class="flex gap-2"><dt class="channel-tag">Endorsed to</dt><dd class="text-ink">{{ signoff.endorsed_to_name || '—' }}</dd></div>
-                <div class="flex gap-2"><dt class="channel-tag">Consultant covering</dt><dd class="text-ink">{{ signoff.consultant_by_name || '—' }}</dd></div>
-                <div class="flex gap-2"><dt class="channel-tag">Consultant receiving</dt><dd class="text-ink">{{ signoff.consultant_to_name || '—' }}</dd></div>
+                <div class="flex gap-2"><dt class="channel-tag">{{ profile.consultant_by_label || 'Consultant covering' }}</dt><dd class="text-ink">{{ signoff.consultant_by_name || '—' }}</dd></div>
+                <div v-if="profile.consultant_pair !== false" class="flex gap-2"><dt class="channel-tag">Consultant receiving</dt><dd class="text-ink">{{ signoff.consultant_to_name || '—' }}</dd></div>
                 <div class="flex gap-2"><dt class="channel-tag">Time</dt><dd class="readout text-ink">{{ signoff.endorsement_time || '—' }}</dd></div>
             </dl>
 
@@ -317,14 +317,15 @@ const submitReopen = () => {
                            class="readout mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm text-ink focus:border-channel focus:outline-none" />
                 </div>
                 <div>
-                    <label for="consultant-by" class="channel-tag mb-1 block">Consultant covering</label>
+                    <!-- Ruling 5 — WARD's single field is labelled "Consultant Oncall" (profile-driven). -->
+                    <label for="consultant-by" class="channel-tag mb-1 block">{{ profile.consultant_by_label || 'Consultant covering' }}</label>
                     <select id="consultant-by" v-model="signForm.consultant_by_user_id" data-testid="consultant-by"
                             class="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm text-ink focus:border-channel focus:outline-none">
                         <option value="">Select</option>
                         <option v-for="s in staff.consultants" :key="s.id" :value="s.id">{{ s.name }}</option>
                     </select>
                 </div>
-                <div>
+                <div v-if="profile.consultant_pair !== false">
                     <label for="consultant-to" class="channel-tag mb-1 block">Consultant receiving</label>
                     <select id="consultant-to" v-model="signForm.consultant_to_user_id" data-testid="consultant-to"
                             class="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm text-ink focus:border-channel focus:outline-none">

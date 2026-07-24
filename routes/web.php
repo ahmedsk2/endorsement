@@ -2,11 +2,52 @@
 
 use App\Http\Controllers\Admin\AccessControlController;
 use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\EndorsementController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 
-// The root lands on the four-unit endorsement chooser (built in Phases 3-4).
+// The root lands on the endorsement surface.
 Route::get('/', fn () => redirect('/endorsement'));
+
+/*
+ * The shift-endorsement / handover module over the collapsed `handovers` table.
+ * Reads are `endorsement.view`; every write is `endorsement.edit` (legacy gate [0,2,3,4] —
+ * excludes Nurse). The `{date}` param is regex-pinned to Y-m-d so the literal write
+ * sub-routes (/new-day, /rows) never bind as a date, and the row {handover} bindings are
+ * declared apart from the {unit}/{date} reads so `rows` never binds as a unit.
+ */
+Route::middleware('auth')->prefix('endorsement')->name('endorsement.')->group(function () {
+    // Phase 4 replaces this redirect with the four-unit chooser.
+    Route::middleware('cap:endorsement.view')->get('/', fn () => redirect()->route('endorsement.index', ['unit' => 'PICU']))
+        ->name('root');
+
+    // Row edits (edit) — declared before the {unit}/{date} reads so `rows` never binds a unit.
+    Route::middleware('cap:endorsement.edit')->group(function () {
+        Route::patch('/rows/{handover}', [EndorsementController::class, 'updateRow'])->name('rows.update');
+        Route::delete('/rows/{handover}', [EndorsementController::class, 'deleteRow'])->name('rows.delete');
+        Route::post('/{unit}/new-day', [EndorsementController::class, 'newDay'])->name('new-day');
+        Route::post('/{unit}/{date}/rows', [EndorsementController::class, 'storeRow'])
+            ->where('date', '\d{4}-\d{2}-\d{2}')->name('rows.store');
+
+        // The per-day shift attestation (legacy `validate-endorsement.php`). The reopen
+        // sub-route is declared first so `reopen` never binds as part of the signoff path.
+        // Reopen additionally requires `endorsement.reopen`, checked IN-CONTROLLER so the
+        // 403 can name the actual active holders.
+        Route::post('/{unit}/{date}/signoff/reopen', [EndorsementController::class, 'reopenSignoff'])
+            ->where('date', '\d{4}-\d{2}-\d{2}')->name('signoff.reopen');
+        Route::patch('/{unit}/{date}/signoff', [EndorsementController::class, 'updateSignoff'])
+            ->where('date', '\d{4}-\d{2}-\d{2}')->name('signoff.update');
+    });
+
+    // Day index + sheet + printable A4 (view).
+    Route::middleware('cap:endorsement.view')->group(function () {
+        Route::get('/{unit}', [EndorsementController::class, 'index'])->name('index');
+        Route::get('/{unit}/{date}/print', [EndorsementController::class, 'print'])
+            ->where('date', '\d{4}-\d{2}-\d{2}')->name('print');
+        Route::get('/{unit}/{date}', [EndorsementController::class, 'show'])
+            ->where('date', '\d{4}-\d{2}-\d{2}')->name('show');
+    });
+});
 
 /*
  * Admin → Access Control. The catalog read and every write are admin-only

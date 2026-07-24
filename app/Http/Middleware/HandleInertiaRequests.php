@@ -56,6 +56,9 @@ class HandleInertiaRequests extends Middleware
             'flash' => [
                 'status' => $request->session()->get('status'),
                 'error' => $request->session()->get('error'),
+                // New-day gap dialog payload: {unit, date, last_date}. Carries no PHI —
+                // unit code and dates only (see EndorsementController::newDay).
+                'carry_prompt' => $request->session()->get('carry_prompt'),
             ],
         ];
     }

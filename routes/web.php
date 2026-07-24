@@ -17,8 +17,8 @@ Route::get('/', fn () => redirect('/endorsement'));
  * declared apart from the {unit}/{date} reads so `rows` never binds as a unit.
  */
 Route::middleware('auth')->prefix('endorsement')->name('endorsement.')->group(function () {
-    // Phase 4 replaces this redirect with the four-unit chooser.
-    Route::middleware('cap:endorsement.view')->get('/', fn () => redirect()->route('endorsement.index', ['unit' => 'PICU']))
+    // The four-unit chooser: one card per unit with today's status.
+    Route::middleware('cap:endorsement.view')->get('/', [EndorsementController::class, 'root'])
         ->name('root');
 
     // Row edits (edit) — declared before the {unit}/{date} reads so `rows` never binds a unit.

@@ -24,11 +24,8 @@ const props = defineProps({
 const { can } = useCan();
 const canEdit = can('endorsement.edit');
 
-// Presentation only: the signature channel bar carries this sheet's unit. G1 — PICU is the only
-// unit left, so this is the single remaining variant; anything else falls back to the default bar.
-const unitBarClass = computed(
-    () => (String(props.unit.code ?? '').toLowerCase() === 'picu' ? 'channel-bar-picu' : ''),
-);
+// Presentation only: the signature channel bar carries this unit's hue, from its profile.
+const unitBarClass = computed(() => props.unit.profile?.bar_class ?? '');
 
 const from = ref(props.filters?.from ?? '');
 const to = ref(props.filters?.to ?? '');

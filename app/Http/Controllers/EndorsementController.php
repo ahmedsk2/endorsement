@@ -8,6 +8,7 @@ use App\Models\HandoverSignoff;
 use App\Models\Unit;
 use App\Models\User;
 use App\Support\AccessControl;
+use App\Support\UnitProfile;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -18,16 +19,11 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * C2 — the shift-endorsement / handover module. The legacy four drifted `*_patintsendorcement`
- * tables collapsed into the single `handovers` table discriminated by `unit_id`.
- *
- * G1 — the registry is PICU-ONLY. NICU / SCBU / WARD have been removed from the application
- * surface: `{unit}` accepts PICU alone and anything else 404s. The route param is KEPT (rather
- * than hard-coding the path) so every existing `/endorsement/picu` URL — the nav, the legacy
- * redirects, bookmarks and print links — keeps resolving unchanged; `/endorsement` redirects to
- * it. The unit-specific columns that only NICU/SCBU (`dob`) and WARD (`age`, `ward_unit`) used are
- * no longer read or written. Their DATABASE columns are deliberately retained so historical rows
- * keep their values (see ClinicalSchemaTest) — this is a surface removal, not a data deletion.
+ * The shift-endorsement / handover module. The legacy four drifted `*_patintsendorcement`
+ * tables collapsed into the single `handovers` table discriminated by `unit_id`; the four
+ * units — PICU, NICU, SCBU, WARD — are each first-class (spec §3), with their per-unit
+ * variation (identity columns, consultant shape, labels, hue) defined ONCE in
+ * `App\Support\UnitProfile` rather than drifting per code path.
  *
  * Gates (routes/web.php owns the `auth`+`cap:` wiring): reads are `endorsement.view`, every write
  * is `endorsement.edit` (legacy server gate [0,2,3,4] — excludes Nurse). The four rich-text fields
@@ -36,8 +32,42 @@ use Inertia\Response;
  */
 class EndorsementController extends Controller
 {
-    /** The ONLY accepted value of the `{unit}` route param — the registry is PICU-only (G1). */
-    public const UNIT_CODES = ['PICU'];
+    /**
+     * The four-unit chooser: one card per unit with today's census count and sign-off state,
+     * so a missing or unsigned day is visible the moment the app opens (the compliance
+     * problem this system exists to fix is FORGETTING).
+     */
+    public function root(): Response
+    {
+        $today = now()->format('Y-m-d');
+
+        $units = Unit::whereIn('code', UnitProfile::codes())
+            ->get()
+            ->sortBy(fn (Unit $u): int => (int) array_search($u->code, UnitProfile::codes(), true))
+            ->values()
+            ->map(function (Unit $u) use ($today): array {
+                $rows = Handover::where('unit_id', $u->id)->whereDate('handover_date', $today)->count();
+                $signed = HandoverSignoff::where('unit_id', $u->id)
+                    ->whereDate('handover_date', $today)
+                    ->whereNotNull('signed_off_at')
+                    ->exists();
+
+                return [
+                    'code' => $u->code,
+                    'name' => $u->name,
+                    'bar_class' => UnitProfile::for($u->code)->barClass,
+                    'today' => [
+                        'date' => $today,
+                        'has_sheet' => $rows > 0,
+                        'rows' => $rows,
+                        'signed_off' => $signed,
+                    ],
+                ];
+            })
+            ->values();
+
+        return Inertia::render('Endorsement/Chooser', ['units' => $units]);
+    }
 
     /**
      * The day index for a unit: one entry per handover_date, newest first.
@@ -441,7 +471,7 @@ class EndorsementController extends Controller
         $u = $this->resolveUnit($unit);
         $date = $this->normalizeDate($date);
 
-        $data = $this->validateRow($request);
+        $data = $this->validateRow($request, UnitProfile::for($u->code));
 
         $row = Handover::create(array_merge($data, [
             'unit_id' => $u->id,
@@ -459,9 +489,9 @@ class EndorsementController extends Controller
     /** Edit an existing handover row (rich-text fields sanitized by the model cast). */
     public function updateRow(Request $request, Handover $handover): RedirectResponse
     {
-        $this->assertPicuRow($handover);
+        $this->assertEnabledUnitRow($handover);
 
-        $data = $this->validateRow($request);
+        $data = $this->validateRow($request, UnitProfile::for((string) $handover->unit?->code));
 
         $handover->update($data);
 
@@ -473,7 +503,7 @@ class EndorsementController extends Controller
     /** Remove a handover row (soft delete). */
     public function deleteRow(Request $request, Handover $handover): RedirectResponse
     {
-        $this->assertPicuRow($handover);
+        $this->assertEnabledUnitRow($handover);
 
         $id = $handover->id;
         $handover->delete();
@@ -484,28 +514,26 @@ class EndorsementController extends Controller
     }
 
     /**
-     * G6-S3 — the row-write verbs bind `{handover}` by BARE ID, so they need the same unit scoping
-     * every read path gets from resolveUnit(). Without it the retained NICU / SCBU / WARD rows were
-     * unreadable yet still writable and soft-deletable by anyone holding `endorsement.edit` —
-     * G1's retention guarantee inverted for exactly the destructive verbs. A non-PICU row 404s,
-     * matching what a read of the same row already does.
+     * The row-write verbs bind `{handover}` by BARE ID, so they need the same unit scoping
+     * every read path gets from resolveUnit(). A row belonging to a unit outside the
+     * four-profile surface 404s, matching what a read of the same row would do.
      */
-    private function assertPicuRow(Handover $handover): void
+    private function assertEnabledUnitRow(Handover $handover): void
     {
-        if (strtoupper((string) $handover->unit?->code) !== 'PICU') {
+        if (! in_array(strtoupper((string) $handover->unit?->code), UnitProfile::codes(), true)) {
             abort(404);
         }
     }
 
     /**
-     * Resolve + validate the `{unit}` route param. G1 — PICU is the only accepted code; NICU /
-     * SCBU / WARD 404 here even when a retained `units` row of that code still exists.
+     * Resolve + validate the `{unit}` route param against the four first-class units.
+     * Lowercase URLs keep resolving (legacy links and the nav both use them).
      */
     private function resolveUnit(string $unit): Unit
     {
         $code = strtoupper($unit);
 
-        if (! in_array($code, self::UNIT_CODES, true)) {
+        if (! in_array($code, UnitProfile::codes(), true)) {
             abort(404);
         }
 
@@ -513,15 +541,16 @@ class EndorsementController extends Controller
     }
 
     /**
-     * Validate an incoming row. Rich-text fields are length-bounded here and sanitized on write by
-     * the model cast. (Phase 4 makes the per-unit identity columns — dob for NICU/SCBU, age +
-     * ward_unit for WARD — writable through the UnitProfile; until then they are dropped.)
+     * Validate an incoming row against ITS UNIT's profile. Rich-text fields are length-bounded
+     * here and sanitized on write by the model cast. Identity columns another unit owns (dob is
+     * NICU/SCBU; age + ward_unit are WARD) are simply not validated for this unit, so a client
+     * that submits them has them dropped rather than persisted.
      *
      * @return array<string, mixed>
      */
-    private function validateRow(Request $request): array
+    private function validateRow(Request $request, UnitProfile $profile): array
     {
-        return $request->validate([
+        $rules = [
             'bed' => ['sometimes', 'nullable', 'string', 'max:100'],
             'mrn' => ['sometimes', 'nullable', 'string', 'max:100'],
             'patient_name' => ['sometimes', 'nullable', 'string', 'max:255'],
@@ -529,7 +558,15 @@ class EndorsementController extends Controller
             'details' => ['sometimes', 'nullable', 'string', 'max:20000'],
             'plan' => ['sometimes', 'nullable', 'string', 'max:20000'],
             'nevent' => ['sometimes', 'nullable', 'string', 'max:20000'],
-        ]);
+        ];
+
+        foreach ($profile->extraRowFields as $field) {
+            $rules[$field] = $field === 'dob'
+                ? ['sometimes', 'nullable', 'date']
+                : ['sometimes', 'nullable', 'string', 'max:100'];
+        }
+
+        return $request->validate($rules);
     }
 
     /**
@@ -554,6 +591,10 @@ class EndorsementController extends Controller
                 'bed' => (string) $h->bed,
                 'mrn' => $h->mrn,
                 'patient_name' => $h->patient_name,
+                // Per-unit identity columns; the UnitProfile decides which of these render.
+                'dob' => $h->dob?->format('Y-m-d H:i'),
+                'age' => $h->age,
+                'ward_unit' => $h->ward_unit,
                 'disease' => $h->disease,
                 'details' => $h->details,
                 'plan' => $h->plan,
@@ -739,11 +780,15 @@ class EndorsementController extends Controller
     }
 
     /**
-     * @return array{code: string, name: string}
+     * @return array{code: string, name: string, profile: array<string, mixed>}
      */
     private function unitPayload(Unit $unit): array
     {
-        return ['code' => $unit->code, 'name' => $unit->name];
+        return [
+            'code' => $unit->code,
+            'name' => $unit->name,
+            'profile' => UnitProfile::for($unit->code)->toArray(),
+        ];
     }
 
     /** Normalize a `{date}` route param to `Y-m-d`, rejecting anything unparseable with a 404. */

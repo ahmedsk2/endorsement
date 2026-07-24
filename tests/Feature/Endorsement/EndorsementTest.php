@@ -101,30 +101,6 @@ class EndorsementTest extends TestCase
         $this->actingAs($this->admin())->get('/endorsement/FOO')->assertNotFound();
     }
 
-    /**
-     * G1 — the registry is PICU-ONLY: the non-PICU unit codes are no longer part of the
-     * application surface and 404 on every endorsement route, even when a retained unit row of
-     * that code still exists in the database.
-     */
-    public function test_non_picu_units_are_no_longer_reachable(): void
-    {
-        // Phase 3 — the surface is still PICU-first; the seeded NICU/SCBU/WARD units 404
-        // until Phase 4 widens UNIT_CODES. (Phase 4 REWRITES this test to assert 200s.)
-        $admin = $this->admin();
-
-        foreach (['NICU', 'SCBU', 'WARD', 'nicu', 'scbu', 'ward'] as $code) {
-            $this->actingAs($admin)->get('/endorsement/'.$code)->assertNotFound();
-            $this->actingAs($admin)->get('/endorsement/'.$code.'/2026-07-10')->assertNotFound();
-            $this->actingAs($admin)->get('/endorsement/'.$code.'/2026-07-10/print')->assertNotFound();
-        }
-
-        foreach (['NICU', 'SCBU', 'WARD'] as $code) {
-            $this->actingAs($this->editor())->post('/endorsement/'.$code.'/new-day', [])->assertNotFound();
-            $this->actingAs($this->editor())
-                ->post('/endorsement/'.$code.'/2026-07-10/rows', ['mrn' => 'X-1'])
-                ->assertNotFound();
-        }
-    }
 
     /** G1 — the lowercase PICU URL keeps working (the legacy links and the nav both use it). */
     public function test_the_lowercase_picu_url_still_resolves(): void
@@ -132,13 +108,6 @@ class EndorsementTest extends TestCase
         $this->actingAs($this->admin())->get('/endorsement/picu')->assertOk();
     }
 
-    /** G1 — with a single unit, a bare `/endorsement` is meaningful: it lands on PICU. */
-    public function test_a_bare_endorsement_url_redirects_to_picu(): void
-    {
-        $this->actingAs($this->admin())
-            ->get('/endorsement')
-            ->assertRedirect('/endorsement/PICU');
-    }
 
     public function test_show_renders_the_editable_sheet_for_a_unit_and_date(): void
     {
@@ -221,11 +190,10 @@ class EndorsementTest extends TestCase
     }
 
     /**
-     * G1 — the neonatal `dob` and the ward `age` / `ward_unit` columns are gone from the SURFACE:
-     * they are no longer accepted on write and no longer shared with the sheet. The DATABASE
-     * columns remain (data retention) — see ClinicalSchemaTest.
+     * PICU's UnitProfile has no extra identity columns, so the neonatal `dob` and the ward
+     * `age` / `ward_unit` fields are dropped on write for PICU rows (spec §3).
      */
-    public function test_the_non_picu_row_fields_are_no_longer_accepted_on_write(): void
+    public function test_picu_drops_the_other_units_identity_fields_on_write(): void
     {
         $this->actingAs($this->editor())
             ->post('/endorsement/PICU/2026-07-10/rows', [

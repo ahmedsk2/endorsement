@@ -16,7 +16,7 @@ import Index from '../../resources/js/Pages/Endorsement/Index.vue';
 
 const mountIndex = (props = {}) => mount(Index, {
     props: {
-        unit: { code: 'PICU', name: 'PICU' },
+        unit: { code: 'PICU', name: 'PICU', profile: { code: 'PICU', extra_row_fields: [], bed_label: 'Bed', consultant_pair: true, consultant_by_label: 'Consultant covering', bar_class: 'channel-bar-picu', plan_label: 'Plan Of Care', narrative_label: 'New events' } },
         dates: [{ date: '2026-07-11', count: 4 }, { date: '2026-07-10', count: 3 }],
         filters: { from: null, to: null },
         ...props,

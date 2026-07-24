@@ -28,19 +28,32 @@ const props = defineProps({
 const { can } = useCan();
 const canEdit = can('endorsement.edit');
 
+// The per-unit shape, defined once server-side (App\Support\UnitProfile).
+const profile = computed(() => props.unit.profile ?? {
+    extra_row_fields: [], bed_label: 'Bed', bar_class: '', narrative_label: 'New events',
+});
+
 // The four rich-text handover fields, with the column heading each one lives under.
-const richFields = [
+// The narrative label is per-unit ("New events" on PICU, "To be followed" elsewhere).
+const richFields = computed(() => [
     { key: 'disease', label: 'Disease' },
     { key: 'details', label: 'Details' },
     { key: 'plan', label: 'Plan' },
-    { key: 'nevent', label: 'New events' },
-];
+    { key: 'nevent', label: profile.value.narrative_label },
+]);
 
-// Presentation only: the signature channel bar carries this sheet's unit. G1 — PICU is the only
-// unit left, so this is the single remaining variant; anything else falls back to the default bar.
-const unitBarClass = computed(
-    () => (String(props.unit.code ?? '').toLowerCase() === 'picu' ? 'channel-bar-picu' : ''),
-);
+// The extra per-unit identity columns (NICU/SCBU: dob; WARD: age + sub-unit).
+const extraFields = computed(() => (profile.value.extra_row_fields ?? []).map((key) => ({
+    key,
+    label: key === 'dob' ? 'DOB' : (key === 'age' ? 'Age' : 'Unit/Speciality'),
+    type: key === 'dob' ? 'datetime-local' : 'text',
+})));
+
+// datetime-local wants 'YYYY-MM-DDTHH:mm'; the server sends 'YYYY-MM-DD HH:mm'.
+const extraValue = (row, key) => (key === 'dob' ? String(row.dob ?? '').replace(' ', 'T') : (row[key] ?? ''));
+
+// Presentation only: the signature channel bar carries this sheet's unit hue.
+const unitBarClass = computed(() => profile.value.bar_class ?? '');
 
 /*
  * G3 — per-field save state, keyed `rowId:field`, so the confirmation lands on the cell that was
@@ -402,7 +415,7 @@ const submitReopen = () => {
                      class="channel-bar rounded-md border border-line bg-panel p-3" :class="unitBarClass">
                 <div class="mb-2 grid grid-cols-3 gap-2">
                     <div>
-                        <label :for="`m-bed-${r.id}`" class="channel-tag mb-0.5 block">Bed</label>
+                        <label :for="`m-bed-${r.id}`" class="channel-tag mb-0.5 block">{{ profile.bed_label }}</label>
                         <input :id="`m-bed-${r.id}`" :value="r.bed" :readonly="!canEdit" inputmode="text"
                                class="readout w-full rounded-md border border-line bg-panel px-2 py-2 text-base focus:border-channel focus:outline-none"
                                @change="saveText(r.id, 'bed', $event)" />
@@ -423,6 +436,14 @@ const submitReopen = () => {
                            @change="saveText(r.id, 'patient_name', $event)" />
                     <SaveStatus :status="statusOf(r.id, 'patient_name')" testid="m-status-patient_name" />
                 </div>
+                <div v-for="x in extraFields" :key="x.key" class="mb-3">
+                    <label :for="`m-${x.key}-${r.id}`" class="channel-tag mb-0.5 block">{{ x.label }}</label>
+                    <input :id="`m-${x.key}-${r.id}`" :type="x.type" :value="extraValue(r, x.key)" :readonly="!canEdit"
+                           class="w-full rounded-md border border-line bg-panel px-2 py-2 text-base text-ink focus:border-channel focus:outline-none"
+                           :class="x.key === 'dob' ? 'readout' : ''"
+                           @change="saveText(r.id, x.key, $event)" />
+                    <SaveStatus :status="statusOf(r.id, x.key)" :testid="`m-status-${x.key}`" />
+                </div>
                 <div v-for="f in richFields" :key="f.key" class="mb-3">
                     <p class="channel-tag mb-0.5">{{ f.label }}</p>
                     <RichTextEditor :model-value="r[f.key]" :editable="canEdit" :label="f.label"
@@ -441,9 +462,10 @@ const submitReopen = () => {
             <table class="min-w-full divide-y divide-line-soft text-sm">
                 <thead class="bg-ground-deep text-left">
                     <tr>
-                        <th class="channel-tag px-3 py-2">Bed</th>
+                        <th class="channel-tag px-3 py-2">{{ profile.bed_label }}</th>
                         <th class="channel-tag px-3 py-2">MRN</th>
                         <th class="channel-tag px-3 py-2">Name</th>
+                        <th v-for="x in extraFields" :key="x.key" class="channel-tag px-3 py-2">{{ x.label }}</th>
                         <th v-for="f in richFields" :key="f.key" class="channel-tag px-3 py-2">{{ f.label }}</th>
                         <th v-if="canEdit" class="channel-tag px-3 py-2"></th>
                     </tr>
@@ -475,6 +497,13 @@ const submitReopen = () => {
                                    class="w-32 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-ink hover:border-line focus:border-channel focus:outline-none"
                                    @change="saveText(r.id, 'patient_name', $event)" />
                             <SaveStatus :status="statusOf(r.id, 'patient_name')" testid="status-patient_name" />
+                        </td>
+                        <td v-for="x in extraFields" :key="x.key" :data-testid="`cell-${x.key}`" class="px-2 py-2">
+                            <input :type="x.type" :value="extraValue(r, x.key)" :readonly="!canEdit" :aria-label="x.label"
+                                   class="w-36 rounded-md border border-transparent bg-transparent px-1 py-0.5 hover:border-line focus:border-channel focus:outline-none"
+                                   :class="x.key === 'dob' ? 'readout' : ''"
+                                   @change="saveText(r.id, x.key, $event)" />
+                            <SaveStatus :status="statusOf(r.id, x.key)" :testid="`status-${x.key}`" />
                         </td>
                         <td v-for="f in richFields" :key="f.key" :data-testid="`cell-${f.key}`" class="px-2 py-2">
                             <RichTextEditor :model-value="r[f.key]" :editable="canEdit" :label="f.label"

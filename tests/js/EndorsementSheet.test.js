@@ -30,7 +30,7 @@ const rows = [
 
 const mountSheet = (props = {}) => mount(Sheet, {
     props: {
-        unit: { code: 'PICU', name: 'PICU' },
+        unit: { code: 'PICU', name: 'PICU', profile: { code: 'PICU', extra_row_fields: [], bed_label: 'Bed', consultant_pair: true, consultant_by_label: 'Consultant covering', bar_class: 'channel-bar-picu', plan_label: 'Plan Of Care', narrative_label: 'New events' } },
         date: '2026-07-10',
         rows,
         ...props,

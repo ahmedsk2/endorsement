@@ -3,6 +3,12 @@
 use Illuminate\Support\Str;
 use Pdo\Mysql;
 
+// Read-only connection to the legacy MySQL database (the migration source consumed by
+// `php artisan legacy:import`). Its settings live in config/legacy.php so the LEGACY_DB_*
+// env vars have one documented home. Required here because the config loader reads
+// `database` before `legacy` alphabetically, so config('legacy.*') is not yet available.
+$legacy = require __DIR__.'/legacy.php';
+
 return [
 
     /*
@@ -31,6 +37,10 @@ return [
     */
 
     'connections' => [
+
+        // Read-only source for `legacy:import`; shape/creds come from config/legacy.php
+        // (LEGACY_DB_* env vars). Never written to by the application.
+        'legacy' => $legacy['database'],
 
         'sqlite' => [
             'driver' => 'sqlite',

@@ -64,4 +64,6 @@ missed-days counter), no nursing sheets.
   (`handover_signoffs`, UNIQUE on that pair); `signed_off_at` = locked.
 - Endorsed by/to pickers: active Residents (4) and Chief Residents (5). Consultants: position 3.
   WARD has a single "Consultant Oncall" stored in `consultant_by_*`.
+- Roles: 0 Admin, 2 Charge Nurse, 3 Consultant, 4 Resident, 5 Chief Resident. Position 1
+  (Nurse) is RETIRED — never revive it or reuse the number.
 - Unit variation lives in ONE place: `App\Support\UnitProfile`.

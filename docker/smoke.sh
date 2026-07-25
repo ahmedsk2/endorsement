@@ -127,6 +127,16 @@ rm -f "$ENVFILE.backup.log"
 check "archive is openssl-encrypted" "Salted__" \
     "$(docker exec "$APP" sh -c 'f=$(ls -1 storage/backups/*.gz.enc 2>/dev/null | tail -1); [ -n "$f" ] && head -c 8 "$f"')"
 
+echo "--- audit chain verifies against real MySQL ---"
+# backup:run above appended a row, so the chain is non-empty by now. This exercises the
+# KEYED chain end to end: if the HMAC key derivation differed between write and verify,
+# or the hash_version column were missing, this is where it shows.
+if docker exec "$APP" php artisan audit:verify >/dev/null 2>&1; then
+    echo "  ok   audit:verify"
+else
+    echo "  FAIL audit:verify"; fail=1
+fi
+
 echo "--- process users (masters still root: see the audit addendum) ---"
 # php-fpm must run as `app`; left on the base image's www-data it cannot write to storage
 # and signature uploads break in production while every page still renders.

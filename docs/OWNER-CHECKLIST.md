@@ -1,5 +1,19 @@
 # Owner checklist — endorse.towardpcc.com
 
+> ## ⚠ Deploying the 2026-07-26 work? Run the migration.
+>
+> ```bash
+> php artisan migrate --force
+> ```
+>
+> One additive, nullable column (`audit_log.hash_version`). The audit chain moved from an
+> unkeyed hash to a keyed HMAC, because the old one could be recomputed by anyone with
+> database write access — so the trail could be rewritten and still report "chain intact".
+> Rows record which algorithm wrote them, so existing history keeps verifying.
+>
+> Without the migration the application will error on its first audited action. Deploy,
+> migrate, then run `bash scripts/verify-live.sh`.
+
 Everything the system needs from you, in the order it has to happen. The site is live and
 healthy; nothing below is a bug fix, it is the handover of the things only you can hold.
 

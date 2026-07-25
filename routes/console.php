@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
@@ -24,3 +25,25 @@ foreach (config('endorsement.handover_times', []) as $time) {
 }
 
 Schedule::command('endorsement:remind')->everyFifteenMinutes();
+
+/*
+ * Security & data-lifecycle jobs (docs/COMPLIANCE.md).
+ *
+ * The audit chain is only tamper-EVIDENT if something actually checks it, so it is
+ * verified hourly and a failure is escalated rather than logged quietly. The nightly
+ * backup runs before the retention sweep, so anything the sweep removes was captured
+ * first. Retention only ever touches expired operational rows — never clinical records.
+ */
+Schedule::command('audit:verify')
+    ->hourly()
+    ->onFailure(function (): void {
+        Log::critical('AUDIT CHAIN VERIFICATION FAILED — the append-only trail may have been altered. Investigate immediately.');
+    });
+
+Schedule::command('backup:run')
+    ->dailyAt('01:30')
+    ->onFailure(function (): void {
+        Log::critical('Nightly encrypted backup FAILED — no recoverable copy was produced tonight.');
+    });
+
+Schedule::command('data:retention --force')->dailyAt('02:30');

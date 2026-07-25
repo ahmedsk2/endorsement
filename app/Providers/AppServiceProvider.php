@@ -26,12 +26,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // A brake on bulk reads of patient data: a legitimate clinician opens a handful of
-        // sheets a shift; a scripted scrape opens hundreds. Generous enough never to
-        // interrupt real work, tight enough that mass extraction is not silent.
+        // A brake on BULK extraction, not on work. Sized from the real ceiling: a resident
+        // using save-on-blur across a 15-patient census touches four fields per patient,
+        // so 60/min (the first attempt) throttled a fast clinician mid-handover — the
+        // browser e2e suite caught it. 240/min is above anything a human generates and
+        // still turns "scrape a year of sheets" into minutes of obvious, audited traffic.
         \Illuminate\Support\Facades\RateLimiter::for('clinical', fn ($request) => $request->user()
-            ? \Illuminate\Cache\RateLimiting\Limit::perMinute(60)->by($request->user()->getKey())
-            : \Illuminate\Cache\RateLimiting\Limit::perMinute(20)->by($request->ip()));
+            ? \Illuminate\Cache\RateLimiting\Limit::perMinute(240)->by($request->user()->getKey())
+            : \Illuminate\Cache\RateLimiting\Limit::perMinute(60)->by($request->ip()));
 
         // Admin-saved runtime settings (SMTP, push, reminder times) override the .env
         // config. Guarded internally so pre-migration artisan calls never crash.

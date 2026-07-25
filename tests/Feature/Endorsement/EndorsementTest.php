@@ -177,7 +177,7 @@ class EndorsementTest extends TestCase
             ])
             ->assertRedirect();
 
-        $row = Handover::where('mrn', 'XSS-1')->firstOrFail();
+        $row = Handover::latest('id')->get()->firstWhere('mrn', 'XSS-1');
 
         // Stored-XSS defense: the script is stripped, the allow-listed markup preserved.
         $this->assertStringNotContainsString('<script', (string) $row->details);
@@ -206,7 +206,7 @@ class EndorsementTest extends TestCase
             ])
             ->assertRedirect();
 
-        $row = Handover::where('mrn', 'PICU-NF-1')->firstOrFail();
+        $row = Handover::latest('id')->get()->firstWhere('mrn', 'PICU-NF-1');
         $this->assertNull($row->dob, 'the neonatal dob field is no longer part of the surface');
         $this->assertNull($row->age, 'the ward age field is no longer part of the surface');
         $this->assertNull($row->ward_unit, 'the ward sub-unit field is no longer part of the surface');

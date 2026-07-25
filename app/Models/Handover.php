@@ -45,7 +45,13 @@ class Handover extends Model
     {
         return [
             'handover_date' => 'date',
-            'dob' => 'datetime',
+            // DIRECT IDENTIFIERS — encrypted at rest (docs/COMPLIANCE.md layer 4). A
+            // stolen dump or a compromised DB account yields ciphertext, not a child's
+            // name and hospital number. Consequence: these columns cannot be searched or
+            // sorted in SQL. Nothing in this system does either.
+            'mrn' => \App\Casts\EncryptedString::class,
+            'patient_name' => \App\Casts\EncryptedString::class,
+            'dob' => \App\Casts\EncryptedDateTime::class,
             // Rich-text handover fields: sanitized on write (allow-list; scripts/handlers stripped).
             'disease' => SanitizedHtml::class,
             'details' => SanitizedHtml::class,

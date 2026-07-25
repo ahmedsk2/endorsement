@@ -92,7 +92,7 @@ class UnitScopeTest extends TestCase
             ])
             ->assertRedirect();
 
-        $row = Handover::where('mrn', 'N-1')->firstOrFail();
+        $row = Handover::latest('id')->get()->firstWhere('mrn', 'N-1');
         $this->assertNotNull($row->dob);
         $this->assertSame('2026-07-01 03:20', $row->dob->format('Y-m-d H:i'));
         $this->assertNull($row->age, 'age is a WARD-only field');
@@ -110,7 +110,7 @@ class UnitScopeTest extends TestCase
             ])
             ->assertRedirect();
 
-        $row = Handover::where('mrn', 'W-1')->firstOrFail();
+        $row = Handover::latest('id')->get()->firstWhere('mrn', 'W-1');
         $this->assertSame('4 years', $row->age);
         $this->assertSame('Hematology', $row->ward_unit);
         $this->assertNull($row->dob, 'dob is a NICU/SCBU-only field');

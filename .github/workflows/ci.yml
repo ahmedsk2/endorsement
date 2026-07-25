@@ -1,0 +1,81 @@
+name: CI
+
+# Every push and a weekly sweep — the weekly run is what catches a dependency that became
+# vulnerable while nobody was touching the code (PDPL/ECC-1 expect vulnerability management,
+# not just a green build on the day you wrote it).
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '0 3 * * 1'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, sqlite3, pdo_sqlite, gd, intl, zip
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Build assets
+        run: npm run build
+
+      # The light-only build guard reads the compiled CSS, so it must run after the build.
+      - name: Backend tests
+        run: php artisan test
+
+      - name: Component tests
+        run: npm test
+
+      - name: End-to-end tests
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction --prefer-dist --no-progress
+          npm ci
+
+      # Known-vulnerable dependencies fail the build; this is the patch SLA's alarm clock.
+      - name: Composer security audit
+        run: composer audit
+
+      - name: npm security audit
+        run: npm audit --omit=dev --audit-level=high

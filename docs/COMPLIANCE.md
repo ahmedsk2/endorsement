@@ -27,7 +27,7 @@ governance work that no code change can do for you.
 | Session cookie encrypted, `Secure` in production, `SameSite=strict`, 60-minute idle lifetime | `config/session.php` |
 | CSP, HSTS (TLS only), X-Frame-Options DENY, nosniff, `Referrer-Policy: no-referrer`, COOP/CORP, Permissions-Policy | `SecurityHeaders` |
 | `Cache-Control: no-store` on **every authenticated response** | `SecurityHeaders` |
-| Rate limits: login, password reset, OTP issue/verify, and a 60/min brake on authenticated clinical reads | `routes/*`, `AppServiceProvider` |
+| Rate limits: login, password reset, OTP issue/verify, and a 240/min brake on authenticated clinical traffic | `routes/*`, `AppServiceProvider` |
 | Trusted-proxy handling so TLS is detected behind a load balancer | `bootstrap/app.php` |
 | Clinical rows soft-deleted; accounts deactivated, never deleted (attribution survives) | migrations, `UserManagementController` |
 | Legacy import is read-only against its source, idempotent, audited, counts-only output | `LegacyImport`, `LegacyReconcile` |
@@ -39,9 +39,14 @@ governance work that no code change can do for you.
 against exactly one thing (someone walking off with the data files) and introduces a real
 risk of *permanent data loss* if the keyring is lost. Cheaper layers cover more.
 
-1. **Encrypted backups — do this first.** There is currently no backup at all, which is a
-   bigger risk than any of this. `mysqldump | gzip | age -r <key>` nightly, restore tested
-   quarterly, keys held offline. **owner**
+1. **Encrypted backups — TOOLING DONE, RUN IT ON THE SERVER.** `php artisan backup:run`
+   dumps, gzips, encrypts (`openssl enc -aes-256-cbc -pbkdf2`), **verifies the archive
+   decrypts and decompresses**, shreds the plaintext dump and prunes old archives. It is
+   scheduled nightly. The archive format is openssl-standard on purpose: recovery needs
+   only openssl and the passphrase, never this application. Verified locally end to end
+   (encrypted archive -> restored database -> ciphertext still in the PHI columns).
+   **owner: set `BACKUP_PASSPHRASE`, run it on the server and locally, keep copies
+   in-Kingdom, test a restore quarterly — docs/RUNBOOK-BACKUP.md.**
 2. **Provider volume/disk encryption.** Free, zero key-loss risk, covers the same threat as
    TDE. Get the provider's written confirmation (AES-256) — that statement is your audit
    evidence. **owner**
@@ -49,10 +54,13 @@ risk of *permanent data loss* if the keyring is lost. Cheaper layers cover more.
    SUPER / GRANT), a separate migration user, TLS between app and DB if they are on
    different hosts, and `INSERT`+`SELECT` only on `audit_log` so append-only is enforced by
    the engine rather than by convention. **owner**
-4. **Application-level column encryption** — the defence-in-depth step that survives a
-   stolen dump *and* a compromised DB account. This codebase never searches or sorts
-   `mrn` / `patient_name` / `dob`, so Laravel's `encrypted` cast fits with almost no
-   breakage. **Not yet applied** — see "Open items" below.
+4. **Application-level column encryption — DONE.** `mrn`, `patient_name`, `dob` and all
+   four rich-text clinical fields are encrypted at rest (AES-256 via APP_KEY). Rich text is
+   sanitised *then* encrypted, so what is stored is already safe to render. A row written
+   before encryption still reads back (the casts fall back to plaintext) rather than
+   500-ing a whole sheet. Proven by `tests/Feature/Security/PhiEncryptionAtRestTest.php`,
+   which reads the RAW columns and requires no identifier to be legible.
+   Trade-off accepted: those columns cannot be searched or sorted in SQL. Nothing does.
 5. **MySQL InnoDB TDE (whole database).** Only worth enabling if you move to managed MySQL
    where it is a provider default, or an auditor names it as a required control. Doing it
    by hand on a VPS buys little over layer 2 and adds a keyring you can lose.
@@ -67,14 +75,20 @@ documented, satisfy them.
 
 ## Open items before go-live
 
-**Code (recommended next):**
-- Apply `encrypted` casts to `handovers.mrn`, `patient_name`, `dob` (+ optionally the four
-  rich-text fields), widen those columns, and ship a backfill command. Blast radius is
-  small — no query filters or sorts on them today. Blind indexing is deliberately *not*
-  needed unless cross-day patient search is ever added.
-- Schedule `audit:verify` (hourly) with alerting on failure, plus an anomaly sweep
-  (repeated `access_denied`, repeated failed second factors).
-- CI running `composer audit`, `npm audit`, the three test suites, and Dependabot/Renovate.
+**Code — done since the audit:**
+- PHI columns encrypted at rest (layer 4 above), proven by a test that reads raw columns.
+- `audit:verify` hourly, `backup:run` nightly, `data:retention` nightly — each escalating
+  to a critical log line on failure (`routes/console.php`).
+- `data:retention`: the disposal mechanism PDPL Art. 18 expects. Dry-run by default;
+  removes only expired operational rows (abandoned registrations, dead one-time codes,
+  idle sessions) and NEVER clinical records or the audit log.
+- CI (`.github/workflows/ci.yml`): all three suites plus `composer audit` and `npm audit`,
+  on every push and weekly.
+
+**Code — still open:**
+- An anomaly sweep that alerts on repeated `access_denied` or repeated failed second
+  factors (the detection half of breach readiness).
+- Enable Dependabot or Renovate in the repository settings.
 
 **Owner / governance (PDPL):**
 - Appoint and publish a **data protection officer**; register with SDAIA if required for

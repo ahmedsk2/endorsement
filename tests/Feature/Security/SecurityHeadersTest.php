@@ -52,4 +52,19 @@ class SecurityHeadersTest extends TestCase
         $response->assertHeader('X-Frame-Options', 'DENY');
         $response->assertHeader('X-Content-Type-Options', 'nosniff');
     }
+
+    /**
+     * The health endpoint is STATELESS — it has no session middleware. A global middleware
+     * that calls $request->user() throws there, 500s /up, and the container is marked
+     * unhealthy forever while every page still renders fine. Found in a production smoke
+     * test; pinned here so it cannot come back.
+     */
+    public function test_the_health_endpoint_is_200_and_still_carries_headers(): void
+    {
+        $response = $this->get('/up');
+
+        $response->assertOk();
+        $response->assertHeader('X-Frame-Options', 'DENY');
+        $response->assertHeader('X-Content-Type-Options', 'nosniff');
+    }
 }

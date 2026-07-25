@@ -55,7 +55,21 @@ class SecurityHeaders
         // NOTHING behind the login is cacheable — not the census, not the staff roster,
         // not the admin console. A path allow-list was too narrow: a proxy or a shared
         // ward workstation would happily keep the last user's page.
-        if ($request->user() !== null || $request->is('endorsement*')) {
+        //
+        // `$request->user()` is wrapped because this middleware is GLOBAL: on a stateless
+        // route (the /up health check has no session middleware) the session guard throws
+        // "Session store not set on request". Unwrapped, that 500s the health endpoint,
+        // the container is marked unhealthy forever and the proxy stops routing to it —
+        // found by the production smoke test, not by any request the app itself makes.
+        $authenticated = false;
+
+        try {
+            $authenticated = $request->user() !== null;
+        } catch (\Throwable) {
+            // Stateless route: treat as anonymous.
+        }
+
+        if ($authenticated || $request->is('endorsement*')) {
             $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
             $response->headers->set('Pragma', 'no-cache');
         }

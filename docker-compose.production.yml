@@ -1,25 +1,63 @@
 # Production stack for endorse.towardpcc.com
 #
-# Joins the EXISTING Coolify-managed Traefik (`coolify` network, `letsencrypt` resolver)
-# rather than binding 80/443 itself — those ports already belong to coolify-proxy.
+# Deployed by Coolify (Docker Compose build pack) onto the EXISTING Coolify-managed
+# Traefik — this stack never binds 80/443 itself, those already belong to coolify-proxy.
 #
-# The database is a DEDICATED MySQL container, not the shared one already on this host:
-# children's health data should not share an engine, a root account or a backup with
-# unrelated projects, and the blast radius of any other app's compromise stops here.
+# ROUTING IS COOLIFY'S JOB. Set the domain in the Coolify UI as
+#   https://endorse.towardpcc.com:8080
+# (the :8080 tells Coolify which container port to route to) and it generates the Traefik
+# router, the HTTP->HTTPS redirect and the Let's Encrypt certificate. Hand-written
+# traefik.* labels here would produce a SECOND router matching the same host — see
+# docs/RUNBOOK-DEPLOY.md for the labels to use if you ever deploy this without Coolify.
 #
-# Secrets come from a .env file that lives ONLY on the server (never in git, never printed).
+# The database is a DEDICATED MySQL container, not the shared one already on this host,
+# and it sits on an internal-only network: children's health data should not share an
+# engine, a root account or a backup with unrelated projects, and it must not be reachable
+# from every other app that happens to be on the `coolify` network.
+#
+# Values for ${...} come from Coolify's Environment Variables screen (or an --env-file for
+# a manual deploy). No secret is ever written into this file.
 
 services:
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    image: endorsement-app:latest
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
-    env_file: .env.production
+    environment:
+      APP_NAME: ${APP_NAME}
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${APP_KEY}
+      APP_URL: ${APP_URL}
+      APP_TIMEZONE: Asia/Riyadh
+
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_DATABASE: ${MYSQL_DATABASE}
+      DB_USERNAME: ${MYSQL_USER}
+      DB_PASSWORD: ${MYSQL_PASSWORD}
+
+      # Sessions/cache/queue in the database: no extra service to secure or back up, and
+      # the session payload is encrypted at rest with APP_KEY.
+      SESSION_DRIVER: database
+      SESSION_ENCRYPT: "true"
+      SESSION_SECURE_COOKIE: "true"
+      CACHE_STORE: database
+      QUEUE_CONNECTION: database
+
+      # Trust the Coolify proxy so isSecure() is true and HSTS/secure cookies apply.
+      TRUSTED_PROXIES: "*"
+
+      LOG_CHANNEL: stderr
+      LOG_LEVEL: warning
+
+      # Encrypts the nightly dump. Owner-set; if unset, backup:run refuses to write.
+      BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE}
     volumes:
       # Signatures and backups must survive a redeploy — they are not in the image.
       - endorsement-storage:/var/www/html/storage/app
@@ -27,20 +65,12 @@ services:
     networks:
       - coolify
       - internal
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=coolify
-      # HTTP -> HTTPS, then the app on 8080 behind a Let's Encrypt certificate.
-      - traefik.http.routers.endorsement-http.rule=Host(`endorse.towardpcc.com`)
-      - traefik.http.routers.endorsement-http.entrypoints=http
-      - traefik.http.routers.endorsement-http.middlewares=endorsement-https
-      - traefik.http.middlewares.endorsement-https.redirectscheme.scheme=https
-      - traefik.http.middlewares.endorsement-https.redirectscheme.permanent=true
-      - traefik.http.routers.endorsement.rule=Host(`endorse.towardpcc.com`)
-      - traefik.http.routers.endorsement.entrypoints=https
-      - traefik.http.routers.endorsement.tls=true
-      - traefik.http.routers.endorsement.tls.certresolver=letsencrypt
-      - traefik.http.services.endorsement.loadbalancer.server.port=8080
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/up"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   db:
     image: mysql:8.4
@@ -49,7 +79,11 @@ services:
       - --default-authentication-plugin=caching_sha2_password
       # No general query log: it would write patient identifiers to disk in plaintext.
       - --general-log=0
-    env_file: .env.production.db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - endorsement-db:/var/lib/mysql
     networks:

@@ -58,6 +58,9 @@ RUN { \
         echo 'upload_max_filesize=4M'; \
         echo 'post_max_size=8M'; \
         echo 'memory_limit=256M'; \
+        echo 'display_errors=Off'; \
+        echo 'log_errors=On'; \
+        echo 'error_reporting=E_ALL & ~E_DEPRECATED & ~E_STRICT'; \
     } > /usr/local/etc/php/conf.d/zz-production.ini
 
 WORKDIR /var/www/html
@@ -66,10 +69,31 @@ COPY --from=vendor /build/vendor ./vendor
 COPY . .
 COPY --from=assets /build/public/build ./public/build
 
+# Discover packages against the PRODUCTION dependency tree (the dev-built manifest is
+# excluded by .dockerignore, so this is the only source of truth in the image).
+RUN php artisan package:discover --ansi
+
 COPY docker/nginx.conf /etc/nginx/nginx.conf
 COPY docker/supervisord.conf /etc/supervisord.conf
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint
 RUN chmod +x /usr/local/bin/entrypoint
+
+# php-fpm must run as the SAME user that owns storage/. The base image's pool runs as
+# www-data, which cannot write to storage owned by `app` — signature uploads and the log
+# would fail silently in production while the pages still rendered.
+RUN { \
+        echo '[www]'; \
+        echo 'user = app'; \
+        echo 'group = app'; \
+        echo 'listen = 127.0.0.1:9000'; \
+        echo 'pm = dynamic'; \
+        echo 'pm.max_children = 20'; \
+        echo 'pm.start_servers = 3'; \
+        echo 'pm.min_spare_servers = 2'; \
+        echo 'pm.max_spare_servers = 6'; \
+        echo 'catch_workers_output = yes'; \
+        echo 'decorate_workers_output = no'; \
+    } > /usr/local/etc/php-fpm.d/zz-app.conf
 
 # The app never writes outside storage/ and bootstrap/cache.
 RUN addgroup -g 1000 app && adduser -u 1000 -G app -s /bin/sh -D app \

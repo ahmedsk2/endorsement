@@ -11,6 +11,9 @@ storage/backups/*
 storage/framework/cache/*
 storage/framework/sessions/*
 storage/framework/views/*
+# Built with DEV dependencies present: shipping it makes Laravel load providers
+# (e.g. Pail) that do not exist in a --no-dev vendor tree.
+bootstrap/cache/*.php
 database/*.sqlite*
 public/build
 public/hot

@@ -44,7 +44,13 @@ class AuditVerify extends Command
                     \Illuminate\Support\Carbon::parse($row->created_at)->toIso8601String(),
                 ]);
 
-                $expected = hash('sha256', ((string) $row->prev_hash).$canonical);
+                // Verify each row under the algorithm it was WRITTEN with, so introducing
+                // the keyed chain does not retroactively declare valid history broken.
+                $expected = \App\Support\AuditChain::hash(
+                    $row->prev_hash,
+                    $canonical,
+                    \App\Support\AuditChain::versionOf($row->hash_version ?? null),
+                );
 
                 if (! hash_equals($expected, (string) $row->hash)) {
                     $broken = $row->id;

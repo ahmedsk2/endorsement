@@ -28,6 +28,7 @@ class AuditLog extends Model
         'ip',
         'prev_hash',
         'hash',
+        'hash_version',
         'created_at',
     ];
 
@@ -77,7 +78,9 @@ class AuditLog extends Model
                 'detail' => $detail,
                 'ip' => $ip,
                 'prev_hash' => $prevHash,
-                'hash' => hash('sha256', ((string) $prevHash).$canonical),
+                // KEYED, with the key held outside the database — see App\Support\AuditChain.
+                'hash' => \App\Support\AuditChain::hash($prevHash, $canonical),
+                'hash_version' => \App\Support\AuditChain::VERSION,
                 'created_at' => $createdAt,
             ]);
         });

@@ -83,6 +83,16 @@ the backup, or every encrypted column reads back as ciphertext.
 handover sheet opens, and `php artisan audit:verify` exits 0. A backup nobody has restored
 is a hypothesis, not a backup.
 
+**First drill done 2026-07-25**, on the live server before any patient data existed: the
+nightly archive decrypted, decompressed to 207 KB of SQL, and restored into a scratch MySQL
+8.4 database with all 24 tables and matching row counts. That also settled the open question
+about the client mismatch — a dump produced by MariaDB's `mariadb-dump` restores cleanly
+into MySQL 8.4.
+
+One expected discrepancy: `audit_log` will always have one row *more* in the live database
+than in the archive, because `backup:run` records its own `backup_created` entry after the
+dump is taken. That is ordering, not loss.
+
 ## 4. What is deliberately NOT automated
 
 `data:retention` prunes only expired operational rows (abandoned registration requests,

@@ -111,6 +111,11 @@ class CreateAdminCommandTest extends TestCase
         $entry = \DB::table('audit_log')->where('action', 'admin_bootstrapped')->first();
 
         $this->assertNotNull($entry);
-        $this->assertStringNotContainsString('Str0ng-pass!x', $entry->details ?? '');
+        // The column is `detail`, singular. Reading `->details` here made this assertion
+        // vacuous — it compared against null-coalesced '' and would have passed even if the
+        // password had been written straight into the trail.
+        $this->assertNotNull($entry->detail, 'the entry should record which user was created');
+        $this->assertStringNotContainsString('Str0ng-pass!x', $entry->detail);
+        $this->assertStringContainsString('user_id=', $entry->detail);
     }
 }

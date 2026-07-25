@@ -139,13 +139,16 @@ class ChiefResidentTest extends TestCase
     {
         $chief = $this->chief();
 
+        // email_verified_at is now a precondition of approval, not decoration.
         $resPending = PendingRegistration::create([
             'member_name' => 'new_res', 'member_email' => 'nr@example.org',
             'full_name' => 'New Res', 'password' => 'hashed-placeholder', 'position' => 4,
+            'email_verified_at' => now(),
         ]);
         $consPending = PendingRegistration::create([
             'member_name' => 'new_cons', 'member_email' => 'nc@example.org',
             'full_name' => 'New Cons', 'password' => 'hashed-placeholder', 'position' => 3,
+            'email_verified_at' => now(),
         ]);
 
         $this->actingAs($chief)->post('/admin/users/pending/'.$resPending->id.'/approve')->assertRedirect();

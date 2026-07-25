@@ -39,10 +39,21 @@ final class AppSettings
 
     private const CACHE_KEY = 'app_settings.all';
 
-    /** @return array<string, string|null> every stored setting, decrypted */
+    /**
+     * @return array<string, string|null> every stored setting, decrypted
+     *
+     * ONLY THE CIPHERTEXT IS CACHED. Decryption happens per read, outside the cache.
+     *
+     * Caching the decrypted map put the SMTP password and the VAPID private key in
+     * CLEARTEXT into the cache store — which in production is the database, the very same
+     * place their encrypted `app_settings` rows live. That handed anyone who could read the
+     * database exactly the secrets the encryption-at-rest layer exists to deny them, and it
+     * would have persisted forever (rememberForever). Decrypting on read costs microseconds
+     * against a handful of keys and keeps plaintext in process memory only.
+     */
     public static function all(): array
     {
-        return Cache::rememberForever(self::CACHE_KEY, function (): array {
+        $stored = Cache::rememberForever(self::CACHE_KEY, function (): array {
             $out = [];
 
             foreach (AppSetting::query()->get(['key', 'value']) as $row) {
@@ -50,13 +61,21 @@ final class AppSettings
                     continue;
                 }
 
-                $out[$row->key] = (self::KEYS[$row->key] && $row->value !== null)
-                    ? Crypt::decryptString($row->value)
-                    : $row->value;
+                $out[$row->key] = $row->value;   // as stored: secrets stay encrypted
             }
 
             return $out;
         });
+
+        $decrypted = [];
+
+        foreach ($stored as $key => $value) {
+            $decrypted[$key] = (self::KEYS[$key] && $value !== null)
+                ? Crypt::decryptString($value)
+                : $value;
+        }
+
+        return $decrypted;
     }
 
     public static function get(string $key): ?string

@@ -82,6 +82,12 @@ services:
       #
       # No general query log: it would write patient identifiers to disk in plaintext.
       - --general-log=0
+      # Nor a binary log. MySQL 8.4 enables it by DEFAULT, in ROW format, unencrypted, with
+      # 30-day retention — a rolling plaintext copy of every column that is not
+      # column-encrypted (bed, age, ward_unit, staff names and emails, audit IPs), sitting
+      # in the data volume outside the encrypted-backup control and surviving the deletions
+      # data:retention performs. This is a single server with no replication to feed.
+      - --skip-log-bin
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}

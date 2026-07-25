@@ -96,6 +96,21 @@ class UserManagementController extends Controller
         $this->authorizeTarget($request, (int) $pending->position);
         $this->assertStillUnique($pending);
 
+        // The verification step existed and was simply not wired into the decision that
+        // depends on it: docs/COMPLIANCE.md claimed "email confirmed before an account is
+        // activated" while approve() never checked. With /register open to the internet,
+        // that let an unproven identity be approved into full four-unit PHI access.
+        if ($pending->email_verified_at === null) {
+            AuditLog::record(
+                'user_approve_denied_unverified',
+                'pending='.$pending->id,
+                $request->user()->getKey(),
+                $request->ip(),
+            );
+
+            return back()->with('error', 'This address has not been confirmed yet. Ask them to use the confirmation link before you approve the account.');
+        }
+
         $userId = DB::transaction(function () use ($pending): int {
             $now = now();
 
@@ -110,6 +125,14 @@ class UserManagementController extends Controller
                 'member_email' => $pending->member_email,
                 'password' => $pending->getRawOriginal('password'),
                 'active' => true,
+                // Carry the proof across, so the account records that its address WAS
+                // confirmed rather than silently losing it at the moment of approval.
+                'email_verified_at' => $pending->email_verified_at,
+                // Arm the expiry backstop. passwordExpired() returns false whenever this is
+                // null, so leaving it unset meant the 90-day rotation never fired for any
+                // account created by approval — which is every account except the
+                // console-created bootstrap administrator.
+                'pass_exp_date' => $now->copy()->addDays(90)->format('Y-m-d'),
                 'created_at' => $now,
                 'updated_at' => $now,
             ]);

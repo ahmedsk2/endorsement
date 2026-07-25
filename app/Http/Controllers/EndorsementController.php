@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -285,11 +286,19 @@ class EndorsementController extends Controller
         $u = $this->resolveUnit($unit);
         $date = $this->normalizeDate($date);
 
+        // The id must be someone the picker would actually have OFFERED. A bare
+        // `exists:users,id` accepted any row in the table — including deactivated and
+        // soft-deleted accounts, consultants, and administrators — and the handler below
+        // then freezes that person's name AND their handwritten signature onto a
+        // medico-legal record. That made this a forgery path, not a tidiness issue.
+        $endorser = $this->pickerRule(self::ENDORSER_POSITIONS);
+        $consultant = $this->pickerRule(self::CONSULTANT_POSITIONS);
+
         $data = $request->validate([
-            'endorsed_by_user_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
-            'endorsed_to_user_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
-            'consultant_by_user_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
-            'consultant_to_user_id' => ['sometimes', 'nullable', 'integer', 'exists:users,id'],
+            'endorsed_by_user_id' => ['sometimes', 'nullable', 'integer', $endorser],
+            'endorsed_to_user_id' => ['sometimes', 'nullable', 'integer', $endorser],
+            'consultant_by_user_id' => ['sometimes', 'nullable', 'integer', $consultant],
+            'consultant_to_user_id' => ['sometimes', 'nullable', 'integer', $consultant],
             'endorsement_time' => ['sometimes', 'nullable', 'string', 'max:50'],
             'sign_off' => ['sometimes', 'boolean'],
         ]);
@@ -493,13 +502,23 @@ class EndorsementController extends Controller
     {
         $u = $this->resolveUnit($unit);
 
+        // date_format, not a bare string: this went to strtotime(), so "+5 years" or
+        // "last monday" created real handover rows at arbitrary dates — and a backdated day
+        // makes the missed-days page report a handover that never happened, corrupting the
+        // one metric this system exists to improve. Every other date route is regex-pinned
+        // in routes/web.php; this one was not.
         $data = $request->validate([
-            'date' => ['sometimes', 'nullable', 'string'],
+            'date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'carry_choice' => ['sometimes', 'nullable', 'in:carry,blank'],
         ]);
 
         $target = $this->parseDateOrToday($data['date'] ?? null);
         $choice = $data['carry_choice'] ?? null;
+
+        // The only clinical write that did not check the lock. Its $alreadyExists guard
+        // below looks for handover ROWS, not for a sign-off — so signing an empty day and
+        // then starting it dropped rows straight into locked evidence.
+        $this->assertDayUnlocked($u->id, $target);
 
         $alreadyExists = Handover::where('unit_id', $u->id)
             ->whereDate('handover_date', $target)
@@ -837,6 +856,22 @@ class EndorsementController extends Controller
      *
      * @return array{endorsers: list<array{id: int, name: string}>, consultants: list<array{id: int, name: string}>}
      */
+    /**
+     * The write-side twin of staffPickers(): the same population, expressed as a validation
+     * rule. Keep the two in step — if they drift, the server accepts endorsers the UI never
+     * offered, which is exactly the defect this closes.
+     *
+     * @param  list<int>  $positions
+     */
+    private function pickerRule(array $positions): \Illuminate\Validation\Rules\Exists
+    {
+        return Rule::exists('users', 'id')->where(function ($query) use ($positions) {
+            $query->whereIn('position', $positions)
+                ->where('active', true)
+                ->whereNull('deleted_at');
+        });
+    }
+
     private function staffPickers(): array
     {
         /** @param list<int> $positions */

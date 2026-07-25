@@ -45,7 +45,12 @@ return [
             'port' => env('MAIL_PORT', 2525),
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
-            'timeout' => null,
+            // NOT null (= wait forever). Mail is sent synchronously in the request, and
+            // php-fpm has 20 workers: an SMTP host that accepts the connection and then
+            // stops responding would pin every worker in turn and take the census offline
+            // at handover time. A login OTP that fails fast is recoverable; a ward that
+            // cannot open the sheet at 07:30 is not.
+            'timeout' => 5,
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 

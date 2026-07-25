@@ -46,6 +46,10 @@ class UserManagementTest extends TestCase
             'position' => 4,
             'password' => 'plain-secret-123', // hashed once by the model cast
             'requested_at' => now(),
+            // Approval now REFUSES an unconfirmed address, so the default fixture is a
+            // registration that completed its email confirmation. Override with null to
+            // exercise the refusal.
+            'email_verified_at' => now(),
         ], $overrides));
     }
 

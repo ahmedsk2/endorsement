@@ -29,13 +29,38 @@ return Application::configure(basePath: dirname(__DIR__))
         // Behind a load balancer / reverse proxy the app must believe X-Forwarded-Proto,
         // or every isSecure() check is false, HSTS is never sent and the session cookie
         // is issued without Secure. The proxy list is deployment config.
+        // X_FORWARDED_HOST IS DELIBERATELY ABSENT. Laravel's password-reset broker builds
+        // its link from the request host, so trusting a client-supplied X-Forwarded-Host
+        // means an attacker can have a genuine reset link mailed to a victim pointing at
+        // the attacker's domain — and the broker token, unlike a signed URL, is not bound
+        // to a host. The app never needs a client to tell it its own hostname: APP_URL is
+        // fixed. Proto/port/for are still honoured so isSecure() and audit IPs work behind
+        // the proxy.
         $middleware->trustProxies(
             at: env('TRUSTED_PROXIES', '*'),
             headers: Request::HEADER_X_FORWARDED_FOR
-                | Request::HEADER_X_FORWARDED_HOST
                 | Request::HEADER_X_FORWARDED_PORT
                 | Request::HEADER_X_FORWARDED_PROTO,
         );
+
+        // Second lock on the same door: reject a forged Host header outright. The app
+        // container sits on the shared `coolify` network, so a co-tenant container can
+        // reach it directly, bypassing Traefik's Host-based routing entirely.
+        //
+        // These are REGEX patterns, and loopback must be in the list: the container's
+        // HEALTHCHECK requests http://127.0.0.1:8080/up, so rejecting that Host would mark
+        // the container permanently unhealthy and stop the proxy routing to it — the same
+        // outage a session-less /up already caused once. docker/smoke.sh asserts /up.
+        $middleware->trustHosts(at: function (): array {
+            $host = parse_url((string) config('app.url'), PHP_URL_HOST);
+
+            return array_values(array_filter([
+                $host ? '^'.preg_quote($host, '#').'$' : null,
+                '^localhost$',
+                '^127\.0\.0\.1$',
+                '^\[::1\]$',
+            ]));
+        }, subdomains: false);
 
         // Security headers on EVERY response, error pages included — appended globally,
         // not just to the web group, so JSON errors and the health endpoint carry them too.

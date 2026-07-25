@@ -258,7 +258,9 @@ class BackupRun extends Command
         );
         $process->run();
 
-        @unlink($gz);
+        // The .gz is a complete, readable copy of every clinical record. Unlinking alone
+        // leaves those blocks on disk; shred it the same way as the plaintext dump.
+        $this->shred($gz);
 
         if (! $process->isSuccessful()) {
             throw new \RuntimeException('openssl encryption failed with code '.$process->getExitCode().'.');
@@ -290,13 +292,26 @@ class BackupRun extends Command
         self::assertPlausibleDump($decompressed, $driver);
     }
 
-    /** Overwrite before unlinking — the plaintext dump is every record in one file. */
+    /**
+     * Overwrite before unlinking — the plaintext dump is every record in one file.
+     *
+     * The WHOLE file, not the first megabyte: the original capped the overwrite at 1 MiB,
+     * so on any real census the overwhelming majority of the clinical record was unlinked
+     * but left intact on disk, recoverable by anyone who could read the raw volume. Written
+     * in chunks so a large dump does not have to be materialised in memory.
+     */
     private function shred(string $path): void
     {
         $size = (int) @filesize($path);
 
         if ($size > 0 && ($handle = @fopen($path, 'r+')) !== false) {
-            fwrite($handle, str_repeat("\0", min($size, 1_048_576)));
+            $chunk = str_repeat("\0", 1_048_576);
+
+            for ($written = 0; $written < $size; $written += 1_048_576) {
+                fwrite($handle, substr($chunk, 0, (int) min(1_048_576, $size - $written)));
+            }
+
+            fflush($handle);
             fclose($handle);
         }
 

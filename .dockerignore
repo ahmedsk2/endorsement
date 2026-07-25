@@ -11,6 +11,12 @@ storage/backups/*
 storage/framework/cache/*
 storage/framework/sessions/*
 storage/framework/views/*
+# Allow-listing individual subpaths let a test fixture signature PNG ship inside the
+# production image. Exclude the whole of testing/ and the private app disk: nothing under
+# storage/app belongs in a layer — it is a runtime volume.
+storage/framework/testing
+storage/app/private
+storage/app/public
 # Built with DEV dependencies present: shipping it makes Laravel load providers
 # (e.g. Pail) that do not exist in a --no-dev vendor tree.
 bootstrap/cache/*.php

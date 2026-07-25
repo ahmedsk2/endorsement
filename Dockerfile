@@ -36,6 +36,9 @@ RUN apk add --no-cache \
         nginx supervisor tzdata icu-data-full \
         libpng libjpeg-turbo freetype libzip icu-libs oniguruma gmp \
         mysql-client gzip openssl \
+        # Drops root after the entrypoint has fixed volume ownership, so PID 1 and every
+        # long-running process is unprivileged.
+        su-exec \
         # Alpine's `mysql-client` is MariaDB's client, and on its own it CANNOT authenticate
         # to MySQL 8.4: the default auth is caching_sha2_password and the plugin .so is not
         # in that package. mariadb-connector-c ships it. Without this the nightly backup
@@ -104,7 +107,11 @@ RUN { \
 RUN addgroup -g 1000 app && adduser -u 1000 -G app -s /bin/sh -D app \
     && mkdir -p storage/framework/{cache,sessions,views} storage/logs storage/app/private/signatures storage/backups bootstrap/cache \
     && chown -R app:app storage bootstrap/cache \
-    && chmod -R 775 storage bootstrap/cache
+    && chmod -R 775 storage bootstrap/cache \
+    # nginx runs unprivileged, so its temp/cache trees must belong to `app` — otherwise the
+    # master starts and then fails on the first request that needs to buffer a body.
+    && mkdir -p /var/lib/nginx/tmp /var/lib/nginx/logs \
+    && chown -R app:app /var/lib/nginx
 
 EXPOSE 8080
 

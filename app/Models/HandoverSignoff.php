@@ -134,6 +134,12 @@ class HandoverSignoff extends Model
             'endorsement_time_minutes' => 'integer',
             'signed_off_at' => 'datetime',
             'reopened_at' => 'datetime',
+            // Free clinical text, so encrypted like every other narrative field. The
+            // reopen path already refuses to write this into audit_log because "it could
+            // name a patient", and bootstrap/app.php lists it in dontFlash for the same
+            // reason — it was identified as PHI-bearing in two places and then stored in
+            // the clear in a third.
+            'reopen_reason' => \App\Casts\EncryptedString::class,
         ];
     }
 

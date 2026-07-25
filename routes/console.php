@@ -37,13 +37,19 @@ Schedule::command('endorsement:remind')->everyFifteenMinutes();
 Schedule::command('audit:verify')
     ->hourly()
     ->onFailure(function (): void {
-        Log::critical('AUDIT CHAIN VERIFICATION FAILED — the append-only trail may have been altered. Investigate immediately.');
+        \App\Support\OpsAlert::critical('Audit chain verification FAILED', 'The append-only trail may have been altered. Investigate immediately.');
     });
 
 Schedule::command('backup:run')
     ->dailyAt('01:30')
     ->onFailure(function (): void {
-        Log::critical('Nightly encrypted backup FAILED — no recoverable copy was produced tonight.');
+        \App\Support\OpsAlert::critical('Nightly backup FAILED', 'No recoverable copy of the clinical record was produced tonight.');
     });
 
-Schedule::command('data:retention --force')->dailyAt('02:30');
+Schedule::command('data:retention --force')
+    ->dailyAt('02:30')
+    ->onFailure(function (): void {
+        // This one had no escalation at all: the disposal mechanism PDPL Art. 18 expects
+        // could stop running and nothing would say so.
+        \App\Support\OpsAlert::critical('Data retention sweep FAILED', 'Expired operational rows were not disposed of.');
+    });

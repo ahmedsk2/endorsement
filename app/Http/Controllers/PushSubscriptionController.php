@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Rules\PushServiceEndpoint;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
@@ -14,7 +15,7 @@ class PushSubscriptionController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
-            'endpoint' => ['required', 'string', 'max:2000'],
+            'endpoint' => ['required', 'string', 'max:2000', new PushServiceEndpoint()],
             'keys.p256dh' => ['required', 'string', 'max:255'],
             'keys.auth' => ['required', 'string', 'max:255'],
         ]);
@@ -34,7 +35,7 @@ class PushSubscriptionController extends Controller
     public function destroy(Request $request): RedirectResponse
     {
         $data = $request->validate([
-            'endpoint' => ['required', 'string', 'max:2000'],
+            'endpoint' => ['required', 'string', 'max:2000', new PushServiceEndpoint()],
         ]);
 
         $request->user()->pushSubscriptions()

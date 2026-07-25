@@ -22,9 +22,14 @@ fi
 
 # Rebuild the caches against the REAL environment (they are env-specific, so baking them
 # into the image would freeze build-time values).
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
+#
+# Run AS `app`, not as root. Laravel `require`s PHP straight out of bootstrap/cache, and
+# that directory is app-writable — so generating those files as root, while the runtime
+# reads them as app, is the wrong way round: anything able to write there as `app` would
+# be executed by whatever runs next. Everything below this point is unprivileged.
+su-exec app php artisan config:cache
+su-exec app php artisan route:cache
+su-exec app php artisan view:cache
 
 # Fail fast if the app cannot reach its database, rather than serving 500s to a ward.
 php -r '
@@ -46,4 +51,13 @@ fwrite(STDERR, "FATAL: database unreachable after 60s\n");
 exit(1);
 '
 
+# supervisord itself stays root, and ONLY supervisord: every program it starts is declared
+# `user=app`, so nginx's master, php-fpm's master and the scheduler are all unprivileged.
+#
+# It cannot be dropped further. Under Docker the container's stdout is a root-owned pipe,
+# and supervisord opens /dev/stdout on behalf of each child before forking — as `app` that
+# fails with EACCES ("making dispatchers") and nothing starts at all. Verified, not assumed.
+# Sending the logs somewhere writable instead would trade a supervisor that forks and waits
+# for the loss of container logs, which is a bad trade on a system whose scheduled jobs
+# escalate by logging.
 exec "$@"

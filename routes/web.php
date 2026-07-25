@@ -66,7 +66,7 @@ Route::middleware(['auth', 'throttle:clinical'])->prefix('endorsement')->name('e
  * Admin → Access Control. The catalog read and every write are admin-only
  * (`cap:access.manage`); writes are POST/PUT + CSRF-protected.
  */
-Route::middleware(['auth', 'cap:access.manage'])
+Route::middleware(['auth', 'throttle:clinical', 'cap:access.manage'])
     ->prefix('admin')
     ->name('admin.')
     ->group(function () {
@@ -98,7 +98,7 @@ Route::middleware('auth')
         Route::patch('/users/{user}/active', [UserManagementController::class, 'setActive'])->name('users.active');
     });
 
-Route::middleware(['auth', 'cap:users.manage'])
+Route::middleware(['auth', 'throttle:clinical', 'cap:users.manage'])
     ->prefix('admin')
     ->name('admin.')
     ->group(function () {
@@ -110,7 +110,7 @@ Route::middleware(['auth', 'cap:users.manage'])
  * Admin → Settings: the runtime-configurable settings (SMTP, push, reminder times).
  * Secrets are write-only; every change is audited by key name, never by value.
  */
-Route::middleware(['auth', 'cap:settings.manage'])
+Route::middleware(['auth', 'throttle:clinical', 'cap:settings.manage'])
     ->prefix('admin')
     ->name('admin.')
     ->group(function () {
@@ -122,7 +122,7 @@ Route::middleware(['auth', 'cap:settings.manage'])
  * Own profile. Every seeded role holds `cap:profile.manage`; the update binds
  * to the SESSION identity only (IDOR-safe).
  */
-Route::middleware(['auth', 'cap:profile.manage'])->group(function () {
+Route::middleware(['auth', 'throttle:clinical', 'cap:profile.manage'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::patch('/profile/reminders', [ProfileController::class, 'updateReminders'])->name('profile.reminders');
@@ -152,8 +152,8 @@ Route::middleware('auth')->group(function () {
  * only, no clinical data.
  */
 Route::middleware('auth')->group(function () {
-    Route::post('/push/subscriptions', [PushSubscriptionController::class, 'store'])->name('push.store');
-    Route::delete('/push/subscriptions', [PushSubscriptionController::class, 'destroy'])->name('push.destroy');
+    Route::post('/push/subscriptions', [PushSubscriptionController::class, 'store'])->middleware('cap:profile.manage')->name('push.store');
+    Route::delete('/push/subscriptions', [PushSubscriptionController::class, 'destroy'])->middleware('cap:profile.manage')->name('push.destroy');
 });
 
 require __DIR__.'/auth.php';

@@ -58,6 +58,7 @@ class SettingsController extends Controller
             'mail_encryption' => ['sometimes', 'nullable', 'in:tls,ssl,none'],
             'mail_from_address' => ['sometimes', 'nullable', 'email', 'max:255'],
             'mail_from_name' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'alert_email' => ['sometimes', 'nullable', 'email', 'max:255'],
             'vapid_subject' => ['sometimes', 'nullable', 'string', 'max:255'],
             'vapid_public_key' => ['sometimes', 'nullable', 'string', 'max:255'],
             'vapid_private_key' => ['sometimes', 'nullable', 'string', 'max:255'],

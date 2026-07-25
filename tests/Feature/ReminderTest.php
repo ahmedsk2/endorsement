@@ -55,7 +55,7 @@ class ReminderTest extends TestCase
         }
 
         $user->pushSubscriptions()->create([
-            'endpoint' => 'https://push.example/'.fake()->uuid(),
+            'endpoint' => 'https://fcm.googleapis.com/fcm/send/'.fake()->uuid(),
             'p256dh' => 'k-p256dh',
             'auth' => 'k-auth',
         ]);
@@ -70,14 +70,14 @@ class ReminderTest extends TestCase
         $user = User::factory()->create(['position' => 4]);
 
         $this->actingAs($user)->post('/push/subscriptions', [
-            'endpoint' => 'https://push.example/abc',
+            'endpoint' => 'https://fcm.googleapis.com/fcm/send/abc',
             'keys' => ['p256dh' => 'pk', 'auth' => 'ak'],
         ])->assertRedirect();
 
         $this->assertDatabaseHas('push_subscriptions', ['user_id' => $user->id]);
 
         $this->actingAs($user)->delete('/push/subscriptions', [
-            'endpoint' => 'https://push.example/abc',
+            'endpoint' => 'https://fcm.googleapis.com/fcm/send/abc',
         ])->assertRedirect();
 
         $this->assertDatabaseCount('push_subscriptions', 0);
@@ -178,7 +178,7 @@ class ReminderTest extends TestCase
         // Subscribed but NOT opted into any unit.
         $user = User::factory()->create(['position' => 4]);
         $user->pushSubscriptions()->create([
-            'endpoint' => 'https://push.example/no-optin',
+            'endpoint' => 'https://fcm.googleapis.com/fcm/send/no-optin',
             'p256dh' => 'k',
             'auth' => 'k',
         ]);

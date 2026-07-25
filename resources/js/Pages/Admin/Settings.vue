@@ -21,6 +21,7 @@ const form = useForm({
     mail_encryption: props.settings.mail_encryption ?? '',
     mail_from_address: props.settings.mail_from_address ?? '',
     mail_from_name: props.settings.mail_from_name ?? '',
+    alert_email: props.settings.alert_email ?? '',
     vapid_subject: props.settings.vapid_subject ?? '',
     vapid_public_key: props.settings.vapid_public_key ?? '',
     vapid_private_key: '',
@@ -94,6 +95,14 @@ const inputClass = 'w-full rounded-md border border-line bg-panel px-3 py-2 text
                         <div>
                             <label class="channel-tag mb-1 block" for="mail_from_name">From name</label>
                             <input id="mail_from_name" v-model="form.mail_from_name" type="text" :class="inputClass" />
+                        </div>
+                        <div>
+                            <label class="channel-tag mb-1 block" for="alert_email">Operational alerts to</label>
+                            <input id="alert_email" v-model="form.alert_email" type="email" :class="inputClass" />
+                            <p class="readout mt-1 text-xs">
+                                Where a failed nightly backup or a broken audit chain is reported.
+                                Alerts carry a job name and a time only &mdash; never patient information.
+                            </p>
                         </div>
                     </div>
                 </section>

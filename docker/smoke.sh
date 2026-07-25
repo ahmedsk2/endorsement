@@ -127,11 +127,27 @@ rm -f "$ENVFILE.backup.log"
 check "archive is openssl-encrypted" "Salted__" \
     "$(docker exec "$APP" sh -c 'f=$(ls -1 storage/backups/*.gz.enc 2>/dev/null | tail -1); [ -n "$f" ] && head -c 8 "$f"')"
 
-echo "--- php-fpm owns storage ---"
+echo "--- nothing runs as root ---"
 # php-fpm must run as `app`; left on the base image's www-data it cannot write to storage
 # and signature uploads break in production while every page still renders.
-check "php-fpm user" app \
+check "php-fpm worker user" app \
     "$(docker exec "$APP" sh -c 'ps -o user,args | grep "[p]ool www" | head -1 | awk "{print \$1}"')"
+
+# The worker check alone passed happily while the nginx and php-fpm MASTERS ran as root —
+# which is what two auditors flagged. Assert the masters specifically.
+#
+# supervisord itself remains root and is the ONLY root process: under Docker it must open
+# the root-owned container stdout for each child before forking, and as `app` that fails
+# with EACCES and nothing starts. So the assertion is "root runs nothing but supervisord",
+# not "no root at all".
+check "nginx master user" app \
+    "$(docker exec "$APP" sh -c 'ps -o user,args | grep "[n]ginx: master" | head -1 | awk "{print \$1}"')"
+check "php-fpm master user" app \
+    "$(docker exec "$APP" sh -c 'ps -o user,args | grep "[p]hp-fpm: master" | head -1 | awk "{print \$1}"')"
+check "scheduler user" app \
+    "$(docker exec "$APP" sh -c 'ps -o user,args | grep "[s]chedule:work" | head -1 | awk "{print \$1}"')"
+check "root processes other than supervisord" 0 \
+    "$(docker exec "$APP" sh -c 'ps -o user,args | awk "\$1==\"root\"" | grep -vc supervisord || true')"
 
 echo "--- database isolation ---"
 # The DB must be on the internal network ONLY. On the shared proxy network every other app

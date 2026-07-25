@@ -40,8 +40,13 @@ class SanitizedHtml implements CastsAttributes
             return Crypt::decryptString((string) $value);
         } catch (\Throwable) {
             // A row written before encryption was introduced (or by a direct SQL insert)
-            // is still readable rather than being lost to the clinician who needs it.
-            return (string) $value;
+            // is still readable rather than being lost to the clinician who needs it —
+            // but it is PURIFIED HERE, because a value that failed to decrypt is by
+            // definition one that never went through set(), and therefore has never been
+            // through the allow-list. Returning it raw handed unfiltered markup straight
+            // to the browser, which is the stored-XSS hole this cast exists to close.
+            // Purifying is idempotent, so an already-clean legacy row is unaffected.
+            return RichTextSanitizer::clean((string) $value);
         }
     }
 

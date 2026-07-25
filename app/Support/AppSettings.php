@@ -29,6 +29,8 @@ final class AppSettings
         'mail_encryption' => false,
         'mail_from_address' => false,
         'mail_from_name' => false,
+        // Where operational alerts go: a failed nightly backup or a broken audit chain.
+        'alert_email' => false,
         'vapid_subject' => false,
         'vapid_public_key' => false,
         'vapid_private_key' => true,

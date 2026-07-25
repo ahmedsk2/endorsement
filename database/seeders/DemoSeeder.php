@@ -16,6 +16,13 @@ class DemoSeeder extends Seeder
 {
     public function run(): void
     {
+        // HARD STOP. These are fictional accounts with a password published in the repo
+        // docs; running this against production would create working logins into a system
+        // holding children's health data. There is deliberately no override flag.
+        if (app()->environment('production')) {
+            throw new \RuntimeException('DemoSeeder must never run in production.');
+        }
+
         $accounts = [
             ['admin', 'Demo Administrator', 0],
             ['charge1', 'Demo Charge Nurse', 2],

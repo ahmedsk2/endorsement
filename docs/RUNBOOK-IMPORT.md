@@ -1,5 +1,11 @@
 # Legacy import runbook (owner-run)
 
+> **NOT PART OF GO-LIVE (owner decision, 2026-07-25).** The system starts CLEAN — no
+> legacy data is being migrated. This runbook is kept because the importer is built,
+> tested and idempotent, so historical data can still be brought across later if the
+> unit ever wants it. Nothing here runs during deployment.
+
+
 The `legacy:import` command moves the four legacy endorsement table pairs into this
 system. It is **one-way** (never writes the legacy DB), **idempotent** (re-runs upsert on
 provenance, never duplicate), and **lossless** (every legacy row keeps its

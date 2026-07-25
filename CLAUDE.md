@@ -6,7 +6,9 @@ missed-days counter), no nursing sheets.
 
 ## Canonical documents
 
-- Spec (approved, rulings index in §15): `docs/superpowers/specs/2026-07-24-endorsement-system-design.md`
+- Spec: SLICED per section under `docs/spec/` — load ONLY the section you need.
+  `docs/spec/15-rulings.md` (tiny) is the rulings index; the old monolith path is now
+  just an index of the slices.
 - Implementation plan: `docs/superpowers/plans/2026-07-24-endorsement-system.md`
 - Design tokens: `docs/DESIGN-TOKENS.md` — "Monitor, in daylight", LIGHT THEME ONLY
 
@@ -47,7 +49,11 @@ missed-days counter), no nursing sheets.
 - PHP 8.4 at `%LOCALAPPDATA%\php84`, Composer shim at `%LOCALAPPDATA%\composer-bin`
   (both on user PATH; prepend to PATH in fresh shells if not picked up)
 - `php artisan test` (PHPUnit, sqlite :memory:) · `npm run build` (Vite) ·
-  `npm test` (Vitest, once configured) · Playwright e2e under `tests/e2e`
+  `npm test` (Vitest) · `npm run test:e2e` (Playwright, self-contained world)
+- ALWAYS filter verbose output: pipe test runs through `Select-Object -Last 5`
+  (PowerShell) or `tail -5`; on failure re-run only the failing filter with
+  `--filter <TestName> | Select-Object -First 30`. Never dump a full failing
+  suite into context.
 
 ## Domain vocabulary
 

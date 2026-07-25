@@ -1,0 +1,22 @@
+# Never ship secrets, local state, or the dev toolchain into the image.
+.env
+.env.*
+!.env.example
+.git
+.github
+node_modules
+vendor
+storage/logs/*
+storage/backups/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+database/*.sqlite*
+public/build
+public/hot
+tests
+test-results
+playwright-report
+docs
+.claude
+*.md

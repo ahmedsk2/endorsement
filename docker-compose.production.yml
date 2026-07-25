@@ -1,0 +1,73 @@
+# Production stack for endorse.towardpcc.com
+#
+# Joins the EXISTING Coolify-managed Traefik (`coolify` network, `letsencrypt` resolver)
+# rather than binding 80/443 itself — those ports already belong to coolify-proxy.
+#
+# The database is a DEDICATED MySQL container, not the shared one already on this host:
+# children's health data should not share an engine, a root account or a backup with
+# unrelated projects, and the blast radius of any other app's compromise stops here.
+#
+# Secrets come from a .env file that lives ONLY on the server (never in git, never printed).
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: endorsement-app:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env.production
+    volumes:
+      # Signatures and backups must survive a redeploy — they are not in the image.
+      - endorsement-storage:/var/www/html/storage/app
+      - endorsement-backups:/var/www/html/storage/backups
+    networks:
+      - coolify
+      - internal
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+      # HTTP -> HTTPS, then the app on 8080 behind a Let's Encrypt certificate.
+      - traefik.http.routers.endorsement-http.rule=Host(`endorse.towardpcc.com`)
+      - traefik.http.routers.endorsement-http.entrypoints=http
+      - traefik.http.routers.endorsement-http.middlewares=endorsement-https
+      - traefik.http.middlewares.endorsement-https.redirectscheme.scheme=https
+      - traefik.http.middlewares.endorsement-https.redirectscheme.permanent=true
+      - traefik.http.routers.endorsement.rule=Host(`endorse.towardpcc.com`)
+      - traefik.http.routers.endorsement.entrypoints=https
+      - traefik.http.routers.endorsement.tls=true
+      - traefik.http.routers.endorsement.tls.certresolver=letsencrypt
+      - traefik.http.services.endorsement.loadbalancer.server.port=8080
+
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    command:
+      - --default-authentication-plugin=caching_sha2_password
+      # No general query log: it would write patient identifiers to disk in plaintext.
+      - --general-log=0
+    env_file: .env.production.db
+    volumes:
+      - endorsement-db:/var/lib/mysql
+    networks:
+      - internal          # NOT on the coolify network: unreachable from other apps
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+networks:
+  coolify:
+    external: true
+  internal:
+    driver: bridge
+
+volumes:
+  endorsement-db:
+  endorsement-storage:
+  endorsement-backups:

@@ -47,6 +47,19 @@ class BackupRunTest extends TestCase
         $this->assertNotContains('--ssl-verify-server-cert=0', $args);
     }
 
+    public function test_it_does_not_ask_for_tablespaces_which_would_require_the_process_privilege(): void
+    {
+        // mysqldump dumps tablespaces by default and needs a server-wide PROCESS privilege
+        // to do it. Granting that to the application's user to make a backup work would be
+        // the wrong trade; skipping tablespaces costs nothing for InnoDB-per-file schemas.
+        foreach ([true, false] as $mariadb) {
+            $this->assertContains(
+                '--no-tablespaces',
+                BackupRun::dumpArgs(self::CONFIG, '/tmp/out.sql', clientIsMariaDb: $mariadb),
+            );
+        }
+    }
+
     public function test_the_password_never_appears_on_the_command_line(): void
     {
         // argv is world-readable via /proc and `ps`. The password goes through MYSQL_PWD.

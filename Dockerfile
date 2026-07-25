@@ -36,6 +36,11 @@ RUN apk add --no-cache \
         nginx supervisor tzdata icu-data-full \
         libpng libjpeg-turbo freetype libzip icu-libs oniguruma gmp \
         mysql-client gzip openssl \
+        # Alpine's `mysql-client` is MariaDB's client, and on its own it CANNOT authenticate
+        # to MySQL 8.4: the default auth is caching_sha2_password and the plugin .so is not
+        # in that package. mariadb-connector-c ships it. Without this the nightly backup
+        # fails every night with "Plugin caching_sha2_password could not be loaded".
+        mariadb-connector-c \
     && apk add --no-cache --virtual .build-deps \
         $PHPIZE_DEPS libpng-dev libjpeg-turbo-dev freetype-dev libzip-dev icu-dev oniguromo-dev gmp-dev 2>/dev/null \
     || apk add --no-cache --virtual .build-deps \

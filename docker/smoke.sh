@@ -111,6 +111,22 @@ jobs="$(docker exec "$APP" php artisan schedule:list 2>&1 \
     | grep -cE 'audit:verify|backup:run|data:retention|endorsement:remind' || true)"
 check "scheduled jobs" 6 "$jobs"
 
+echo "--- encrypted backup against real MySQL ---"
+# backup:run shells out to mysqldump, so ONLY a real MySQL can exercise it — the PHP suite
+# runs on sqlite and takes a different branch entirely. This assertion exists because the
+# backup reached production broken twice over: Alpine's `mysql-client` is MariaDB's client,
+# which verifies TLS against MySQL 8.4's self-signed cert AND (until mariadb-connector-c was
+# added) shipped no caching_sha2_password plugin, so it could not authenticate at all. Every
+# nightly dump would have failed, silently, on a clinical database.
+if docker exec "$APP" php artisan backup:run >"$ENVFILE.backup.log" 2>&1; then
+    echo "  ok   backup:run"
+else
+    echo "  FAIL backup:run"; grep -i 'backup failed' "$ENVFILE.backup.log" | head -1; fail=1
+fi
+rm -f "$ENVFILE.backup.log"
+check "archive is openssl-encrypted" "Salted__" \
+    "$(docker exec "$APP" sh -c 'f=$(ls -1 storage/backups/*.gz.enc 2>/dev/null | tail -1); [ -n "$f" ] && head -c 8 "$f"')"
+
 echo "--- php-fpm owns storage ---"
 # php-fpm must run as `app`; left on the base image's www-data it cannot write to storage
 # and signature uploads break in production while every page still renders.

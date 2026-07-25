@@ -73,6 +73,26 @@ documented, satisfy them.
 > **Cross-border warning:** storing backups outside Saudi Arabia is a PDPL Art. 29 transfer,
 > and health data attracts the strictest treatment. Keep backups in-Kingdom.
 
+## As deployed (2026-07-25)
+
+Verified on the live system, not inferred from config:
+
+| Property | Evidence |
+| --- | --- |
+| Hosted **in-Kingdom** — OCI `me-riyadh-1` | PDPL Art. 29 transfer question does not arise |
+| TLS: valid Let's Encrypt certificate for `endorse.towardpcc.com`; only TLS 1.2/1.3 negotiate; HTTP 307s to HTTPS; HSTS `max-age=31536000; includeSubDomains` | `curl -sI`, `openssl s_client` |
+| Patient database on an **internal-only** docker network, publishing no host port — unreachable from every other application on the host | asserted on each run by `docker/smoke.sh` |
+| Database credentials, `APP_KEY` and `BACKUP_PASSPHRASE` held in the platform's encrypted store; Coolify's preview-environment copies deleted | Coolify env store |
+| Repository access is a **read-only, single-repo deploy key** — not an account credential | GitHub deploy keys |
+| Migrations never run at container boot, so an unattended restart cannot alter a clinical schema | `docker/entrypoint.sh` |
+| Nightly encrypted dump verified to be a real dump of this database, not merely a file that decompresses | `BackupRun::assertPlausibleDump`, `tests/Feature/Console/BackupRunTest.php` |
+| Zero accounts existed until the owner created the first administrator; no legacy data imported | clean-start decision, 2026-07-25 |
+
+Residual transport note: the app→database hop uses TLS without certificate verification,
+because MySQL 8.4 generates a self-signed server certificate. That matches Oracle's own
+client default and the hop is a private network no other container can reach; pinning a
+generated CA would be the improvement if this ever moves off one host.
+
 ## Open items before go-live
 
 **Code — done since the audit:**
@@ -99,5 +119,9 @@ documented, satisfy them.
   log ≥ 12 months hot; pending registrations 30 days) and a disposal mechanism.
 - **Breach procedure**: SDAIA notification within 72 hours; who decides, who writes it.
 - **Data-subject-rights** procedure (access, correction, erasure where lawful).
-- Restrict `/register` to the hospital network or replace it with admin invitations.
-- Confirm hosting is in-Kingdom, and that backups are too.
+- Restrict `/register` to the hospital network or replace it with admin invitations — it is
+  currently open to the internet, which is the largest remaining exposure.
+- Hosting is confirmed in-Kingdom (above). **Backups are not yet off-host**: the nightly
+  archive still only exists in a volume on the machine it backs up, which is not a backup.
+  Pull it to a second in-Kingdom location per `docs/RUNBOOK-BACKUP.md` and do the restore
+  drill once.

@@ -174,6 +174,10 @@ class BackupRun extends Command
             '--port='.($config['port'] ?? 3306),
             '--user='.($config['username'] ?? ''),
             $clientIsMariaDb ? '--ssl-verify-server-cert=0' : '--ssl-mode=PREFERRED',
+            // Dumping tablespaces needs the PROCESS privilege, which the application's DB
+            // user deliberately does not have. Skipping them keeps least privilege intact —
+            // the alternative was granting a server-wide privilege for a backup.
+            '--no-tablespaces',
             '--single-transaction',
             '--routines',
             '--triggers',

@@ -63,8 +63,18 @@ passphrase**, not this application:
 
 ```bash
 openssl enc -d -aes-256-cbc -pbkdf2 -in endorsement-YYYY-MM-DD_HHMMSS.sql.gz.enc | gunzip > restore.sql
-mysql -u <user> -p <database> < restore.sql
 ```
+
+```bash
+mysql --ssl-verify-server-cert=0 -h db -u <user> -p <database> < restore.sql
+```
+
+`--ssl-verify-server-cert=0` is needed **inside the app container**, whose `mysql-client`
+package is MariaDB's client: MariaDB 11 verifies the server certificate by default and
+MySQL 8.4 generates a self-signed one, so without it the client refuses to connect
+(`error 2026`). Drop the flag if you restore with Oracle's client — it does not accept that
+spelling; use `--ssl-mode=PREFERRED` there instead. This same mismatch silently broke the
+nightly dump once; `backup:run` now selects the right flag by detecting the client.
 
 Then set `APP_KEY` on the restoring machine to the **same value** as the system that wrote
 the backup, or every encrypted column reads back as ciphertext.

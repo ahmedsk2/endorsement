@@ -59,10 +59,12 @@ class BackupRun extends Command
 
         $started = microtime(true);
 
+        $driver = (string) config('database.connections.'.config('database.default').'.driver');
+
         try {
             $this->dump($plain);
             $this->compressAndEncrypt($plain, $archive, $passphrase);
-            $this->verify($archive, $passphrase);
+            $this->verify($archive, $passphrase, $driver);
         } catch (\Throwable $e) {
             @unlink($plain);
             @unlink($archive);
@@ -115,23 +117,114 @@ class BackupRun extends Command
             throw new \RuntimeException('The `mysqldump` binary was not found on PATH.');
         }
 
-        $process = new Process([
-            'mysqldump',
-            '--host='.($config['host'] ?? '127.0.0.1'),
-            '--port='.($config['port'] ?? 3306),
-            '--user='.($config['username'] ?? ''),
-            '--single-transaction',
-            '--routines',
-            '--triggers',
-            '--result-file='.$target,
-            $config['database'] ?? '',
-        ], null, ['MYSQL_PWD' => (string) ($config['password'] ?? '')], null, 3600);
+        $process = new Process(
+            self::dumpArgs($config, $target, self::clientIsMariaDb()),
+            null,
+            // Never in argv: /proc and `ps` expose a command line to every local user.
+            ['MYSQL_PWD' => (string) ($config['password'] ?? '')],
+            null,
+            3600,
+        );
 
         $process->run();
 
         if (! $process->isSuccessful()) {
-            // Never echo the process output verbatim — a failing dump can quote row data.
-            throw new \RuntimeException('mysqldump exited with code '.$process->getExitCode().'.');
+            // NEVER the raw stderr: a dump that fails mid-table quotes the offending row,
+            // which would put a patient identifier in a log. The numeric MySQL error number
+            // is enough to diagnose (2026 = TLS, 1045 = auth, 2002 = cannot connect) and
+            // carries no row data. "exited with code 2" alone cost an hour once.
+            $errno = self::mysqlErrorNumber($process->getErrorOutput());
+
+            throw new \RuntimeException(
+                'mysqldump exited with code '.$process->getExitCode()
+                .($errno !== null ? ' (mysql errno '.$errno.')' : '')
+                .'. Run `mysqldump --version` and check connectivity from the app container.',
+            );
+        }
+    }
+
+    /** Pull just the numeric error number out of mysqldump's stderr — never the message. */
+    public static function mysqlErrorNumber(string $stderr): ?int
+    {
+        return preg_match('/error:?\s*(\d{4})/i', $stderr, $m) === 1 ? (int) $m[1] : null;
+    }
+
+    /**
+     * Build the dump command line.
+     *
+     * The TLS flags are client-specific and there is NO spelling that works on both:
+     * Alpine's `mysql-client` package is MariaDB's client, whose 11.x releases verify the
+     * server certificate by default — and MySQL 8.4 auto-generates a self-signed one, so
+     * the dump dies with "TLS/SSL error: self-signed certificate in certificate chain".
+     * MariaDB wants `--ssl-verify-server-cert=0`; MySQL 8.4 REMOVED that option and wants
+     * `--ssl-mode`. Passing the wrong one aborts the client, so we detect the vendor.
+     *
+     * The connection still uses TLS — only the certificate check is relaxed, matching what
+     * Oracle's own client does by default. The hop is a private, internal-only docker
+     * network that no other container on the host can reach (asserted in docker/smoke.sh).
+     *
+     * @param  array<string, mixed>  $config
+     * @return array<int, string>
+     */
+    public static function dumpArgs(array $config, string $target, bool $clientIsMariaDb): array
+    {
+        return [
+            'mysqldump',
+            '--host='.($config['host'] ?? '127.0.0.1'),
+            '--port='.($config['port'] ?? 3306),
+            '--user='.($config['username'] ?? ''),
+            $clientIsMariaDb ? '--ssl-verify-server-cert=0' : '--ssl-mode=PREFERRED',
+            '--single-transaction',
+            '--routines',
+            '--triggers',
+            '--result-file='.$target,
+            (string) ($config['database'] ?? ''),
+        ];
+    }
+
+    /** True when the `mysqldump` on PATH is MariaDB's rather than Oracle's. */
+    private static function clientIsMariaDb(): bool
+    {
+        $probe = new Process(['mysqldump', '--version']);
+        $probe->run();
+
+        return self::versionIsMariaDb($probe->getOutput().$probe->getErrorOutput());
+    }
+
+    public static function versionIsMariaDb(string $versionBanner): bool
+    {
+        return stripos($versionBanner, 'mariadb') !== false;
+    }
+
+    /**
+     * A backup that decrypts and decompresses is not necessarily a backup.
+     *
+     * The original check stopped at "it gunzipped", which an empty or truncated dump passes
+     * happily — you find out only when you need it. This asserts the payload actually looks
+     * like a dump of THIS database.
+     */
+    public static function assertPlausibleDump(string $payload, string $driver): void
+    {
+        if (strlen($payload) < 128) {
+            throw new \RuntimeException('The archive payload is too small to be a database.');
+        }
+
+        if ($driver === 'sqlite') {
+            if (! str_starts_with($payload, 'SQLite format 3')) {
+                throw new \RuntimeException('The archive payload is not a SQLite database file.');
+            }
+
+            return;
+        }
+
+        if (stripos($payload, 'CREATE TABLE') === false) {
+            throw new \RuntimeException('The archive payload contains no CREATE TABLE statement.');
+        }
+
+        // `handovers` is the table the whole system exists to protect. A dump without it is
+        // not a backup of this application, whatever else it contains.
+        if (stripos($payload, 'handovers') === false) {
+            throw new \RuntimeException('The archive payload does not contain the handovers table.');
         }
     }
 
@@ -169,7 +262,7 @@ class BackupRun extends Command
     }
 
     /** Decrypt + decompress the archive we just wrote. An unverified backup is a guess. */
-    private function verify(string $archive, string $passphrase): void
+    private function verify(string $archive, string $passphrase, string $driver): void
     {
         $process = new Process(
             ['openssl', 'enc', '-d', '-aes-256-cbc', '-pbkdf2', '-in', $archive, '-pass', 'env:BACKUP_PASSPHRASE'],
@@ -189,6 +282,8 @@ class BackupRun extends Command
         if ($decompressed === false || $decompressed === '') {
             throw new \RuntimeException('The archive decrypted but did not decompress.');
         }
+
+        self::assertPlausibleDump($decompressed, $driver);
     }
 
     /** Overwrite before unlinking — the plaintext dump is every record in one file. */

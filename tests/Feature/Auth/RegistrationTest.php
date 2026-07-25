@@ -23,8 +23,8 @@ class RegistrationTest extends TestCase
             'member_name' => 'new_doc',
             'member_email' => 'new@example.com',
             'position' => 4,
-            'password' => 'secret-pass1',
-            'password_confirmation' => 'secret-pass1',
+            'password' => 'Secret-pass1',
+            'password_confirmation' => 'Secret-pass1',
         ], $overrides);
     }
 
@@ -42,7 +42,7 @@ class RegistrationTest extends TestCase
             'member_name' => 'first_doc',
             'member_email' => 'dup@example.com',
             'position' => 3,
-            'password' => 'secret-pass1',
+            'password' => 'Secret-pass1',
             'requested_at' => now(),
         ]);
 
@@ -72,8 +72,8 @@ class RegistrationTest extends TestCase
         $this->assertGuest();
 
         $pending = PendingRegistration::where('member_name', 'new_doc')->firstOrFail();
-        $this->assertNotSame('secret-pass1', $pending->password);
-        $this->assertTrue(Hash::check('secret-pass1', $pending->password));
+        $this->assertNotSame('Secret-pass1', $pending->password);
+        $this->assertTrue(Hash::check('Secret-pass1', $pending->password));
     }
 
     public function test_registration_may_not_create_an_administrator(): void
@@ -117,11 +117,41 @@ class RegistrationTest extends TestCase
         $this->assertDatabaseMissing('pending_registrations', ['member_name' => 'new_doc']);
     }
 
+    /**
+     * The registration password policy is Password::min(8)->mixedCase()->numbers()
+     * ->symbols() — exactly the four requirements the page's live checklist shows.
+     * UI and server must never disagree about what a valid password is.
+     */
+    public function test_password_must_meet_all_four_requirements(): void
+    {
+        $base = [
+            'full_name' => 'New Member',
+            'member_name' => 'weak_pw_user',
+            'member_email' => 'weak_pw@example.org',
+            'position' => 4,
+        ];
+
+        foreach ([
+            'Short1!',          // < 8 chars
+            'secret-pass1',     // no uppercase
+            'SECRET-PASS1',     // no lowercase
+            'Secret-passX',     // no number
+            'Secretpass11',     // no symbol
+        ] as $weak) {
+            $this->post('/register', $base + [
+                'password' => $weak,
+                'password_confirmation' => $weak,
+            ])->assertSessionHasErrors('password');
+        }
+
+        $this->assertDatabaseCount('pending_registrations', 0);
+    }
+
     public function test_password_must_be_confirmed(): void
     {
         $response = $this->from('/register')->post('/register', $this->payload([
-            'password' => 'secret-pass1',
-            'password_confirmation' => 'different-pass1',
+            'password' => 'Secret-pass1',
+            'password_confirmation' => 'Different-pass1',
         ]));
 
         $response->assertSessionHasErrors('password');

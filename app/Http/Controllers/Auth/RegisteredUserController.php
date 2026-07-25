@@ -47,7 +47,9 @@ class RegisteredUserController extends Controller
                 Rule::unique('pending_registrations', 'member_email'),
             ],
             'position' => ['required', 'integer', Rule::in([1, 2, 3, 4])],
-            'password' => ['required', 'confirmed', Password::min(8)],
+            // The four requirements the registration page's live checklist shows —
+            // UI and server must never disagree about what a valid password is.
+            'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
         ]);
 
         PendingRegistration::create([

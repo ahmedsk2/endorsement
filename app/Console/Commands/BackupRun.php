@@ -79,6 +79,8 @@ class BackupRun extends Command
             }
         }
 
+        $signatures = $this->backupSignatures($dir, $stamp, $passphrase);
+
         $bytes = (int) filesize($archive);
         $seconds = round(microtime(true) - $started, 1);
 
@@ -86,11 +88,81 @@ class BackupRun extends Command
 
         \App\Models\AuditLog::record('backup_created', 'bytes='.$bytes.' seconds='.$seconds, null, null);
 
+        if ($signatures !== null) {
+            $this->info("Signature archive written: {$signatures}");
+        }
+
         $this->info("Backup written and verified: {$archive} ({$bytes} bytes, {$seconds}s)");
         $this->line('Copy it off this machine. Restore with:');
         $this->line("  openssl enc -d -aes-256-cbc -pbkdf2 -in <file>.gz.enc | gunzip > restore.sql");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * The database dump is not the whole record.
+     *
+     * `handover_signoffs` stores the PATH of the signature image that was frozen onto a
+     * sheet at sign-off, not the bytes. Those files live on disk, outside the SQL dump — so
+     * restoring the database onto fresh storage produced sheets that still claimed to be
+     * signed while every signature rendered as nothing. The attestation is the point of the
+     * document; losing its image silently weakens every historical one.
+     *
+     * Written as a SEPARATE encrypted archive rather than folded into the SQL one, so the
+     * documented restore recipe for the database is unchanged and each artefact can be
+     * verified on its own.
+     *
+     * @return string|null the archive path, or null when there are no signatures yet
+     */
+    private function backupSignatures(string $dir, string $stamp, string $passphrase): ?string
+    {
+        $source = storage_path('app/private/signatures');
+
+        if (! is_dir($source) || count(glob($source.DIRECTORY_SEPARATOR.'*') ?: []) === 0) {
+            return null;
+        }
+
+        $tar = $dir.DIRECTORY_SEPARATOR."endorsement-signatures-{$stamp}.tar";
+        $gz = $tar.'.gz';
+        $archive = $gz.'.enc';
+
+        @unlink($tar);
+        @unlink($gz);
+
+        try {
+            // PharData rather than shelling out to tar: no external binary, and it is
+            // exempt from phar.readonly (which is on in production).
+            $phar = new \PharData($tar);
+            $phar->buildFromDirectory($source);
+            $phar->compress(\Phar::GZ);
+            unset($phar);
+
+            if (! is_file($gz)) {
+                throw new \RuntimeException('The signature archive was not compressed.');
+            }
+
+            $process = new Process(
+                ['openssl', 'enc', '-aes-256-cbc', '-pbkdf2', '-salt', '-in', $gz, '-out', $archive, '-pass', 'env:BACKUP_PASSPHRASE'],
+                null,
+                ['BACKUP_PASSPHRASE' => $passphrase],
+                null,
+                1800,
+            );
+            $process->run();
+
+            if (! $process->isSuccessful()) {
+                throw new \RuntimeException('Signature archive encryption failed.');
+            }
+        } finally {
+            // Both intermediates are readable copies of staff signatures — a forgeable
+            // credential. Neither may be left on disk.
+            $this->shred($tar);
+            $this->shred($gz);
+        }
+
+        $this->prune($dir, (int) $this->option('keep'), 'endorsement-signatures-*.tar.gz.enc');
+
+        return $archive;
     }
 
     /** Dump the default connection. MySQL via mysqldump; SQLite is a file copy. */
@@ -318,13 +390,13 @@ class BackupRun extends Command
         @unlink($path);
     }
 
-    private function prune(string $dir, int $keep): void
+    private function prune(string $dir, int $keep, string $pattern = 'endorsement-*.sql.gz.enc'): void
     {
         if ($keep < 1) {
             return;
         }
 
-        $files = glob($dir.DIRECTORY_SEPARATOR.'endorsement-*.sql.gz.enc') ?: [];
+        $files = glob($dir.DIRECTORY_SEPARATOR.$pattern) ?: [];
         rsort($files);
 
         foreach (array_slice($files, $keep) as $old) {

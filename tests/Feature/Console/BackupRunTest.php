@@ -159,4 +159,47 @@ class BackupRunTest extends TestCase
 
         return $probe->isSuccessful();
     }
+
+    /**
+     * SPC-TM-017. handover_signoffs stores the PATH of the signature frozen onto a sheet,
+     * not the bytes, so a database-only backup restored onto fresh storage yields sheets
+     * that still claim to be signed while every signature renders as nothing.
+     */
+    public function test_signature_files_are_archived_alongside_the_database(): void
+    {
+        if (! $this->hasOpenssl()) {
+            $this->markTestSkipped('openssl is not on PATH in this environment.');
+        }
+
+        $sigDir = storage_path('app/private/signatures');
+        @mkdir($sigDir, 0777, true);
+        file_put_contents($sigDir.DIRECTORY_SEPARATOR.'deadbeef.png', str_repeat('P', 300));
+
+        $source = storage_path('framework/testing/backup-sig-source.sqlite');
+        @mkdir(dirname($source), 0777, true);
+        file_put_contents($source, '');
+        $pdo = new \PDO('sqlite:'.$source);
+        $pdo->exec('CREATE TABLE handovers (id INTEGER PRIMARY KEY)');
+        $pdo = null;
+
+        config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => $source]);
+        putenv('BACKUP_PASSPHRASE=a-long-test-passphrase-1234567890');
+
+        $dir = storage_path('framework/testing/backups-sig');
+
+        $this->artisan('backup:run', ['--path' => $dir])->assertExitCode(0);
+
+        $archives = glob($dir.DIRECTORY_SEPARATOR.'endorsement-signatures-*.tar.gz.enc') ?: [];
+        $this->assertCount(1, $archives, 'the signature archive should exist');
+
+        // Encrypted, and the plaintext intermediates must not survive.
+        $this->assertStringStartsWith('Salted__', (string) file_get_contents($archives[0]));
+        $this->assertSame([], glob($dir.DIRECTORY_SEPARATOR.'*.tar') ?: []);
+        $this->assertSame([], glob($dir.DIRECTORY_SEPARATOR.'*.tar.gz') ?: []);
+
+        array_map('unlink', glob($dir.DIRECTORY_SEPARATOR.'*') ?: []);
+        @unlink($sigDir.DIRECTORY_SEPARATOR.'deadbeef.png');
+        @unlink($source);
+        putenv('BACKUP_PASSPHRASE=');
+    }
 }

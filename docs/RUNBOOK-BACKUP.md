@@ -76,8 +76,31 @@ MySQL 8.4 generates a self-signed one, so without it the client refuses to conne
 spelling; use `--ssl-mode=PREFERRED` there instead. This same mismatch silently broke the
 nightly dump once; `backup:run` now selects the right flag by detecting the client.
 
+### The signature archive
+
+`backup:run` writes a **second** file whenever any signatures exist:
+`endorsement-signatures-<stamp>.tar.gz.enc`. Copy it off-host with the database archive.
+
+`handover_signoffs` stores the PATH of the signature frozen onto a sheet, not the bytes, so
+a database-only restore produces sheets that still say they are signed while every
+signature renders as nothing — the attestation is the point of the document, and losing its
+image silently weakens every historical one. Restore it into the app's private disk:
+
+```bash
+openssl enc -d -aes-256-cbc -pbkdf2 -in endorsement-signatures-YYYY-MM-DD_HHMMSS.tar.gz.enc | tar xzf - -C storage/app/private/signatures
+```
+
+Files are content-addressed, so re-extracting an older archive over a newer one is safe:
+identical content has an identical name and nothing is overwritten with something else.
+
 Then set `APP_KEY` on the restoring machine to the **same value** as the system that wrote
 the backup, or every encrypted column reads back as ciphertext.
+
+> Since 2026-07-26 a wrong `APP_KEY` no longer silently destroys data: an undecryptable
+> value renders as `[unreadable — encrypted with a different key]` and **any write over it
+> is refused**, so the row survives until the correct key is restored. Before that change,
+> the ciphertext was shown as clinical text and the next save re-encrypted it under the new
+> key, permanently.
 
 **Test a restore quarterly** into a scratch database and confirm: row counts look right, a
 handover sheet opens, and `php artisan audit:verify` exits 0. A backup nobody has restored

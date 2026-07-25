@@ -22,6 +22,8 @@ use Illuminate\Support\Facades\Crypt;
  */
 class EncryptedString implements CastsAttributes
 {
+    use \App\Casts\Concerns\DetectsForeignCiphertext;
+
     /**
      * @param  array<string, mixed>  $attributes
      */
@@ -34,7 +36,14 @@ class EncryptedString implements CastsAttributes
         try {
             return Crypt::decryptString((string) $value);
         } catch (\Throwable) {
-            return (string) $value;
+            // Two very different situations look identical here. A value that was never
+            // encrypted is legacy data and stays readable. A value that IS a Laravel
+            // payload but will not decrypt was encrypted under a key we no longer hold —
+            // showing that as clinical text would put base64 in front of a clinician and,
+            // worse, invite a save that re-encrypts it and destroys the original.
+            return $this->looksEncrypted($value)
+                ? $this->unreadableMarker()
+                : (string) $value;
         }
     }
 
@@ -43,6 +52,8 @@ class EncryptedString implements CastsAttributes
      */
     public function set(Model $model, string $key, mixed $value, array $attributes): ?string
     {
+        $this->assertNotOverwritingForeignCiphertext($key, $attributes);
+
         return $value === null ? null : Crypt::encryptString((string) $value);
     }
 }

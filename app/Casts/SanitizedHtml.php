@@ -27,6 +27,8 @@ use Illuminate\Support\Facades\Crypt;
  */
 class SanitizedHtml implements CastsAttributes
 {
+    use \App\Casts\Concerns\DetectsForeignCiphertext;
+
     /**
      * @param  array<string, mixed>  $attributes
      */
@@ -46,7 +48,13 @@ class SanitizedHtml implements CastsAttributes
             // through the allow-list. Returning it raw handed unfiltered markup straight
             // to the browser, which is the stored-XSS hole this cast exists to close.
             // Purifying is idempotent, so an already-clean legacy row is unaffected.
-            return RichTextSanitizer::clean((string) $value);
+            //
+            // Unless it is a Laravel payload we simply cannot decrypt — that is a wrong-key
+            // situation, not legacy plaintext, and rendering it would show base64 as a
+            // clinical narrative and invite a save that destroys the original.
+            return $this->looksEncrypted($value)
+                ? $this->unreadableMarker()
+                : RichTextSanitizer::clean((string) $value);
         }
     }
 
@@ -55,6 +63,8 @@ class SanitizedHtml implements CastsAttributes
      */
     public function set(Model $model, string $key, mixed $value, array $attributes): ?string
     {
+        $this->assertNotOverwritingForeignCiphertext($key, $attributes);
+
         if ($value === null) {
             return null;
         }

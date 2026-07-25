@@ -1,80 +1,98 @@
 #!/usr/bin/env bash
 #
-# Production-image smoke test. Run ON the deployment host, against a throwaway MySQL and
-# a throwaway app container — never against the live stack.
+# Production smoke test. Run ON the deployment host, against a throwaway copy of the REAL
+# production stack — never against the live one.
 #
-#   docker build -t endorsement-app:test .
 #   bash docker/smoke.sh
 #
-# It answers the questions the unit-test suite structurally cannot: does the built image
-# boot, can it reach a real MySQL, do the migrations apply, does the health endpoint the
-# container orchestrator polls actually return 200, and is the scheduler registered.
+# It brings up `docker-compose.production.yml` itself, under a separate compose project
+# name and its own volumes, with generated throwaway credentials. That matters: an earlier
+# version of this script ran `docker run mysql:8.4` by hand and therefore could not see a
+# fatal error in the compose file — `--default-authentication-plugin`, which MySQL 8.4
+# removed, made mysqld abort at boot and the first real deployment failed. Test the
+# artifact you ship, not an approximation of it.
 #
-# The last one matters: /up runs with NO session middleware, so any global middleware that
-# touches $request->user() 500s there while every real page still renders. That shipped
-# once and was caught here, not by the 293 unit tests.
+# What it answers that the PHP/JS suites structurally cannot:
+#   - the image builds and boots, and MySQL accepts the compose file's flags;
+#   - migrations apply against a real MySQL (not sqlite);
+#   - /up returns 200 — it runs with NO session middleware, so any global middleware that
+#     touches $request->user() 500s there while every real page still renders;
+#   - php-fpm runs as the user that owns storage/ (else signature uploads fail silently);
+#   - the database is NOT reachable from the shared proxy network.
 #
 # Everything is torn down on exit, including on failure.
 set -euo pipefail
 
-IMAGE="${IMAGE:-endorsement-app:test}"
-PORT="${PORT:-9911}"
-NET=endorse-smoke
-APP=endorse-smoke-app
-DB=endorse-smoke-db
+cd "$(dirname "$0")/.."
 
-# Ephemeral, in-memory only: these never reach a file, an env, or a log.
-APPKEY="base64:$(openssl rand -base64 32)"
-DBPASS="$(openssl rand -hex 16)"
+PROJECT=endorse-smoke
+PORT="${PORT:-9911}"
+ENVFILE="$(mktemp)"
+OVERRIDE="$(mktemp --suffix=.yml)"
+COMPOSE="docker compose -p $PROJECT -f docker-compose.production.yml -f $OVERRIDE --env-file $ENVFILE"
 
 cleanup() {
-    docker rm -f "$APP" "$DB" >/dev/null 2>&1 || true
-    docker network rm "$NET" >/dev/null 2>&1 || true
+    $COMPOSE down -v --remove-orphans >/dev/null 2>&1 || true
+    rm -f "$ENVFILE" "$OVERRIDE"
 }
 trap cleanup EXIT
 
-cleanup
-docker network create "$NET" >/dev/null
+# Throwaway credentials, in a 0600 temp file, deleted on exit. Alphanumeric only: docker
+# compose interpolates env values, so a '$' would be silently mangled.
+rnd() { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 40; }
+umask 077
+cat > "$ENVFILE" <<EOF
+APP_NAME=Paediatric Endorsement
+APP_URL=https://endorse.towardpcc.com
+APP_KEY=base64:$(openssl rand -base64 32)
+MYSQL_DATABASE=endorsement
+MYSQL_USER=endorse
+MYSQL_PASSWORD=$(rnd)
+MYSQL_ROOT_PASSWORD=$(rnd)
+BACKUP_PASSPHRASE=$(rnd)
+EOF
 
-docker run -d --name "$DB" --network "$NET" \
-    -e MYSQL_ROOT_PASSWORD="$DBPASS" -e MYSQL_DATABASE=endorsement \
-    -e MYSQL_USER=endorse -e MYSQL_PASSWORD="$DBPASS" mysql:8.4 >/dev/null
+# The real stack publishes nothing (Traefik reaches it over the coolify network), so expose
+# the app on loopback just for this test.
+cat > "$OVERRIDE" <<EOF
+services:
+  app:
+    ports:
+      - "127.0.0.1:${PORT}:8080"
+EOF
 
-printf 'waiting for mysql'
-for _ in $(seq 1 40); do
-    docker exec "$DB" mysqladmin ping -h 127.0.0.1 --silent >/dev/null 2>&1 && break
-    printf '.'; sleep 2
-done
-echo
+# Present on the deployment host; created here so the file is testable anywhere.
+docker network inspect coolify >/dev/null 2>&1 || docker network create coolify >/dev/null
 
-docker run -d --name "$APP" --network "$NET" -p "127.0.0.1:${PORT}:8080" \
-    -e APP_NAME="Paediatric Endorsement" -e APP_ENV=production -e APP_DEBUG=false \
-    -e APP_KEY="$APPKEY" -e APP_URL=https://endorse.towardpcc.com -e APP_TIMEZONE=Asia/Riyadh \
-    -e DB_CONNECTION=mysql -e DB_HOST="$DB" -e DB_PORT=3306 \
-    -e DB_DATABASE=endorsement -e DB_USERNAME=endorse -e DB_PASSWORD="$DBPASS" \
-    -e SESSION_DRIVER=database -e CACHE_STORE=database -e QUEUE_CONNECTION=database \
-    -e SESSION_ENCRYPT=true -e SESSION_SECURE_COOKIE=true \
-    "$IMAGE" >/dev/null
+echo "--- build and start ---"
+$COMPOSE up -d --build 2>&1 | tail -4
 
 printf 'waiting for app'
-# Probe /up, not /login: the health route needs no database, so it comes up before the
+# Probe /up, not /login: the health route needs no database, so it answers before the
 # migrations exist. Polling a session-backed page here just burns the whole timeout.
-for _ in $(seq 1 30); do
+for _ in $(seq 1 60); do
     curl -sf "http://127.0.0.1:${PORT}/up" >/dev/null 2>&1 && break
-    printf '.'; sleep 2
+    printf '.'; sleep 3
 done
 echo
+
+APP="$($COMPOSE ps -q app)"
+DB="$($COMPOSE ps -q db)"
 
 fail=0
 check() { # check <label> <expected> <actual>
     if [ "$2" = "$3" ]; then echo "  ok   $1 ($3)"; else echo "  FAIL $1 (want $2, got $3)"; fail=1; fi
 }
 
+echo "--- containers healthy ---"
+check "db health" healthy "$(docker inspect -f '{{.State.Health.Status}}' "$DB" 2>/dev/null || echo missing)"
+check "app running" running "$(docker inspect -f '{{.State.Status}}' "$APP" 2>/dev/null || echo missing)"
+
 echo "--- migrate ---"
-docker exec "$APP" php artisan migrate --force 2>&1 | tail -3
+docker exec "$APP" php artisan migrate --force 2>&1 | grep -viE '^PHP Warning|thecodingmachine' | tail -3
 
 echo "--- seed reference data ---"
-docker exec "$APP" php artisan db:seed --force 2>&1 | tail -2
+docker exec "$APP" php artisan db:seed --force 2>&1 | grep -viE '^PHP Warning|thecodingmachine' | tail -2
 
 echo "--- endpoints ---"
 check "GET /up" 200 "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/up")"
@@ -93,11 +111,21 @@ jobs="$(docker exec "$APP" php artisan schedule:list 2>&1 \
     | grep -cE 'audit:verify|backup:run|data:retention|endorsement:remind' || true)"
 check "scheduled jobs" 6 "$jobs"
 
-echo "--- storage is writable by php-fpm ---"
-# php-fpm runs as `app`; if the pool were left on www-data this write fails and signature
-# uploads break in production while every page still renders.
-fpmuser="$(docker exec "$APP" sh -c 'ps -o user,args | grep "[p]ool www" | head -1 | awk "{print \$1}"')"
-check "php-fpm user" app "$fpmuser"
+echo "--- php-fpm owns storage ---"
+# php-fpm must run as `app`; left on the base image's www-data it cannot write to storage
+# and signature uploads break in production while every page still renders.
+check "php-fpm user" app \
+    "$(docker exec "$APP" sh -c 'ps -o user,args | grep "[p]ool www" | head -1 | awk "{print \$1}"')"
+
+echo "--- database isolation ---"
+# The DB must be on the internal network ONLY. On the shared proxy network every other app
+# on this host could reach the patient database.
+check "db on coolify network" false \
+    "$(docker inspect -f '{{if index .NetworkSettings.Networks "coolify"}}true{{else}}false{{end}}' "$DB")"
+# Must test for a HOST BINDING, not for exposed ports: the mysql image EXPOSEs 3306 and
+# 33060, so a length check here counts 2 on a correctly-unpublished container.
+check "db publishes no host port" "" \
+    "$(docker inspect -f '{{range $p, $c := .NetworkSettings.Ports}}{{if $c}}{{$p}}{{end}}{{end}}' "$DB")"
 
 echo
 if [ "$fail" -eq 0 ]; then echo "SMOKE TEST PASSED"; else echo "SMOKE TEST FAILED"; fi

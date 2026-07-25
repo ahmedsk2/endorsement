@@ -34,6 +34,10 @@ class User extends Authenticatable
         'two_factor_secret',
         'two_factor_recovery_codes',
         'two_factor_confirmed_at',
+        'two_factor_method',
+        'email_verified_at',
+        'signature_path',
+        'signature_updated_at',
     ];
 
     /**
@@ -65,7 +69,39 @@ class User extends Authenticatable
             'two_factor_secret' => 'encrypted',
             'two_factor_recovery_codes' => 'encrypted:array',
             'two_factor_confirmed_at' => 'datetime',
+            'email_verified_at' => 'datetime',
+            'signature_updated_at' => 'datetime',
         ];
+    }
+
+    /** The account's e-mail address is confirmed (a link sent to it was opened). */
+    public function hasVerifiedEmail(): bool
+    {
+        return $this->email_verified_at !== null;
+    }
+
+    /** A handwritten signature is on file (drawn or uploaded from the profile page). */
+    public function hasSignature(): bool
+    {
+        return $this->signature_path !== null && $this->signature_path !== '';
+    }
+
+    /**
+     * The second factor actually in force: 'totp' only counts once enrolment is CONFIRMED,
+     * 'email' needs a verified address to send the code to. Anything else is "none", which
+     * is what the setup checklist nags about.
+     */
+    public function activeTwoFactorMethod(): ?string
+    {
+        if ($this->two_factor_method === 'totp' && $this->hasTwoFactorEnabled()) {
+            return 'totp';
+        }
+
+        if ($this->two_factor_method === 'email' && $this->hasVerifiedEmail() && $this->member_email !== null) {
+            return 'email';
+        }
+
+        return null;
     }
 
     /**

@@ -10,7 +10,7 @@ import AppLayout from '../../Layouts/AppLayout.vue';
 const props = defineProps({
     settings: { type: Object, default: () => ({}) },
     secrets: { type: Object, default: () => ({}) },
-    defaults: { type: Object, default: () => ({ remind_delay_minutes: 10, handover_times: ['07:30', '13:30'] }) },
+    defaults: { type: Object, default: () => ({ remind_delay_minutes: 10, handover_times: ['07:30', '15:30'] }) },
 });
 
 const form = useForm({

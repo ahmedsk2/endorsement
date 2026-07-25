@@ -101,9 +101,26 @@ class AuthenticatedSessionController extends Controller
             return redirect()->route('password.change');
         }
 
-        // Second factor (B4): a user with confirmed 2FA is NOT logged in here — park their
-        // (already proven) identity and hand off to the TOTP challenge. Users without 2FA
-        // continue to log in exactly as before.
+        // Second factor: a user who chose one is NOT logged in here — their (already
+        // proven) identity is parked and the challenge takes over. Two methods, one
+        // choice per user; users with neither continue to log in exactly as before.
+        $method = $user->activeTwoFactorMethod();
+
+        if ($method === 'totp') {
+            $request->session()->put(self::TWO_FACTOR_LOGIN_ID_KEY, $user->id);
+            $request->session()->put(self::TWO_FACTOR_LOGIN_REMEMBER_KEY, $request->boolean('remember'));
+
+            return redirect()->route('two-factor.login');
+        }
+
+        if ($method === 'email') {
+            EmailOtpChallengeController::begin($request, $user, $request->boolean('remember'));
+
+            return redirect()->route('email-otp.login');
+        }
+
+        // Enrolled TOTP but never picked a method (e.g. accounts predating the choice):
+        // honour the stronger factor rather than silently skipping it.
         if ($user->hasTwoFactorEnabled()) {
             $request->session()->put(self::TWO_FACTOR_LOGIN_ID_KEY, $user->id);
             $request->session()->put(self::TWO_FACTOR_LOGIN_REMEMBER_KEY, $request->boolean('remember'));

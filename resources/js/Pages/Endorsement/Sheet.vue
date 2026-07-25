@@ -153,7 +153,7 @@ const signForm = ref({
 /*
  * ACTUAL CLOCK TIME. Legacy offered exactly two shift labels and nothing else, so a handover that
  * genuinely happened at 02:40 could not be recorded as 02:40. The two labels stay as the QUICK
- * DEFAULT — routine 07:30 / 13:30 use is one click, unchanged — and "Other time" reveals a real
+ * DEFAULT — routine 07:30 / 15:30 use is one click, unchanged — and "Other time" reveals a real
  * time input for everything else. The server normalizes a non-legacy entry to 24-hour HH:MM and
  * stores the unambiguous minutes alongside it.
  */

@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\EndorsementController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PushSubscriptionController;
+use App\Http\Controllers\SignatureController;
 use Illuminate\Support\Facades\Route;
 
 // The root lands on the endorsement surface.
@@ -18,7 +19,7 @@ Route::get('/', fn () => redirect('/endorsement'));
  * sub-routes (/new-day, /rows) never bind as a date, and the row {handover} bindings are
  * declared apart from the {unit}/{date} reads so `rows` never binds as a unit.
  */
-Route::middleware('auth')->prefix('endorsement')->name('endorsement.')->group(function () {
+Route::middleware(['auth', 'throttle:clinical'])->prefix('endorsement')->name('endorsement.')->group(function () {
     // The four-unit chooser: one card per unit with today's status.
     Route::middleware('cap:endorsement.view')->get('/', [EndorsementController::class, 'root'])
         ->name('root');
@@ -70,6 +71,9 @@ Route::middleware(['auth', 'cap:access.manage'])
     ->name('admin.')
     ->group(function () {
         Route::get('/access-control', [AccessControlController::class, 'index'])->name('access-control');
+        // The page's single Save posts the WHOLE matrix; the per-role endpoint remains for
+        // scripted/partial updates.
+        Route::put('/access-control/roles', [AccessControlController::class, 'updateRoles'])->name('access-control.roles');
         Route::put('/access-control/role', [AccessControlController::class, 'updateRole'])->name('access-control.role');
         Route::put('/access-control/user', [AccessControlController::class, 'updateUser'])->name('access-control.user');
     });
@@ -122,6 +126,25 @@ Route::middleware(['auth', 'cap:profile.manage'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::patch('/profile/reminders', [ProfileController::class, 'updateReminders'])->name('profile.reminders');
+
+    // Change your own password (current password required), choose the second factor,
+    // and manage the handwritten signature that prints on sheets you sign.
+    Route::put('/profile/password', [ProfileController::class, 'updatePassword'])
+        ->middleware('throttle:6,1')->name('profile.password');
+    Route::put('/profile/two-factor-method', [ProfileController::class, 'updateTwoFactorMethod'])->name('profile.two-factor-method');
+    Route::post('/profile/signature', [ProfileController::class, 'updateSignature'])->name('profile.signature');
+    Route::delete('/profile/signature', [ProfileController::class, 'deleteSignature'])->name('profile.signature.delete');
+});
+
+/*
+ * Staff signatures. Never public files: `/signatures/{user}` is your own (or, with the
+ * endorsement read gate, a colleague's current one) and `/signatures/file/{hash}` serves
+ * the immutable image a signed sheet was signed with.
+ */
+Route::middleware('auth')->group(function () {
+    Route::get('/signatures/file/{hash}', [SignatureController::class, 'file'])->name('signatures.file');
+    Route::get('/signatures/me', [SignatureController::class, 'mine'])->name('signatures.mine');
+    Route::get('/signatures/{user}', [SignatureController::class, 'show'])->name('signatures.show');
 });
 
 /*

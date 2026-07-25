@@ -120,8 +120,18 @@ onMounted(() => {
         -->
         <footer class="print-signoff" data-testid="print-signoff">
             <div class="print-signoff-grid">
-                <p><strong>Endorsed By: </strong>{{ orNotSelected(signoff.endorsed_by_name) }}</p>
-                <p><strong>Endorsed To: </strong>{{ orNotSelected(signoff.endorsed_to_name) }}</p>
+                <!-- Name AND the signature the sheet was actually signed with (frozen at
+                     sign-off, served by content hash — never "whatever they use today"). -->
+                <p>
+                    <strong>Endorsed By: </strong>{{ orNotSelected(signoff.endorsed_by_name) }}
+                    <img v-if="signoff.endorsed_by_signature" :src="signoff.endorsed_by_signature"
+                         alt="" data-testid="print-signature-by" class="print-signature" />
+                </p>
+                <p>
+                    <strong>Endorsed To: </strong>{{ orNotSelected(signoff.endorsed_to_name) }}
+                    <img v-if="signoff.endorsed_to_signature" :src="signoff.endorsed_to_signature"
+                         alt="" data-testid="print-signature-to" class="print-signature" />
+                </p>
                 <p><strong>{{ consultantByLabel }}: </strong>{{ orNotSelected(signoff.consultant_by_name) }}</p>
                 <p v-if="hasConsultantPair"><strong>Consultant Receiving: </strong>{{ orNotSelected(signoff.consultant_to_name) }}</p>
             </div>
@@ -184,6 +194,16 @@ onMounted(() => {
 
 .print-signoff-grid p {
     margin: 0;
+}
+
+/* The signature sits on the same line as the name it belongs to and never grows tall
+   enough to push the footer onto a second page. */
+.print-signature {
+    display: block;
+    height: 34px;
+    margin-top: 2px;
+    max-width: 220px;
+    object-fit: contain;
 }
 
 .print-signoff-stamp {

@@ -49,12 +49,12 @@ class RegisteredUserController extends Controller
                 Rule::unique('pending_registrations', 'member_email'),
             ],
             'position' => ['required', 'integer', Rule::in([2, 3, 4])],
-            // The four requirements the registration page's live checklist shows —
-            // UI and server must never disagree about what a valid password is.
-            'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
+            // ONE definition of a valid password for the whole system — the same rule the
+            // registration page's live checklist mirrors (App\Support\PasswordPolicy).
+            'password' => \App\Support\PasswordPolicy::rules(),
         ]);
 
-        PendingRegistration::create([
+        $pending = PendingRegistration::create([
             'full_name' => $data['full_name'],
             'member_name' => $data['member_name'],
             'member_email' => $data['member_email'],
@@ -63,9 +63,14 @@ class RegisteredUserController extends Controller
             'requested_at' => now(),
         ]);
 
+        // Confirm the address BEFORE anybody activates the account: an administrator
+        // should never switch on an inbox nobody has proved they own, and password
+        // resets and (optionally) sign-in codes are delivered there.
+        EmailVerificationController::sendRegistrationLink($pending);
+
         return redirect()->route('login')->with(
             'status',
-            'Registration received — an administrator must activate your account before you can sign in.'
+            'Registration received — confirm your email address using the link we just sent, then an administrator will activate your account.'
         );
     }
 }

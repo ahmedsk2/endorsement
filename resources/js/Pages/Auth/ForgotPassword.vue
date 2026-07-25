@@ -23,7 +23,7 @@ const submit = () => form.post('/forgot-password');
             <form @submit.prevent="submit" class="mt-6 space-y-4">
                 <div>
                     <label class="channel-tag mb-1.5 block">Email</label>
-                    <input v-model="form.email" type="email" autocomplete="email" autofocus class="w-full rounded-md border border-line bg-panel px-3 py-2 text-ink focus:border-channel focus:ring-channel" />
+                    <input v-model="form.email" type="email" autocomplete="email" autofocus class="w-full rounded-md border border-line bg-panel px-3 py-2 text-ink focus:border-channel focus:ring-2 focus:ring-channel focus:outline-none" />
                     <p v-if="form.errors.email" class="mt-1 text-xs text-critical">{{ form.errors.email }}</p>
                 </div>
 

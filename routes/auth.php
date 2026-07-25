@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\Auth\EmailOtpChallengeController;
+use App\Http\Controllers\Auth\EmailVerificationController;
 use App\Http\Controllers\Auth\ChangePasswordController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
@@ -51,3 +53,29 @@ Route::middleware('auth')->group(function () {
 Route::get('/two-factor-challenge', [TwoFactorChallengeController::class, 'create'])->name('two-factor.login');
 Route::post('/two-factor-challenge', [TwoFactorChallengeController::class, 'store'])
     ->middleware('throttle:10,1')->name('two-factor.login.store');
+
+/*
+ * Email confirmation. Both links are SIGNED URLs (HMAC + expiry, keyed by APP_KEY), so
+ * nothing is stored and a tampered or stale link is rejected by the framework itself.
+ * Confirming is not a login — a registration still needs an administrator's approval.
+ */
+Route::get('/registration/verify/{pending}/{hash}', [EmailVerificationController::class, 'verifyRegistration'])
+    ->middleware(['signed', 'throttle:12,1'])
+    ->name('registration.verify');
+
+Route::get('/profile/email/verify/{user}/{hash}', [EmailVerificationController::class, 'verifyAccount'])
+    ->middleware(['auth', 'signed', 'throttle:12,1'])
+    ->name('profile.email.verify');
+
+Route::post('/profile/email/verify', [EmailVerificationController::class, 'sendAccountLink'])
+    ->middleware(['auth', 'throttle:4,1'])
+    ->name('profile.email.send');
+
+/*
+ * The e-mail second factor challenge — the sibling of the TOTP challenge for users who
+ * chose a code by email. Identity lives in the session, never in the request.
+ */
+Route::get('/email-code', [EmailOtpChallengeController::class, 'create'])->name('email-otp.login');
+Route::post('/email-code', [EmailOtpChallengeController::class, 'store'])->middleware('throttle:10,1');
+Route::post('/email-code/resend', [EmailOtpChallengeController::class, 'resend'])
+    ->middleware('throttle:4,1')->name('email-otp.resend');

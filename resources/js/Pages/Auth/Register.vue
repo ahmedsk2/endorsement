@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Link, useForm } from '@inertiajs/vue3';
+import AuthLayout from '../../Layouts/AuthLayout.vue';
 
 defineProps({
     positions: { type: Object, default: () => ({}) },
@@ -73,15 +74,9 @@ const submit = () =>
 </script>
 
 <template>
-    <Head title="Create account" />
-    <main class="min-h-screen flex items-center justify-center bg-ground p-6">
-        <div class="w-full max-w-sm rounded-md border border-line bg-panel p-8">
-            <h1 class="text-xl font-semibold text-ink">Create account</h1>
-            <p class="mt-1 text-sm text-muted">
-                An administrator activates your account before you can sign in.
-            </p>
-
-            <form @submit.prevent="submit" class="mt-6 space-y-4">
+    <AuthLayout title="Request access" heading="Request access" wide
+                subheading="Confirm your email, then an administrator activates the account.">
+            <form @submit.prevent="submit" class="space-y-4">
                 <div>
                     <label class="channel-tag mb-1.5 block">Full name</label>
                     <input v-model="form.full_name" type="text" class="w-full rounded-md border border-line bg-panel px-3 py-2 text-ink focus:border-channel focus:ring-channel" />
@@ -165,6 +160,5 @@ const submit = () =>
                 Already have an account?
                 <Link href="/login" class="font-medium text-channel-ink hover:underline">Sign in</Link>
             </p>
-        </div>
-    </main>
+    </AuthLayout>
 </template>

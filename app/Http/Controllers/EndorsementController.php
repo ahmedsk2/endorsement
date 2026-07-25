@@ -38,7 +38,7 @@ class EndorsementController extends Controller
      * so a missing or unsigned day is visible the moment the app opens (the compliance
      * problem this system exists to fix is FORGETTING).
      */
-    public function root(): Response
+    public function root(Request $request): Response
     {
         $today = now()->format('Y-m-d');
 
@@ -67,7 +67,22 @@ class EndorsementController extends Controller
             })
             ->values();
 
-        return Inertia::render('Endorsement/Chooser', ['units' => $units]);
+        // The account-setup checklist. Anything unfinished is surfaced HERE, on the first
+        // screen after sign-in, because a signature or second factor that is "meant to be
+        // set up later" never is. Booleans only — no addresses, no secrets.
+        $me = $request->user();
+        $setup = [
+            'email_verified' => $me?->hasVerifiedEmail() ?? true,
+            'has_email' => filled($me?->member_email),
+            'two_factor' => $me?->activeTwoFactorMethod() !== null,
+            'has_signature' => $me?->hasSignature() ?? true,
+        ];
+        $setup['complete'] = $setup['email_verified'] && $setup['two_factor'] && $setup['has_signature'];
+
+        return Inertia::render('Endorsement/Chooser', [
+            'units' => $units,
+            'setup' => $setup,
+        ]);
     }
 
     /**
@@ -199,10 +214,23 @@ class EndorsementController extends Controller
             $user->forceFill(['preferred_unit_id' => $u->id])->save();
         }
 
+        $rows = $this->rowsFor($u, $date);
+
+        // PDPL Art. 19 / HIPAA §164.312(b): READS of patient data are auditable events,
+        // not just writes — "who looked at this child's handover, and when" is the
+        // question an investigation actually asks. Unit id, date and a row COUNT only;
+        // never a name or an MRN.
+        AuditLog::record(
+            'endorsement_view',
+            'unit='.$u->id.' date='.$date.' rows='.$rows->count(),
+            $request->user()?->getKey(),
+            $request->ip(),
+        );
+
         return Inertia::render('Endorsement/Sheet', [
             'unit' => $this->unitPayload($u),
             'date' => $date,
-            'rows' => $this->rowsFor($u, $date),
+            'rows' => $rows,
             // The viewer is passed so the sheet can state up front whether THIS user may reopen a
             // signed day, and who to ask if not.
             'signoff' => $this->signoffPayload($u, $date, $request->user()),
@@ -212,15 +240,25 @@ class EndorsementController extends Controller
     }
 
     /** The printable A4 sheet for a unit + date (its own minimal layout, no app chrome). */
-    public function print(string $unit, string $date): Response
+    public function print(Request $request, string $unit, string $date): Response
     {
         $u = $this->resolveUnit($unit);
         $date = $this->normalizeDate($date);
+        $rows = $this->rowsFor($u, $date);
+
+        // A distinct action from a screen read: a printed sheet leaves the system and the
+        // building, so "who printed this day" is its own auditable question.
+        AuditLog::record(
+            'endorsement_print',
+            'unit='.$u->id.' date='.$date.' rows='.$rows->count(),
+            $request->user()?->getKey(),
+            $request->ip(),
+        );
 
         return Inertia::render('Endorsement/Print', [
             'unit' => $this->unitPayload($u),
             'date' => $date,
-            'rows' => $this->rowsFor($u, $date),
+            'rows' => $rows,
             'signoff' => $this->signoffPayload($u, $date),
         ]);
     }
@@ -287,9 +325,16 @@ class EndorsementController extends Controller
             $userId = $data[$field.'_user_id'];
             $signoff->{$field.'_user_id'} = $userId;
             // Freeze the name at write time; a later rename must not rewrite a signed sheet.
-            $signoff->{$field.'_name'} = $userId === null
-                ? null
-                : User::whereKey($userId)->value('full_name');
+            $chosen = $userId === null ? null : User::find($userId);
+            $signoff->{$field.'_name'} = $chosen?->full_name;
+
+            // The endorsers' SIGNATURES are frozen the same way and for the same reason:
+            // signature files are content-addressed and immutable, so storing the path
+            // pins the exact image this sheet was signed with (the consultant fields
+            // carry no signature — legacy printed them as a typed name).
+            if (in_array($field, ['endorsed_by', 'endorsed_to'], true)) {
+                $signoff->{$field.'_signature_path'} = $chosen?->signature_path;
+            }
         }
 
         if (array_key_exists('endorsement_time', $data)) {
@@ -747,8 +792,10 @@ class EndorsementController extends Controller
             'signed_off_by_name' => $s?->signedOffBy?->full_name,
             'endorsed_by_user_id' => $s?->endorsed_by_user_id,
             'endorsed_by_name' => $s?->endorsed_by_name,
+            'endorsed_by_signature' => self::signatureUrl($s?->endorsed_by_signature_path),
             'endorsed_to_user_id' => $s?->endorsed_to_user_id,
             'endorsed_to_name' => $s?->endorsed_to_name,
+            'endorsed_to_signature' => self::signatureUrl($s?->endorsed_to_signature_path),
             'consultant_by_user_id' => $s?->consultant_by_user_id,
             'consultant_by_name' => $s?->consultant_by_name,
             'consultant_to_user_id' => $s?->consultant_to_user_id,
@@ -865,6 +912,19 @@ class EndorsementController extends Controller
         return 'Reopening a signed handover needs the “reopen handover” permission, because it '
             .'reverses another clinician\'s attestation. The sheet stays signed as it is — ask '
             .$who.' to reopen it, and give them the reason for the correction.';
+    }
+
+    /**
+     * A frozen signature path -> the authenticated URL that serves that exact image.
+     * Content-addressed, so the URL pins the version signed with (never "current").
+     */
+    private static function signatureUrl(?string $path): ?string
+    {
+        if ($path === null || ! preg_match('#^signatures/([a-f0-9]{64})\.png$#', $path, $m)) {
+            return null;
+        }
+
+        return '/signatures/file/'.$m[1];
     }
 
     /**

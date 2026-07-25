@@ -53,7 +53,7 @@ class PasswordResetTest extends TestCase
     {
         $user = User::factory()->create([
             'member_email' => 'doc@example.com',
-            'password' => 'old-pass1',
+            'password' => 'Old-pass1!',
             'active' => true,
         ]);
 
@@ -62,12 +62,12 @@ class PasswordResetTest extends TestCase
         $response = $this->post('/reset-password', [
             'token' => $token,
             'email' => 'doc@example.com',
-            'password' => 'new-pass123',
-            'password_confirmation' => 'new-pass123',
+            'password' => 'New-pass123!',
+            'password_confirmation' => 'New-pass123!',
         ]);
 
         $response->assertSessionHasNoErrors();
         $response->assertRedirect(route('login'));
-        $this->assertTrue(Hash::check('new-pass123', $user->fresh()->password));
+        $this->assertTrue(Hash::check('New-pass123!', $user->fresh()->password));
     }
 }

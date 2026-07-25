@@ -72,18 +72,70 @@ class AccessControlController extends Controller
             'capability_ids.*' => ['integer', 'distinct', 'exists:capabilities,id'],
         ]);
 
-        $position = (int) $data['position'];
-        $desired = array_values(array_unique(array_map('intval', $data['capability_ids'])));
+        $this->applyRoleSet(
+            (int) $data['position'],
+            array_values(array_unique(array_map('intval', $data['capability_ids']))),
+            $request,
+        );
 
-        // Safeguard: the Administrator role (0) must always keep `access.manage`, otherwise this
-        // page becomes unreachable and access control could never be edited again (self-lockout).
-        if ($position === 0) {
-            $accessManageId = (int) Capability::where('key', 'access.manage')->value('id');
-            if ($accessManageId !== 0 && ! in_array($accessManageId, $desired, true)) {
+        return back()->with('status', 'Role defaults updated.');
+    }
+
+    /**
+     * Replace the WHOLE role matrix in one submission — the page has a single Save button, so
+     * one click is one atomic change with one confirmation, not five. Every role is validated
+     * BEFORE anything is written (a rejected Administrator set must not leave the other four
+     * roles half-applied); the per-capability audit rows are identical to the single-role path.
+     */
+    public function updateRoles(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'roles' => ['present', 'array'],
+            'roles.*' => ['present', 'array'],
+            // No `distinct` here: on a nested wildcard it compares across EVERY role, so two
+            // roles legitimately holding the same capability would be rejected. Duplicates
+            // within a role are harmless and are collapsed by array_unique below.
+            'roles.*.*' => ['integer', 'exists:capabilities,id'],
+        ]);
+
+        $matrix = [];
+
+        foreach ($data['roles'] as $position => $capabilityIds) {
+            $position = (int) $position;
+
+            if (! in_array($position, self::POSITIONS, true)) {
                 throw ValidationException::withMessages([
-                    'capability_ids' => "The Administrator role cannot give up 'access.manage'.",
+                    'roles' => 'Unknown role in the submitted matrix.',
                 ]);
             }
+
+            $matrix[$position] = array_values(array_unique(array_map('intval', $capabilityIds)));
+        }
+
+        // Validate the self-lockout guard across the whole matrix first — all-or-nothing.
+        foreach ($matrix as $position => $desired) {
+            $this->assertNoSelfLockout($position, $desired);
+        }
+
+        DB::transaction(function () use ($matrix, $request): void {
+            foreach ($matrix as $position => $desired) {
+                $this->applyRoleSet($position, $desired, $request, guard: false);
+            }
+        });
+
+        return back()->with('status', 'Role defaults updated.');
+    }
+
+    /**
+     * Replace ONE role's capability set with exactly the submitted set (delete removed rows,
+     * insert added rows), bump the generation, and audit per capability.
+     *
+     * @param  list<int>  $desired
+     */
+    private function applyRoleSet(int $position, array $desired, Request $request, bool $guard = true): void
+    {
+        if ($guard) {
+            $this->assertNoSelfLockout($position, $desired);
         }
 
         [$toAdd, $toRemove] = DB::transaction(function () use ($position, $desired): array {
@@ -136,8 +188,27 @@ class AccessControlController extends Controller
         foreach ($toRemove as $capabilityId) {
             AuditLog::record('access_role_revoke', 'position='.$position.';cap='.($keys[$capabilityId] ?? $capabilityId), $actorId, $ip);
         }
+    }
 
-        return back()->with('status', 'Role defaults updated.');
+    /**
+     * The Administrator role (0) must always keep `access.manage`, otherwise this page becomes
+     * unreachable and access control could never be edited again (self-lockout).
+     *
+     * @param  list<int>  $desired
+     */
+    private function assertNoSelfLockout(int $position, array $desired): void
+    {
+        if ($position !== 0) {
+            return;
+        }
+
+        $accessManageId = (int) Capability::where('key', 'access.manage')->value('id');
+
+        if ($accessManageId !== 0 && ! in_array($accessManageId, $desired, true)) {
+            throw ValidationException::withMessages([
+                'capability_ids' => "The Administrator role cannot give up 'access.manage'.",
+            ]);
+        }
     }
 
     /**

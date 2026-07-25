@@ -17,6 +17,7 @@ class PendingRegistration extends Model
         'password',
         'position',
         'requested_at',
+        'email_verified_at',
     ];
 
     /**
@@ -35,6 +36,7 @@ class PendingRegistration extends Model
             'password' => 'hashed',
             'position' => 'integer',
             'requested_at' => 'datetime',
+            'email_verified_at' => 'datetime',
         ];
     }
 }

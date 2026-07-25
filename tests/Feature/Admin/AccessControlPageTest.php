@@ -137,6 +137,84 @@ class AccessControlPageTest extends TestCase
         ]);
     }
 
+    /**
+     * The page has ONE Save button, so one click submits the whole matrix atomically.
+     */
+    public function test_the_bulk_endpoint_saves_every_role_in_one_submission(): void
+    {
+        $admin = User::factory()->create(['position' => 0]);
+        $resident = User::factory()->create(['position' => 4]);
+        $consultant = User::factory()->create(['position' => 3]);
+
+        $adminSet = RoleCapability::where('position', 0)->pluck('capability_id')->all();
+        $residentSet = RoleCapability::where('position', 4)->pluck('capability_id')->all();
+        $residentSet[] = $this->capId('endorsement.compliance');
+        $consultantSet = array_values(array_diff(
+            RoleCapability::where('position', 3)->pluck('capability_id')->all(),
+            [$this->capId('endorsement.edit')],
+        ));
+
+        $this->actingAs($admin)
+            ->put('/admin/access-control/roles', [
+                'roles' => [
+                    0 => $adminSet,
+                    2 => RoleCapability::where('position', 2)->pluck('capability_id')->all(),
+                    3 => $consultantSet,
+                    4 => $residentSet,
+                    5 => RoleCapability::where('position', 5)->pluck('capability_id')->all(),
+                ],
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        // Both edits landed from the single request.
+        $this->assertTrue(AccessControl::allows($resident->fresh(), 'endorsement.compliance'));
+        $this->assertFalse(AccessControl::allows($consultant->fresh(), 'endorsement.edit'));
+    }
+
+    /** All-or-nothing: a rejected Administrator set must not half-apply the other roles. */
+    public function test_the_bulk_endpoint_rejects_administrator_self_lockout_without_writing(): void
+    {
+        $admin = User::factory()->create(['position' => 0]);
+        $resident = User::factory()->create(['position' => 4]);
+
+        $residentSet = RoleCapability::where('position', 4)->pluck('capability_id')->all();
+        $residentSet[] = $this->capId('endorsement.compliance');
+
+        $this->actingAs($admin)
+            ->from('/admin/access-control')
+            ->put('/admin/access-control/roles', [
+                'roles' => [
+                    // Administrator dropping access.manage — refused.
+                    0 => array_values(array_diff(
+                        RoleCapability::where('position', 0)->pluck('capability_id')->all(),
+                        [$this->capId('access.manage')],
+                    )),
+                    4 => $residentSet,
+                ],
+            ])
+            ->assertSessionHasErrors('capability_ids');
+
+        // The resident change was NOT written.
+        $this->assertFalse(AccessControl::allows($resident->fresh(), 'endorsement.compliance'));
+        $this->assertTrue(AccessControl::allows($admin->fresh(), 'access.manage'));
+    }
+
+    public function test_the_bulk_endpoint_rejects_an_unknown_role(): void
+    {
+        $this->actingAs(User::factory()->create(['position' => 0]))
+            ->from('/admin/access-control')
+            ->put('/admin/access-control/roles', ['roles' => [9 => []]])
+            ->assertSessionHasErrors('roles');
+    }
+
+    public function test_a_resident_cannot_use_the_bulk_endpoint(): void
+    {
+        $this->actingAs(User::factory()->create(['position' => 4]))
+            ->put('/admin/access-control/roles', ['roles' => [4 => []]])
+            ->assertForbidden();
+    }
+
     public function test_update_role_rejects_an_unknown_position(): void
     {
         $admin = User::factory()->create(['position' => 0]);

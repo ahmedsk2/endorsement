@@ -26,7 +26,7 @@ class HandoverSignoff extends Model
      *
      * @var list<string>
      */
-    public const TIME_OPTIONS = ['7:30 Am', '13:30'];
+    public const TIME_OPTIONS = ['7:30 Am', '15:30'];
 
     /**
      * Parse a handover-time label into MINUTES PAST MIDNIGHT (0..1439), or null when the string
@@ -105,8 +105,10 @@ class HandoverSignoff extends Model
         'handover_date',
         'endorsed_by_user_id',
         'endorsed_by_name',
+        'endorsed_by_signature_path',
         'endorsed_to_user_id',
         'endorsed_to_name',
+        'endorsed_to_signature_path',
         'consultant_by_user_id',
         'consultant_by_name',
         'consultant_to_user_id',

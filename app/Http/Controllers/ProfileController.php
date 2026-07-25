@@ -29,6 +29,17 @@ class ProfileController extends Controller
                 'member_name' => $user->member_name,
                 'member_email' => $user->member_email,
             ],
+            // The account-assurance state the profile page manages, and the setup
+            // checklist on the chooser nags about.
+            'security' => [
+                'email' => $user->member_email,
+                'email_verified' => $user->hasVerifiedEmail(),
+                'two_factor_method' => $user->two_factor_method,
+                'two_factor_active' => $user->activeTwoFactorMethod(),
+                'totp_confirmed' => $user->hasTwoFactorEnabled(),
+                'has_signature' => $user->hasSignature(),
+                'signature_updated_at' => $user->signature_updated_at?->format('Y-m-d H:i'),
+            ],
             // Spec §10.2 — the per-unit reminder opt-in + the public half of the VAPID
             // pair (public by definition; the private key never leaves the server env).
             'reminders' => [
@@ -91,5 +102,144 @@ class ProfileController extends Controller
         $request->user()->reminderUnits()->sync($data['unit_ids'] ?? []);
 
         return back()->with('status', 'Reminder preferences saved.');
+    }
+
+    /**
+     * Change your own password while signed in. The CURRENT password is required — a
+     * hijacked session must not be able to lock the real owner out — and the new one must
+     * meet the same four requirements the registration page checklists.
+     */
+    public function updatePassword(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'current_password' => ['required', 'string'],
+            'password' => [
+                'required', 'confirmed',
+                \App\Support\PasswordPolicy::rule(),
+            ],
+        ]);
+
+        if (! \Illuminate\Support\Facades\Hash::check($data['current_password'], $user->getAuthPassword())) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'current_password' => 'That is not your current password.',
+            ]);
+        }
+
+        if (\Illuminate\Support\Facades\Hash::check($data['password'], $user->getAuthPassword())) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'password' => 'Choose a password you have not used here before.',
+            ]);
+        }
+
+        $user->forceFill([
+            'password' => $data['password'],           // hashed by the model cast
+            'pass_exp_date' => today(),                // restart the 3-month expiry clock
+            'remember_token' => \Illuminate\Support\Str::random(60),
+        ])->save();
+
+        // Every OTHER session for this account dies with the old password.
+        \Illuminate\Support\Facades\DB::table('sessions')
+            ->where('user_id', $user->getKey())
+            ->where('id', '!=', $request->session()->getId())
+            ->delete();
+
+        $request->session()->regenerate();
+
+        AuditLog::record('password_changed', 'user='.$user->getKey(), $user->getKey(), $request->ip());
+
+        return back()->with('status', 'Password changed. Other devices have been signed out.');
+    }
+
+    /**
+     * Choose the second factor: an authenticator app (TOTP — enrolled on its own page) or
+     * a code by email. 'email' is only accepted once the address is confirmed, otherwise
+     * the factor would be delivered to an address nobody has proved they own.
+     */
+    public function updateTwoFactorMethod(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        $data = $request->validate([
+            'method' => ['present', 'nullable', 'in:totp,email'],
+        ]);
+
+        $method = $data['method'] ?? null;
+
+        if ($method === 'email' && ! $user->hasVerifiedEmail()) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'method' => 'Confirm your email address before using it for sign-in codes.',
+            ]);
+        }
+
+        if ($method === 'totp' && ! $user->hasTwoFactorEnabled()) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'method' => 'Set up your authenticator app first, then select this option.',
+            ]);
+        }
+
+        $user->forceFill(['two_factor_method' => $method])->save();
+
+        AuditLog::record(
+            'two_factor_method_set',
+            'user='.$user->getKey().';method='.($method ?? 'none'),
+            $user->getKey(),
+            $request->ip(),
+        );
+
+        return back()->with('status', $method === null
+            ? 'Two-step sign-in turned off.'
+            : 'Two-step sign-in updated.');
+    }
+
+    /**
+     * Store the user's handwritten signature — either an uploaded image or a canvas
+     * drawing (data URL). Files are private and content-addressed, so this never
+     * overwrites the signature an already-signed handover points at.
+     */
+    public function updateSignature(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        $request->validate([
+            'signature_file' => ['sometimes', 'nullable', 'file', 'mimes:png,jpg,jpeg', 'max:2048'],
+            'signature_data' => ['sometimes', 'nullable', 'string', 'max:4000000'],
+        ]);
+
+        $path = null;
+
+        if ($request->hasFile('signature_file')) {
+            $path = \App\Support\SignatureStore::putUpload($request->file('signature_file'));
+        } elseif (filled($request->input('signature_data'))) {
+            $path = \App\Support\SignatureStore::putDataUrl((string) $request->input('signature_data'));
+        }
+
+        if ($path === null) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'signature' => 'Draw a signature or choose an image file.',
+            ]);
+        }
+
+        $user->forceFill([
+            'signature_path' => $path,
+            'signature_updated_at' => now(),
+        ])->save();
+
+        AuditLog::record('signature_updated', 'user='.$user->getKey(), $user->getKey(), $request->ip());
+
+        return back()->with('status', 'Signature saved.');
+    }
+
+    /** Remove the signature from the ACCOUNT. Already-signed sheets keep theirs. */
+    public function deleteSignature(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        $user->forceFill(['signature_path' => null, 'signature_updated_at' => null])->save();
+
+        AuditLog::record('signature_removed', 'user='.$user->getKey(), $user->getKey(), $request->ip());
+
+        return back()->with('status', 'Signature removed. Sheets you already signed keep the signature they were signed with.');
     }
 }

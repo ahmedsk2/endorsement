@@ -28,19 +28,19 @@ const submit = () =>
             <form @submit.prevent="submit" class="mt-6 space-y-4">
                 <div>
                     <label class="channel-tag mb-1.5 block">Email</label>
-                    <input v-model="form.email" type="email" autocomplete="email" class="w-full rounded-md border border-line bg-panel px-3 py-2 text-ink focus:border-channel focus:ring-channel" />
+                    <input v-model="form.email" type="email" autocomplete="email" class="w-full rounded-md border border-line bg-panel px-3 py-2 text-ink focus:border-channel focus:ring-2 focus:ring-channel focus:outline-none" />
                     <p v-if="form.errors.email" class="mt-1 text-xs text-critical">{{ form.errors.email }}</p>
                 </div>
 
                 <div>
                     <label class="channel-tag mb-1.5 block">New password</label>
-                    <input v-model="form.password" type="password" autocomplete="new-password" class="w-full rounded-md border border-line bg-panel px-3 py-2 text-ink focus:border-channel focus:ring-channel" />
+                    <input v-model="form.password" type="password" autocomplete="new-password" class="w-full rounded-md border border-line bg-panel px-3 py-2 text-ink focus:border-channel focus:ring-2 focus:ring-channel focus:outline-none" />
                     <p v-if="form.errors.password" class="mt-1 text-xs text-critical">{{ form.errors.password }}</p>
                 </div>
 
                 <div>
                     <label class="channel-tag mb-1.5 block">Confirm new password</label>
-                    <input v-model="form.password_confirmation" type="password" autocomplete="new-password" class="w-full rounded-md border border-line bg-panel px-3 py-2 text-ink focus:border-channel focus:ring-channel" />
+                    <input v-model="form.password_confirmation" type="password" autocomplete="new-password" class="w-full rounded-md border border-line bg-panel px-3 py-2 text-ink focus:border-channel focus:ring-2 focus:ring-channel focus:outline-none" />
                 </div>
 
                 <button type="submit" :disabled="form.processing" class="w-full rounded-md bg-channel px-4 py-2.5 font-semibold text-white transition hover:bg-channel-ink disabled:opacity-60">

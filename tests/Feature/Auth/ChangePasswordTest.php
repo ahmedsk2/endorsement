@@ -19,12 +19,12 @@ class ChangePasswordTest extends TestCase
     {
         $user = User::factory()->create([
             'member_name' => 'dr_old',
-            'password' => 'old-pass1',
+            'password' => 'Old-pass1!',
             'active' => true,
             'pass_exp_date' => now()->subMonths(4)->toDateString(),
         ]);
 
-        $this->post('/login', ['member_name' => 'dr_old', 'password' => 'old-pass1'])
+        $this->post('/login', ['member_name' => 'dr_old', 'password' => 'Old-pass1!'])
             ->assertRedirect(route('password.change'));
 
         return $user;
@@ -47,13 +47,13 @@ class ChangePasswordTest extends TestCase
         $user = $this->userWithExpiredPassword();
 
         $response = $this->post('/change-password', [
-            'current_password' => 'old-pass1',
-            'password' => 'brand-new123',
-            'password_confirmation' => 'brand-new123',
+            'current_password' => 'Old-pass1!',
+            'password' => 'Brand-new123!',
+            'password_confirmation' => 'Brand-new123!',
         ]);
 
         $response->assertRedirect(route('login'));
-        $this->assertTrue(Hash::check('brand-new123', $user->fresh()->password));
+        $this->assertTrue(Hash::check('Brand-new123!', $user->fresh()->password));
         $this->assertGuest();
     }
 
@@ -63,8 +63,8 @@ class ChangePasswordTest extends TestCase
 
         $response = $this->from('/change-password')->post('/change-password', [
             'current_password' => 'not-the-old-one',
-            'password' => 'brand-new123',
-            'password_confirmation' => 'brand-new123',
+            'password' => 'Brand-new123!',
+            'password_confirmation' => 'Brand-new123!',
         ]);
 
         $response->assertSessionHasErrors('current_password');

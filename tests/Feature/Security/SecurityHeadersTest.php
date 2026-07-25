@@ -18,7 +18,7 @@ class SecurityHeadersTest extends TestCase
         $response->assertOk();
         $response->assertHeader('X-Frame-Options', 'DENY');
         $response->assertHeader('X-Content-Type-Options', 'nosniff');
-        $response->assertHeader('Referrer-Policy', 'same-origin');
+        $response->assertHeader('Referrer-Policy', 'no-referrer');
 
         $csp = $response->headers->get('Content-Security-Policy');
         $this->assertNotNull($csp, 'Content-Security-Policy header is missing.');

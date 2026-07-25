@@ -4,9 +4,9 @@ return [
 
     /*
      * The unit handover times (Asia/Riyadh wall clock). Shared by all four units — the
-     * legacy quick-picks '7:30 Am' / '13:30' are the display forms of these same shifts.
+     * legacy quick-picks '7:30 Am' / '15:30' are the display forms of these same shifts.
      */
-    'handover_times' => ['07:30', '13:30'],
+    'handover_times' => ['07:30', '15:30'],
 
     /*
      * Minutes after a handover time before the reminder fires: at handover_time + delay,
@@ -19,6 +19,12 @@ return [
      * generate-vapid-keys`), set in the environment, never committed. With no keys the
      * reminder command runs but skips sending, so deploys never break on this.
      */
+    /*
+     * Require a second factor for accounts holding privileged capabilities. Production
+     * default (see App\Http\Middleware\EnforceTwoFactor); overridable per environment.
+     */
+    'require_2fa' => env('REQUIRE_2FA_PRIVILEGED', env('APP_ENV') === 'production'),
+
     'vapid' => [
         'subject' => env('VAPID_SUBJECT', 'mailto:admin@example.org'),
         'public_key' => env('VAPID_PUBLIC_KEY'),

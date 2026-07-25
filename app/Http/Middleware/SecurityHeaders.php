@@ -29,13 +29,19 @@ class SecurityHeaders
             ."font-src 'self' data:{$devVite}; "
             ."connect-src 'self'{$devVite}; "
             ."frame-ancestors 'none'; "
+            ."object-src 'none'; "
+            ."frame-src 'none'; "
             ."base-uri 'self'; "
             ."form-action 'self'";
 
         $response->headers->set('Content-Security-Policy', $csp);
         $response->headers->set('X-Frame-Options', 'DENY');
         $response->headers->set('X-Content-Type-Options', 'nosniff');
-        $response->headers->set('Referrer-Policy', 'same-origin');
+        // no-referrer, not same-origin: a clinical URL should not travel anywhere.
+        $response->headers->set('Referrer-Policy', 'no-referrer');
+        $response->headers->set('Cross-Origin-Opener-Policy', 'same-origin');
+        $response->headers->set('Cross-Origin-Resource-Policy', 'same-origin');
+        $response->headers->set('X-Permitted-Cross-Domain-Policies', 'none');
         $response->headers->set(
             'Permissions-Policy',
             'camera=(), microphone=(), geolocation=(), payment=(), usb=()'
@@ -46,11 +52,12 @@ class SecurityHeaders
             $response->headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
         }
 
-        // Clinical surfaces are never cacheable — not by the service worker, not by a
-        // proxy, not by the browser. A stale census read as current is the failure mode
-        // this system exists to avoid (spec §10.1).
-        if ($request->is('endorsement*')) {
-            $response->headers->set('Cache-Control', 'no-store, max-age=0');
+        // NOTHING behind the login is cacheable — not the census, not the staff roster,
+        // not the admin console. A path allow-list was too narrow: a proxy or a shared
+        // ward workstation would happily keep the last user's page.
+        if ($request->user() !== null || $request->is('endorsement*')) {
+            $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+            $response->headers->set('Pragma', 'no-cache');
         }
 
         return $response;

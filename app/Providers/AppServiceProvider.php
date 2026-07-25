@@ -26,6 +26,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // A brake on bulk reads of patient data: a legitimate clinician opens a handful of
+        // sheets a shift; a scripted scrape opens hundreds. Generous enough never to
+        // interrupt real work, tight enough that mass extraction is not silent.
+        \Illuminate\Support\Facades\RateLimiter::for('clinical', fn ($request) => $request->user()
+            ? \Illuminate\Cache\RateLimiting\Limit::perMinute(60)->by($request->user()->getKey())
+            : \Illuminate\Cache\RateLimiting\Limit::perMinute(20)->by($request->ip()));
+
         // Admin-saved runtime settings (SMTP, push, reminder times) override the .env
         // config. Guarded internally so pre-migration artisan calls never crash.
         \App\Support\AppSettings::applyOverrides();

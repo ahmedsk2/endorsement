@@ -52,7 +52,7 @@ const mountSheet = (props = {}) => mount(Sheet, {
         rows: [{ id: 11, bed: '1', mrn: 'A-1', patient_name: 'Layla', disease: '', details: '', plan: '', nevent: '' }],
         signoff: unsigned,
         staff,
-        timeOptions: ['7:30 Am', '13:30'],
+        timeOptions: ['7:30 Am', '15:30'],
         ...props,
     },
 });
@@ -75,7 +75,7 @@ describe('Endorsement/Sheet — shift sign-off', () => {
         expect(names('consultant-by')).toEqual(['Select', 'Dr Gamma', 'Dr Delta']);
         expect(names('consultant-to')).toEqual(['Select', 'Dr Gamma', 'Dr Delta']);
         // The two legacy labels stay the quick default; "Other time" opens a real clock entry.
-        expect(names('endorsement-time')).toEqual(['Select', '7:30 Am', '13:30', 'Other time…']);
+        expect(names('endorsement-time')).toEqual(['Select', '7:30 Am', '15:30', 'Other time…']);
     });
 
     it('signs off with the selected staff and time', async () => {
@@ -102,10 +102,10 @@ describe('Endorsement/Sheet — shift sign-off', () => {
     it('can save the details without signing off', async () => {
         const w = mountSheet();
 
-        await w.get('[data-testid="endorsement-time"]').setValue('13:30');
+        await w.get('[data-testid="endorsement-time"]').setValue('15:30');
         await w.get('[data-testid="signoff-save-draft"]').trigger('click');
 
-        expect(router.patch.mock.calls[0][1]).toMatchObject({ sign_off: false, endorsement_time: '13:30' });
+        expect(router.patch.mock.calls[0][1]).toMatchObject({ sign_off: false, endorsement_time: '15:30' });
     });
 
     it('locks the attestation once signed and shows who signed it', () => {
@@ -135,7 +135,7 @@ describe('Endorsement/Sheet — shift sign-off', () => {
     it('records a handover that genuinely happened off-schedule, at the actual clock time', async () => {
         const w = mountSheet();
 
-        // No custom input until "Other time" is chosen — routine 07:30 / 13:30 use is unchanged.
+        // No custom input until "Other time" is chosen — routine 07:30 / 15:30 use is unchanged.
         expect(w.find('[data-testid="endorsement-time-custom"]').exists()).toBe(false);
 
         await w.get('[data-testid="endorsement-time"]').setValue('__custom__');

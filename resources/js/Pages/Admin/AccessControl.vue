@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { Head, router, useForm, usePage } from '@inertiajs/vue3';
+import { router, useForm, usePage } from '@inertiajs/vue3';
+import AppLayout from '../../Layouts/AppLayout.vue';
 
 const props = defineProps({
     // Full capability catalog: [{ id, key, label, description }].
@@ -17,16 +18,23 @@ const props = defineProps({
 
 const flash = computed(() => usePage().props.flash);
 
-// One Inertia form per role — "Save role defaults" PUTs just that role's capability id set.
-const roleForms = {};
-for (const position of props.positions) {
-    roleForms[position.id] = useForm({
-        position: position.id,
-        capability_ids: [...(props.roleMatrix[position.id] ?? [])],
-    });
-}
-const saveRole = (positionId) =>
-    roleForms[positionId].put('/admin/access-control/role', { preserveScroll: true });
+/*
+ * ONE form for the WHOLE matrix, and therefore ONE Save button. The page previously carried a
+ * Save per role (five buttons, five requests, five confirmations) — easy to tick a box in one
+ * column and save a different one, which on a permissions screen is a real hazard rather than
+ * a papercut. The bulk endpoint validates every role before writing any of them.
+ */
+const matrixForm = useForm({
+    roles: Object.fromEntries(
+        props.positions.map((p) => [p.id, [...(props.roleMatrix[p.id] ?? [])]]),
+    ),
+});
+
+const saveMatrix = () => matrixForm.put('/admin/access-control/roles', { preserveScroll: true });
+
+// Dirty tracking so the Save button can say whether there is anything to save.
+const pristine = JSON.stringify(matrixForm.roles);
+const matrixDirty = computed(() => JSON.stringify(matrixForm.roles) !== pristine);
 
 // Per-user override editor. overrides is a map { capabilityId: 'grant'|'deny' }; a capability
 // absent from the map is inherited from the role default.
@@ -64,12 +72,10 @@ const effectiveSet = computed(() => new Set(props.selectedUser?.effective ?? [])
 </script>
 
 <template>
-    <Head title="Access control" />
-    <main class="min-h-screen bg-ground p-6">
+    <AppLayout title="Access control">
         <div class="mx-auto max-w-6xl space-y-8">
             <div>
-                <h1 class="text-xl font-semibold text-ink">Access control</h1>
-                <p class="mt-1 text-sm text-muted">
+                <p class="text-sm text-muted">
                     Edit each role's default capabilities and set per-user grant / deny overrides.
                     Changes take effect immediately.
                 </p>
@@ -134,7 +140,7 @@ const effectiveSet = computed(() => new Set(props.selectedUser?.effective ?? [])
                                     <input
                                         type="checkbox"
                                         :value="cap.id"
-                                        v-model="roleForms[position.id].capability_ids"
+                                        v-model="matrixForm.roles[position.id]"
                                         :data-testid="`role-${position.id}-cap-${cap.id}`"
                                         :aria-label="`${cap.key} for ${position.name}`"
                                         class="h-4 w-4 rounded border-line bg-panel text-channel focus:ring-channel"
@@ -142,24 +148,24 @@ const effectiveSet = computed(() => new Set(props.selectedUser?.effective ?? [])
                                 </td>
                             </tr>
                         </tbody>
-                        <tfoot>
-                            <tr>
-                                <td class="py-3 pr-4 pl-3 text-sm text-muted">Save each role after editing.</td>
-                                <td v-for="position in positions" :key="position.id" class="px-3 py-3 text-center">
-                                    <button
-                                        type="button"
-                                        @click="saveRole(position.id)"
-                                        :disabled="roleForms[position.id].processing"
-                                        :data-testid="`save-role-${position.id}`"
-                                        :aria-label="`Save the default capabilities for ${position.name}`"
-                                        class="rounded-md bg-channel px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-channel-ink disabled:opacity-60"
-                                    >
-                                        Save
-                                    </button>
-                                </td>
-                            </tr>
-                        </tfoot>
                     </table>
+                </div>
+
+                <!-- ONE save for the whole matrix. -->
+                <div class="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-line-soft pt-4">
+                    <p v-if="matrixForm.errors.capability_ids" class="text-xs text-critical" role="alert">
+                        {{ matrixForm.errors.capability_ids }}
+                    </p>
+                    <span v-else-if="matrixDirty" class="text-xs text-caution">Unsaved changes</span>
+                    <button
+                        type="button"
+                        @click="saveMatrix"
+                        :disabled="matrixForm.processing || !matrixDirty"
+                        data-testid="save-roles"
+                        class="rounded-md bg-channel px-4 py-2 text-sm font-semibold text-white transition hover:bg-channel-ink disabled:opacity-60"
+                    >
+                        Save role defaults
+                    </button>
                 </div>
             </section>
 
@@ -275,5 +281,5 @@ const effectiveSet = computed(() => new Set(props.selectedUser?.effective ?? [])
                 </div>
             </section>
         </div>
-    </main>
+    </AppLayout>
 </template>

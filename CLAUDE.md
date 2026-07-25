@@ -67,3 +67,19 @@ missed-days counter), no nursing sheets.
 - Roles: 0 Admin, 2 Charge Nurse, 3 Consultant, 4 Resident, 5 Chief Resident. Position 1
   (Nurse) is RETIRED — never revive it or reuse the number.
 - Unit variation lives in ONE place: `App\Support\UnitProfile`.
+
+## Invariants the 2026-07-26 audit had to restore (don't regress these)
+
+- A picker's write-side validation must match what it OFFERS. `exists:users,id` let any
+  account be named as endorser — and sign-off freezes that person's signature onto
+  medico-legal evidence. See `pickerRule()`.
+- `TRUSTED_PROXIES` is never `*` (Symfony then takes the client-supplied leftmost
+  X-Forwarded-For: forgeable audit IPs, bypassable lockout), and X-Forwarded-Host is never
+  trusted (password-reset link poisoning). `trustHosts` must keep loopback — the
+  HEALTHCHECK uses 127.0.0.1.
+- Never cache decrypted secrets: `CACHE_STORE=database`, so plaintext would land beside the
+  encrypted rows. Cache ciphertext, decrypt per read.
+- Every clinical write calls `assertDayUnlocked()`. `newDay` was the one that didn't.
+- `/up` must prove the DATABASE is reachable (connection, not a table — it has to pass
+  before the first migration) or the container reports healthy while every page 500s.
+- Full detail: `docs/SECURITY-AUDIT-2026-07-26.md`, `docs/PRODUCTION-READINESS-2026-07-26.md`.

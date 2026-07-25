@@ -36,9 +36,6 @@ RUN apk add --no-cache \
         nginx supervisor tzdata icu-data-full \
         libpng libjpeg-turbo freetype libzip icu-libs oniguruma gmp \
         mysql-client gzip openssl \
-        # Drops root after the entrypoint has fixed volume ownership, so PID 1 and every
-        # long-running process is unprivileged.
-        su-exec \
         # Alpine's `mysql-client` is MariaDB's client, and on its own it CANNOT authenticate
         # to MySQL 8.4: the default auth is caching_sha2_password and the plugin .so is not
         # in that package. mariadb-connector-c ships it. Without this the nightly backup
@@ -108,10 +105,13 @@ RUN addgroup -g 1000 app && adduser -u 1000 -G app -s /bin/sh -D app \
     && mkdir -p storage/framework/{cache,sessions,views} storage/logs storage/app/private/signatures storage/backups bootstrap/cache \
     && chown -R app:app storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache \
-    # nginx runs unprivileged, so its temp/cache trees must belong to `app` — otherwise the
-    # master starts and then fails on the first request that needs to buffer a body.
-    && mkdir -p /var/lib/nginx/tmp /var/lib/nginx/logs \
-    && chown -R app:app /var/lib/nginx
+    # nginx and php-fpm run unprivileged, so every path their MASTERS touch at startup must
+    # belong to `app`. /var/lib/nginx/logs is a SYMLINK to /var/log/nginx and `chown -R`
+    # does not follow symlinks, so the real directory has to be named explicitly — missing
+    # it fails the master with "could not open error log file (13: Permission denied)"
+    # before it ever reads error_log from the config.
+    && mkdir -p /var/lib/nginx/tmp /var/log/nginx /usr/local/var/log \
+    && chown -R app:app /var/lib/nginx /var/log/nginx /usr/local/var/log
 
 EXPOSE 8080
 

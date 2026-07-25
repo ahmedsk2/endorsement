@@ -23,13 +23,9 @@ fi
 # Rebuild the caches against the REAL environment (they are env-specific, so baking them
 # into the image would freeze build-time values).
 #
-# Run AS `app`, not as root. Laravel `require`s PHP straight out of bootstrap/cache, and
-# that directory is app-writable — so generating those files as root, while the runtime
-# reads them as app, is the wrong way round: anything able to write there as `app` would
-# be executed by whatever runs next. Everything below this point is unprivileged.
-su-exec app php artisan config:cache
-su-exec app php artisan route:cache
-su-exec app php artisan view:cache
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
 
 # Fail fast if the app cannot reach its database, rather than serving 500s to a ward.
 php -r '

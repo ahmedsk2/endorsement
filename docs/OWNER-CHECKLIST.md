@@ -91,6 +91,16 @@ Enter host, port, encryption, username, password, from-address, from-name, then 
 **send test email** button and confirm it arrives. The password is stored encrypted; it is
 not an environment variable and does not require a redeploy.
 
+### 4b. Set "Operational alerts to" — same screen, right below SMTP
+
+The nightly backup and the hourly audit-chain check know when they have failed. Until this
+address is set they report it to a log file on the server that nobody reads — so the system
+can know it produced no recoverable copy of the clinical record and tell no one.
+
+Put a mailbox you actually watch. Alerts carry a job name and a timestamp and nothing else:
+they travel through an external relay into a mailbox without this system's access controls
+around it, so they deliberately contain no patient information.
+
 ## 5. Generate the VAPID pair — same screen
 
 Enables browser push for the 07:30 and 15:30 handover reminders. One click; the private key
@@ -119,6 +129,31 @@ archive decrypted to 207 KB of SQL and restored into a scratch MySQL 8.4 with al
 Repeat it quarterly — `docs/RUNBOOK-BACKUP.md` has the recipe.
 
 ---
+
+## 6b. Run the least-privilege grants
+
+```bash
+docker exec -i $(docker ps -qf name=db-oo7d7si62yhyi7fx10hrck6q) \
+    sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot endorsement' < docs/sql/least-privilege.sql
+```
+
+The mysql image auto-granted the application's user `ALL PRIVILEGES` — including `DROP`,
+and including `UPDATE`/`DELETE` on `audit_log`. So two things this system states as facts
+are currently only conventions in PHP: that the audit log is append-only, and that clinical
+rows are never hard-deleted. The script strips DDL from the runtime credential and makes
+`audit_log` append-only with database triggers, which hold no matter which credential is
+used.
+
+**One consequence, deliberate:** `php artisan migrate` will no longer work with the app's
+credential. Run migrations with the root one instead — the command is in the script's
+header. That keeps schema change an explicit privileged act rather than something the web
+tier could do.
+
+Verify it took by confirming both of these FAIL:
+
+```bash
+docker exec -i $(docker ps -qf name=db-oo7d7si62yhyi7fx10hrck6q) sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot endorsement -e "UPDATE audit_log SET action=\"x\" WHERE id=1"'
+```
 
 ## 7. Restrict `/register`
 

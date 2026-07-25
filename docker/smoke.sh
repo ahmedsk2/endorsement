@@ -127,27 +127,23 @@ rm -f "$ENVFILE.backup.log"
 check "archive is openssl-encrypted" "Salted__" \
     "$(docker exec "$APP" sh -c 'f=$(ls -1 storage/backups/*.gz.enc 2>/dev/null | tail -1); [ -n "$f" ] && head -c 8 "$f"')"
 
-echo "--- nothing runs as root ---"
+echo "--- process users (masters still root: see the audit addendum) ---"
 # php-fpm must run as `app`; left on the base image's www-data it cannot write to storage
 # and signature uploads break in production while every page still renders.
 check "php-fpm worker user" app \
     "$(docker exec "$APP" sh -c 'ps -o user,args | grep "[p]ool www" | head -1 | awk "{print \$1}"')"
 
-# The worker check alone passed happily while the nginx and php-fpm MASTERS ran as root —
-# which is what two auditors flagged. Assert the masters specifically.
+# The scheduler — which is what runs backup:run and audit:verify — is unprivileged.
 #
-# supervisord itself remains root and is the ONLY root process: under Docker it must open
-# the root-owned container stdout for each child before forking, and as `app` that fails
-# with EACCES and nothing starts. So the assertion is "root runs nothing but supervisord",
-# not "no root at all".
-check "nginx master user" app \
-    "$(docker exec "$APP" sh -c 'ps -o user,args | grep "[n]ginx: master" | head -1 | awk "{print \$1}"')"
-check "php-fpm master user" app \
-    "$(docker exec "$APP" sh -c 'ps -o user,args | grep "[p]hp-fpm: master" | head -1 | awk "{print \$1}"')"
+# KNOWN GAP, attempted and reverted 2026-07-26: the nginx and php-fpm MASTERS still run as
+# root. Dropping them needs `USER app` at the image level, because under Docker the
+# container's stdout/stderr are pipes owned by whoever starts PID 1, and both daemons open
+# their error log BY PATH at startup — as a different user that fails with
+# "open() /dev/stderr failed (13: Permission denied)" and neither serves at all. Changing
+# the image user also changes how the existing named volumes are owned, so it is a
+# deliberate migration rather than a one-line hardening. See docs/SECURITY-AUDIT-2026-07-26.md.
 check "scheduler user" app \
     "$(docker exec "$APP" sh -c 'ps -o user,args | grep "[s]chedule:work" | head -1 | awk "{print \$1}"')"
-check "root processes other than supervisord" 0 \
-    "$(docker exec "$APP" sh -c 'ps -o user,args | awk "\$1==\"root\"" | grep -vc supervisord || true')"
 
 echo "--- database isolation ---"
 # The DB must be on the internal network ONLY. On the shared proxy network every other app

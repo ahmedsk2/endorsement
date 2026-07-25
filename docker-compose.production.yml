@@ -50,8 +50,14 @@ services:
       CACHE_STORE: database
       QUEUE_CONNECTION: database
 
-      # Trust the Coolify proxy so isSecure() is true and HSTS/secure cookies apply.
-      TRUSTED_PROXIES: "*"
+      # Trust the proxy so isSecure() is true and HSTS/secure cookies apply — but NOT "*".
+      # With a wildcard, Symfony trusts the whole X-Forwarded-For chain and takes the
+      # LEFTMOST entry, which the client supplies: the per-IP login lockout is bypassable by
+      # rotating the header, and every IP in audit_log is forgeable. Restricted to private
+      # ranges, Symfony stops at the real client address Traefik appends. Ranges rather than
+      # the current 10.0.2.0/24 so a Docker network renumber cannot silently break TLS
+      # detection on a live clinical system.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
 
       LOG_CHANNEL: stderr
       LOG_LEVEL: warning

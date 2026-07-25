@@ -138,6 +138,14 @@ class LegacyImport extends Command
         DB::transaction(function () use ($legacy, $institutionId, $now) {
             $legacy->table('members')->orderBy('member_id')->chunk(500, function ($rows) use ($institutionId, $now) {
                 foreach ($rows as $r) {
+                    // Position 1 (Nurse) is RETIRED in this system (owner ruling,
+                    // 2026-07-25): nurses have no endorsement surface and are never
+                    // referenced by sign-offs (endorsers are residents), so their
+                    // accounts are not imported at all.
+                    if ((int) ($r->position ?? 1) === 1) {
+                        continue;
+                    }
+
                     // Query-builder upsert on purpose: the model's 'hashed' cast would
                     // re-hash the already-bcrypt legacy hash and lock everyone out.
                     DB::table('users')->upsert([[
@@ -159,10 +167,14 @@ class LegacyImport extends Command
             });
         });
 
+        // Nurses are excluded on both sides of the comparison (retired role, not imported).
         $this->recordCount(
             'users',
-            (int) $legacy->table('members')->count(),
-            (int) DB::table('users')->whereIn('member_name', $legacy->table('members')->pluck('member_name'))->count(),
+            (int) $legacy->table('members')->where('position', '!=', 1)->count(),
+            (int) DB::table('users')->whereIn(
+                'member_name',
+                $legacy->table('members')->where('position', '!=', 1)->pluck('member_name'),
+            )->count(),
         );
     }
 

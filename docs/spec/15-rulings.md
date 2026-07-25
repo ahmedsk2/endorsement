@@ -17,3 +17,12 @@
 | 13 | Notifications | In-app + web push (no email) |
 | 14 | Compliance metric | Missed-days per unit only, date-range selectable, expandable to dates; missed = no signed sign-off |
 | 15 | Consultant pickers | Active Consultants (position 3), replacing legacy free text |
+
+## Post-launch rulings (2026-07-25)
+
+| # | Decision | Ruling |
+|---|---|---|
+| 16 | Nurse role (position 1) | RETIRED entirely: no catalog row, no defaults, not registerable, legacy nurse accounts not imported |
+| 17 | Chief Resident (position 5) | Registers as Resident, promoted by an Administrator; holds `users.manage_residents` (approve/activate/deactivate RESIDENT accounts only — no role changes, no profiles, no non-residents); remains in the endorser pickers |
+| 18 | Runtime settings | Admin → Settings (`settings.manage`, Admin-only default): SMTP, VAPID, reminder times stored in `app_settings`, secrets encrypted + write-only, changes audited by key name only, values override .env at boot |
+| 19 | Registration password policy | `Password::min(8)->mixedCase()->numbers()->symbols()`, mirrored 1:1 by the page's live checklist |

@@ -11,13 +11,16 @@ class ReferenceSeederTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_it_seeds_the_five_positions(): void
+    public function test_it_seeds_the_five_positions_with_nurse_retired(): void
     {
         $this->seed(ReferenceSeeder::class);
 
-        foreach ([0 => 'Administrator', 1 => 'Nurse', 2 => 'Charge Nurse', 3 => 'Consultant', 4 => 'Resident'] as $id => $name) {
+        foreach ([0 => 'Administrator', 2 => 'Charge Nurse', 3 => 'Consultant', 4 => 'Resident', 5 => 'Chief Resident'] as $id => $name) {
             $this->assertDatabaseHas('positions', ['id' => $id, 'name' => $name]);
         }
+
+        // Position 1 (Nurse) is retired - the catalog row must not exist.
+        $this->assertDatabaseMissing('positions', ['id' => 1]);
     }
 
     /**

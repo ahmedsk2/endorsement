@@ -62,6 +62,6 @@ missed-days counter), no nursing sheets.
   says "New events"). nevent CARRIES FORWARD on new day (owner ruling).
 - Day identity: (unit_id, handover_date). Sign-off is a per-day header row
   (`handover_signoffs`, UNIQUE on that pair); `signed_off_at` = locked.
-- Endorsed by/to pickers: active Residents (position 4) only. Consultants: position 3.
+- Endorsed by/to pickers: active Residents (4) and Chief Residents (5). Consultants: position 3.
   WARD has a single "Consultant Oncall" stored in `consultant_by_*`.
 - Unit variation lives in ONE place: `App\Support\UnitProfile`.

@@ -16,6 +16,10 @@ const props = defineProps({
     users: { type: Array, default: () => [] },
     positions: { type: Array, default: () => [] },
     errors: { type: Object, default: () => ({}) },
+    // False for a scoped (Chief Resident) manager: the server already limits the payload
+    // to residents; the page additionally hides the full-manager-only controls
+    // (role changes, profile edits) the server would 403 anyway.
+    canManageAll: { type: Boolean, default: true },
 });
 
 const search = ref('');
@@ -190,12 +194,13 @@ const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : '—');
                                     <span v-else>{{ u.member_email || '—' }}</span>
                                 </td>
                                 <td class="px-4 py-2.5">
-                                    <select :value="u.position" :data-testid="`position-${u.id}`"
+                                    <select v-if="canManageAll" :value="u.position" :data-testid="`position-${u.id}`"
                                             :aria-label="`Role for ${u.member_name}`"
                                             @change="changePosition(u, $event)"
                                             class="rounded-md border border-line bg-panel px-2 py-1 text-xs">
                                         <option v-for="pos in positions" :key="pos.id" :value="pos.id">{{ pos.name }}</option>
                                     </select>
+                                    <span v-else class="text-xs text-body">{{ positionName(u.position) }}</span>
                                 </td>
                                 <td class="px-4 py-2.5">
                                     <span v-if="u.has_two_factor" class="rounded bg-ok-soft px-2 py-0.5 text-xs font-semibold text-ok">Enabled</span>
@@ -214,7 +219,7 @@ const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : '—');
                                                 class="ml-2 rounded-md border border-line px-3 py-1.5 text-xs font-semibold text-body">Cancel</button>
                                     </template>
                                     <template v-else>
-                                    <button type="button" :data-testid="`edit-profile-${u.id}`" @click="startEdit(u)"
+                                    <button v-if="canManageAll" type="button" :data-testid="`edit-profile-${u.id}`" @click="startEdit(u)"
                                             :aria-label="`Edit the account details for ${u.member_name}`"
                                             class="mr-2 rounded-md border border-line px-3 py-1.5 text-xs font-semibold text-body transition hover:bg-ground">
                                         Edit

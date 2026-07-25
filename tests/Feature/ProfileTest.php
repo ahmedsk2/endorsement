@@ -29,7 +29,7 @@ class ProfileTest extends TestCase
     public function test_a_user_can_view_their_own_profile(): void
     {
         $user = User::factory()->create([
-            'position' => 1,
+            'position' => 4,
             'full_name' => 'Own Name',
             'member_name' => 'own.name',
             'member_email' => 'own@example.com',
@@ -53,7 +53,7 @@ class ProfileTest extends TestCase
 
     public function test_a_user_can_update_their_own_profile_and_the_change_is_audited(): void
     {
-        $user = User::factory()->create(['position' => 1]);
+        $user = User::factory()->create(['position' => 4]);
 
         $this->actingAs($user)
             ->patch('/profile', [
@@ -77,7 +77,7 @@ class ProfileTest extends TestCase
 
     public function test_a_submitted_foreign_id_is_ignored_and_only_the_session_user_changes(): void
     {
-        $user = User::factory()->create(['position' => 1]);
+        $user = User::factory()->create(['position' => 4]);
         $victim = User::factory()->create([
             'full_name' => 'Victim Name',
             'member_name' => 'victim.name',
@@ -107,7 +107,7 @@ class ProfileTest extends TestCase
 
     public function test_member_name_must_be_unique_across_other_users(): void
     {
-        $user = User::factory()->create(['position' => 1]);
+        $user = User::factory()->create(['position' => 4]);
         User::factory()->create(['member_name' => 'taken.name']);
 
         $this->actingAs($user)
@@ -122,7 +122,7 @@ class ProfileTest extends TestCase
 
     public function test_member_email_must_be_unique_across_other_users(): void
     {
-        $user = User::factory()->create(['position' => 1]);
+        $user = User::factory()->create(['position' => 4]);
         User::factory()->create(['member_email' => 'taken@example.com']);
 
         $this->actingAs($user)
@@ -137,12 +137,12 @@ class ProfileTest extends TestCase
 
     public function test_member_name_must_not_collide_with_the_pending_queue(): void
     {
-        $user = User::factory()->create(['position' => 1]);
+        $user = User::factory()->create(['position' => 4]);
         PendingRegistration::create([
             'full_name' => 'Pending Person',
             'member_name' => 'pending.taken',
             'member_email' => 'pending.taken@example.com',
-            'position' => 1,
+            'position' => 4,
             'password' => 'irrelevant-plain',
             'requested_at' => now(),
         ]);
@@ -160,7 +160,7 @@ class ProfileTest extends TestCase
     public function test_keeping_your_own_current_name_and_email_is_allowed(): void
     {
         $user = User::factory()->create([
-            'position' => 1,
+            'position' => 4,
             'member_name' => 'same.name',
             'member_email' => 'same@example.com',
         ]);

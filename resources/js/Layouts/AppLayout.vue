@@ -30,9 +30,11 @@ const units = [
     { code: 'ward', label: 'Ward', bar: 'channel-bar-ward' },
 ];
 
-// Admin section is visible with ANY admin-surface capability. Nav visibility never keys off
-// role numbers — only capability keys.
-const canAdmin = computed(() => can('access.manage') || can('users.manage'));
+// Admin section is visible with ANY admin-surface capability — including the Chief
+// Resident's scoped users.manage_residents. Nav visibility never keys off role
+// numbers — only capability keys.
+const canAdmin = computed(() => can('access.manage') || can('users.manage')
+    || can('users.manage_residents') || can('settings.manage'));
 
 const initials = computed(() => (user.value?.full_name || user.value?.member_name || '')
     .split(' ')
@@ -117,13 +119,17 @@ const navClass = (active) => [
                 <!-- Administration -->
                 <template v-if="canAdmin">
                     <p class="channel-tag px-3 pb-1 pt-4">Administration</p>
-                    <Link v-if="can('users.manage')" href="/admin/users"
+                    <Link v-if="can('users.manage') || can('users.manage_residents')" href="/admin/users"
                           :class="navClass(isActive('/admin/users'))">
-                        Users
+                        {{ can('users.manage') ? 'Users' : 'Residents' }}
                     </Link>
                     <Link v-if="can('access.manage')" href="/admin/access-control"
                           :class="navClass(isActive('/admin/access-control'))">
                         Access Control
+                    </Link>
+                    <Link v-if="can('settings.manage')" href="/admin/settings"
+                          :class="navClass(isActive('/admin/settings'))">
+                        Settings
                     </Link>
                 </template>
             </nav>

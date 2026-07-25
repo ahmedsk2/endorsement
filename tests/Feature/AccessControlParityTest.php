@@ -31,15 +31,20 @@ class AccessControlParityTest extends TestCase
         $anyAuth = ['profile.manage'];
         $endorsement = ['endorsement.view', 'endorsement.edit'];
         // Reopen reverses a signed attestation (medico-legal); compliance exposes the
-        // missed-days page. Both default to Administrator alone, grantable deliberately.
-        $adminOnly = ['users.manage', 'access.manage', 'endorsement.reopen', 'endorsement.compliance'];
+        // missed-days page; settings edits runtime config. Administrator-only defaults.
+        $adminOnly = [
+            'users.manage', 'users.manage_residents', 'access.manage', 'settings.manage',
+            'endorsement.reopen', 'endorsement.compliance',
+        ];
 
         return [
             0 => array_merge($anyAuth, $endorsement, $adminOnly), // Administrator: everything
-            1 => $anyAuth,                                        // Nurse: no endorsement (legacy parity)
+            // Position 1 (Nurse) is RETIRED - no catalog row, no defaults, nothing to assert.
             2 => array_merge($anyAuth, $endorsement),             // Charge Nurse
             3 => array_merge($anyAuth, $endorsement),             // Consultant
             4 => array_merge($anyAuth, $endorsement),             // Resident
+            // Chief Resident (5): a resident clinically + the ONE scoped admin power.
+            5 => array_merge($anyAuth, $endorsement, ['users.manage_residents']),
         ];
     }
 
@@ -61,15 +66,27 @@ class AccessControlParityTest extends TestCase
         }
     }
 
-    public function test_nurse_has_profile_but_no_endorsement(): void
+    /** The retired Nurse position (1) resolves to NOTHING - it has no defaults at all. */
+    public function test_the_retired_nurse_position_holds_no_capabilities(): void
     {
         $this->seed(AccessControlSeeder::class);
-        $nurse = User::factory()->create(['position' => 1]);
+        $ghost = User::factory()->create(['position' => 1]);
 
-        $this->assertTrue(AccessControl::allows($nurse, 'profile.manage'));
-        $this->assertFalse(AccessControl::allows($nurse, 'endorsement.view'));
-        $this->assertFalse(AccessControl::allows($nurse, 'endorsement.edit'));
-        $this->assertFalse(AccessControl::allows($nurse, 'users.manage'));
+        $this->assertSame([], AccessControl::capabilitiesFor($ghost));
+        $this->assertFalse(AccessControl::allows($ghost, 'profile.manage'));
+        $this->assertFalse(AccessControl::allows($ghost, 'endorsement.view'));
+    }
+
+    public function test_a_chief_resident_holds_the_scoped_power_but_no_admin_console(): void
+    {
+        $this->seed(AccessControlSeeder::class);
+        $chief = User::factory()->create(['position' => 5]);
+
+        $this->assertTrue(AccessControl::allows($chief, 'users.manage_residents'));
+        $this->assertTrue(AccessControl::allows($chief, 'endorsement.edit'));
+        $this->assertFalse(AccessControl::allows($chief, 'users.manage'));
+        $this->assertFalse(AccessControl::allows($chief, 'access.manage'));
+        $this->assertFalse(AccessControl::allows($chief, 'settings.manage'));
     }
 
     public function test_resident_has_endorsement_edit_but_no_admin_tooling(): void
@@ -86,13 +103,14 @@ class AccessControlParityTest extends TestCase
     {
         $this->seed(AccessControlSeeder::class);
 
-        foreach ([0, 1, 2, 3, 4] as $position) {
+        foreach ([0, 2, 3, 4, 5] as $position) {
             $user = User::factory()->create(['position' => $position]);
             $isAdmin = $position === 0;
 
             $this->assertSame($isAdmin, AccessControl::allows($user, 'users.manage'));
             $this->assertSame($isAdmin, AccessControl::allows($user, 'access.manage'));
             $this->assertSame($isAdmin, AccessControl::allows($user, 'endorsement.compliance'));
+            $this->assertSame($isAdmin, AccessControl::allows($user, 'settings.manage'));
         }
     }
 

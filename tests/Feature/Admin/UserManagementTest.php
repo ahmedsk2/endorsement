@@ -87,7 +87,7 @@ class UserManagementTest extends TestCase
 
     public function test_a_nurse_is_forbidden_from_the_users_page(): void
     {
-        $nurse = User::factory()->create(['position' => 1]);
+        $nurse = User::factory()->create(['position' => 4]);
 
         $this->actingAs($nurse)->get('/admin/users')->assertForbidden();
     }
@@ -162,7 +162,7 @@ class UserManagementTest extends TestCase
 
     public function test_a_nurse_cannot_approve_a_pending_registration(): void
     {
-        $nurse = User::factory()->create(['position' => 1]);
+        $nurse = User::factory()->create(['position' => 4]);
         $pending = $this->pending();
 
         $this->actingAs($nurse)
@@ -193,7 +193,7 @@ class UserManagementTest extends TestCase
 
     public function test_a_nurse_cannot_reject_a_pending_registration(): void
     {
-        $nurse = User::factory()->create(['position' => 1]);
+        $nurse = User::factory()->create(['position' => 4]);
         $pending = $this->pending();
 
         $this->actingAs($nurse)
@@ -268,7 +268,7 @@ class UserManagementTest extends TestCase
         $admin = $this->admin();
         // Neither an inactive admin nor an active nurse keeps the door open.
         User::factory()->inactive()->create(['position' => 0]);
-        User::factory()->create(['position' => 1]);
+        User::factory()->create(['position' => 4]);
 
         $this->actingAs($admin)
             ->patchJson('/admin/users/'.$admin->id.'/active', ['active' => false])
@@ -279,7 +279,7 @@ class UserManagementTest extends TestCase
 
     public function test_a_nurse_cannot_toggle_activation(): void
     {
-        $nurse = User::factory()->create(['position' => 1]);
+        $nurse = User::factory()->create(['position' => 4]);
         $victim = User::factory()->create();
 
         $this->actingAs($nurse)
@@ -294,7 +294,7 @@ class UserManagementTest extends TestCase
     public function test_set_position_changes_the_role_flushes_the_cap_cache_and_audits(): void
     {
         $admin = $this->admin();
-        $user = User::factory()->create(['position' => 1]); // Nurse
+        $user = User::factory()->create(['position' => 4]); // Nurse
 
         // Warm the resolver cache with the nurse capability set.
         $this->assertFalse(AccessControl::allows($user, 'users.manage'));
@@ -318,14 +318,14 @@ class UserManagementTest extends TestCase
     public function test_set_position_rejects_an_out_of_range_position(): void
     {
         $admin = $this->admin();
-        $user = User::factory()->create(['position' => 1]);
+        $user = User::factory()->create(['position' => 4]);
 
         $this->actingAs($admin)
             ->patchJson('/admin/users/'.$user->id.'/position', ['position' => 7])
             ->assertStatus(422)
             ->assertJsonValidationErrors('position');
 
-        $this->assertSame(1, $user->fresh()->position);
+        $this->assertSame(4, $user->fresh()->position);
     }
 
     public function test_the_last_active_administrator_cannot_be_demoted(): void
@@ -354,13 +354,13 @@ class UserManagementTest extends TestCase
 
     public function test_a_nurse_cannot_change_roles(): void
     {
-        $nurse = User::factory()->create(['position' => 1]);
-        $victim = User::factory()->create(['position' => 1]);
+        $nurse = User::factory()->create(['position' => 4]);
+        $victim = User::factory()->create(['position' => 4]);
 
         $this->actingAs($nurse)
             ->patch('/admin/users/'.$victim->id.'/position', ['position' => 0])
             ->assertForbidden();
 
-        $this->assertSame(1, $victim->fresh()->position);
+        $this->assertSame(4, $victim->fresh()->position);
     }
 }

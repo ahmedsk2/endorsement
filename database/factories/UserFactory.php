@@ -26,7 +26,7 @@ class UserFactory extends Factory
     {
         return [
             'institution_id' => null,
-            'position' => 1, // Nurse
+            'position' => 4, // Resident (position 1/Nurse is retired)
             'full_name' => fake()->name(),
             'member_name' => fake()->unique()->userName(),
             'member_email' => fake()->unique()->safeEmail(),

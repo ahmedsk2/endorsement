@@ -31,7 +31,7 @@ use Inertia\Response;
 class AccessControlController extends Controller
 {
     /** Valid role ids (0=Administrator .. 4=Resident). */
-    private const POSITIONS = [0, 1, 2, 3, 4];
+    private const POSITIONS = [0, 2, 3, 4, 5];
 
     public function index(Request $request): Response
     {

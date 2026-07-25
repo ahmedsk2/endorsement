@@ -18,10 +18,15 @@ use Inertia\Response;
 
 /**
  * F1 — Admin → Users (re-platform of legacy control.php). Approves/rejects pending
- * self-registrations and activates/deactivates accounts or changes roles. Every route is
- * `auth` + `cap:users.manage` (admin-only per the seeded matrix — routes/web.php owns the
- * gates), every write is audited PHI-free (ids only), and passwords NEVER appear in props,
- * logs, or audit details.
+ * self-registrations and activates/deactivates accounts or changes roles. Every write is
+ * audited PHI-free (ids only), and passwords NEVER appear in props, logs, or audit details.
+ *
+ * TWO TIERS OF ACCESS:
+ *  - `users.manage` (Administrator): everything, every account.
+ *  - `users.manage_residents` (Chief Resident): the SCOPED tier — sees, approves,
+ *    activates and deactivates RESIDENT (position 4) accounts alone. No role changes,
+ *    no profile edits, no non-resident accounts. Enforced in-controller (the shared
+ *    routes carry `auth` only) so the refusal can be audited with the attempted target.
  *
  * Two hard invariants:
  *  - The pending row's ALREADY-HASHED password is copied VERBATIM through the query builder
@@ -31,13 +36,28 @@ use Inertia\Response;
  */
 class UserManagementController extends Controller
 {
-    /** Valid role ids (0=Administrator .. 4=Resident). Position 0 is grantable ONLY here. */
-    private const POSITIONS = [0, 1, 2, 3, 4];
+    /**
+     * Valid role ids. Position 1 (Nurse) is RETIRED — an endorsement-only system has no
+     * nurse surface (the legacy gate excluded them), so the value is invalid everywhere.
+     * Position 0 is grantable ONLY here; 5 = Chief Resident (promoted, never registered).
+     */
+    private const POSITIONS = [0, 2, 3, 4, 5];
 
-    public function index(): Response
+    /** The one position a scoped (Chief Resident) manager may act on. */
+    private const RESIDENT = 4;
+
+    public function index(Request $request): Response
     {
+        $all = $this->canManageAll($request->user());
+
+        if (! $all) {
+            $this->assertScopedManager($request);
+        }
+
         return Inertia::render('Admin/Users', [
+            'canManageAll' => $all,
             'pending' => PendingRegistration::query()
+                ->when(! $all, fn ($q) => $q->where('position', self::RESIDENT))
                 ->orderBy('requested_at')
                 ->get()
                 ->map(fn (PendingRegistration $p): array => [
@@ -49,6 +69,7 @@ class UserManagementController extends Controller
                     'requested_at' => $p->requested_at?->toIso8601String(),
                 ]),
             'users' => User::query()
+                ->when(! $all, fn ($q) => $q->where('position', self::RESIDENT))
                 ->orderBy('full_name')
                 ->get()
                 ->map(fn (User $u): array => [
@@ -72,6 +93,7 @@ class UserManagementController extends Controller
      */
     public function approve(Request $request, PendingRegistration $pending): RedirectResponse
     {
+        $this->authorizeTarget($request, (int) $pending->position);
         $this->assertStillUnique($pending);
 
         $userId = DB::transaction(function () use ($pending): int {
@@ -112,6 +134,8 @@ class UserManagementController extends Controller
      */
     public function reject(Request $request, PendingRegistration $pending): RedirectResponse
     {
+        $this->authorizeTarget($request, (int) $pending->position);
+
         $pending->delete();
 
         AuditLog::record(
@@ -130,6 +154,8 @@ class UserManagementController extends Controller
      */
     public function setActive(Request $request, User $user): RedirectResponse
     {
+        $this->authorizeTarget($request, (int) $user->position);
+
         $data = $request->validate([
             'active' => ['required', 'boolean'],
         ]);
@@ -245,6 +271,51 @@ class UserManagementController extends Controller
  *
  * The route was removed with this method, not just the button — see routes/web.php.
  */
+
+    /** Full user management: the unrestricted tier. */
+    private function canManageAll(?User $user): bool
+    {
+        return $user !== null && AccessControl::allows($user, 'users.manage');
+    }
+
+    /** The scoped (Chief Resident) tier — must hold users.manage_residents. 403 + audit otherwise. */
+    private function assertScopedManager(Request $request): void
+    {
+        $user = $request->user();
+
+        if ($user !== null && AccessControl::allows($user, 'users.manage_residents')) {
+            return;
+        }
+
+        AuditLog::record('access_denied', 'cap=users.manage_residents', $user?->getKey(), $request->ip());
+
+        abort(403);
+    }
+
+    /**
+     * Authorize an action against ONE account/registration: a full manager may act on
+     * anyone; a scoped manager on RESIDENTS alone. The denied attempt is audited with the
+     * target's position — never a name.
+     */
+    private function authorizeTarget(Request $request, int $targetPosition): void
+    {
+        if ($this->canManageAll($request->user())) {
+            return;
+        }
+
+        $this->assertScopedManager($request);
+
+        if ($targetPosition !== self::RESIDENT) {
+            AuditLog::record(
+                'user_scope_denied',
+                'target_position='.$targetPosition,
+                $request->user()?->getKey(),
+                $request->ip(),
+            );
+
+            abort(403, 'A Chief Resident manages resident accounts only.');
+        }
+    }
 
     /**
      * Re-validate a pending registration's identifiers against the live `users` table at

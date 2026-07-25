@@ -22,8 +22,10 @@ class RegisteredUserController extends Controller
     {
         return Inertia::render('Auth/Register', [
             // 0 = Administrator is deliberately NOT offered to self-registration.
+            // 1 = Nurse is RETIRED from this system. 5 = Chief Resident is never
+            // registered — a chief registers as a Resident and is promoted by an
+            // Administrator afterwards.
             'positions' => [
-                1 => 'Nurse',
                 2 => 'Charge Nurse',
                 3 => 'Consultant',
                 4 => 'Resident',
@@ -46,7 +48,7 @@ class RegisteredUserController extends Controller
                 Rule::unique('users', 'member_email'),
                 Rule::unique('pending_registrations', 'member_email'),
             ],
-            'position' => ['required', 'integer', Rule::in([1, 2, 3, 4])],
+            'position' => ['required', 'integer', Rule::in([2, 3, 4])],
             // The four requirements the registration page's live checklist shows —
             // UI and server must never disagree about what a valid password is.
             'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],

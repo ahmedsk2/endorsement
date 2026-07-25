@@ -23,7 +23,7 @@ class DemoSeeder extends Seeder
             ['consultant2', 'Dr Second Consultant', 3],
             ['resident1', 'Dr Demo Resident', 4],
             ['resident2', 'Dr Second Resident', 4],
-            ['nurse1', 'Demo Nurse (no endorsement access)', 1],
+            ['chief1', 'Dr Demo Chief Resident', 5],
         ];
 
         foreach ($accounts as [$name, $full, $position]) {

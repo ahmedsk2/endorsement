@@ -46,6 +46,12 @@ class AccessControlSeeder extends Seeder
             .'audited. The handover sheet names the current holders of this capability to anyone who '
             .'cannot reopen, so a ward always knows who to call.',
 
+        'users.manage_residents' => 'The Chief Resident power: approve pending RESIDENT '
+            .'registrations and activate/deactivate RESIDENT accounts — nothing else. No role '
+            .'changes, no profile edits, no non-resident accounts, and the full user console '
+            .'stays Administrator-only. Default: Administrator and Chief Resident; grantable '
+            .'per role or per named user like any capability.',
+
         'endorsement.compliance' => 'View the missed-days compliance page: for each unit, how many '
             .'days in a chosen date range have no signed endorsement, expandable to the missing dates '
             .'themselves. Counts and dates only — the page carries no patient data. Default: '
@@ -67,9 +73,11 @@ class AccessControlSeeder extends Seeder
         'endorsement.reopen' => 'Reopen a signed handover day for correction (reverses an attestation)',
         'endorsement.compliance' => 'View the per-unit missed-days compliance page',
 
-        // User & access administration (Admin only).
+        // User & access administration.
         'users.manage' => 'Create, update and deactivate user accounts',
+        'users.manage_residents' => 'Approve, activate and deactivate RESIDENT accounts only',
         'access.manage' => 'Manage the access-control catalog and per-user overrides',
+        'settings.manage' => 'Edit runtime settings (mail server, push keys, reminder times)',
     ];
 
     /**
@@ -82,12 +90,9 @@ class AccessControlSeeder extends Seeder
         0 => [
             'profile.manage',
             'endorsement.view', 'endorsement.edit', 'endorsement.reopen', 'endorsement.compliance',
-            'users.manage', 'access.manage',
+            'users.manage', 'users.manage_residents', 'access.manage', 'settings.manage',
         ],
-        // Nurse (1): own profile only — excluded from endorsement (legacy gate parity).
-        1 => [
-            'profile.manage',
-        ],
+        // Position 1 (Nurse) is RETIRED — no defaults exist for it.
         // Charge Nurse (2): endorsement.
         2 => [
             'profile.manage',
@@ -102,6 +107,12 @@ class AccessControlSeeder extends Seeder
         4 => [
             'profile.manage',
             'endorsement.view', 'endorsement.edit',
+        ],
+        // Chief Resident (5): a Resident clinically, plus the ONE scoped admin power.
+        5 => [
+            'profile.manage',
+            'endorsement.view', 'endorsement.edit',
+            'users.manage_residents',
         ],
     ];
 

@@ -26,6 +26,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Admin-saved runtime settings (SMTP, push, reminder times) override the .env
+        // config. Guarded internally so pre-migration artisan calls never crash.
+        \App\Support\AppSettings::applyOverrides();
+
         // Bridge the data-driven capability resolver into Laravel's Gate so `$user->can('...')`,
         // `@can`, and Inertia `can` checks resolve against capabilities. Returning null (not
         // false) on a miss lets any non-capability Gate/Policy still run normally.

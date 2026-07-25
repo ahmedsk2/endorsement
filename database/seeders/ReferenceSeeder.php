@@ -18,16 +18,24 @@ class ReferenceSeeder extends Seeder
     public function run(): void
     {
         // Role catalog (0=Administrator has no lookup row in legacy; here it is explicit).
+        // Position 1 (Nurse) is RETIRED (owner ruling, 2026-07-25): an endorsement-only
+        // system has no nurse surface — the legacy gate excluded them everywhere.
+        // Position 5 (Chief Resident) is a Resident promoted by an Administrator; it is
+        // never offered at registration.
         $positions = [
             0 => 'Administrator',
-            1 => 'Nurse',
             2 => 'Charge Nurse',
             3 => 'Consultant',
             4 => 'Resident',
+            5 => 'Chief Resident',
         ];
         foreach ($positions as $id => $name) {
             Position::updateOrCreate(['id' => $id], ['name' => $name]);
         }
+
+        // Remove the retired catalog row where it exists. Catalog only — user rows are
+        // never deleted by a seeder (legacy nurse accounts are simply no longer imported).
+        Position::whereKey(1)->delete();
 
         // The four first-class clinical units. Codes are the routing identity
         // (/endorsement/{code}); names appear on screens and the printed sheet.

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AccessControlController;
+use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\EndorsementController;
 use App\Http\Controllers\ProfileController;
@@ -77,8 +78,13 @@ Route::middleware(['auth', 'cap:access.manage'])
  * Admin → Users: approve/reject pending registrations, toggle activation,
  * change roles (the ONLY place position 0 can be granted), correct another
  * account's profile. Account DELETION is deliberately absent — deactivate instead.
+ *
+ * TWO TIERS: the shared endpoints (index/approve/reject/active) carry `auth` only and
+ * are gated IN-CONTROLLER, because `users.manage_residents` (Chief Resident) may use
+ * them on RESIDENT accounts alone and the refusal is audited with the attempted target.
+ * Role and profile changes remain full-manager (`cap:users.manage`) routes.
  */
-Route::middleware(['auth', 'cap:users.manage'])
+Route::middleware('auth')
     ->prefix('admin')
     ->name('admin.')
     ->group(function () {
@@ -86,8 +92,26 @@ Route::middleware(['auth', 'cap:users.manage'])
         Route::post('/users/pending/{pending}/approve', [UserManagementController::class, 'approve'])->name('users.approve');
         Route::delete('/users/pending/{pending}', [UserManagementController::class, 'reject'])->name('users.reject');
         Route::patch('/users/{user}/active', [UserManagementController::class, 'setActive'])->name('users.active');
+    });
+
+Route::middleware(['auth', 'cap:users.manage'])
+    ->prefix('admin')
+    ->name('admin.')
+    ->group(function () {
         Route::patch('/users/{user}/position', [UserManagementController::class, 'setPosition'])->name('users.position');
         Route::patch('/users/{user}/profile', [UserManagementController::class, 'updateProfile'])->name('users.profile');
+    });
+
+/*
+ * Admin → Settings: the runtime-configurable settings (SMTP, push, reminder times).
+ * Secrets are write-only; every change is audited by key name, never by value.
+ */
+Route::middleware(['auth', 'cap:settings.manage'])
+    ->prefix('admin')
+    ->name('admin.')
+    ->group(function () {
+        Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
+        Route::put('/settings', [SettingsController::class, 'update'])->name('settings.update');
     });
 
 /*

@@ -75,17 +75,17 @@ class AccessControlPageTest extends TestCase
         ]);
     }
 
-    public function test_a_nurse_is_forbidden_and_an_access_denied_row_is_written(): void
+    public function test_a_resident_is_forbidden_and_an_access_denied_row_is_written(): void
     {
-        $nurse = User::factory()->create(['position' => 1]);
+        $resident = User::factory()->create(['position' => 4]);
 
-        $this->actingAs($nurse)
+        $this->actingAs($resident)
             ->get('/admin/access-control')
             ->assertForbidden();
 
         $this->assertDatabaseHas('audit_log', [
             'action' => 'access_denied',
-            'user_id' => $nurse->id,
+            'user_id' => $resident->id,
             'detail' => 'cap=access.manage',
         ]);
     }
@@ -98,42 +98,42 @@ class AccessControlPageTest extends TestCase
     public function test_update_role_persists_added_and_removed_capabilities_and_audits(): void
     {
         $admin = User::factory()->create(['position' => 0]);
-        $nurse = User::factory()->create(['position' => 1]);
+        $resident = User::factory()->create(['position' => 4]);
 
-        // Nurse (position 1) holds only profile.manage — not endorsement.edit.
-        $this->assertTrue(AccessControl::allows($nurse, 'profile.manage'));
-        $this->assertFalse(AccessControl::allows($nurse, 'endorsement.edit'));
+        // Resident (position 4) holds profile.manage but NOT endorsement.compliance.
+        $this->assertTrue(AccessControl::allows($resident, 'profile.manage'));
+        $this->assertFalse(AccessControl::allows($resident, 'endorsement.compliance'));
 
-        // New desired set: current minus profile.manage, plus endorsement.edit.
-        $current = RoleCapability::where('position', 1)->pluck('capability_id')->all();
+        // New desired set: current minus profile.manage, plus endorsement.compliance.
+        $current = RoleCapability::where('position', 4)->pluck('capability_id')->all();
         $desired = array_values(array_diff($current, [$this->capId('profile.manage')]));
-        $desired[] = $this->capId('endorsement.edit');
+        $desired[] = $this->capId('endorsement.compliance');
 
         $this->actingAs($admin)
             ->put('/admin/access-control/role', [
-                'position' => 1,
+                'position' => 4,
                 'capability_ids' => $desired,
             ])
             ->assertRedirect();
 
         // The role_capabilities rows now match exactly (added row present, removed row gone).
         $this->assertDatabaseHas('role_capabilities', [
-            'position' => 1,
-            'capability_id' => $this->capId('endorsement.edit'),
+            'position' => 4,
+            'capability_id' => $this->capId('endorsement.compliance'),
         ]);
         $this->assertDatabaseMissing('role_capabilities', [
-            'position' => 1,
+            'position' => 4,
             'capability_id' => $this->capId('profile.manage'),
         ]);
 
         // The change is reflected through the resolver (cache busted via generation bump).
-        $this->assertTrue(AccessControl::allows($nurse, 'endorsement.edit'));
-        $this->assertFalse(AccessControl::allows($nurse, 'profile.manage'));
+        $this->assertTrue(AccessControl::allows($resident, 'endorsement.compliance'));
+        $this->assertFalse(AccessControl::allows($resident, 'profile.manage'));
 
         $this->assertDatabaseHas('audit_log', [
             'action' => 'access_role_update',
             'user_id' => $admin->id,
-            'detail' => 'position=1;caps='.count($desired),
+            'detail' => 'position=4;caps='.count($desired),
         ]);
     }
 
@@ -157,19 +157,19 @@ class AccessControlPageTest extends TestCase
         $this->actingAs($admin)
             ->from('/admin/access-control')
             ->put('/admin/access-control/role', [
-                'position' => 1,
+                'position' => 4,
                 'capability_ids' => [999999],
             ])
             ->assertSessionHasErrors('capability_ids.0');
     }
 
-    public function test_a_nurse_cannot_edit_role_defaults(): void
+    public function test_a_resident_cannot_edit_role_defaults(): void
     {
-        $nurse = User::factory()->create(['position' => 1]);
+        $resident = User::factory()->create(['position' => 4]);
 
-        $this->actingAs($nurse)
+        $this->actingAs($resident)
             ->put('/admin/access-control/role', [
-                'position' => 1,
+                'position' => 4,
                 'capability_ids' => [$this->capId('endorsement.reopen')],
             ])
             ->assertForbidden();
@@ -178,11 +178,11 @@ class AccessControlPageTest extends TestCase
     public function test_update_user_persists_a_grant_and_a_deny_and_audits(): void
     {
         $admin = User::factory()->create(['position' => 0]);
-        $nurse = User::factory()->create(['position' => 1]);
+        $resident = User::factory()->create(['position' => 4]);
 
         $this->actingAs($admin)
             ->put('/admin/access-control/user', [
-                'user_id' => $nurse->id,
+                'user_id' => $resident->id,
                 'overrides' => [
                     $this->capId('endorsement.reopen') => 'grant',
                     $this->capId('profile.manage') => 'deny',
@@ -191,77 +191,77 @@ class AccessControlPageTest extends TestCase
             ->assertRedirect();
 
         $this->assertDatabaseHas('user_capabilities', [
-            'user_id' => $nurse->id,
+            'user_id' => $resident->id,
             'capability_id' => $this->capId('endorsement.reopen'),
             'effect' => 'grant',
         ]);
         $this->assertDatabaseHas('user_capabilities', [
-            'user_id' => $nurse->id,
+            'user_id' => $resident->id,
             'capability_id' => $this->capId('profile.manage'),
             'effect' => 'deny',
         ]);
 
         // End-to-end: the grant adds endorsement.reopen, and the deny removes an otherwise
         // role-granted profile.manage (deny wins).
-        $this->assertTrue(AccessControl::allows($nurse, 'endorsement.reopen'));
-        $this->assertFalse(AccessControl::allows($nurse, 'profile.manage'));
+        $this->assertTrue(AccessControl::allows($resident, 'endorsement.reopen'));
+        $this->assertFalse(AccessControl::allows($resident, 'profile.manage'));
 
         $this->assertDatabaseHas('audit_log', [
             'action' => 'access_user_update',
             'user_id' => $admin->id,
-            'detail' => 'user='.$nurse->id.';overrides=2',
+            'detail' => 'user='.$resident->id.';overrides=2',
         ]);
     }
 
     public function test_update_user_removes_overrides_omitted_from_the_submitted_set(): void
     {
         $admin = User::factory()->create(['position' => 0]);
-        $nurse = User::factory()->create(['position' => 1]);
+        $resident = User::factory()->create(['position' => 4]);
 
         // Pre-existing grant that should be removed when omitted from a fresh submission.
         UserCapability::create([
-            'user_id' => $nurse->id,
+            'user_id' => $resident->id,
             'capability_id' => $this->capId('endorsement.reopen'),
             'effect' => 'grant',
         ]);
-        AccessControl::flush($nurse->id);
-        $this->assertTrue(AccessControl::allows($nurse, 'endorsement.reopen'));
+        AccessControl::flush($resident->id);
+        $this->assertTrue(AccessControl::allows($resident, 'endorsement.reopen'));
 
         // Submit an empty override set -> all explicit overrides for the user are cleared.
         $this->actingAs($admin)
             ->put('/admin/access-control/user', [
-                'user_id' => $nurse->id,
+                'user_id' => $resident->id,
                 'overrides' => [],
             ])
             ->assertRedirect();
 
         $this->assertDatabaseMissing('user_capabilities', [
-            'user_id' => $nurse->id,
+            'user_id' => $resident->id,
             'capability_id' => $this->capId('endorsement.reopen'),
         ]);
-        $this->assertFalse(AccessControl::allows($nurse, 'endorsement.reopen'));
+        $this->assertFalse(AccessControl::allows($resident, 'endorsement.reopen'));
     }
 
     public function test_update_user_rejects_an_unknown_effect(): void
     {
         $admin = User::factory()->create(['position' => 0]);
-        $nurse = User::factory()->create(['position' => 1]);
+        $resident = User::factory()->create(['position' => 4]);
 
         $this->actingAs($admin)
             ->from('/admin/access-control')
             ->put('/admin/access-control/user', [
-                'user_id' => $nurse->id,
+                'user_id' => $resident->id,
                 'overrides' => [$this->capId('endorsement.reopen') => 'sometimes'],
             ])
             ->assertSessionHasErrors('overrides.'.$this->capId('endorsement.reopen'));
     }
 
-    public function test_a_nurse_cannot_edit_user_overrides(): void
+    public function test_a_resident_cannot_edit_user_overrides(): void
     {
-        $nurse = User::factory()->create(['position' => 1]);
-        $victim = User::factory()->create(['position' => 1]);
+        $resident = User::factory()->create(['position' => 4]);
+        $victim = User::factory()->create(['position' => 4]);
 
-        $this->actingAs($nurse)
+        $this->actingAs($resident)
             ->put('/admin/access-control/user', [
                 'user_id' => $victim->id,
                 'overrides' => [$this->capId('endorsement.reopen') => 'grant'],
@@ -272,20 +272,20 @@ class AccessControlPageTest extends TestCase
     public function test_selecting_a_user_returns_their_effective_caps_and_overrides(): void
     {
         $admin = User::factory()->create(['position' => 0]);
-        $nurse = User::factory()->create(['position' => 1]);
+        $resident = User::factory()->create(['position' => 4]);
 
         UserCapability::create([
-            'user_id' => $nurse->id,
+            'user_id' => $resident->id,
             'capability_id' => $this->capId('endorsement.reopen'),
             'effect' => 'grant',
         ]);
 
         $this->actingAs($admin)
-            ->get('/admin/access-control?user_id='.$nurse->id)
+            ->get('/admin/access-control?user_id='.$resident->id)
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Admin/AccessControl')
-                ->where('selectedUser.id', $nurse->id)
+                ->where('selectedUser.id', $resident->id)
                 ->where('selectedUser.overrides.'.$this->capId('endorsement.reopen'), 'grant')
                 ->has('selectedUser.effective')
             );
@@ -294,10 +294,10 @@ class AccessControlPageTest extends TestCase
     public function test_role_update_busts_the_cache_by_generation_without_flushing_unrelated_cache(): void
     {
         $admin = User::factory()->create(['position' => 0]);
-        $nurse = User::factory()->create(['position' => 1]);
+        $resident = User::factory()->create(['position' => 4]);
 
-        // Warm the resolver cache for the nurse.
-        $this->assertFalse(AccessControl::allows($nurse, 'endorsement.edit'));
+        // Warm the resolver cache for the resident (compliance is NOT a resident default).
+        $this->assertFalse(AccessControl::allows($resident, 'endorsement.compliance'));
 
         // Unrelated cache state that MUST survive a role update (e.g. a rate-limiter counter
         // and an arbitrary cached value). A global Cache::flush() would wipe these.
@@ -305,20 +305,20 @@ class AccessControlPageTest extends TestCase
         RateLimiter::hit('probe-key', 600);
         $this->assertSame(1, RateLimiter::attempts('probe-key'));
 
-        // Grant endorsement.edit to the nurse's role.
-        $desired = RoleCapability::where('position', 1)->pluck('capability_id')->all();
-        $desired[] = $this->capId('endorsement.edit');
+        // Grant endorsement.compliance to the resident's role.
+        $desired = RoleCapability::where('position', 4)->pluck('capability_id')->all();
+        $desired[] = $this->capId('endorsement.compliance');
 
         $this->actingAs($admin)
             ->put('/admin/access-control/role', [
-                'position' => 1,
+                'position' => 4,
                 'capability_ids' => $desired,
             ])
             ->assertRedirect();
 
         // The role change is visible (cache busted via generation), and the unrelated cache
         // entries are intact (no Cache::flush()).
-        $this->assertTrue(AccessControl::allows($nurse, 'endorsement.edit'));
+        $this->assertTrue(AccessControl::allows($resident, 'endorsement.compliance'));
         $this->assertSame('keep-me', Cache::get('unrelated.value'));
         $this->assertSame(1, RateLimiter::attempts('probe-key'));
     }

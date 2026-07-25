@@ -763,13 +763,14 @@ class EndorsementController extends Controller
      * The roles that may be named as ENDORSED BY / ENDORSED TO — the clinician who personally
      * handed over, and the one who personally received.
      *
-     * RULING 6 — RESIDENTS ALONE (position 4), exactly as legacy sourced both pickers
+     * RULING 6 — RESIDENTS ALONE, exactly as legacy sourced both pickers
      * (`members WHERE position='4'`, `picu-endorsement-patients.php:397`). The reference app
-     * had widened this to [2,3,4]; the owner ruled to keep legacy parity.
+     * had widened this to [2,3,4]; the owner ruled to keep legacy parity. A CHIEF RESIDENT
+     * (5) is a resident clinically — promotion must not remove them from the handover.
      *
      * @var list<int>
      */
-    private const ENDORSER_POSITIONS = [4];
+    private const ENDORSER_POSITIONS = [4, 5];
 
     /**
      * The roles offered for the two CONSULTANT fields. These name the COVERING / RECEIVING

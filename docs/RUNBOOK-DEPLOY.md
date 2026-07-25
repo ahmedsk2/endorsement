@@ -1,130 +1,118 @@
-# Deployment runbook — endorse.towardpcc.com (owner-run)
+# Deployment runbook — endorse.towardpcc.com
 
-Target: the existing Coolify host in **OCI me-riyadh-1** (in-Kingdom, which is what keeps
-the PDPL data-residency position simple). Coolify 4.1.2, Traefik already owns :80/:443 on
-the `coolify` docker network.
+Hosted on the existing Coolify host in **OCI me-riyadh-1** (in-Kingdom, which is what keeps
+the PDPL data-residency position simple). Coolify 4.1.2, Traefik owns :80/:443 on the
+`coolify` docker network.
 
 | | |
 | --- | --- |
 | Host public IP | `145.241.105.239` |
 | Domain | `endorse.towardpcc.com` |
-| Stack | `docker-compose.production.yml` (app + dedicated MySQL 8.4) |
+| Coolify dashboard | `deploy.towardpcc.com` |
+| Coolify project | `clinical` — deliberately separate from `demos` / `migrated-sites` |
+| Coolify app | `endorsement` (Docker Compose build pack) |
 | Repo | `github.com/ahmedsk2/endorsement`, branch `main` |
+| Compose file | `/docker-compose.production.yml` |
 
-**You run every step here.** Migrations and live-DB changes are yours by project rule, and
-no secret in this document has a value written down — you supply them in the Coolify UI.
-
----
-
-## 1. DNS (Cloudflare) — you add one record
-
-| Type | Name | Content | Proxy | TTL |
-| --- | --- | --- | --- | --- |
-| A | `endorse` | `145.241.105.239` | **DNS only (grey cloud)** | Auto |
-
-Grey cloud **for the first deploy only**. Let's Encrypt validates over HTTP-01, which
-Traefik answers directly on port 80; with the orange cloud on before the certificate
-exists, Cloudflare terminates TLS itself and the challenge never reaches Traefik.
-
-Once the certificate is issued (step 5 shows a real Let's Encrypt cert), you may switch
-the record to **Proxied (orange)**. If you do, set Cloudflare SSL/TLS mode to
-**Full (strict)** — anything less lets Cloudflare talk plain HTTP to the origin, which
-would put clinical traffic in the clear on the last hop.
-
-Verify before continuing:
-
-```bash
-nslookup endorse.towardpcc.com
-```
+Identifiers (project/app/DNS-record/deploy-key UUIDs) are recorded in
+`ORACLE MCP/infra/state.env` as `ENDORSE_*`, alongside the other apps on this host.
 
 ---
 
-## 2. Push the code
+## As configured
 
-Already committed on `main`. From the project directory:
+**DNS.** Cloudflare `A endorse → 145.241.105.239`, **DNS only (grey cloud)**. Grey matters
+for certificate issuance: Let's Encrypt validates over HTTP-01 and Traefik answers that on
+port 80, but with the orange cloud on, Cloudflare terminates TLS itself and the challenge
+never reaches Traefik. You may switch to **Proxied** now that the certificate exists — if
+you do, set Cloudflare SSL/TLS mode to **Full (strict)**, or Cloudflare will talk plain
+HTTP to the origin on the last hop.
+
+**Routing.** The domain is set on the compose `app` service as
+`https://endorse.towardpcc.com:8080` — the `:8080` is Coolify's syntax for the container
+port (the app runs unprivileged and cannot bind 80). Coolify generates the Traefik routers,
+the `redirect-to-https` middleware and the Let's Encrypt certificate from that one field.
+`docker-compose.production.yml` therefore carries **no `traefik.*` labels of its own**;
+adding any would create a second router competing for the same host.
+
+**Repo access.** A dedicated ed25519 **read-only** deploy key, held in Coolify and
+registered on the GitHub repo. Not a GitHub App, not an account credential — it can clone
+this one repository and nothing else.
+
+**Database.** A dedicated `mysql:8.4` container on an `internal`-only network: not on the
+shared `coolify` network, and publishing no host port. Children's health data does not
+share an engine, a root account or a backup with unrelated projects, and no other app on
+this host can reach it. `docker/smoke.sh` asserts both properties on every run.
+
+**Secrets.** `APP_KEY`, `MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD` and `BACKUP_PASSPHRASE` live
+in Coolify's environment-variable store and are mirrored in `infra/secrets.env` as
+`ENDORSE_*`. They are 48-character alphanumeric by construction: Coolify feeds these into
+`docker compose`, which performs `$`-interpolation on env values, so a password containing
+`$` would be silently truncated into something weaker. Coolify's preview-environment copies
+of each variable were deleted — PR previews are not in use, and a second copy of the
+production database password is not worth having.
+
+> **APP_KEY is not a routine secret.** Patient name, MRN, DOB and all four rich-text fields
+> are encrypted with it in the database. Lose it and the clinical record is unrecoverable
+> ciphertext; a restored backup will not help. Rotating it is a data migration, not a config
+> change. Keep it in your password manager, and **not** in the same place as
+> `BACKUP_PASSPHRASE` — a backup and its key should never sit together. Custody rules:
+> `docs/RUNBOOK-BACKUP.md`.
+
+SMTP and web-push VAPID keys are **not** environment variables — configure them in-app at
+**Admin → Settings**, where they are stored encrypted.
+
+---
+
+## Deploying a change
 
 ```bash
 git push origin main
 ```
 
-The repo is private; Coolify authenticates with the GitHub App or a deploy key you
-configure once under **Sources**.
+Then **Deploy** in Coolify (or let the webhook fire, if you enable one). The container
+**does not migrate at boot** — `docker/entrypoint.sh` deliberately never touches the
+schema, so an unattended 3am restart can never alter a clinical database. It does rebuild
+the config/route/view caches against the real environment and refuses to start without
+`APP_KEY`.
 
----
+If a release adds migrations, run them yourself after the deploy (next section).
 
-## 3. Create the application in Coolify
-
-**+ New → Resource → Docker Compose** (not "Dockerfile" — the compose file also brings up
-the dedicated database).
-
-| Field | Value |
-| --- | --- |
-| Source | GitHub → `ahmedsk2/endorsement` |
-| Branch | `main` |
-| Build pack | Docker Compose |
-| Compose file | `docker-compose.production.yml` |
-| Base directory | `/` |
-| Domain (service `app`) | `https://endorse.towardpcc.com:8080` |
-
-The `:8080` suffix is Coolify's syntax for "route to container port 8080" — the app's
-nginx listens there, and the container runs unprivileged so it cannot bind 80. Coolify
-generates the Traefik router, the HTTP→HTTPS redirect and the Let's Encrypt certificate
-from that one field; the compose file deliberately carries **no** `traefik.*` labels so
-there is only ever one router per host.
-
-Leave the `db` service with **no domain** — it must not be reachable from outside.
-
----
-
-## 4. Environment variables
-
-**Settings → Environment Variables.** Mark every one **Build Variable: off**, and the
-secrets as locked/hidden. Generate values yourself — never paste them into a chat.
-
-| Key | Value | Notes |
-| --- | --- | --- |
-| `APP_NAME` | `Paediatric Endorsement` | shown in the UI and on printed sheets |
-| `APP_URL` | `https://endorse.towardpcc.com` | must match exactly, or signed URLs (email verification) break |
-| `APP_KEY` | generate: `php artisan key:generate --show` | **the encryption key for all PHI** — see below |
-| `MYSQL_DATABASE` | `endorsement` | |
-| `MYSQL_USER` | `endorse` | |
-| `MYSQL_PASSWORD` | 32+ random chars | app's DB login |
-| `MYSQL_ROOT_PASSWORD` | 32+ random chars, **different** | never used by the app |
-| `BACKUP_PASSPHRASE` | 32+ random chars, **different again** | encrypts the nightly dump |
-
-> **APP_KEY is not a routine secret.** Patient name, MRN, DOB and all four rich-text
-> fields are encrypted with it in the database. Lose it and the clinical record is
-> unrecoverable ciphertext — a restored backup will not help. Rotating it is a data
-> migration, not a config change. Store it in your password manager *before* the first
-> deploy, separately from `BACKUP_PASSPHRASE` (a backup and its key must never sit in the
-> same place). Full custody rules: `docs/RUNBOOK-BACKUP.md`.
-
-SMTP and web-push VAPID keys are **not** set here — configure them in-app at
-**Admin → Settings** after login, where they are stored encrypted.
-
----
-
-## 5. Deploy and issue the certificate
-
-Press **Deploy**. First build takes roughly 4–6 minutes on this ARM host (npm + composer);
-later builds reuse cached layers.
-
-The app boots but **does not migrate** — `docker/entrypoint.sh` deliberately never touches
-the schema, so a restart can never alter your data. Expect the health check to be green
-and the site to error until you run step 6.
-
-Watch for: `Certificate obtained successfully` in the Coolify proxy logs, then
+### Before you push anything that touches the image or the compose file
 
 ```bash
-curl -sI https://endorse.towardpcc.com/up | head -3
+bash docker/smoke.sh
 ```
+
+Run it **on the host**. It brings up a throwaway copy of the real production stack — its own
+compose project, its own volumes, generated credentials — and asserts what the PHP and JS
+suites structurally cannot: the image boots, MySQL accepts the compose file's flags,
+migrations apply against real MySQL, `/up` returns 200, php-fpm runs as the user owning
+`storage/`, and the database is neither on the shared proxy network nor publishing a port.
+It tears itself down, including on failure.
+
+It exists because three bugs reached a deployment while all 299 unit tests passed:
+
+- a global middleware calling `$request->user()` on the session-less `/up` route — health
+  check permanently red, every real page fine;
+- php-fpm running as `www-data` against storage owned by `app` — signature uploads failing
+  silently;
+- `--default-authentication-plugin` in the compose file, **removed in MySQL 8.4**, so mysqld
+  aborted at boot and the first deployment failed. The earlier smoke script ran
+  `docker run mysql:8.4` by hand and could not see a compose-file bug at all. Test the
+  artifact you ship.
 
 ---
 
-## 6. Initialise the database (once)
+## Database operations (yours to run)
 
-From **Coolify → the app → Terminal**, or over SSH with
-`docker exec -it <app-container> sh`:
+Open a shell from **Coolify → the app → Terminal**, or over SSH:
+
+```bash
+docker exec -it $(docker ps -qf name=app-oo7d7si62yhyi7fx10hrck6q) sh
+```
+
+Initial setup, once:
 
 ```bash
 php artisan migrate --force
@@ -134,89 +122,70 @@ php artisan migrate --force
 php artisan db:seed --force
 ```
 
-That runs exactly two seeders: `ReferenceSeeder` (the four units + the institution) and
-`AccessControlSeeder` (the capability catalogue and role grants). It does **not** touch
-`DemoSeeder` or `E2eSeeder` — those create fictional logins whose password is published in
+`db:seed` runs exactly two seeders — `ReferenceSeeder` (the four units + the institution)
+and `AccessControlSeeder` (the capability catalogue and role grants). It does **not** touch
+`DemoSeeder` or `E2eSeeder`: those create fictional logins whose password is published in
 the repo docs, are not wired into `DatabaseSeeder`, and throw if invoked with
 `APP_ENV=production`. Never call them by name here.
 
-Create the first administrator. This is the only way in: registration produces a *pending
-Resident*, and approving one requires an administrator who does not exist yet. The command
-prompts for everything and never echoes the password:
+Create the first administrator. **This is the only way in** — registration produces a
+*pending Resident*, and approving one requires an administrator who does not exist yet:
 
 ```bash
 php artisan user:create-admin
 ```
 
-It refuses a username that already exists (so a careless re-run cannot reset a real
-administrator's password) and applies the same password policy as the registration form.
-Your first sign-in will redirect you to your profile to enrol a second factor — admin
-screens are unreachable without one, by design.
+It prompts for everything, never echoes the password, applies the same password policy as
+the registration form, and refuses a username that already exists so a careless re-run
+cannot reset a real administrator's password. Your first sign-in redirects you to your
+profile to enrol a second factor — the admin screens are unreachable without one, by design.
 
-Then register the real clinicians through the normal registration page and promote them
-from **Admin → Access Control**. Nothing is imported: the system starts clean, by your
-decision of 2026-07-25 (`docs/RUNBOOK-IMPORT.md` keeps the importer available if the unit
-ever changes its mind).
+Nothing is imported: the system starts clean, by your decision of 2026-07-25.
+`docs/RUNBOOK-IMPORT.md` keeps the importer available if the unit ever changes its mind.
 
 ---
 
-## 7. Verify the live deployment
+## Verify
 
 ```bash
 curl -sI https://endorse.towardpcc.com/up
 ```
 
 Expect `200`, plus `strict-transport-security`, `content-security-policy`,
-`x-frame-options: DENY` and `referrer-policy: no-referrer`.
-
-Then, signed in:
+`x-frame-options: DENY` and `referrer-policy: no-referrer`. Then, signed in:
 
 - **Admin → Settings** — set SMTP, send the test email, generate the VAPID pair.
 - Register a throwaway account and confirm the verification email arrives.
 - Open a unit, add a patient row, type in a rich-text field, **reload** — the text must
-  still be there and still coloured (that is the legacy production bug this system fixes).
-- Print a signed day and confirm names + signatures render.
-- Confirm the scheduler is alive:
-
-  ```bash
-  php artisan schedule:list
-  ```
-
-  Six jobs: two handover reminders (07:30 / 15:30), `audit:verify` hourly, `backup:run`
-  01:30, `data:retention` 02:30.
-
-- Confirm the audit chain is intact:
-
-  ```bash
-  php artisan audit:verify
-  ```
+  still be there and still coloured. That is the legacy production bug this system fixes.
+- Print a signed day; confirm names and signatures render.
+- `php artisan schedule:list` — six jobs: handover reminders at 07:30 and 15:30,
+  `audit:verify` hourly, `backup:run` 01:30, `data:retention` 02:30.
+- `php artisan audit:verify` — the hash chain is intact.
 
 ---
 
-## 8. Backups
+## Backups
 
-The nightly encrypted dump is already scheduled inside the container and lands in the
-`endorsement-backups` volume. **A backup that only exists on the machine it backs up is
-not a backup** — pull it off-host on a schedule, per `docs/RUNBOOK-BACKUP.md`, which also
-covers the local-copy step and the restore drill. Do the restore drill once before you
-trust it.
+The nightly encrypted dump is scheduled inside the container and lands in the
+`endorsement-backups` volume. **A backup that only exists on the machine it backs up is not
+a backup** — pull it off-host on a schedule, per `docs/RUNBOOK-BACKUP.md`, which also covers
+the local copy and the restore recipe. Do the restore drill once before you trust it.
 
 ---
 
 ## Rollback
 
-Coolify keeps previous deployments: **Deployments → the last good one → Redeploy**. That
-reverts code only. It does **not** revert migrations — if a release migrated the schema,
-roll back by restoring the database backup taken before it, then redeploying the matching
-image.
+**Coolify → Deployments → the last good one → Redeploy.** That reverts code only. It does
+**not** revert migrations: if the release migrated the schema, restore the database backup
+taken before it, then redeploy the matching commit.
 
 ---
 
 ## Deploying without Coolify (fallback)
 
-If Coolify is ever unavailable, the same compose file runs by hand — but then nothing
-generates the Traefik router, so add these labels to the `app` service and supply an
-`--env-file`:
+The compose file runs by hand, but then nothing generates the Traefik router — add these
+labels to the `app` service and supply an `--env-file`:
 
 ```yaml
 labels:
@@ -237,21 +206,3 @@ labels:
 ```bash
 docker compose -f docker-compose.production.yml --env-file .env.production up -d --build
 ```
-
----
-
-## Verifying a change before it reaches the ward
-
-`docker/smoke.sh` boots the built image against a throwaway MySQL and asserts what unit
-tests structurally cannot: that the image boots, migrations apply, `/up` returns 200, the
-security headers survive, php-fpm runs as the storage owner, and the scheduler is
-registered. Run it on the host after any Dockerfile or middleware change:
-
-```bash
-docker build -t endorsement-app:test . && bash docker/smoke.sh
-```
-
-It tears its own containers down, including on failure. It caught two bugs that all 293
-unit tests passed straight through: a global middleware calling `$request->user()` on the
-session-less `/up` route (health check permanently red, every page fine), and php-fpm
-running as `www-data` against storage owned by `app` (signature uploads silently failing).

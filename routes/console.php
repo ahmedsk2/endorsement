@@ -46,6 +46,15 @@ Schedule::command('backup:run')
         \App\Support\OpsAlert::critical('Nightly backup FAILED', 'No recoverable copy of the clinical record was produced tonight.');
     });
 
+// Detection, as distinct from integrity: audit:verify proves the chain is intact, which
+// is a different question from whether anything alarming happened inside it. Every insider
+// scenario in the threat model was audited and unwatched.
+Schedule::command('audit:anomalies')
+    ->hourly()
+    ->onFailure(function (): void {
+        \App\Support\OpsAlert::critical('Audit anomaly sweep FAILED', 'Suspicious-activity detection did not run.');
+    });
+
 Schedule::command('data:retention --force')
     ->dailyAt('02:30')
     ->onFailure(function (): void {

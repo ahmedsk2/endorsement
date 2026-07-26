@@ -82,4 +82,10 @@ missed-days counter), no nursing sheets.
 - Every clinical write calls `assertDayUnlocked()`. `newDay` was the one that didn't.
 - `/up` must prove the DATABASE is reachable (connection, not a table — it has to pass
   before the first migration) or the container reports healthy while every page 500s.
+- The audit canonical string has exactly ONE definition (`AuditChain::canonical()`), shared
+  by the writer and `audit:verify`. Two copies drifted the day `APP_TIMEZONE` was set and
+  the live system announced its whole trail as tampered; nothing had been. Never re-parse a
+  stored naive datetime in the *current* timezone — v3 hashes it verbatim for that reason.
+  A test that only calls `config(['app.timezone' => ...])` proves nothing: it does not move
+  PHP's default timezone, so `now()` and `Carbon::parse()` don't move either.
 - Full detail: `docs/SECURITY-AUDIT-2026-07-26.md`, `docs/PRODUCTION-READINESS-2026-07-26.md`.

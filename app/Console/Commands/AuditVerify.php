@@ -41,7 +41,8 @@ class AuditVerify extends Command
                     (string) $row->detail,
                     (string) $row->ip,
                     // Stored as UTC in the DB; canonicalised exactly as AuditLog::record did.
-                    \Illuminate\Support\Carbon::parse($row->created_at)->toIso8601String(),
+                    // Must match AuditLog::record exactly — UTC, not the display timezone.
+                    \Illuminate\Support\Carbon::parse($row->created_at)->utc()->toIso8601String(),
                 ]);
 
                 // Verify each row under the algorithm it was WRITTEN with, so introducing

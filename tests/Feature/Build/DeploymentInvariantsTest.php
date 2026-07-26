@@ -129,4 +129,28 @@ class DeploymentInvariantsTest extends TestCase
             $this->assertStringContainsString($path, $ignore, "[{$path}] must be excluded from the image");
         }
     }
+
+    /**
+     * Hardcoded to 'UTC', config/app.php silently ignored APP_TIMEZONE — so a container
+     * configured for the ward still ran three hours behind it. The handover reminders that
+     * this system exists to send fired at 10:30 and 18:30 local instead of 07:30 and 15:30,
+     * and the day boundary sat at 03:00, filing night-shift entries under the wrong date.
+     */
+    public function test_the_application_timezone_comes_from_the_environment(): void
+    {
+        $this->assertMatchesRegularExpression(
+            "/'timezone'\s*=>\s*env\(\s*'APP_TIMEZONE'/",
+            (string) file_get_contents(config_path('app.php')),
+            'config/app.php must read APP_TIMEZONE or setting it in the environment does nothing',
+        );
+    }
+
+    public function test_the_deployment_sets_the_wards_timezone(): void
+    {
+        $this->assertStringContainsString(
+            'APP_TIMEZONE: Asia/Riyadh',
+            $this->compose(),
+            'the container must be told which timezone the ward is in',
+        );
+    }
 }

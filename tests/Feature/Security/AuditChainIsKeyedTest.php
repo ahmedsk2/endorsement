@@ -79,7 +79,10 @@ class AuditChainIsKeyedTest extends TestCase
     {
         // A security improvement must not retroactively declare correctly-recorded history
         // invalid — an hourly check that cries wolf is one nobody reads.
-        $canonical = implode('|', ['1', 'login', 'member=1', '10.0.0.1', now()->toIso8601String()]);
+        // Built in UTC, exactly as AuditLog::record does. A legacy row was written by the
+        // same code path, so a fixture that canonicalises in the display timezone is
+        // testing a row the application would never have produced.
+        $canonical = implode('|', ['1', 'login', 'member=1', '10.0.0.1', now()->utc()->toIso8601String()]);
 
         DB::table('audit_log')->insert([
             'user_id' => 1,
@@ -105,5 +108,22 @@ class AuditChainIsKeyedTest extends TestCase
         $appKey = (string) config('app.key');
         $this->assertNotSame(hash_hmac('sha256', $canonical, $appKey), $hash);
         $this->assertNotSame(hash('sha256', $canonical), $hash);
+    }
+
+    public function test_the_chain_survives_a_change_of_application_timezone(): void
+    {
+        // The trap that made fixing APP_TIMEZONE risky. The canonical string included
+        // toIso8601String(), which renders in the DISPLAY timezone — so the day someone set
+        // the app to Asia/Riyadh, every row already written would re-render with a +03:00
+        // offset, hash differently, and audit:verify would report the trail as tampered.
+        // On a control whose whole job is tamper-evidence, a false positive is as damaging
+        // as a false negative: it teaches its reader to ignore it.
+        config(['app.timezone' => 'UTC']);
+        AuditLog::record('login', 'member=1', 1, '10.0.0.1');
+        AuditLog::record('endorsement_view', 'unit=1', 1, '10.0.0.1');
+
+        config(['app.timezone' => 'Asia/Riyadh']);
+
+        $this->artisan('audit:verify')->assertExitCode(0);
     }
 }

@@ -65,7 +65,12 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    // Reads the environment. Hardcoded to 'UTC' this silently ignored APP_TIMEZONE, so a
+    // container configured for Asia/Riyadh still ran three hours behind the ward: the 07:30
+    // and 15:30 handover reminders fired at 10:30 and 18:30 local, and — worse — the day
+    // boundary sat at 03:00 local, so a night-shift entry written at 01:00 filed under the
+    // previous date and the missed-days counter marked a covered day as missed.
+    'timezone' => env('APP_TIMEZONE', 'UTC'),
 
     /*
     |--------------------------------------------------------------------------

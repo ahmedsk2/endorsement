@@ -71,6 +71,20 @@ services:
     networks:
       - coolify
       - internal
+    labels:
+      # THE ONLY traefik label here, and it is not a router — it is a HINT.
+      #
+      # This container sits on three networks (coolify, the per-app network Coolify
+      # creates, and internal for the database). coolify-proxy is not on `internal`. With
+      # no hint Traefik picks one of the container's networks to dial, and because Go map
+      # iteration is randomised that choice can differ on every deploy — pick `internal`
+      # and every request times out at 30s and the site returns 504 while the container
+      # sits there healthy. That is exactly what happened on 2026-07-27; it had been a
+      # coin-flip on every previous deploy and simply never lost before.
+      #
+      # Routers still come from Coolify's Domains field. Adding a rule here would create a
+      # second router competing for the same host — see the header of this file.
+      - traefik.docker.network=coolify
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/up"]
       interval: 30s

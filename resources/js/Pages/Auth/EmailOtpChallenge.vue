@@ -20,7 +20,7 @@ const notice = computed(() => usePage().props.flash?.status ?? null);
 </script>
 
 <template>
-    <AuthLayout title="Enter your code" heading="Check your email"
+    <AuthLayout title="Enter your code" heading="Check your email" hero-src="/img/auth-dawn.webp"
                 :subheading="`We sent a ${6}-digit code to ${props.hint}.`">
         <div role="status" aria-live="polite">
             <p v-if="notice" class="channel-bar channel-bar-ok mb-5 rounded-md bg-ok-soft px-3 py-2 text-sm text-ink">

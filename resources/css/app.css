@@ -157,6 +157,26 @@
         display: block;
     }
 
+    /* Legibility floor for the white text over the illustration. Two ramps: one across
+       (the brand panel is the left 54%), one up from the bottom (where the strapline and
+       chips sit). Both fade out well before the curve, so the form surface is untouched. */
+    .auth-hero-scrim {
+        position: absolute;
+        inset: 0;
+        background-image:
+            linear-gradient(
+                to right,
+                color-mix(in srgb, var(--color-ink) 82%, transparent) 0%,
+                color-mix(in srgb, var(--color-ink) 58%, transparent) 34%,
+                transparent 62%
+            ),
+            linear-gradient(
+                to top,
+                color-mix(in srgb, var(--color-ink) 55%, transparent) 0%,
+                transparent 48%
+            );
+    }
+
     .auth-hero-curve {
         position: absolute;
         inset: 0;

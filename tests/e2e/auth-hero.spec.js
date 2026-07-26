@@ -48,6 +48,74 @@ test.describe('signed-out hero', () => {
         expect(box.x).toBeGreaterThan(1440 * CURVE_WHITE_STARTS_AT.wide);
     });
 
+    test('white text over the illustration still meets AA', async ({ page }) => {
+        // The one that matters. Measured against the real dawn render, the illustration's
+        // upper-left is pale mint sky — 1.24:1 against white, where AA needs 4.5. The drawn
+        // fallback happened to be dark there, so nothing revealed it until a photograph
+        // went in. The scrim is what fixes it, and this is what proves the scrim is enough.
+        //
+        // Composites the source pixel with both scrim ramps rather than screenshotting, so
+        // it needs no image-decoding dependency and fails loudly if either ramp is weakened.
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.goto('/login');
+        await page.locator('.auth-hero-img').waitFor();
+
+        const worst = await page.evaluate(() => {
+            const img = document.querySelector('img.auth-hero-img');
+
+            if (!img) {
+                return null; // drawn fallback in use; its colours are token-controlled
+            }
+
+            const c = document.createElement('canvas');
+            c.width = img.naturalWidth;
+            c.height = img.naturalHeight;
+            const ctx = c.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+
+            const INK = [11, 46, 51];
+            const lerp = (a, b, t) => a + (b - a) * t;
+            // Mirrors .auth-hero-scrim. If the CSS stops matching this, the test is lying.
+            const acrossRamp = (fx) => fx < 0.34 ? lerp(0.82, 0.58, fx / 0.34)
+                : fx < 0.62 ? lerp(0.58, 0, (fx - 0.34) / 0.28) : 0;
+            const upRamp = (fy) => fy > 0.52 ? lerp(0, 0.55, (fy - 0.52) / 0.48) : 0;
+            const over = (fg, a, bg) => fg.map((v, i) => v * a + bg[i] * (1 - a));
+            const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+            const vsWhite = ([r, g, b]) => 1.05 / (0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b) + 0.05);
+
+            const hero = document.querySelector('[data-testid="auth-hero"]').getBoundingClientRect();
+            const targets = [...document.querySelectorAll('aside h2, aside p')]
+                .filter((el) => !el.closest('.auth-glass') && el.textContent.trim());
+
+            let worst = Infinity;
+
+            for (const el of targets) {
+                const b = el.getBoundingClientRect();
+
+                if (!b.width || !b.height) continue;
+
+                for (let i = 0; i <= 12; i++) {
+                    for (let j = 0; j <= 4; j++) {
+                        const fx = (b.left + (b.width * i) / 12 - hero.left) / hero.width;
+                        const fy = (b.top + (b.height * j) / 4 - hero.top) / hero.height;
+                        const px = Math.max(0, Math.min(c.width - 1, Math.round(fx * (c.width - 1))));
+                        const py = Math.max(0, Math.min(c.height - 1, Math.round(fy * (c.height - 1))));
+                        const d = ctx.getImageData(px, py, 1, 1).data;
+
+                        let col = over(INK, upRamp(fy), [d[0], d[1], d[2]]);
+                        col = over(INK, acrossRamp(fx), col);
+                        worst = Math.min(worst, vsWhite(col));
+                    }
+                }
+            }
+
+            return Number.isFinite(worst) ? Number(worst.toFixed(2)) : null;
+        });
+
+        expect(worst, 'no measurable text found over the hero').not.toBeNull();
+        expect(worst, `worst white-on-illustration contrast is ${worst}:1`).toBeGreaterThanOrEqual(4.5);
+    });
+
     test('the decorative curve is hidden from assistive technology', async ({ page }) => {
         await page.goto('/login');
 

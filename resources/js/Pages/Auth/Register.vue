@@ -74,7 +74,7 @@ const submit = () =>
 </script>
 
 <template>
-    <AuthLayout title="Request access" heading="Request access" wide
+    <AuthLayout title="Request access" heading="Request access" wide hero-src="/img/auth-dawn.webp"
                 subheading="Confirm your email, then an administrator activates the account.">
             <form @submit.prevent="submit" class="space-y-4">
                 <div>

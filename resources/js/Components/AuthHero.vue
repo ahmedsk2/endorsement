@@ -84,7 +84,7 @@ onBeforeUnmount(() => {
     <div ref="root" class="auth-hero" data-testid="auth-hero">
         <!-- The scene. Each layer declares its own depth; the transform is shared. -->
         <div class="auth-hero-layer" style="--hero-depth: 0.35">
-            <img v-if="props.src" :src="props.src" alt="" width="1920" height="1080"
+            <img v-if="props.src" :src="props.src" alt="" width="1920" height="1072"
                  loading="eager" fetchpriority="high" class="auth-hero-img" />
 
             <!-- Drawn from tokens: complete before any asset exists. -->
@@ -107,6 +107,20 @@ onBeforeUnmount(() => {
                 </g>
             </svg>
         </div>
+
+        <!--
+          The scrim. NOT decoration — it is what makes the white text legible.
+
+          Measured against the real dawn render, the illustration's upper-left is pale mint
+          sky: 1.24:1 against white, where AA needs 4.5. The drawn fallback happened to be
+          dark in that region, so nothing revealed this until a photograph went in. Rather
+          than tune the copy to one image, the scrim guarantees a floor for ANY image —
+          swap the illustration and the text stays readable.
+
+          It sits above the scene and below the curve, so it darkens only the region the
+          brand panel occupies and never touches the form surface.
+        -->
+        <div class="auth-hero-scrim" aria-hidden="true"></div>
 
         <!--
           The curve. Decorative: it carries no information, it is the SHAPE of the form

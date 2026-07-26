@@ -22,7 +22,8 @@ const inputClass = 'w-full rounded-md border border-line bg-panel px-3 py-2 text
 </script>
 
 <template>
-    <AuthLayout title="Sign in" heading="Sign in" subheading="Use the account your unit administrator activated.">
+    <AuthLayout title="Sign in" heading="Sign in" hero-src="/img/auth-dawn.webp"
+                subheading="Use the account your unit administrator activated.">
         <!-- Announcements. Text is `ink` on the tinted panel: `text-ok` on `bg-ok-soft`
              measures 3.66:1 and fails AA, and this is the banner a newly-registered
              visitor reads. The colour is carried by the channel bar, which is structural. -->

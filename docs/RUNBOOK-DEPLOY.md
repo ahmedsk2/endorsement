@@ -255,3 +255,17 @@ Two false trails cost time and are worth naming:
 `scripts/verify-live.sh` catches this outage — it was green after the previous deploy,
 which is precisely when the coin had landed the other way. **Run it after every deploy**;
 it is the only check that exercises the real path from the edge to the container.
+
+Since 2026-07-27 this no longer depends on somebody remembering. The host runs
+`/usr/local/bin/endorsement-uptime-check` every five minutes against the PUBLIC url and
+logs to `/var/log/endorsement-uptime.log` on every state change. That is deliberately
+outside the container: the container's own HEALTHCHECK proves the app is alive, which is a
+different question from whether a clinician can reach it — and during this outage the first
+was green the entire time the second was false.
+
+```bash
+sudo tail /var/log/endorsement-uptime.log
+```
+
+It logs transitions only, plus one daily heartbeat at 07:00 so a silent log can be told
+apart from a stopped cron. **It has no notification channel yet** — see the owner checklist.

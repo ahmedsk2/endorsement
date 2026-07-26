@@ -261,6 +261,12 @@ class EndorsementController extends Controller
             'date' => $date,
             'rows' => $rows,
             'signoff' => $this->signoffPayload($u, $date),
+            // Paper is the one egress channel with no technical control downstream. The
+            // print is audited, but the SHEET itself carried nothing identifying who
+            // produced it, so a census found on a desk or in a bin was anonymous. This
+            // makes it attributable — which is also the cheapest deterrent there is.
+            'printed_by' => (string) ($request->user()?->full_name ?? ''),
+            'printed_at' => now()->format('Y-m-d H:i'),
         ]);
     }
 

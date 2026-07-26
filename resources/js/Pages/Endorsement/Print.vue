@@ -28,6 +28,8 @@ const props = defineProps({
      * Oncall field (ruling 5).
      */
     signoff: { type: Object, default: () => ({}) },
+    printed_by: { type: String, default: '' },
+    printed_at: { type: String, default: '' },
 });
 
 const profile = computed(() => props.unit.profile ?? {});
@@ -141,6 +143,15 @@ onMounted(() => {
             <p v-else class="print-signoff-stamp" data-testid="print-signoff-unsigned">
                 NOT SIGNED OFF — this sheet has no shift attestation.
             </p>
+
+            <!--
+              Attribution. Paper leaves the building and nothing downstream controls it; an
+              unattributed census found on a desk tells you nothing about where it came from.
+            -->
+            <p v-if="printed_by" class="print-attribution" data-testid="print-attribution">
+                Printed by {{ printed_by }} — {{ printed_at }} — {{ unit.code }} {{ date }}.
+                Contains patient-identifiable information: handle and dispose of accordingly.
+            </p>
         </footer>
     </div>
 </template>
@@ -204,6 +215,12 @@ onMounted(() => {
     margin-top: 2px;
     max-width: 220px;
     object-fit: contain;
+}
+
+.print-attribution {
+    margin-top: 0.35rem;
+    font-size: 8pt;
+    color: #000;
 }
 
 .print-signoff-stamp {

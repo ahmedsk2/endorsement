@@ -45,7 +45,7 @@
        interface reading as a default admin template. */
     --color-ink: #0b2e33;         /* headings, primary text */
     --color-body: #2c4f53;        /* body copy */
-    --color-muted: #6b8b8e;       /* secondary/meta text, channel tags */
+    --color-muted: #526d70;       /* secondary/meta text, channel tags — WCAG AA */
     --color-line: #cbdedc;        /* hairline borders */
     --color-line-soft: #e0ecea;   /* subtle dividers, table stripes */
     --color-ground: #edf4f3;      /* page ground */
@@ -58,9 +58,9 @@
     --color-channel-soft: #dff0f1; /* active nav wash, chips */
 
     /* Signals — monitor-derived. Warmth reads as "attention" inside a cool UI. */
-    --color-ok: #0f8a6a;
+    --color-ok: #0c7358;
     --color-ok-soft: #dcf1ea;
-    --color-caution: #b7791f;
+    --color-caution: #8f5d13;
     --color-caution-soft: #fbf0dc;
     --color-critical: #b3261e;
     --color-critical-soft: #fbe4e2;

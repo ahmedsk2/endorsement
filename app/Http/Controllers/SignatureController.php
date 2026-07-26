@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\User;
 use App\Support\SignatureStore;
 use Illuminate\Http\Request;
@@ -37,8 +38,20 @@ class SignatureController extends Controller
             abort(401);
         }
 
-        // Your own signature always; anyone else's only with the endorsement read gate.
-        if ($viewer->getKey() !== $user->getKey() && ! $viewer->can('endorsement.view')) {
+        // YOUR OWN SIGNATURE ONLY.
+        //
+        // This used to serve any user's current signature to any holder of
+        // endorsement.view — which is every clinical role — so ids 1..N were enumerable and
+        // a handwritten signature is, as this class's own docblock says, a forgeable
+        // credential. Its value is mostly OUTSIDE this system: on consent forms, leave
+        // requests, prescriptions.
+        //
+        // Nothing legitimate needs it. Rendering a signed sheet uses the content-addressed
+        // file/{hash} route below, which serves the exact image frozen at sign-off rather
+        // than whatever the person's signature happens to be today.
+        if ($viewer->getKey() !== $user->getKey()) {
+            AuditLog::record('signature_access_denied', 'target='.$user->getKey(), $viewer->getKey(), $request->ip());
+
             abort(403);
         }
 

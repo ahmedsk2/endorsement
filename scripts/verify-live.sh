@@ -22,8 +22,23 @@ echo "=== TLS ==="
 cert=$(echo | openssl s_client -connect "$HOST:443" -servername "$HOST" 2>/dev/null \
         | openssl x509 -noout -subject -issuer -enddate 2>/dev/null)
 echo "$cert" | sed 's/^/  /'
-echo "$cert" | grep -q "CN=$HOST" || bad "certificate CN" "does not match $HOST"
-echo "$cert" | grep -qi "Let's Encrypt" || note "certificate issuer" "not Let's Encrypt (check expectations)"
+
+# Verify the certificate is VALID FOR THIS HOSTNAME rather than string-matching the CN.
+# Behind Cloudflare's proxy the served certificate is Cloudflare's — an apex or wildcard
+# cert whose CN is not this host — and a CN match would fail on a perfectly correct setup.
+# -verify_hostname checks CN *and* SANs, which is the property that actually matters.
+if echo | openssl s_client -connect "$HOST:443" -servername "$HOST" \
+        -verify_hostname "$HOST" -verify_return_error >/dev/null 2>&1; then
+    note "certificate valid for $HOST" yes
+else
+    bad "certificate" "not valid for $HOST"
+fi
+
+if echo "$cert" | grep -q "CN=$HOST"; then
+    note "TLS terminated at" "origin (direct)"
+else
+    note "TLS terminated at" "Cloudflare proxy — confirm SSL mode is Full (strict)"
+fi
 
 redirect=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "http://$HOST/")
 case "$redirect" in 30*) note "http:// redirects" "$redirect";; *) bad "http:// redirect" "got $redirect";; esac

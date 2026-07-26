@@ -15,6 +15,12 @@ import { onBeforeUnmount, onMounted, ref } from 'vue';
 const props = defineProps({
     /** The generated illustration, once there is one. Falls back to the drawn scene. */
     src: { type: String, default: '' },
+    /**
+     * Which part of the day it is, from the SERVER's clock (App\Support\ShiftClock).
+     * Drives a tint over the scene so 03:00 does not look like 09:00 — one illustration,
+     * four moods, no extra asset to generate or ship.
+     */
+    phase: { type: String, default: 'day' },
 });
 
 const root = ref(null);
@@ -81,7 +87,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <div ref="root" class="auth-hero" data-testid="auth-hero">
+    <div ref="root" class="auth-hero" :data-phase="props.phase" data-testid="auth-hero">
         <!-- The scene. Each layer declares its own depth; the transform is shared. -->
         <div class="auth-hero-layer" style="--hero-depth: 0.35">
             <img v-if="props.src" :src="props.src" alt="" width="1920" height="1072"

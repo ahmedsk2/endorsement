@@ -123,8 +123,6 @@
     .channel-bar-critical { border-left-color: var(--color-critical); }
     .channel-bar-caution { border-left-color: var(--color-caution); }
 
-    /* Channel tag — the monitor's tiny uppercase label. Field labels, eyebrows,
-       column headers. */
     /* ---- Signed-out hero ------------------------------------------------------------
        The stage behind the sign-in form. Everything here is transform/opacity only, and
        the depth transform is driven by two custom properties the component writes. */
@@ -166,15 +164,45 @@
         background-image:
             linear-gradient(
                 to right,
-                color-mix(in srgb, var(--color-ink) 82%, transparent) 0%,
-                color-mix(in srgb, var(--color-ink) 58%, transparent) 34%,
-                transparent 62%
+                color-mix(in srgb, var(--color-ink) 84%, transparent) 0%,
+                color-mix(in srgb, var(--color-ink) 72%, transparent) 38%,
+                color-mix(in srgb, var(--color-ink) 40%, transparent) 56%,
+                transparent 72%
             ),
             linear-gradient(
                 to top,
                 color-mix(in srgb, var(--color-ink) 55%, transparent) 0%,
                 transparent 48%
             );
+    }
+
+    /* Time of day, from the SERVER's clock. One illustration, four moods — the page a
+       resident opens at 03:00 should not look like the one they open at 09:00. Applied to
+       the scene layer only, so it tints the picture and never the text above it. */
+    .auth-hero[data-phase='dawn'] .auth-hero-layer { filter: none; }
+
+    .auth-hero[data-phase='day'] .auth-hero-layer {
+        filter: saturate(1.05) brightness(1.04);
+    }
+
+    .auth-hero[data-phase='dusk'] .auth-hero-layer {
+        filter: saturate(0.92) brightness(0.86) hue-rotate(-8deg);
+    }
+
+    .auth-hero[data-phase='night'] .auth-hero-layer {
+        filter: saturate(0.7) brightness(0.6) hue-rotate(-14deg);
+    }
+
+    /* The scrim deepens with the light, so white text keeps its margin at every hour — the
+       AA floor must not depend on which shift is signing in.
+       A flat wash, NOT `opacity` above 1: opacity caps at 1, so that would silently do
+       nothing and the guarantee would be imaginary. */
+    .auth-hero[data-phase='dusk'] .auth-hero-scrim {
+        background-color: color-mix(in srgb, var(--color-ink) 12%, transparent);
+    }
+
+    .auth-hero[data-phase='night'] .auth-hero-scrim {
+        background-color: color-mix(in srgb, var(--color-ink) 22%, transparent);
     }
 
     .auth-hero-curve {
@@ -201,6 +229,34 @@
         border: 1px solid color-mix(in srgb, white 28%, transparent);
     }
 
+    /* The mark draws itself: the outgoing shift's trace, then the handover node, then the
+       incoming shift's. It depicts exactly what the product does, once, in under a second.
+       Motivated rather than decorative — the test the motion spec sets.
+
+       Values are the path lengths, measured not guessed; a too-small dash array leaves a
+       visible gap and a too-large one wastes the first part of the animation on nothing. */
+    .brand-trace {
+        stroke-dasharray: 26;
+        stroke-dashoffset: 26;
+        animation: brand-draw 620ms var(--motion-ease) forwards;
+    }
+
+    .brand-trace-out { animation-delay: 120ms; }
+    .brand-node {
+        transform-origin: 22.5px 22px;
+        animation: brand-pop 320ms var(--motion-ease) 640ms backwards;
+    }
+    .brand-trace-in { animation-delay: 780ms; }
+
+    @keyframes brand-draw {
+        to { stroke-dashoffset: 0; }
+    }
+
+    @keyframes brand-pop {
+        from { transform: scale(0); opacity: 0; }
+        to   { transform: scale(1); opacity: 1; }
+    }
+
     /* Entry reveal. One-time, staggered by an inline --reveal-order on each child. */
     .auth-reveal {
         animation: auth-rise var(--motion-reveal) var(--motion-ease) backwards;
@@ -212,6 +268,8 @@
         to   { opacity: 1; transform: none; }
     }
 
+    /* Channel tag — the monitor's tiny uppercase label. Field labels, eyebrows,
+       column headers. */
     .channel-tag {
         font-family: var(--font-mono);
         font-size: 10px;

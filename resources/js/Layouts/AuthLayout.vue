@@ -2,6 +2,8 @@
 import { Head } from '@inertiajs/vue3';
 import BrandMark from '../Components/BrandMark.vue';
 import AuthHero from '../Components/AuthHero.vue';
+import { computed } from 'vue';
+import { usePage } from '@inertiajs/vue3';
 
 /**
  * The shell every signed-out page shares (sign in, request access, second factor).
@@ -32,6 +34,10 @@ defineProps({
     heroSrc: { type: String, default: '' },
 });
 
+const page = usePage();
+// Server-computed, in the ward's timezone — see App\Support\ShiftClock.
+const shift = computed(() => page.props.shift ?? { greeting: '', phase: 'day', label: '' });
+
 const units = [
     { code: 'PICU', name: 'Paediatric Intensive Care' },
     { code: 'NICU', name: 'Neonatal Intensive Care' },
@@ -44,7 +50,7 @@ const units = [
     <Head :title="title" />
 
     <div class="relative min-h-dvh">
-        <AuthHero :src="heroSrc" />
+        <AuthHero :src="heroSrc" :phase="shift.phase" />
 
         <!-- Everything below sits over the hero. -->
         <div class="relative flex min-h-dvh flex-col lg:flex-row">
@@ -65,17 +71,21 @@ const units = [
                 </div>
 
                 <div class="hidden lg:block">
-                    <h2 class="auth-reveal max-w-md text-3xl leading-tight font-semibold text-white"
-                        style="--reveal-order: 1">
+                    <p v-if="shift.greeting" class="auth-reveal channel-tag max-w-md !text-white/70"
+                       style="--reveal-order: 1" data-testid="shift-greeting">
+                        {{ shift.greeting }} · {{ shift.label }}
+                    </p>
+                    <h2 class="auth-reveal mt-2 max-w-md text-3xl leading-tight font-semibold text-white"
+                        style="--reveal-order: 2">
                         Every shift, handed over in writing.
                     </h2>
-                    <p class="auth-reveal mt-3 max-w-md text-sm text-white/80" style="--reveal-order: 2">
+                    <p class="auth-reveal mt-3 max-w-md text-sm text-white/80" style="--reveal-order: 3">
                         The census, the plan and the follow-ups for every child on the unit — written
                         during the shift, signed at handover, printed for the round.
                     </p>
 
                     <ul class="auth-reveal mt-8 flex max-w-md flex-wrap gap-2" data-testid="unit-legend"
-                        style="--reveal-order: 3">
+                        style="--reveal-order: 4">
                         <li v-for="u in units" :key="u.code"
                             class="auth-glass flex items-baseline gap-2 rounded-lg px-2.5 py-1.5">
                             <span class="readout text-xs font-semibold text-white">{{ u.code }}</span>

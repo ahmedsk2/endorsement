@@ -52,6 +52,11 @@ class HandleInertiaRequests extends Middleware
                 ] : null,
                 'can' => $user ? AccessControl::capabilitiesFor($user) : [],
             ],
+            // Which handover the visitor is arriving for. Server-side and in the app's
+            // timezone on purpose: the browser clock is whatever the device says, and a
+            // ward system should agree with the ward. No PHI — a greeting and a time that
+            // is already pinned to the wall.
+            'shift' => \App\Support\ShiftClock::now(),
             // One-shot flash surface for the layout's status/error banners.
             'flash' => [
                 'status' => $request->session()->get('status'),

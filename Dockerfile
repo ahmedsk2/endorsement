@@ -1,5 +1,19 @@
 # syntax=docker/dockerfile:1
 #
+# BASE IMAGES ARE PINNED BY DIGEST, not by tag.
+#
+# A tag is mutable: `php:8.4-fpm-alpine` today and in six months are different bits, so a
+# rebuild — which is exactly what a Coolify "redeploy last good" does — could ship
+# something never tested, and a rollback could differ from the thing it is rolling back
+# to. The digest makes a rebuild reproducible.
+#
+# The trade-off is that security updates no longer arrive silently. That is deliberate and
+# handled: .github/dependabot.yml watches the docker ecosystem and opens a PR when a base
+# image moves, so the bump is a reviewed change rather than an invisible one.
+#
+# Digests captured 2026-07-27. To refresh by hand:
+#   docker pull php:8.4-fpm-alpine && docker inspect php:8.4-fpm-alpine --format '{{index .RepoDigests 0}}'
+#
 # Production image for the Paediatric Endorsement system.
 #
 # Target host: OCI VM.Standard.A1.Flex (ARM64, Ubuntu) running Coolify + Traefik, so the
@@ -14,23 +28,27 @@
 #  - config/route/view caches are built at boot, when the real env is present.
 
 # ---------- stage 1: front-end assets ----------
-FROM node:22-alpine AS assets
+FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS assets
 WORKDIR /build
-COPY package*.json vite.config.js ./
+# .npmrc carries `ignore-scripts=true`. It was not copied, so the policy applied on a
+# developer's laptop and NOT in the build — which is the one place it matters, because this
+# build runs as root on the same docker daemon as the patient database. A dependency's
+# postinstall script had a free hand exactly where it could do the most damage.
+COPY package*.json .npmrc vite.config.js ./
 RUN npm ci
 COPY resources ./resources
 COPY public ./public
 RUN npm run build
 
 # ---------- stage 2: PHP dependencies ----------
-FROM composer:2 AS vendor
+FROM composer:2@sha256:5946476338742b200bb9ff88f8be56275ddae4b3949c72305cb0dbf10cfcb760 AS vendor
 WORKDIR /build
 COPY composer.json composer.lock ./
 # Scripts are skipped here: artisan is not present yet and must not run at build time.
 RUN composer install --no-dev --no-interaction --prefer-dist --no-scripts --optimize-autoloader
 
 # ---------- stage 3: runtime ----------
-FROM php:8.4-fpm-alpine AS runtime
+FROM php:8.4-fpm-alpine@sha256:913ddd6934a805429618a16aa36da47cd8a8aec8b2f111c294936ba4003fded6 AS runtime
 
 RUN apk add --no-cache \
         nginx supervisor tzdata icu-data-full \

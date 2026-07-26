@@ -6,9 +6,12 @@
 # ROUTING IS COOLIFY'S JOB. Set the domain in the Coolify UI as
 #   https://endorse.towardpcc.com:8080
 # (the :8080 tells Coolify which container port to route to) and it generates the Traefik
-# router, the HTTP->HTTPS redirect and the Let's Encrypt certificate. Hand-written
-# traefik.* labels here would produce a SECOND router matching the same host — see
-# docs/RUNBOOK-DEPLOY.md for the labels to use if you ever deploy this without Coolify.
+# router, the HTTP->HTTPS redirect and the Let's Encrypt certificate. A hand-written
+# `rule` or `entrypoints` label here would produce a SECOND router matching the same host —
+# see docs/RUNBOOK-DEPLOY.md for the full label set if you ever deploy this without Coolify.
+#
+# The one traefik label below is NOT a router; it tells Traefik which of this container's
+# three networks to dial, and its absence caused a total outage on 2026-07-27.
 #
 # The database is a DEDICATED MySQL container, not the shared one already on this host,
 # and it sits on an internal-only network: children's health data should not share an
@@ -93,7 +96,9 @@ services:
       start_period: 20s
 
   db:
-    image: mysql:8.4
+    # Pinned by digest for the same reason as the Dockerfile bases: a redeploy months
+    # from now must get the bits that were tested, not whatever `8.4` points at then.
+    image: mysql:8.4@sha256:8dbcf531a03aade657e181b9cf2f1d1803ce621a1d55610cb44cb531ab7d7db6
     restart: unless-stopped
     command:
       # NO --default-authentication-plugin: MySQL 8.4 REMOVED it (deprecated in 8.0.27),

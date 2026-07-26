@@ -11,6 +11,9 @@ import { reactive } from 'vue';
 vi.mock('@inertiajs/vue3', () => ({
     Head: { name: 'Head', template: '<div><slot /></div>' },
     Link: { name: 'Link', props: ['href'], template: '<a :href="href"><slot /></a>' },
+    // AuthLayout reads the server-computed shift (App\Support\ShiftClock) to greet the
+    // visitor with the handover they are arriving for.
+    usePage: () => ({ props: { shift: { greeting: 'Good morning', phase: 'dawn', next: '07:30', label: 'Next handover 07:30' } } }),
     useForm: (fields) => reactive({
         ...fields,
         errors: {},

@@ -76,8 +76,9 @@ test.describe('signed-out hero', () => {
             const INK = [11, 46, 51];
             const lerp = (a, b, t) => a + (b - a) * t;
             // Mirrors .auth-hero-scrim. If the CSS stops matching this, the test is lying.
-            const acrossRamp = (fx) => fx < 0.34 ? lerp(0.82, 0.58, fx / 0.34)
-                : fx < 0.62 ? lerp(0.58, 0, (fx - 0.34) / 0.28) : 0;
+            const acrossRamp = (fx) => fx < 0.38 ? lerp(0.84, 0.72, fx / 0.38)
+                : fx < 0.56 ? lerp(0.72, 0.40, (fx - 0.38) / 0.18)
+                : fx < 0.72 ? lerp(0.40, 0, (fx - 0.56) / 0.16) : 0;
             const upRamp = (fy) => fy > 0.52 ? lerp(0, 0.55, (fy - 0.52) / 0.48) : 0;
             const over = (fg, a, bg) => fg.map((v, i) => v * a + bg[i] * (1 - a));
             const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };

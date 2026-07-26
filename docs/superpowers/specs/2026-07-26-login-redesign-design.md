@@ -113,7 +113,22 @@ space, `loading="eager"` and `fetchpriority="high"` since it is above the fold. 
 **The CSS fallback ships first.** Before any generated asset exists, the illustration
 region renders a layered SVG dawn composition built from token colours — horizon bands, a
 sun disc, silhouetted hills. The page is complete and shippable without the generated
-image; dropping it in later replaces one element.
+image.
+
+### Dropping the image in
+
+1. Save the chosen render as `public/img/auth-dawn.webp`.
+2. Add one attribute in `resources/js/Pages/Auth/Login.vue` (and `Register.vue`,
+   `EmailOtpChallenge.vue` if you want it everywhere):
+
+   ```
+   <AuthLayout hero-src="/img/auth-dawn.webp" …>
+   ```
+
+3. `npm run build`, commit, deploy.
+
+Nothing else changes. `AuthHero` renders the `<img>` instead of the drawn scene; the
+curve, the depth motion and every test behave identically.
 
 ## Motion
 
@@ -174,3 +189,40 @@ it is a decision rather than a drift.
 
 Signed-in surfaces. The brand question for the wider TowardPCC platform (Pulse Crimson vs
 teal) is not settled here and does not need to be for this work.
+
+---
+
+## What the build taught us (2026-07-26)
+
+Three defects, none of which any unit test could have caught. Recorded because each is a
+trap that would be walked into again.
+
+**The form landed on the illustration at phone width.** The narrow curve yielded white
+below 54% while the form column began around 19%, so `ink` text rendered directly on
+`dawn-near`. Every test was green: the failure is purely positional, and only a real
+layout engine can see it. Fixed by moving the curve's edge to 24–32% and giving the brand
+panel a `min-h-[34vh]` that pins the form beneath it — the two numbers are coupled, which
+is noted in both files.
+
+**`backdrop-filter` inside `@layer components` was silently dropped.** The
+`background-color` and `border` from the very same rule applied, so the chips looked
+plausible while the frost never rendered. Tailwind's own layers outrank the components
+layer. Moved unlayered, next to the `:focus-visible` rule that solved this exact problem
+before.
+
+**Then it still did not render.** Writing `-webkit-backdrop-filter` *after* the standard
+property made the minifier keep the prefixed declaration and drop the standard one, and
+Chrome reports `none` for the alias — so `getComputedStyle` said `none` while the bundle
+contained a rule that looked correct. Unprefixed only; the build adds prefixes for the
+configured targets.
+
+The lesson worth keeping: **a visual change has to be looked at.** Three green suites and a
+correct-looking stylesheet said this was finished, and it was broken on every phone.
+
+## Regression cover added
+
+- `tests/js/AuthHero.test.js` — fallback renders without an asset, the pointer listener is
+  refused under reduced motion *and* on coarse pointers, and it is removed on unmount.
+- `tests/e2e/auth-hero.spec.js` — the geometry invariants, plus a **positive control**
+  proving the scene really does lean toward the pointer. Without it, "nothing moved under
+  reduced motion" would pass just as happily if nothing ever moved at all.

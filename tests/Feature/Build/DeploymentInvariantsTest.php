@@ -92,11 +92,21 @@ class DeploymentInvariantsTest extends TestCase
     {
         $entrypoint = (string) file_get_contents(base_path('docker/entrypoint.sh'));
 
-        // `artisan migrate` in any form — the word appears in comments, so match a command.
+        // Catches EXECUTION only. `migrate:status` is a read and is deliberately present —
+        // the entrypoint warns when the schema is behind the code — and the same string
+        // appears inside an echo telling the operator what to run. A guard broad enough to
+        // reject those is a guard that blocks the right fix, so it excludes both.
         $this->assertDoesNotMatchRegularExpression(
-            '/^\s*(?!#).*artisan\s+migrate/mi',
+            '/^\s*(?!#)(?!.*echo).*artisan\s+migrate(?!:status)/mi',
             $entrypoint,
-            'the entrypoint must never run migrations',
+            'the entrypoint must never RUN migrations (reading their status is fine)',
+        );
+
+        // And prove the warning it replaces them with is actually there.
+        $this->assertStringContainsString(
+            'migrate:status',
+            $entrypoint,
+            'the entrypoint should warn when the schema is behind the code',
         );
     }
 

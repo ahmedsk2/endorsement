@@ -56,4 +56,23 @@ exit(1);
 # Sending the logs somewhere writable instead would trade a supervisor that forks and waits
 # for the loss of container logs, which is a bad trade on a system whose scheduled jobs
 # escalate by logging.
+# Say so — loudly — if the schema is behind the code.
+#
+# This does NOT migrate. Production migrations are the owner's (a container that migrates
+# at boot can alter a clinical schema during an unattended 3am restart). But a deploy that
+# ships a migration and is never followed by `migrate --force` leaves the app throwing
+# column-not-found errors with nothing anywhere explaining why, and the container reporting
+# itself perfectly healthy. Ten lines of warning now saves an hour of confusion later.
+pending=$(php artisan migrate:status --pending 2>/dev/null | grep -c 'Pending' || true)
+
+if [ "${pending:-0}" -gt 0 ]; then
+    echo "============================================================"
+    echo "WARNING: ${pending} migration(s) are PENDING."
+    echo "The code in this image expects a schema the database does not have."
+    echo "Expect errors until you run, from a shell in this container:"
+    echo "    php artisan migrate --force"
+    echo "Migrations are deliberately never run automatically — see docs/RUNBOOK-DEPLOY.md."
+    echo "============================================================"
+fi
+
 exec "$@"

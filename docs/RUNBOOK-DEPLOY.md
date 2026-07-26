@@ -206,3 +206,47 @@ labels:
 ```bash
 docker compose -f docker-compose.production.yml --env-file .env.production up -d --build
 ```
+
+---
+
+## Outage 2026-07-27 — 504 on every request, container healthy
+
+**Symptom.** The site returned 504 from both Cloudflare and the origin directly, with a
+consistent 30-second wait. The app container was `healthy` and answering 200s to its own
+healthcheck the whole time. Nothing in the deployed change was related.
+
+**Cause.** The app container is on THREE docker networks — `coolify`, Coolify's per-app
+network, and `internal` for the database — and `coolify-proxy` is not on `internal`. No
+`traefik.docker.network` label was set, so Traefik chose which of the container's networks
+to dial on its own. Go randomises map iteration, so that choice can differ on every deploy.
+Pick `internal` and every request hangs until Traefik's 30s backend timeout.
+
+**This had been a coin flip on every deploy since the application was created.** It simply
+never lost before. That is the shape worth remembering: a latent fault that stays invisible
+for weeks, then presents as a total outage immediately after an unrelated change.
+
+**Fix.** One label on the `app` service in `docker-compose.production.yml`:
+
+```yaml
+labels:
+  - traefik.docker.network=coolify
+```
+
+It is a hint, not a router — routers still come from Coolify's Domains field, so it does
+not create a second router competing for the host. Coolify preserves it into its generated
+compose; verified on the running container after deploy.
+
+### Diagnosing this class of fault
+
+Two false trails cost time and are worth naming:
+
+- **Probing the container by IP returns `400 Bad Request`.** That is `trustHosts` working
+  correctly — the Host header is the container IP, which is not allowlisted. It is not the
+  bug. Probe with `--header "Host: endorse.towardpcc.com"` instead.
+- **Grepping the main JS bundle for a page's assets finds nothing.** Inertia code-splits by
+  page; look in `assets/<PageName>-<hash>.js`, found via `/build/manifest.json`. Comparing
+  that hash against the local build also proves the deployed artifact is the tested one.
+
+`scripts/verify-live.sh` catches this outage — it was green after the previous deploy,
+which is precisely when the coin had landed the other way. **Run it after every deploy**;
+it is the only check that exercises the real path from the edge to the container.

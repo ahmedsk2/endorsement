@@ -72,6 +72,22 @@
     --color-unit-nicu: #5b6bbf;   /* indigo */
     --color-unit-scbu: #8a5ba8;   /* violet */
     --color-unit-ward: #9c5470;   /* plum */
+
+    /* Dawn — the signed-out hero only.
+       Handover is at 07:30, so first light is the moment the system exists for; these are
+       the illustration's own colours, never UI. They live here rather than as hex in the
+       markup so the fallback scene stays tunable and the "no hex in markup" rule holds
+       even inside an SVG. Nothing signed-in may use them. */
+    --color-dawn-deep: #08333a;   /* far hills, deepest band */
+    --color-dawn-mid: #0a3d45;    /* mid hills */
+    --color-dawn-near: #0d4a52;   /* sky ground / nearest mass */
+    --color-dawn-sky: #17636d;    /* upper sky */
+    --color-dawn-glow: #f0c98a;   /* the sun and lit windows — warm, and the only warm note */
+
+    /* Motion. One easing voice, two durations: interactions and reveals. */
+    --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --motion-fast: 150ms;
+    --motion-reveal: 400ms;
 }
 
 @layer base {
@@ -109,6 +125,73 @@
 
     /* Channel tag — the monitor's tiny uppercase label. Field labels, eyebrows,
        column headers. */
+    /* ---- Signed-out hero ------------------------------------------------------------
+       The stage behind the sign-in form. Everything here is transform/opacity only, and
+       the depth transform is driven by two custom properties the component writes. */
+    .auth-hero {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        background-color: var(--color-dawn-near);
+        --hero-x: 0;
+        --hero-y: 0;
+    }
+
+    .auth-hero-layer {
+        position: absolute;
+        /* Bleed past the edges so the drift never exposes a bare corner. */
+        inset: -12px;
+        transform: translate3d(
+            calc(var(--hero-x) * var(--hero-depth, 1) * -8px),
+            calc(var(--hero-y) * var(--hero-depth, 1) * -8px),
+            0
+        );
+        transition: transform var(--motion-fast) var(--motion-ease);
+        will-change: transform;
+    }
+
+    .auth-hero-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+
+    .auth-hero-curve {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+    }
+
+    /* Below lg the curve rotates: the scene becomes a top band and the form sits under it. */
+    .auth-hero-curve-wide { display: none; }
+    .auth-hero-curve-narrow { display: inline; }
+
+    @media (min-width: 64rem) {
+        .auth-hero-curve-wide { display: inline; }
+        .auth-hero-curve-narrow { display: none; }
+    }
+
+    /* Frosted chips. ONLY for the lockup and the unit codes — never behind form text,
+       where translucency over an unpredictable image is how contrast quietly fails. The
+       scrim means legibility does not depend on the illustration being dark just there. */
+    .auth-glass {
+        background-color: color-mix(in srgb, var(--color-ink) 42%, transparent);
+        border: 1px solid color-mix(in srgb, white 28%, transparent);
+    }
+
+    /* Entry reveal. One-time, staggered by an inline --reveal-order on each child. */
+    .auth-reveal {
+        animation: auth-rise var(--motion-reveal) var(--motion-ease) backwards;
+        animation-delay: calc(var(--reveal-order, 0) * 60ms);
+    }
+
+    @keyframes auth-rise {
+        from { opacity: 0; transform: translate3d(0, 12px, 0); }
+        to   { opacity: 1; transform: none; }
+    }
+
     .channel-tag {
         font-family: var(--font-mono);
         font-size: 10px;
@@ -155,6 +238,19 @@
 :focus-visible {
     outline: 2px solid var(--color-channel);
     outline-offset: 2px;
+}
+
+/* The frost itself, deliberately UNLAYERED for the same reason as the rule above.
+   Declared inside `@layer components` the blur was silently dropped — the colour and
+   border from the same rule applied, the backdrop-filter computed to `none` — because
+   Tailwind's own layers outrank it. The scrim in `.auth-glass` is what carries legibility,
+   so this only ever adds polish; it must never be the thing making text readable. */
+.auth-glass {
+    /* UNPREFIXED ONLY. Writing the -webkit- alias after it made the minifier keep the
+       prefixed declaration and drop this one, and Chrome reports `none` for the alias —
+       so the frost silently vanished while the colour and border still applied. The build
+       adds whatever prefixes the browser targets need. */
+    backdrop-filter: blur(10px) saturate(120%);
 }
 
 @media (prefers-reduced-motion: reduce) {

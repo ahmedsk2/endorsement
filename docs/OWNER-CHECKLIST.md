@@ -122,7 +122,34 @@ is stored encrypted. Without it the reminders simply do not send — nothing els
 
 ---
 
-## 6. Get backups off the server — the largest operational gap
+## 6. ~~Get backups off the server~~ — DONE 2026-07-26
+
+Closed. `/usr/local/bin/endorsement-backup-sync` runs at 02:05 (after `backup:run` at
+01:30) and copies the encrypted archives to a **dedicated** OCI Object Storage bucket,
+`endorsement-backups` — deliberately not the shared `coolify-backups`, so children's health
+data does not sit alongside unrelated projects. First run verified: last night's real
+archive is in the bucket.
+
+`copy`, not `sync`: `sync` would delete remote objects as the local 14-archive retention
+prunes them, which makes the off-host copy no better than the on-host one against
+ransomware that simply waits. Credentials live in `/etc/endorsement/rclone.conf` (0600,
+root-only) and are NOT in the app container — the web tier has no object-storage access,
+so a compromise there cannot reach the backups.
+
+Nothing in that bucket is readable without `BACKUP_PASSPHRASE`, which is not on the host
+and not in Object Storage. **That separation is the whole design: losing the bucket leaks
+nothing, losing the passphrase loses the backups.**
+
+Two things still worth doing, both in the OCI console:
+
+- **A retention/object-lock rule on the bucket.** Without it, credentials that can write
+  can also delete — which is what ransomware does after it finds the backup.
+- **A third copy.** You already pull other projects to `C:\Backups\oracle`; add this bucket.
+
+<details>
+<summary>Original item, for reference</summary>
+
+## ~~6-old. Get backups off the server — the largest operational gap~~
 
 The nightly encrypted archive lands in a docker volume **on the machine it is backing up**.
 That is not a backup: it does not survive the failure it exists for.
@@ -143,6 +170,8 @@ archive decrypted to 207 KB of SQL and restored into a scratch MySQL 8.4 with al
 Repeat it quarterly — `docs/RUNBOOK-BACKUP.md` has the recipe.
 
 ---
+
+</details>
 
 ## 6b. Run the least-privilege grants
 

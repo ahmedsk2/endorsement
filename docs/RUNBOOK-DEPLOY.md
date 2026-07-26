@@ -21,12 +21,28 @@ Identifiers (project/app/DNS-record/deploy-key UUIDs) are recorded in
 
 ## As configured
 
-**DNS.** Cloudflare `A endorse → 145.241.105.239`, **DNS only (grey cloud)**. Grey matters
-for certificate issuance: Let's Encrypt validates over HTTP-01 and Traefik answers that on
-port 80, but with the orange cloud on, Cloudflare terminates TLS itself and the challenge
-never reaches Traefik. You may switch to **Proxied** now that the certificate exists — if
-you do, set Cloudflare SSL/TLS mode to **Full (strict)**, or Cloudflare will talk plain
-HTTP to the origin on the last hop.
+**DNS.** Cloudflare `A endorse → 145.241.105.239`, now **Proxied (orange cloud)**.
+
+It was grey during setup, and that mattered then: Let's Encrypt validates over HTTP-01 and
+Traefik answers that on port 80, but with the orange cloud on Cloudflare terminates TLS
+itself and the challenge never reaches Traefik. Once the certificate existed the record was
+switched to proxied.
+
+Two consequences of being proxied, both already hit:
+
+- **The served certificate is Cloudflare's** (`CN=towardpcc.com`), not the origin's. Any
+  check that string-matches the certificate CN against the hostname fails on a perfectly
+  correct setup — `scripts/verify-live.sh` verifies the certificate is *valid for the
+  hostname* instead, which is the property that actually matters.
+- **Cloudflare 1010-blocks unusual user agents** on this zone. The Coolify API sits behind
+  it too, so any automation must send a real `User-Agent` or get a 403 that looks like a
+  revoked token.
+
+**Confirm SSL/TLS mode is Full (strict)** in the dashboard. Flexible is ruled out
+behaviourally — the origin 302s HTTP to HTTPS, so Flexible would loop forever and the site
+would be dead — but Full and Full (strict) cannot be told apart from outside, and only
+strict validates the origin certificate. The API token used here cannot read zone settings
+(it returns 9109), so this one needs a human with the dashboard open.
 
 **Routing.** The domain is set on the compose `app` service as
 `https://endorse.towardpcc.com:8080` — the `:8080` is Coolify's syntax for the container

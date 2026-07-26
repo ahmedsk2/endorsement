@@ -75,7 +75,12 @@ jobs:
 
       # Known-vulnerable dependencies fail the build; this is the patch SLA's alarm clock.
       - name: Composer security audit
-        run: composer audit
+        # --abandoned=report, so this gate means "there is a known VULNERABILITY" and
+        # nothing else. Bare `composer audit` exits 1 on merely abandoned packages, and
+        # six of those are unavoidable today: the web-token/jwt-* chain that
+        # minishlink/web-push requires for VAPID signing. A gate that is red on every
+        # push regardless of risk is one people stop reading, and then delete.
+        run: composer audit --abandoned=report
 
       - name: npm security audit
         run: npm audit --omit=dev --audit-level=high

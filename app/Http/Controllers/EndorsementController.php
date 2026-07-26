@@ -634,6 +634,11 @@ class EndorsementController extends Controller
 
         $data = $this->validateRow($request, UnitProfile::for((string) $handover->unit?->code));
 
+        // Keep what the record SAID before this edit. The audit row proves that a change
+        // happened; without this, nothing anywhere retains what was originally attested,
+        // so a reopen-rewrite-resign after an adverse event is unreconstructable.
+        $this->recordRevisions($handover, $data, $request->user()?->getKey());
+
         $handover->update($data);
 
         AuditLog::record('endorsement_row_update', 'row='.$handover->id, $request->user()?->getKey(), $request->ip());
@@ -862,6 +867,51 @@ class EndorsementController extends Controller
      *
      * @return array{endorsers: list<array{id: int, name: string}>, consultants: list<array{id: int, name: string}>}
      */
+    /**
+     * Append the previous value of every tracked field that is actually changing.
+     *
+     * Only real changes are stored — re-saving an unchanged field on blur must not fill the
+     * table with identical rows. `day_was_signed` is captured because an edit to a signed
+     * day is the case that matters: it means the attestation no longer describes what was
+     * attested, and that is the question an incident review asks.
+     *
+     * @param  array<string, mixed>  $incoming
+     */
+    private function recordRevisions(Handover $handover, array $incoming, ?int $userId): void
+    {
+        $signed = HandoverSignoff::where('unit_id', $handover->unit_id)
+            ->whereDate('handover_date', $handover->handover_date?->format('Y-m-d'))
+            ->whereNotNull('signed_off_at')
+            ->exists();
+
+        foreach (\App\Models\HandoverRevision::TRACKED as $field) {
+            if (! array_key_exists($field, $incoming)) {
+                continue;
+            }
+
+            $before = $handover->getAttribute($field);
+            $after = $incoming[$field];
+
+            // Compare the DECRYPTED values: comparing ciphertext would report a change on
+            // every save, because each encryption uses a fresh IV.
+            $beforeString = $before instanceof \DateTimeInterface ? $before->format('Y-m-d') : (string) $before;
+            $afterString = $after instanceof \DateTimeInterface ? $after->format('Y-m-d') : (string) $after;
+
+            if ($beforeString === $afterString) {
+                continue;
+            }
+
+            \App\Models\HandoverRevision::create([
+                'handover_id' => $handover->getKey(),
+                'field' => $field,
+                'old_value' => $beforeString === '' ? null : $beforeString,
+                'changed_by_user_id' => $userId,
+                'day_was_signed' => $signed,
+                'created_at' => now(),
+            ]);
+        }
+    }
+
     /**
      * The write-side twin of staffPickers(): the same population, expressed as a validation
      * rule. Keep the two in step — if they drift, the server accepts endorsers the UI never

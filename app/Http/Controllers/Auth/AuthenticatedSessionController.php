@@ -128,7 +128,7 @@ class AuthenticatedSessionController extends Controller
             return redirect()->route('two-factor.login');
         }
 
-        Auth::login($user, (bool) $request->boolean('remember'));
+        \App\Support\Login::complete($user, (bool) $request->boolean('remember'));
         $request->session()->regenerate();
 
         AuditLog::record('login', 'member='.$user->id, $user->id, $request->ip());

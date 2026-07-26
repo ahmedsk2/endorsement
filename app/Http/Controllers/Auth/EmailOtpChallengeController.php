@@ -97,7 +97,7 @@ class EmailOtpChallengeController extends Controller
         $remember = (bool) $request->session()->get(self::SESSION_REMEMBER, false);
         $this->forget($request);
 
-        Auth::login($user, $remember);
+        \App\Support\Login::complete($user, $remember);
         $request->session()->regenerate();
 
         AuditLog::record('login_two_factor_email', 'user='.$user->getKey(), $user->getKey(), $request->ip());

@@ -117,7 +117,7 @@ class TwoFactorChallengeController extends Controller
 
         $this->forgetPending($request);
 
-        Auth::login($user, $remember);
+        \App\Support\Login::complete($user, $remember);
         $request->session()->regenerate();
 
         AuditLog::record('login', 'member='.$user->id, $user->id, $request->ip());

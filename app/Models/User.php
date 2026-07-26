@@ -38,6 +38,7 @@ class User extends Authenticatable
         'email_verified_at',
         'signature_path',
         'signature_updated_at',
+        'last_login_at',
     ];
 
     /**
@@ -71,6 +72,7 @@ class User extends Authenticatable
             'two_factor_confirmed_at' => 'datetime',
             'email_verified_at' => 'datetime',
             'signature_updated_at' => 'datetime',
+            'last_login_at' => 'datetime',
         ];
     }
 

@@ -32,8 +32,13 @@ HTTP to the origin on the last hop.
 `https://endorse.towardpcc.com:8080` — the `:8080` is Coolify's syntax for the container
 port (the app runs unprivileged and cannot bind 80). Coolify generates the Traefik routers,
 the `redirect-to-https` middleware and the Let's Encrypt certificate from that one field.
-`docker-compose.production.yml` therefore carries **no `traefik.*` labels of its own**;
-adding any would create a second router competing for the same host.
+`docker-compose.production.yml` therefore defines **no Traefik router of its own** — adding
+a `rule` or `entrypoints` label would create a second router competing for the same host.
+
+It carries exactly one `traefik.*` label, and that one is a *hint* rather than a router:
+`traefik.docker.network=coolify`, which tells Traefik which of the container's three
+networks to dial. Without it Traefik guesses, and guessing wrong is a total outage — see
+the 2026-07-27 entry at the end of this file.
 
 **Repo access.** A dedicated ed25519 **read-only** deploy key, held in Coolify and
 registered on the GitHub repo. Not a GitHub App, not an account credential — it can clone

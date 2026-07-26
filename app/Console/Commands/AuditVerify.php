@@ -35,23 +35,21 @@ class AuditVerify extends Command
                     return false;
                 }
 
-                $canonical = implode('|', [
-                    (string) $row->user_id,
-                    (string) $row->action,
-                    (string) $row->detail,
-                    (string) $row->ip,
-                    // Stored as UTC in the DB; canonicalised exactly as AuditLog::record did.
-                    // Must match AuditLog::record exactly — UTC, not the display timezone.
-                    \Illuminate\Support\Carbon::parse($row->created_at)->utc()->toIso8601String(),
-                ]);
+                // Verify each row under the scheme it was WRITTEN with, so introducing the
+                // keyed chain — or setting the ward's timezone — does not retroactively
+                // declare correctly-recorded history broken.
+                $version = \App\Support\AuditChain::versionOf($row->hash_version ?? null);
 
-                // Verify each row under the algorithm it was WRITTEN with, so introducing
-                // the keyed chain does not retroactively declare valid history broken.
-                $expected = \App\Support\AuditChain::hash(
-                    $row->prev_hash,
-                    $canonical,
-                    \App\Support\AuditChain::versionOf($row->hash_version ?? null),
+                $canonical = \App\Support\AuditChain::canonical(
+                    $row->user_id === null ? null : (int) $row->user_id,
+                    (string) $row->action,
+                    $row->detail,
+                    $row->ip,
+                    (string) $row->created_at,
+                    $version,
                 );
+
+                $expected = \App\Support\AuditChain::hash($row->prev_hash, $canonical, $version);
 
                 if (! hash_equals($expected, (string) $row->hash)) {
                     $broken = $row->id;

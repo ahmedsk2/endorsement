@@ -28,10 +28,46 @@ namespace App\Support;
 final class AuditChain
 {
     /** Bump when the algorithm changes; old rows keep verifying under their own version. */
-    public const VERSION = 2;
+    public const VERSION = 3;
 
     /** v1: unkeyed sha256. Kept so pre-2026-07-26 rows still verify rather than alarming. */
     public const VERSION_UNKEYED = 1;
+
+    /**
+     * The exact bytes that get hashed for a row. ONE definition, used by both the writer
+     * (AuditLog::record) and the verifier (audit:verify).
+     *
+     * It lived in two places before, and they drifted: setting APP_TIMEZONE changed how the
+     * verifier rendered a timestamp but not how the writer had, so `audit:verify` announced
+     * that the entire trail had been tampered with. Nothing had been. A tamper-evidence
+     * control that cries wolf is worse than none — it trains its only reader to ignore it.
+     *
+     * The timestamp is therefore handled per version:
+     *
+     *  - v1/v2 hashed an ISO-8601 rendering of a UTC instant, because the app ran on UTC.
+     *    Their stored `created_at` MEANS UTC, so it is parsed as UTC — never in whatever
+     *    timezone the app happens to be configured for today.
+     *  - v3 hashes the stored datetime VERBATIM. No parsing, so there is no timezone left to
+     *    reinterpret it with, and no future APP_TIMEZONE change can invalidate history again.
+     */
+    public static function canonical(
+        ?int $userId,
+        string $action,
+        ?string $detail,
+        ?string $ip,
+        \DateTimeInterface|string $createdAt,
+        int $version = self::VERSION,
+    ): string {
+        $stored = $createdAt instanceof \DateTimeInterface
+            ? $createdAt->format('Y-m-d H:i:s')
+            : $createdAt;
+
+        $time = $version >= 3
+            ? $stored
+            : \Illuminate\Support\Carbon::parse($stored, 'UTC')->toIso8601String();
+
+        return implode('|', [(string) $userId, $action, (string) $detail, (string) $ip, $time]);
+    }
 
     public static function hash(?string $prevHash, string $canonical, int $version = self::VERSION): string
     {

@@ -64,16 +64,9 @@ class AuditLog extends Model
             $prevHash = static::query()->orderByDesc('id')->lockForUpdate()->value('hash');
             $createdAt = now();
 
-            $canonical = implode('|', [
-                (string) $userId,
-                $action,
-                (string) $detail,
-                (string) $ip,
-                // UTC EXPLICITLY. toIso8601String() renders in the app timezone, so the
-                // canonical string — and therefore the hash — would change the day someone
-                // sets APP_TIMEZONE, retroactively breaking every row already written.
-                $createdAt->copy()->utc()->toIso8601String(),
-            ]);
+            // Canonicalised by AuditChain so the writer and `audit:verify` can never drift
+            // apart again — that drift is what made the trail report itself as tampered.
+            $canonical = \App\Support\AuditChain::canonical($userId, $action, $detail, $ip, $createdAt);
 
             return static::create([
                 'user_id' => $userId,

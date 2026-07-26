@@ -79,10 +79,15 @@ class AuditChainIsKeyedTest extends TestCase
     {
         // A security improvement must not retroactively declare correctly-recorded history
         // invalid — an hourly check that cries wolf is one nobody reads.
-        // Built in UTC, exactly as AuditLog::record does. A legacy row was written by the
-        // same code path, so a fixture that canonicalises in the display timezone is
-        // testing a row the application would never have produced.
-        $canonical = implode('|', ['1', 'login', 'member=1', '10.0.0.1', now()->utc()->toIso8601String()]);
+        // A fixed UTC instant, not now(): a legacy row was written by an application running
+        // on UTC, and stating that explicitly is the whole point of the fixture. Deriving
+        // the stored value and the canonical string from two separate now() calls also made
+        // this test depend on the machine's timezone and on not straddling a second.
+        $writtenAt = '2026-07-25 13:30:51';
+
+        // The v1 timestamp rendering, written out literally rather than by calling the code
+        // under test to produce its own expected value.
+        $canonical = implode('|', ['1', 'login', 'member=1', '10.0.0.1', '2026-07-25T13:30:51+00:00']);
 
         DB::table('audit_log')->insert([
             'user_id' => 1,
@@ -92,7 +97,7 @@ class AuditChainIsKeyedTest extends TestCase
             'prev_hash' => null,
             'hash' => AuditChain::hash(null, $canonical, AuditChain::VERSION_UNKEYED),
             'hash_version' => null,   // pre-change row
-            'created_at' => now(),
+            'created_at' => $writtenAt,
         ]);
 
         $this->artisan('audit:verify')->assertExitCode(0);
@@ -112,18 +117,55 @@ class AuditChainIsKeyedTest extends TestCase
 
     public function test_the_chain_survives_a_change_of_application_timezone(): void
     {
-        // The trap that made fixing APP_TIMEZONE risky. The canonical string included
-        // toIso8601String(), which renders in the DISPLAY timezone — so the day someone set
-        // the app to Asia/Riyadh, every row already written would re-render with a +03:00
-        // offset, hash differently, and audit:verify would report the trail as tampered.
+        // The trap that made fixing APP_TIMEZONE risky, and that this test's first version
+        // FAILED to catch: it only called config(['app.timezone' => ...]), which does not
+        // touch PHP's default timezone, so neither now() nor Carbon::parse() actually moved
+        // and the test proved nothing. Production moved for real and audit:verify declared
+        // the whole trail broken. Setting the process timezone is what makes this faithful.
+        //
         // On a control whose whole job is tamper-evidence, a false positive is as damaging
-        // as a false negative: it teaches its reader to ignore it.
-        config(['app.timezone' => 'UTC']);
-        AuditLog::record('login', 'member=1', 1, '10.0.0.1');
-        AuditLog::record('endorsement_view', 'unit=1', 1, '10.0.0.1');
+        // as a false negative: it teaches its only reader to ignore it.
+        $this->withApplicationTimezone('UTC', function () {
+            AuditLog::record('backup_created', 'files=3');
+            AuditLog::record('login', 'member=1', 1, '10.0.0.1');
+        });
 
-        config(['app.timezone' => 'Asia/Riyadh']);
+        // The deploy that set APP_TIMEZONE=Asia/Riyadh. Nothing in the table changed.
+        $this->withApplicationTimezone('Asia/Riyadh', function () {
+            $this->artisan('audit:verify')->assertExitCode(0);
+        });
+    }
 
-        $this->artisan('audit:verify')->assertExitCode(0);
+    public function test_the_chain_still_verifies_after_a_second_timezone_change(): void
+    {
+        // Rows written on Riyadh must not become unverifiable if the timezone is ever
+        // corrected again — otherwise this fix is a trap laid for the next person.
+        $this->withApplicationTimezone('Asia/Riyadh', function () {
+            AuditLog::record('backup_created', 'files=3');
+        });
+
+        $this->withApplicationTimezone('Europe/London', function () {
+            $this->artisan('audit:verify')->assertExitCode(0);
+        });
+    }
+
+    /**
+     * Run $body with the application genuinely on $timezone — config AND the process
+     * default, because Laravel's date helpers read the latter.
+     */
+    private function withApplicationTimezone(string $timezone, callable $body): void
+    {
+        $previousConfig = config('app.timezone');
+        $previousDefault = date_default_timezone_get();
+
+        config(['app.timezone' => $timezone]);
+        date_default_timezone_set($timezone);
+
+        try {
+            $body();
+        } finally {
+            config(['app.timezone' => $previousConfig]);
+            date_default_timezone_set($previousDefault);
+        }
     }
 }

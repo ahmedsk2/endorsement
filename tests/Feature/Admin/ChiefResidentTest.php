@@ -47,22 +47,21 @@ class ChiefResidentTest extends TestCase
         $this->assertDatabaseHas('positions', ['id' => 5, 'name' => 'Chief Resident']);
     }
 
-    public function test_registration_offers_neither_nurse_nor_chief(): void
+    public function test_account_creation_offers_neither_nurse_nor_chief(): void
     {
-        $this->get('/register')->assertInertia(fn (Assert $page) => $page
-            ->where('positions', fn ($positions) => ! collect($positions)->keys()->contains(fn ($k) => in_array((int) $k, [0, 1, 5], true)))
-        );
-
-        foreach ([1, 5] as $position) {
-            $this->post('/register', [
-                'full_name' => 'X',
-                'member_name' => 'x_'.$position,
-                'member_email' => 'x'.$position.'@example.org',
-                'position' => $position,
-                'password' => 'Secret-pass1',
-                'password_confirmation' => 'Secret-pass1',
-            ])->assertSessionHasErrors('position');
+        // The same invariant, now enforced where accounts are actually created: invitations
+        // (self-registration closed on 2026-07-27). Chief Resident is a PROMOTION applied to
+        // an existing account — the test below — never a role anyone is created into, and
+        // Nurse is retired. Both must stay unreachable from the creation path.
+        foreach ([0, 1, 5] as $position) {
+            $this->actingAs($this->admin())
+                ->post('/admin/invitations', [
+                    'member_email' => 'x'.$position.'@example.org',
+                    'position' => $position,
+                ])->assertSessionHasErrors('position');
         }
+
+        $this->assertDatabaseCount('invitations', 0);
     }
 
     public function test_an_administrator_promotes_a_resident_to_chief(): void

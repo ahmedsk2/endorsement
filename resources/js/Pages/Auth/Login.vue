@@ -72,12 +72,18 @@ const inputClass = 'w-full rounded-md border border-line bg-panel px-3 py-2 text
             </button>
         </form>
 
-        <div class="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm">
-            <!-- "Request access", not "Create account": registering writes a request an
-                 administrator must approve — it does not create a usable account. -->
-            <Link href="/register" class="font-medium text-channel-ink hover:underline">Request access</Link>
+        <div class="mt-6 flex flex-wrap items-center justify-end gap-3 text-sm">
             <Link href="/forgot-password" class="font-medium text-muted hover:text-body hover:underline">Forgot password?</Link>
         </div>
+
+        <!--
+          No "Request access" link since 2026-07-27: accounts are created by invitation, so
+          a link here would send someone to a page that only tells them to ask a person.
+          Say that here instead, and save them the round trip.
+        -->
+        <p class="mt-4 text-sm text-muted">
+            Need an account? Ask an administrator or your chief resident to invite you.
+        </p>
 
         <p class="mt-6 border-t border-line-soft pt-4 text-xs text-muted">
             Authorised clinical staff only. Activity on this system is recorded.

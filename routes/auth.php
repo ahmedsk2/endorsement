@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\EmailOtpChallengeController;
 use App\Http\Controllers\Auth\EmailVerificationController;
+use App\Http\Controllers\Auth\InvitationAcceptController;
 use App\Http\Controllers\Auth\ChangePasswordController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
@@ -22,8 +23,25 @@ Route::get('/login', [AuthenticatedSessionController::class, 'create'])->name('l
 Route::post('/login', [AuthenticatedSessionController::class, 'store']);
 Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
 
-Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
-Route::post('/register', [RegisteredUserController::class, 'store'])->middleware('throttle:10,1');
+/*
+ * REGISTRATION IS BY INVITATION ONLY (2026-07-27, owner decision).
+ *
+ * `/register` was an unauthenticated endpoint on the public internet that wrote to the
+ * database and sent mail on a stranger's say-so. The approval step behind it was a real
+ * control — and it is the one docs/COMPLIANCE.md leans on to justify every account seeing
+ * all four units — so the answer was to make it stronger, not to keep guarding a door that
+ * did not need to be open.
+ *
+ * The route is KEPT rather than deleted, redirecting to the sign-in page with an
+ * explanation. A 404 here would read as "the system is broken" to a nurse who bookmarked
+ * it, and the link is still printed in older documentation.
+ */
+Route::get('/register', [RegisteredUserController::class, 'closed'])->name('register');
+
+Route::get('/invitation/{token}', [InvitationAcceptController::class, 'show'])
+    ->name('invitation.show')->middleware('throttle:20,1');
+Route::post('/invitation/{token}', [InvitationAcceptController::class, 'store'])
+    ->middleware('throttle:10,1');
 
 Route::get('/forgot-password', [PasswordResetLinkController::class, 'create'])->name('password.request');
 Route::post('/forgot-password', [PasswordResetLinkController::class, 'store'])

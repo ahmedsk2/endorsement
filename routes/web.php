@@ -96,6 +96,13 @@ Route::middleware('auth')
         Route::post('/users/pending/{pending}/approve', [UserManagementController::class, 'approve'])->name('users.approve');
         Route::delete('/users/pending/{pending}', [UserManagementController::class, 'reject'])->name('users.reject');
         Route::patch('/users/{user}/active', [UserManagementController::class, 'setActive'])->name('users.active');
+
+        // Invitations are the only way an account is created. Same two-tier rule, applied
+        // in-controller via ManagerScope: a Chief Resident may invite Residents alone.
+        Route::post('/invitations', [\App\Http\Controllers\Admin\InvitationController::class, 'store'])
+            ->name('invitations.store');
+        Route::delete('/invitations/{invitation}', [\App\Http\Controllers\Admin\InvitationController::class, 'revoke'])
+            ->name('invitations.revoke');
     });
 
 Route::middleware(['auth', 'throttle:clinical', 'cap:users.manage'])

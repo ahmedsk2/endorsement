@@ -3,10 +3,15 @@ import { describe, it, expect, vi } from 'vitest';
 import { reactive } from 'vue';
 
 /**
- * Registration-page password UX: a live requirements checklist (red -> green), a strength
- * meter, and a "passwords do not match" label that appears BEFORE submitting. The checklist
- * mirrors the SERVER rule exactly (Password::min(8)->mixedCase()->numbers()->symbols()) —
- * a checklist the server disagrees with is worse than none.
+ * Password UX on the form that sets a password: a live requirements checklist (red ->
+ * green), a strength meter, and a "passwords do not match" label that appears BEFORE
+ * submitting. The checklist mirrors the SERVER rule exactly
+ * (Password::min(8)->mixedCase()->numbers()->symbols()) — a checklist the server disagrees
+ * with is worse than none.
+ *
+ * Pointed at the invitation form since 2026-07-27: self-registration closed, and the
+ * registration page went with it. The behaviour under test is unchanged, because the meter
+ * itself moved into Composables/usePasswordStrength.js and is now shared rather than copied.
  */
 vi.mock('@inertiajs/vue3', () => ({
     Head: { name: 'Head', template: '<div><slot /></div>' },
@@ -23,9 +28,11 @@ vi.mock('@inertiajs/vue3', () => ({
     }),
 }));
 
-import Register from '../../resources/js/Pages/Auth/Register.vue';
+import AcceptInvitation from '../../resources/js/Pages/Auth/AcceptInvitation.vue';
 
-const mountPage = () => mount(Register, { props: { positions: { 4: 'Resident' } } });
+const mountPage = () => mount(AcceptInvitation, {
+    props: { token: 'a'.repeat(64), member_email: 'new@example.org', position_label: 'Resident' },
+});
 
 const setPassword = async (w, value) => {
     await w.get('[data-testid="password"]').setValue(value);

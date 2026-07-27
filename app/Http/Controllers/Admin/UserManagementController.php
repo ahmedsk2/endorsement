@@ -82,6 +82,16 @@ class UserManagementController extends Controller
                     'has_two_factor' => $u->hasTwoFactorEnabled(),
                 ]),
             'positions' => Position::orderBy('id')->get(['id', 'name']),
+
+            // Invitations are how accounts are created now. A Chief Resident sees only the
+            // ones they could act on, matching how `pending` and `users` are scoped above.
+            'invitations' => collect(InvitationController::openInvitations($request->user()))
+                ->when(! $all, fn ($c) => $c->where('position', self::RESIDENT))
+                ->values()
+                ->all(),
+            'invitablePositions' => $all
+                ? InvitationController::OFFERABLE
+                : [self::RESIDENT => InvitationController::OFFERABLE[self::RESIDENT]],
         ]);
     }
 
@@ -298,21 +308,13 @@ class UserManagementController extends Controller
     /** Full user management: the unrestricted tier. */
     private function canManageAll(?User $user): bool
     {
-        return $user !== null && AccessControl::allows($user, 'users.manage');
+        return \App\Support\ManagerScope::canManageAll($user);
     }
 
     /** The scoped (Chief Resident) tier — must hold users.manage_residents. 403 + audit otherwise. */
     private function assertScopedManager(Request $request): void
     {
-        $user = $request->user();
-
-        if ($user !== null && AccessControl::allows($user, 'users.manage_residents')) {
-            return;
-        }
-
-        AuditLog::record('access_denied', 'cap=users.manage_residents', $user?->getKey(), $request->ip());
-
-        abort(403);
+        \App\Support\ManagerScope::assertScopedManager($request);
     }
 
     /**
@@ -322,22 +324,7 @@ class UserManagementController extends Controller
      */
     private function authorizeTarget(Request $request, int $targetPosition): void
     {
-        if ($this->canManageAll($request->user())) {
-            return;
-        }
-
-        $this->assertScopedManager($request);
-
-        if ($targetPosition !== self::RESIDENT) {
-            AuditLog::record(
-                'user_scope_denied',
-                'target_position='.$targetPosition,
-                $request->user()?->getKey(),
-                $request->ip(),
-            );
-
-            abort(403, 'A Chief Resident manages resident accounts only.');
-        }
+        \App\Support\ManagerScope::assertMayTarget($request, $targetPosition);
     }
 
     /**

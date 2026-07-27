@@ -64,6 +64,11 @@ class HandleInertiaRequests extends Middleware
                 // New-day gap dialog payload: {unit, date, last_date}. Carries no PHI —
                 // unit code and dates only (see EndorsementController::newDay).
                 'carry_prompt' => $request->session()->get('carry_prompt'),
+                // A freshly-minted invitation link, shown to its issuer exactly once. It is
+                // a bearer credential: it lives in the session flash for a single response
+                // and is never persisted in readable form, so losing it means issuing a new
+                // invitation rather than looking this one up.
+                'invitation_link' => $request->session()->get('invitation_link'),
             ],
         ];
     }

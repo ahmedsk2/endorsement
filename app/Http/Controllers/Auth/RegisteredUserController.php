@@ -3,74 +3,38 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Models\PendingRegistration;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Password;
-use Inertia\Inertia;
-use Inertia\Response;
 
 /**
- * Public self-registration. Legacy parity: this NEVER creates an active `users` row and never
- * logs anyone in — it writes a `pending_registrations` row (hashed password) that an
- * administrator approves later (that approval flow is a separate task).
+ * Public self-registration, CLOSED on 2026-07-27 (owner decision).
+ *
+ * `/register` was an unauthenticated endpoint on the public internet that wrote to the
+ * database and sent mail on a stranger's say-so. An administrator still had to approve the
+ * resulting row — a real control, and the one docs/COMPLIANCE.md leans on to justify every
+ * clinical account being able to read all four units — so the answer was to make that
+ * control stronger rather than keep guarding a door that did not need to be open.
+ *
+ * Accounts are now created only by invitation:
+ * App\Http\Controllers\Admin\InvitationController.
+ *
+ * What survives, and why this is not simply deleted: the `pending_registrations` queue and
+ * its email-confirmation link are still reachable, because an administrator can still
+ * approve rows that were registered before invitations existed. Nothing creates new ones.
+ * Once that queue is confirmed empty in production, the queue, its approval path and this
+ * file can all go together.
  */
 class RegisteredUserController extends Controller
 {
-    public function create(): Response
+    /**
+     * A redirect rather than a 404: the URL is bookmarked and printed in older
+     * documentation, and "page not found" reads as a broken system to a nurse at 03:00 —
+     * which produces a phone call rather than the intended understanding.
+     */
+    public function closed(): RedirectResponse
     {
-        return Inertia::render('Auth/Register', [
-            // 0 = Administrator is deliberately NOT offered to self-registration.
-            // 1 = Nurse is RETIRED from this system. 5 = Chief Resident is never
-            // registered — a chief registers as a Resident and is promoted by an
-            // Administrator afterwards.
-            'positions' => [
-                2 => 'Charge Nurse',
-                3 => 'Consultant',
-                4 => 'Resident',
-            ],
-        ]);
-    }
-
-    public function store(Request $request): RedirectResponse
-    {
-        $data = $request->validate([
-            'full_name' => ['required', 'string', 'max:255'],
-            'member_name' => [
-                'required', 'string', 'max:255',
-                // Unique across BOTH the live users and the pending queue.
-                Rule::unique('users', 'member_name'),
-                Rule::unique('pending_registrations', 'member_name'),
-            ],
-            'member_email' => [
-                'required', 'email', 'max:255',
-                Rule::unique('users', 'member_email'),
-                Rule::unique('pending_registrations', 'member_email'),
-            ],
-            'position' => ['required', 'integer', Rule::in([2, 3, 4])],
-            // ONE definition of a valid password for the whole system — the same rule the
-            // registration page's live checklist mirrors (App\Support\PasswordPolicy).
-            'password' => \App\Support\PasswordPolicy::rules(),
-        ]);
-
-        $pending = PendingRegistration::create([
-            'full_name' => $data['full_name'],
-            'member_name' => $data['member_name'],
-            'member_email' => $data['member_email'],
-            'position' => $data['position'],
-            'password' => $data['password'], // hashed by the model cast
-            'requested_at' => now(),
-        ]);
-
-        // Confirm the address BEFORE anybody activates the account: an administrator
-        // should never switch on an inbox nobody has proved they own, and password
-        // resets and (optionally) sign-in codes are delivered there.
-        EmailVerificationController::sendRegistrationLink($pending);
-
         return redirect()->route('login')->with(
             'status',
-            'Registration received — confirm your email address using the link we just sent, then an administrator will activate your account.'
+            'Accounts are created by invitation. Ask an administrator or your chief resident to send you one.',
         );
     }
 }

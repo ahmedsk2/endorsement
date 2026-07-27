@@ -20,9 +20,53 @@ const props = defineProps({
     // to residents; the page additionally hides the full-manager-only controls
     // (role changes, profile edits) the server would 403 anyway.
     canManageAll: { type: Boolean, default: true },
+    // Open invitations, and the roles THIS manager may invite into — a Chief Resident sees
+    // Resident only, matching the server rule in App\Support\ManagerScope.
+    invitations: { type: Array, default: () => [] },
+    invitablePositions: { type: Object, default: () => ({}) },
 });
 
 const search = ref('');
+
+/*
+ * Invitations. The link comes back in a one-shot flash — it is a bearer credential that
+ * creates an account, so it is stored hashed and this is the only moment it exists in a
+ * readable form. If the admin loses it, the answer is a new invitation, not a lookup.
+ */
+const invite = reactive({ member_email: '', position: 4 });
+const inviteSending = ref(false);
+const invitationLink = ref(null);
+const copied = ref(false);
+
+const sendInvite = () => {
+    inviteSending.value = true;
+    copied.value = false;
+
+    router.post('/admin/invitations', { ...invite }, {
+        preserveScroll: true,
+        onSuccess: (page) => {
+            invitationLink.value = page.props.flash?.invitation_link ?? null;
+            invite.member_email = '';
+        },
+        onFinish: () => { inviteSending.value = false; },
+    });
+};
+
+const copyLink = async () => {
+    try {
+        await navigator.clipboard.writeText(invitationLink.value);
+        copied.value = true;
+    } catch {
+        // Clipboard access can be refused (insecure context, permissions). The link is on
+        // screen and selectable, so this is a convenience failing, not the feature failing.
+        copied.value = false;
+    }
+};
+
+const revokeInvite = (i) => {
+    if (!confirm(`Revoke the invitation for ${i.member_email}? The link stops working immediately.`)) return;
+    router.delete(`/admin/invitations/${i.id}`, { preserveScroll: true });
+};
 
 const filteredUsers = computed(() => {
     const q = search.value.trim().toLowerCase();
@@ -91,8 +135,72 @@ const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : '—');
                 <p v-for="(message, key) in errors" :key="key">{{ message }}</p>
             </div>
 
+            <!--
+              Invitations. Since 2026-07-27 this is the ONLY way an account is created —
+              /register is closed. The link is shown once, here, and never again: it is a
+              bearer credential, so it is stored hashed and cannot be re-displayed.
+            -->
+            <section aria-labelledby="invite-heading">
+                <h2 id="invite-heading" class="mb-3 text-base font-semibold text-ink">Invite someone</h2>
+
+                <form @submit.prevent="sendInvite" class="flex flex-wrap items-end gap-3 rounded-md border border-line bg-panel p-4">
+                    <div class="min-w-56 flex-1">
+                        <label class="channel-tag mb-1.5 block" for="invite-email">Email address</label>
+                        <input id="invite-email" v-model="invite.member_email" type="email" required
+                               class="w-full rounded-md border border-line bg-panel px-3 py-2 text-ink focus:border-channel focus:ring-channel" />
+                    </div>
+                    <div>
+                        <label class="channel-tag mb-1.5 block" for="invite-position">Role</label>
+                        <select id="invite-position" v-model.number="invite.position"
+                                class="rounded-md border border-line bg-panel px-3 py-2 text-ink focus:border-channel focus:ring-channel">
+                            <option v-for="(label, value) in invitablePositions" :key="value" :value="Number(value)">{{ label }}</option>
+                        </select>
+                    </div>
+                    <button type="submit" :disabled="inviteSending"
+                            class="rounded-md bg-channel px-4 py-2 font-semibold text-white transition hover:bg-channel-ink disabled:opacity-60">
+                        Send invitation
+                    </button>
+                </form>
+
+                <!-- Shown once. Copy it now or issue a new invitation. -->
+                <div v-if="invitationLink" data-testid="invitation-link"
+                     class="channel-bar channel-bar-ok mt-3 rounded-md bg-ok-soft px-4 py-3 text-sm">
+                    <p class="mb-1 font-semibold text-ink">Invitation link — shown only once</p>
+                    <p class="readout break-all text-xs text-ink">{{ invitationLink }}</p>
+                    <button type="button" class="mt-2 text-xs font-semibold text-channel-ink hover:underline"
+                            @click="copyLink">{{ copied ? 'Copied' : 'Copy link' }}</button>
+                </div>
+
+                <div v-if="invitations.length" class="mt-4 overflow-x-auto rounded-md border border-line">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-panel-soft">
+                            <tr>
+                                <th class="channel-tag px-3 py-2">Email</th>
+                                <th class="channel-tag px-3 py-2">Role</th>
+                                <th class="channel-tag px-3 py-2">Invited by</th>
+                                <th class="channel-tag px-3 py-2">Expires</th>
+                                <th class="channel-tag px-3 py-2"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="i in invitations" :key="i.id" class="border-t border-line">
+                                <td class="px-3 py-2 text-ink">{{ i.member_email }}</td>
+                                <td class="px-3 py-2 text-muted">{{ i.position_label }}</td>
+                                <td class="px-3 py-2 text-muted">{{ i.invited_by || '—' }}</td>
+                                <td class="readout px-3 py-2 text-muted">{{ i.expires_at }}</td>
+                                <td class="px-3 py-2 text-right">
+                                    <button type="button" class="text-xs font-semibold text-critical hover:underline"
+                                            @click="revokeInvite(i)">Revoke</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p v-else class="mt-3 text-sm text-muted">No invitations are waiting to be accepted.</p>
+            </section>
+
             <!-- Pending registrations -->
-            <section aria-labelledby="pending-heading">
+            <section v-if="pending.length" aria-labelledby="pending-heading">
                 <h2 id="pending-heading" class="mb-3 text-base font-semibold text-ink">
                     Pending registrations
                     <span class="readout ml-1 rounded-full bg-caution-soft px-2 py-0.5 text-xs font-semibold text-caution">{{ pending.length }}</span>

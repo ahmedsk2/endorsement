@@ -35,18 +35,29 @@ class AccountAssuranceTest extends TestCase
         Notification::fake();
     }
 
+    /**
+     * Queue a registration and send its confirmation link.
+     *
+     * Built directly rather than by POSTing /register, which closed on 2026-07-27 when
+     * accounts moved to invitation-only. The pending QUEUE and its confirmation link are
+     * still reachable — an administrator still approves rows that predate invitations — so
+     * the behaviour below is still live and still worth pinning; only the public front door
+     * to it is gone.
+     */
     private function register(array $overrides = []): PendingRegistration
     {
-        $this->post('/register', array_merge([
+        $pending = PendingRegistration::create(array_merge([
             'full_name' => 'New Resident',
             'member_name' => 'new_res',
             'member_email' => 'new_res@example.org',
             'position' => 4,
-            'password' => 'Secret-pass1',
-            'password_confirmation' => 'Secret-pass1',
-        ], $overrides))->assertRedirect();
+            'password' => 'Secret-pass1',   // hashed by the model cast
+            'requested_at' => now(),
+        ], $overrides));
 
-        return PendingRegistration::latest('id')->firstOrFail();
+        EmailVerificationController::sendRegistrationLink($pending);
+
+        return $pending;
     }
 
     // ------------------------------------------------------- email confirmation

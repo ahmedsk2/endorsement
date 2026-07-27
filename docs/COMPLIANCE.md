@@ -128,9 +128,11 @@ clinician at 03:00 unable to document the child in front of them.
    the next request.
 
 **What this deviation depends on.** Control 1 is doing most of the work, and it is only as
-strong as the registration path in front of it. `/register` is currently open to the
-internet (see below). **If that stays open, this deviation weakens** — the two decisions
-are coupled and should be reviewed together.
+strong as the path in front of it — which is why that path was closed on the same day. Self
+registration is gone: an account now exists only because an Administrator or Chief Resident
+invited one named address into one named role (`App\Http\Controllers\Admin\InvitationController`).
+The deviation and the account-creation path are coupled, and should be reviewed together if
+either changes.
 
 **Reopen this decision if** the department stops covering all four units concurrently,
 non-clinical roles are given `endorsement.view`, the system is extended beyond the
@@ -190,8 +192,9 @@ clinician who has none on file — something the paper cannot show. No names, no
   log ≥ 12 months hot; pending registrations 30 days) and a disposal mechanism.
 - **Breach procedure**: SDAIA notification within 72 hours; who decides, who writes it.
 - **Data-subject-rights** procedure (access, correction, erasure where lawful).
-- Restrict `/register` to the hospital network or replace it with admin invitations — it is
-  currently open to the internet, which is the largest remaining exposure.
+- ~~Restrict `/register`~~ — **done 2026-07-27.** Replaced with admin invitations: an
+  Administrator or Chief Resident invites one address into one role, the link is single-use,
+  expiring and revocable, and the token is stored hashed. Nothing self-registers.
 - Hosting is confirmed in-Kingdom (above). **Backups are not yet off-host**: the nightly
   archive still only exists in a volume on the machine it backs up, which is not a backup.
   Pull it to a second in-Kingdom location per `docs/RUNBOOK-BACKUP.md` and do the restore

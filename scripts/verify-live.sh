@@ -146,10 +146,19 @@ done
 
 echo "=== public routes ==="
 # `/` intentionally redirects (to /endorsement, which sends a guest on to /login).
-for r in /login /register /forgot-password /up; do
+for r in /login /forgot-password /up; do
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$BASE$r")
     [ "$code" = "200" ] && note "$r" "$code" || bad "$r" "expected 200, got $code"
 done
+
+# /register is CLOSED (2026-07-27): accounts are created by invitation. It redirects to the
+# sign-in page with an explanation rather than 404ing, because the URL is bookmarked and
+# printed in older documentation. A 200 here would mean self-registration came back.
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$BASE/register")
+case "$code" in
+    30*) note "/register closed" "$code" ;;
+    *)   bad "/register" "expected a redirect (self-registration is closed), got $code" ;;
+esac
 code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$BASE/")
 case "$code" in 30*|200) note "/" "$code";; *) bad "/" "unexpected $code";; esac
 

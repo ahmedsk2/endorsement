@@ -75,6 +75,20 @@ will fail to get a certificate, and the fix is to proxy it. And the origin certi
 no longer be inspected from a laptop, so that check runs on the host with
 `ORIGIN_IP=127.0.0.1`.
 
+### Self-registration is closed — accounts are created by invitation
+
+`/register` accepted anyone on the internet. An Administrator or Chief Resident now invites
+one address into one role; the invitee chooses only a username and password, because the
+address and the role travel with the invitation. Single use, seven-day expiry, revocable,
+token stored hashed, every failure indistinguishable from every other so it is not an oracle
+for valid addresses.
+
+This also strengthens the unit-scoping deviation below, which leans on "no account exists
+without approval" — that approval now happens before anyone can even reach a form.
+
+The pending-registration queue survives for rows created before today (there are none in
+production) and nothing adds to it. Once confirmed empty it can be removed entirely.
+
 ### Unit scoping — no boundary, and now recorded as such
 
 Residents cover all four units concurrently and may sign off more than one on the same date.
@@ -124,6 +138,9 @@ were corrected.
 **Rotate the two Coolify tokens** — the deploy token was still working on 2026-07-27, so
 this has not been done since the leak. · `php artisan user:create-admin` (TOTP, not email
 codes) · `APP_KEY` and `BACKUP_PASSPHRASE` into your password manager, in two different
-places · SMTP and VAPID · an object-lock rule on the `endorsement-backups` bucket · restrict
-`/register` — and note it is now coupled to the unit-scoping deviation above · the PDPL
+places · SMTP and VAPID · an object-lock rule on the `endorsement-backups` bucket · the PDPL
 governance set (DPO, ROPA, privacy notice, DPIA, retention schedule, breach procedure).
+
+Note that `user:create-admin` is now the ONLY way to create the first account, since
+self-registration is closed and an invitation has to be issued by someone who already has
+an account. Do that one first.

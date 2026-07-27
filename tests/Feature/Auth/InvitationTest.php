@@ -291,8 +291,13 @@ class InvitationTest extends TestCase
     {
         [, $real] = $this->invite();
 
+        // The near-miss must differ from the real token EVERY time. Appending a fixed '0' to
+        // the first 63 characters reproduces the original whenever it happens to end in '0'
+        // — a one-in-sixteen flake that duly failed a run.
+        $nearMiss = substr($real, 0, 63).(str_ends_with($real, '0') ? '1' : '0');
+
         // A well-formed-but-wrong token, a malformed one, and a near-miss of a real token.
-        foreach ([str_repeat('a', 64), 'not-a-token', substr($real, 0, 63).'0'] as $bad) {
+        foreach ([str_repeat('a', 64), 'not-a-token', $nearMiss] as $bad) {
             $this->get('/invitation/'.$bad)->assertRedirect('/login');
         }
 

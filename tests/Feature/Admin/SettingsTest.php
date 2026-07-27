@@ -202,7 +202,8 @@ class SettingsTest extends TestCase
 
         $this->actingAs($this->admin())->post('/admin/settings/test-email')
             ->assertRedirect()
-            ->assertSessionHas('error');
+            // Reported beside the button, not as a page-top banner a scroll away.
+            ->assertSessionHas('mail_test', fn ($r) => $r['ok'] === false);
 
         \Illuminate\Support\Facades\Mail::assertNothingSent();
     }

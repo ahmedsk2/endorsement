@@ -187,4 +187,59 @@ class ReminderTest extends TestCase
 
         $this->assertCount(0, $this->sender->sent);
     }
+
+    /*
+     * The self-test button. Without it, the only way to learn whether push works is to wait
+     * for a real reminder — which fires at 07:30 or 15:30, only for units you opted into,
+     * only while that handover is unsigned, and only once per slot. That is a poor way to
+     * discover a VAPID key was pasted with a trailing space.
+     */
+
+    public function test_a_user_can_push_a_test_notification_to_their_own_devices(): void
+    {
+        config(['endorsement.vapid.public_key' => 'pub', 'endorsement.vapid.private_key' => 'priv']);
+        $user = $this->optedInResident('PICU');
+
+        $this->actingAs($user)->post('/push/test')
+            ->assertRedirect()
+            ->assertSessionHas('push_test', fn ($r) => $r['ok'] === true);
+
+        $this->assertCount(1, $this->sender->sent);
+    }
+
+    public function test_the_test_notification_carries_no_patient_data(): void
+    {
+        // Same rule as a real reminder: a title, a line of text and a route, all composed
+        // in the controller, none of them read from any record.
+        config(['endorsement.vapid.public_key' => 'pub', 'endorsement.vapid.private_key' => 'priv']);
+        $user = $this->optedInResident('PICU');
+
+        $this->actingAs($user)->post('/push/test');
+
+        // FakePushSender records [subscription, payload].
+        [, $payload] = $this->sender->sent[0];
+        $this->assertSame(['title', 'body', 'url'], array_keys($payload));
+    }
+
+    public function test_it_says_so_when_this_device_is_not_registered(): void
+    {
+        config(['endorsement.vapid.public_key' => 'pub', 'endorsement.vapid.private_key' => 'priv']);
+
+        $this->actingAs(User::factory()->create(['position' => 4]))
+            ->post('/push/test')
+            ->assertSessionHas('push_test', fn ($r) => $r['ok'] === false);
+
+        $this->assertCount(0, $this->sender->sent);
+    }
+
+    public function test_it_says_so_when_the_server_has_no_vapid_keys(): void
+    {
+        config(['endorsement.vapid.public_key' => null, 'endorsement.vapid.private_key' => null]);
+        $user = $this->optedInResident('PICU');
+
+        $this->actingAs($user)->post('/push/test')
+            ->assertSessionHas('push_test', fn ($r) => $r['ok'] === false);
+
+        $this->assertCount(0, $this->sender->sent);
+    }
 }

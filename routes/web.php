@@ -181,6 +181,10 @@ Route::middleware('auth')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::post('/push/subscriptions', [PushSubscriptionController::class, 'store'])->middleware('cap:profile.manage')->name('push.store');
     Route::delete('/push/subscriptions', [PushSubscriptionController::class, 'destroy'])->middleware('cap:profile.manage')->name('push.destroy');
+    // Prove push works now, rather than at the next 07:30. Throttled: it reaches an
+    // external push service and puts a notification on someone's phone.
+    Route::post('/push/test', [PushSubscriptionController::class, 'test'])
+        ->middleware(['cap:profile.manage', 'throttle:6,1'])->name('push.test');
 });
 
 require __DIR__.'/auth.php';

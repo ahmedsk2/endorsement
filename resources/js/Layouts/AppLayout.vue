@@ -65,8 +65,19 @@ const navClass = (active) => [
             Skip to content
         </a>
 
-        <!-- Sidebar / role-gated navigation -->
-        <aside class="w-full shrink-0 border-b border-line bg-ground-deep lg:min-h-screen lg:w-64 lg:border-b-0 lg:border-r">
+        <!--
+          Sidebar / role-gated navigation.
+
+          STICKY FROM `lg` UP, and only there. On a desktop the census scrolls for pages, and
+          a nav that scrolls away with it means reaching for another unit is a scroll back to
+          the top first. `h-screen` + `overflow-y-auto` rather than `min-h-screen`: pinned, it
+          must be able to scroll its own contents on a short viewport, or the Administration
+          links at the bottom become unreachable on a laptop.
+
+          Left alone below `lg`, where it is a stacked block at the top of the document —
+          pinning that would eat a phone's screen for the one page a ward actually reads.
+        -->
+        <aside class="w-full shrink-0 border-b border-line bg-ground-deep lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:overflow-y-auto lg:border-b-0 lg:border-r">
             <div class="flex h-16 items-center gap-2 px-5 border-b border-line">
                 <span class="grid h-8 w-8 place-items-center rounded-md bg-channel text-sm font-bold text-white">PE</span>
                 <div class="leading-tight">

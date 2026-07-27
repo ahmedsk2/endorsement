@@ -1,6 +1,6 @@
 <script setup>
-import { ref } from 'vue';
-import { router, useForm } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
+import { router, useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '../../Layouts/AppLayout.vue';
 
 /**
@@ -35,10 +35,14 @@ const form = useForm({
 // transport's own words reach the admin — "connection refused" and "535 authentication
 // failed" point at different wrong fields, and one generic failure would hide which.
 const testing = ref(false);
+// preserveScroll + preserveState keeps the admin exactly where they pressed the button,
+// with everything they had typed still in the form. The outcome appears beside it.
+const mailTest = computed(() => usePage().props.flash?.mail_test ?? null);
 const sendTestEmail = () => {
     testing.value = true;
     router.post('/admin/settings/test-email', {}, {
         preserveScroll: true,
+        preserveState: true,
         onFinish: () => { testing.value = false; },
     });
 };
@@ -133,6 +137,21 @@ const inputClass = 'w-full rounded-md border border-line bg-panel px-3 py-2 text
                         <p class="text-xs text-muted">
                             Sends one message to the alerts address above (or to your own, if that is blank).
                             <strong class="text-ink">Save your changes first</strong> &mdash; the test uses what is stored.
+                        </p>
+                    </div>
+
+                    <!--
+                      The result, beside the button that caused it. Rendered persistently and
+                      populated, never created together with its content, so a screen reader
+                      announces the change rather than a new region appearing.
+                    -->
+                    <div role="status" aria-live="polite" class="mt-3" data-testid="mail-test-result">
+                        <p v-if="mailTest"
+                           class="channel-bar rounded-md px-3 py-2 text-sm"
+                           :class="mailTest.ok
+                               ? 'channel-bar-ok bg-ok-soft text-ok'
+                               : 'channel-bar-critical bg-critical-soft text-critical'">
+                            {{ mailTest.message }}
                         </p>
                     </div>
                 </section>

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { Link, router, useForm } from '@inertiajs/vue3';
+import { Link, router, useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '../../Layouts/AppLayout.vue';
 import SignaturePad from '../../Components/SignaturePad.vue';
 
@@ -81,6 +81,20 @@ const saveSignature = () => {
 };
 
 const removeSignature = () => router.delete('/profile/signature', { preserveScroll: true });
+
+// ------------------------------------------------------------ push self-test
+
+const pushTesting = ref(false);
+const pushTest = computed(() => usePage().props.flash?.push_test ?? null);
+
+const sendTestPush = () => {
+    pushTesting.value = true;
+    router.post('/push/test', {}, {
+        preserveScroll: true,
+        preserveState: true,
+        onFinish: () => { pushTesting.value = false; },
+    });
+};
 
 // ------------------------------------------------------------ reminders
 
@@ -349,9 +363,28 @@ const enablePush = async () => {
                             class="rounded-md border border-line px-3 py-1.5 text-sm font-semibold text-channel-ink hover:bg-channel-soft">
                         Enable notifications on this device
                     </button>
+                    <!--
+                      Otherwise the only way to learn push works is to wait for a real 07:30
+                      reminder — which fires only for units you opted into, only if that
+                      handover is still unsigned, and only once per slot. A poor way to find
+                      out a VAPID key was pasted with a trailing space.
+                    -->
+                    <button type="button" data-testid="test-push" @click="sendTestPush" :disabled="pushTesting"
+                            class="rounded-md border border-line px-3 py-1.5 text-sm font-semibold text-body hover:bg-ground disabled:opacity-60">
+                        {{ pushTesting ? 'Sending…' : 'Send a test notification' }}
+                    </button>
                     <span v-if="reminderSaved" class="text-sm text-ok" role="status">Saved.</span>
                 </div>
                 <p v-if="pushState" class="mt-2 text-xs text-body" role="status" data-testid="push-state">{{ pushState }}</p>
+
+                <div role="status" aria-live="polite" class="mt-2" data-testid="push-test-result">
+                    <p v-if="pushTest" class="channel-bar rounded-md px-3 py-2 text-sm"
+                       :class="pushTest.ok
+                           ? 'channel-bar-ok bg-ok-soft text-ok'
+                           : 'channel-bar-critical bg-critical-soft text-critical'">
+                        {{ pushTest.message }}
+                    </p>
+                </div>
             </section>
         </div>
     </AppLayout>

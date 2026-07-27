@@ -113,8 +113,15 @@ class SettingsController extends Controller
         // Whatever was just saved applies to THIS request too.
         AppSettings::applyOverrides();
 
+        // Reported through a DEDICATED flash key, rendered beside the button rather than as
+        // the page-top banner every other action uses. The result of pressing a button
+        // belongs next to that button — on this page the banner is a scroll away, so the
+        // answer to "did it work?" would land off screen.
         if (config('mail.default') !== 'smtp') {
-            return back()->with('error', 'No SMTP server is configured yet — fill in the mail settings and save first.');
+            return back()->with('mail_test', [
+                'ok' => false,
+                'message' => 'No SMTP server is configured yet — fill in the mail settings above and save first.',
+            ]);
         }
 
         // The alert address if one is set, because that is the delivery path an operational
@@ -122,7 +129,10 @@ class SettingsController extends Controller
         $to = AppSettings::get('alert_email') ?: $request->user()->member_email;
 
         if (! is_string($to) || ! filter_var($to, FILTER_VALIDATE_EMAIL)) {
-            return back()->with('error', 'No usable address to send to — set "Operational alerts to", or an email address on your own profile.');
+            return back()->with('mail_test', [
+                'ok' => false,
+                'message' => 'No usable address to send to — set "Operational alerts to" above, or an email address on your own profile.',
+            ]);
         }
 
         try {
@@ -135,11 +145,17 @@ class SettingsController extends Controller
             // it goes to the admin's screen and not into the audit trail.
             AuditLog::record('settings_test_email_failed', 'to=set', $request->user()->getKey(), $request->ip());
 
-            return back()->with('error', 'Could not send: '.$e->getMessage());
+            return back()->with('mail_test', [
+                'ok' => false,
+                'message' => 'Could not send: '.$e->getMessage(),
+            ]);
         }
 
         AuditLog::record('settings_test_email', 'to=set', $request->user()->getKey(), $request->ip());
 
-        return back()->with('status', 'Test message sent to '.$to.'. If it does not arrive within a few minutes, check the spam folder and the relay logs.');
+        return back()->with('mail_test', [
+            'ok' => true,
+            'message' => 'Sent to '.$to.'. If it has not arrived in a few minutes, check the spam folder and the relay logs.',
+        ]);
     }
 }

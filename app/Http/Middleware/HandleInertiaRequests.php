@@ -69,6 +69,12 @@ class HandleInertiaRequests extends Middleware
                 // and is never persisted in readable form, so losing it means issuing a new
                 // invitation rather than looking this one up.
                 'invitation_link' => $request->session()->get('invitation_link'),
+                // Results of the two "prove it works" buttons: {ok, message}. Separate from
+                // `status`/`error` on purpose — these render BESIDE the button that caused
+                // them, because on a long settings or profile page the page-top banner is a
+                // scroll away, and the answer to "did that work?" must not land off screen.
+                'mail_test' => $request->session()->get('mail_test'),
+                'push_test' => $request->session()->get('push_test'),
             ],
         ];
     }

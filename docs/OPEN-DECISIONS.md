@@ -8,34 +8,6 @@ auditor wants and a deleted section cannot give it.
 
 ## STILL OPEN
 
-### A. The origin answers the public internet, so Cloudflare is bypassable
-
-**This is the largest of the remaining items, and it was found while checking something
-else.** Verified 2026-07-27:
-
-```
-curl https://endorse.towardpcc.com/login --resolve endorse.towardpcc.com:443:145.241.105.239
-→ 200, no cf-ray header
-```
-
-That is the live application served straight from the origin with Cloudflare cut out of the
-path. The OCI security list allows `0.0.0.0/0` on 22, 80 and 443. The origin IP is not
-secret: the Let's Encrypt certificate for `endorse.towardpcc.com` is published in
-Certificate Transparency logs, and the site answered on an sslip.io hostname before the real
-domain existed.
-
-Consequences: any Cloudflare WAF rule, rate limit or bot protection is optional from an
-attacker's point of view, and the plan to put Cloudflare Access in front of `/register` is
-defeated before it is built. App-level defences (auth, lockout, CSRF, CSP) all still apply,
-so this is not an emergency.
-
-**Why it is not already fixed:** the obvious remedy — restrict ingress to Cloudflare's
-ranges — has a blast radius that needs your decision. `towardpcc.com` and `www` are
-**grey-clouded**: they resolve straight to 145.241.105.239, so that change takes those two
-sites down entirely, not merely their certificate renewals. Options are (a) proxy those
-records too, then restrict ingress; (b) restrict ingress and accept the apex moving; or
-(c) leave it and treat Cloudflare as performance rather than security.
-
 ### B. Cloudflare SSL/TLS mode — Full, or Full (strict)?
 
 **Recommendation: set it, but as a Configuration Rule scoped to `endorse.towardpcc.com`,
@@ -75,6 +47,33 @@ is tied to your personal email) and the heartbeat URL, which is a secret.
 ---
 
 ## DECIDED — 2026-07-27
+
+### The origin no longer answers the public internet
+
+Until this afternoon the whole application was served straight from 145.241.105.239 with
+Cloudflare cut out of the path, so every WAF rule, rate limit and access policy was optional
+for anyone who knew the IP — and the IP is public, because the origin's own certificate is
+in the Certificate Transparency logs.
+
+Closed in two steps, in this order, because the reverse order would have taken sites down:
+
+1. **Every hostname is now proxied.** Three were grey-clouded, not the two I first reported
+   — `towardpcc.com`, `www`, and `next` — all serving the live TowardPCC site. Each was
+   verified to hold a valid publicly-trusted origin certificate first, then flipped, then
+   re-checked through the edge.
+2. **OCI ingress on 80/443 is restricted to Cloudflare's published ranges.** Port 22 and
+   ICMP fragmentation-needed are deliberately left open — the latter is not optional, since
+   removing it makes large responses hang rather than fail.
+
+Verified: the bypass now returns nothing, and all eight hostnames still serve. Asserted from
+then on by `scripts/verify-live.sh` with `ORIGIN_PUBLIC_IP` set, so a change that reopens
+the origin is caught rather than noticed.
+
+**Two consequences worth knowing.** Certificate renewal now depends on the HTTP-01 challenge
+arriving *through* Cloudflare, which it does today — but a NEW hostname added grey-clouded
+will fail to get a certificate, and the fix is to proxy it. And the origin certificate can
+no longer be inspected from a laptop, so that check runs on the host with
+`ORIGIN_IP=127.0.0.1`.
 
 ### Unit scoping — no boundary, and now recorded as such
 

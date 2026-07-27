@@ -46,14 +46,18 @@ else
     # diary entry with a check that runs itself is the difference between the two modes
     # being a free improvement and being a trap.
     #
-    # ORIGIN_IP lets this resolve past Cloudflare; without it the origin is not reachable
-    # by name and the check reports that rather than pretending to pass.
+    # Since 2026-07-27 the origin accepts 80/443 ONLY from Cloudflare's ranges, so this can
+    # no longer be checked from a laptop. Run it ON the host, where the origin is loopback:
+    #
+    #   ORIGIN_IP=127.0.0.1 bash scripts/verify-live.sh
+    #
+    # From outside, an unreachable origin is the CORRECT answer — asserted separately below.
     if [ -n "${ORIGIN_IP:-}" ]; then
         origin_end=$(echo | openssl s_client -connect "$ORIGIN_IP:443" -servername "$HOST" 2>/dev/null \
                      | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
 
         if [ -z "$origin_end" ]; then
-            bad "origin certificate" "no certificate served by $ORIGIN_IP"
+            note "origin certificate" "unreachable at $ORIGIN_IP (expected from outside; run on the host with ORIGIN_IP=127.0.0.1)"
         else
             end_epoch=$(date -d "$origin_end" +%s 2>/dev/null || echo 0)
             now_epoch=$(date +%s)
@@ -69,6 +73,29 @@ else
         fi
     else
         note "origin certificate" "not checked (set ORIGIN_IP=... to enable)"
+    fi
+fi
+
+# THE PROXY MUST NOT BE BYPASSABLE.
+#
+# Until 2026-07-27 the origin answered the whole application to anyone on the internet, so
+# every Cloudflare WAF rule, rate limit and access policy was optional for an attacker who
+# knew the IP — and the IP is public, because the origin's own certificate is in the
+# Certificate Transparency logs. OCI ingress on 80/443 is now restricted to Cloudflare's
+# published ranges. This asserts that it stayed that way.
+#
+# Set ORIGIN_PUBLIC_IP to enable; skipped silently otherwise so the script still runs
+# anywhere. Do NOT set it when running ON the host, where the origin is reachable by design.
+if [ -n "${ORIGIN_PUBLIC_IP:-}" ]; then
+    # No `|| echo 000` — curl already writes 000 on a failed connection, and appending a
+    # second one produced "000000", which matched nothing and failed the check.
+    bypass=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+             --resolve "$HOST:443:$ORIGIN_PUBLIC_IP" "https://$HOST/login" 2>/dev/null)
+
+    if [ "${bypass:-000}" = "000" ]; then
+        note "origin reachable only via Cloudflare" yes
+    else
+        bad "origin is directly reachable" "got $bypass bypassing Cloudflare — WAF and rate limits are optional"
     fi
 fi
 

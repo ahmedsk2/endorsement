@@ -133,11 +133,40 @@ Open a shell from **Coolify → the app → Terminal**, or over SSH:
 docker exec -it $(docker ps -qf name=app-oo7d7si62yhyi7fx10hrck6q) sh
 ```
 
-Initial setup, once:
+### Migrations need a privilege the app does not have
+
+`php artisan migrate --force` **fails on its own**, and that is deliberate:
+
+```
+SQLSTATE[42000]: 1142 ALTER command denied to user 'endorse'@'...'
+```
+
+The application's database user holds `SELECT, INSERT, UPDATE, DELETE` and nothing else —
+no `ALTER`, no `DROP`, no `CREATE`. A compromised application therefore cannot reshape or
+drop the clinical schema, which is worth keeping. It does mean a schema change is a
+deliberate, privileged act rather than something the app can do to itself.
+
+Setting `-e DB_USERNAME=root` on the exec does **not** work either: the config is cached at
+boot, so `env()` is not consulted at runtime.
+
+So: grant, migrate, revoke. Run from the HOST (not inside the app container), so the root
+credential is read from the database container's own environment and never typed or logged:
 
 ```bash
-php artisan migrate --force
+APP=$(sudo docker ps -qf name=app-oo7d7si62yhyi7fx10hrck6q | head -1)
+DB=$(sudo docker ps -qf ancestor=mysql:8.4 | head -1)
+PW=$(sudo docker exec "$DB" printenv MYSQL_ROOT_PASSWORD)
+DBNAME=$(sudo docker exec "$DB" printenv MYSQL_DATABASE)
+DBUSER=$(sudo docker exec "$DB" printenv MYSQL_USER)
+
+sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "GRANT ALTER ON \`$DBNAME\`.* TO '$DBUSER'@'%'; FLUSH PRIVILEGES;"
+sudo docker exec -u app "$APP" php artisan migrate --force
+sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "REVOKE ALTER ON \`$DBNAME\`.* FROM '$DBUSER'@'%'; FLUSH PRIVILEGES;"
 ```
+
+`MYSQL_PWD` rather than `-p"$PW"` keeps the credential out of the container's process list.
+`-u app` keeps the artisan process unprivileged inside the container. **Verify the revoke
+landed** — `SHOW GRANTS FOR '$DBUSER'@'%';` should show no ALTER.
 
 ```bash
 php artisan db:seed --force

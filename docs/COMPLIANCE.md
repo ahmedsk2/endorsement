@@ -174,11 +174,10 @@ clinician who has none on file — something the paper cannot show. No names, no
   on every push and weekly.
 
 **Code — still open:**
-- The anomaly sweep exists and runs hourly (`AuditAnomalies`, `routes/console.php`),
-  counting `access_denied`, `user_scope_denied` and `signature_access_denied`. Still open:
-  it does not count repeated failed second factors (`two_factor_email_failed`), and it has
-  no delivery destination until SMTP and an alert address are configured.
-- Enable Dependabot or Renovate in the repository settings.
+- Nothing. The anomaly sweep now also counts repeated failed second factors — `2fa_failed`
+  per user, and `two_factor_email_failed` per source address, since that one is recorded
+  before a session exists. It still has **no delivery destination** until SMTP and an alert
+  address are configured, which is an owner item below, not a code item.
 
 **Owner / governance (PDPL):**
 - Appoint and publish a **data protection officer**; register with SDAIA if required for

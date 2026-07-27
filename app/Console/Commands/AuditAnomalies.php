@@ -56,11 +56,26 @@ class AuditAnomalies extends Command
         }
 
         // Any refusal cluster: wrong capability, out-of-scope target, or a failing factor.
-        foreach (['access_denied', 'user_scope_denied', 'signature_access_denied'] as $action) {
+        //
+        // `2fa_failed` matters most of the four: a password that works followed by a second
+        // factor that keeps failing is what a stolen credential looks like meeting the
+        // control that stopped it. It was missing while this comment already claimed it.
+        foreach (['access_denied', 'user_scope_denied', 'signature_access_denied', '2fa_failed'] as $action) {
             foreach ($this->perUserCounts($action, $since) as $row) {
                 if ($row->n >= self::DENIED_THRESHOLD) {
                     $findings[] = "user={$row->user_id} triggered {$row->n} {$action} in the window";
                 }
+            }
+        }
+
+        // The emailed-code failure records NO user_id — it happens before a session exists —
+        // so the per-user sweep above skips it entirely and would go on doing so silently.
+        // Counted by source address instead, which only became a meaningful signal on
+        // 2026-07-27: before that every request resolved to a Cloudflare edge address, so
+        // this would have aggregated the whole internet into one bucket.
+        foreach ($this->perIpCounts('two_factor_email_failed', $since) as $row) {
+            if ($row->n >= self::DENIED_THRESHOLD) {
+                $findings[] = "ip={$row->ip} triggered {$row->n} two_factor_email_failed in the window";
             }
         }
 
@@ -96,6 +111,25 @@ class AuditAnomalies extends Command
         // NOT a failure exit: the command did its job. Returning non-zero would make the
         // scheduler's onFailure fire as well and report the same thing twice.
         return self::SUCCESS;
+    }
+
+    /**
+     * For pre-authentication events, where there is no user to group by.
+     *
+     * An IP is personal data under PDPL, but it is already in this table by design and the
+     * finding carries nothing else — no account, no name, no detail column.
+     *
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function perIpCounts(string $action, \DateTimeInterface $since)
+    {
+        return AuditLog::query()
+            ->select('ip', DB::raw('COUNT(*) as n'))
+            ->where('action', $action)
+            ->where('created_at', '>=', $since)
+            ->whereNotNull('ip')
+            ->groupBy('ip')
+            ->get();
     }
 
     /** @return \Illuminate\Support\Collection<int, object> */

@@ -102,6 +102,41 @@ class AuditAnomaliesTest extends TestCase
         Mail::assertSent(\App\Mail\OpsAlertMail::class);
     }
 
+    public function test_a_run_of_failed_second_factors_is_reported(): void
+    {
+        // The sweep's own comment claimed it covered "a failing factor" and it did not.
+        // A password that works plus a second factor that keeps failing is the signature of
+        // a stolen credential meeting the control that stopped it — precisely the thing a
+        // breach clock should start on.
+        Mail::fake();
+        $this->alertable();
+
+        for ($i = 0; $i < 12; $i++) {
+            AuditLog::record('2fa_failed', 'member=5', 5, '10.0.0.1');
+        }
+
+        $this->artisan('audit:anomalies')->assertExitCode(0);
+
+        Mail::assertSent(\App\Mail\OpsAlertMail::class);
+    }
+
+    public function test_failed_email_codes_are_reported_even_though_nobody_is_signed_in(): void
+    {
+        // This one records NO user_id — it happens before a session exists — so per-user
+        // counting silently skips it. Counted by source address instead, which is only
+        // meaningful now that the address is the client's rather than a Cloudflare edge.
+        Mail::fake();
+        $this->alertable();
+
+        for ($i = 0; $i < 12; $i++) {
+            AuditLog::record('two_factor_email_failed', 'user=5', null, '203.0.113.5');
+        }
+
+        $this->artisan('audit:anomalies')->assertExitCode(0);
+
+        Mail::assertSent(\App\Mail\OpsAlertMail::class);
+    }
+
     public function test_events_outside_the_window_are_ignored(): void
     {
         Mail::fake();

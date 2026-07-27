@@ -46,3 +46,29 @@ if [ -z "$newest" ]; then
 fi
 
 log "newest object: $newest"
+
+# Dead-man's switch. Every failure path above exits non-zero BEFORE this line, so the ping
+# is only sent when an archive genuinely reached the off-host destination and was seen
+# there. The monitoring service alarms when the ping stops — which is the only way to be
+# told about a backup that silently stopped running, as opposed to one that failed loudly.
+#
+# The URL is a secret (anyone holding it can suppress the alarm), so it lives in a
+# root-only file rather than in this repo or in a crontab line. Absent, this is a no-op:
+# the sync is not made to depend on the monitoring of it.
+HEARTBEAT_FILE=/etc/endorsement/heartbeat.url
+
+if [ -r "$HEARTBEAT_FILE" ]; then
+    url=$(tr -d '[:space:]' < "$HEARTBEAT_FILE")
+
+    if [ -n "$url" ]; then
+        # Never let monitoring fail the thing it monitors: short timeout, errors swallowed,
+        # and the URL kept out of the log because it is a credential.
+        if curl -fsS --max-time 15 -o /dev/null "$url" 2>/dev/null; then
+            log "heartbeat sent"
+        else
+            log "heartbeat FAILED to send (the backup itself succeeded)"
+        fi
+    fi
+else
+    log "no heartbeat configured ($HEARTBEAT_FILE absent)"
+fi

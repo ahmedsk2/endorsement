@@ -169,9 +169,16 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:profile.manage'])->group(fu
  * the immutable image a signed sheet was signed with.
  */
 Route::middleware('auth')->group(function () {
-    Route::get('/signatures/file/{hash}', [SignatureController::class, 'file'])->name('signatures.file');
-    Route::get('/signatures/me', [SignatureController::class, 'mine'])->name('signatures.mine');
-    Route::get('/signatures/{user}', [SignatureController::class, 'show'])->name('signatures.show');
+    // `no_history` on each: these are fetched by an <img>, never navigated to. Without it the
+    // browser's image request became the session's "previous page", and every later back()
+    // redirected to a PNG — which Inertia rendered as a full-screen wall of raw bytes.
+    // See App\Http\Middleware\StartSession.
+    Route::get('/signatures/file/{hash}', [SignatureController::class, 'file'])
+        ->defaults('no_history', true)->name('signatures.file');
+    Route::get('/signatures/me', [SignatureController::class, 'mine'])
+        ->defaults('no_history', true)->name('signatures.mine');
+    Route::get('/signatures/{user}', [SignatureController::class, 'show'])
+        ->defaults('no_history', true)->name('signatures.show');
 });
 
 /*

@@ -36,7 +36,11 @@ class RequireSetup
         'setup*',
         'user/two-factor*',
         'profile/two-factor-method',
-        'profile/email/verify',
+        // WILDCARD. The emailed confirmation link is /profile/email/verify/{user}/{hash};
+        // the literal path only matched the POST that SENDS it. So a user mid-setup could
+        // request the email and then be bounced away from the link it contained — stuck
+        // needing a verified address to choose email codes, and unable to verify one.
+        'profile/email/verify*',
         'profile/reminders',
         'push/subscriptions*',
         'logout',

@@ -5,6 +5,7 @@ use App\Http\Middleware\EnsureAccountActive;
 use App\Http\Middleware\EnsureCapability;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RequireSetup;
+use App\Http\Middleware\TrackInertiaPreviousUrl;
 use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -18,7 +19,18 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // `back()` has no Referer to use (Referrer-Policy: no-referrer is deliberate), so it
+        // falls back to the session — which Laravel only updates on non-AJAX GETs, i.e.
+        // never for an Inertia visit. These two put that right from both ends: page visits
+        // ARE recorded, and `<img>` sub-resources are NOT. Three bugs shared that one cause.
+        $middleware->replaceInGroup(
+            'web',
+            \Illuminate\Session\Middleware\StartSession::class,
+            \App\Http\Middleware\StartSession::class,
+        );
+
         $middleware->web(append: [
+            TrackInertiaPreviousUrl::class,
             // Per-request `active` re-check (legacy require_auth.php parity). Declared
             // BEFORE HandleInertiaRequests so a revoked account never gets its auth props shared.
             EnsureAccountActive::class,

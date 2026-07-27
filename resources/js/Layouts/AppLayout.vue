@@ -20,15 +20,25 @@ const page = usePage();
  * stay in step, which is why the number is written down here and nowhere else.
  */
 const DESKTOP = '(min-width: 64rem)';
-const isDesktop = ref(typeof window !== 'undefined' ? window.matchMedia(DESKTOP).matches : true);
+
+// Guarded: matchMedia is absent in the component test environment, and would be absent in
+// any non-browser render. Defaulting to "desktop" there means the nav is SHOWN — failing
+// towards a visible menu rather than an invisible one, since a hidden nav with no working
+// toggle would be a page with no way out.
+const desktopQuery = () =>
+    (typeof window !== 'undefined' && typeof window.matchMedia === 'function')
+        ? window.matchMedia(DESKTOP)
+        : null;
+
+const isDesktop = ref(desktopQuery()?.matches ?? true);
 const navOpen = ref(false);
 
 let mq = null;
 const syncDesktop = (e) => { isDesktop.value = e.matches; };
 
 onMounted(() => {
-    mq = window.matchMedia(DESKTOP);
-    mq.addEventListener('change', syncDesktop);
+    mq = desktopQuery();
+    mq?.addEventListener('change', syncDesktop);
 });
 
 onUnmounted(() => mq?.removeEventListener('change', syncDesktop));

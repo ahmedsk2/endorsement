@@ -183,7 +183,10 @@ clinician who has none on file — something the paper cannot show. No names, no
   before a session exists. It still has **no delivery destination** until SMTP and an alert
   address are configured, which is an owner item below, not a code item.
 
-**Owner / governance (PDPL):**
+**Owner / governance (PDPL):** — drafted for you in `docs/PDPL-PACK.md`, with every
+technical claim filled in from the code and every decision marked `[DECIDE]`. What follows
+is the checklist; the pack is the working document.
+
 - Appoint and publish a **data protection officer**; register with SDAIA if required for
   your processing volume.
 - **Records of processing (ROPA)**, a **privacy notice** for staff and patients, and a

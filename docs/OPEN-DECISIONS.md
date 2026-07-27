@@ -139,7 +139,10 @@ were corrected.
 this has not been done since the leak. · `php artisan user:create-admin` (TOTP, not email
 codes) · `APP_KEY` and `BACKUP_PASSPHRASE` into your password manager, in two different
 places · SMTP and VAPID · an object-lock rule on the `endorsement-backups` bucket · the PDPL
-governance set (DPO, ROPA, privacy notice, DPIA, retention schedule, breach procedure).
+governance set — **now drafted in `docs/PDPL-PACK.md`**, with the technical half filled
+in from the code and every judgement marked `[DECIDE]`. What is left there is genuinely
+yours: who the DPO is, the clinical retention period, who declares a breach, and how this
+system learns that somebody has left.
 
 Note that `user:create-admin` is now the ONLY way to create the first account, since
 self-registration is closed and an invitation has to be issued by someone who already has

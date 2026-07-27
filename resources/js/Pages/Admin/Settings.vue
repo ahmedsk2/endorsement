@@ -1,5 +1,6 @@
 <script setup>
-import { useForm } from '@inertiajs/vue3';
+import { ref } from 'vue';
+import { router, useForm } from '@inertiajs/vue3';
 import AppLayout from '../../Layouts/AppLayout.vue';
 
 /**
@@ -29,6 +30,18 @@ const form = useForm({
     handover_time_morning: props.settings.handover_time_morning ?? '',
     handover_time_afternoon: props.settings.handover_time_afternoon ?? '',
 });
+
+// The result arrives as a flash banner (status or error) rendered by AppLayout, so the
+// transport's own words reach the admin — "connection refused" and "535 authentication
+// failed" point at different wrong fields, and one generic failure would hide which.
+const testing = ref(false);
+const sendTestEmail = () => {
+    testing.value = true;
+    router.post('/admin/settings/test-email', {}, {
+        preserveScroll: true,
+        onFinish: () => { testing.value = false; },
+    });
+};
 
 const submit = () => form.put('/admin/settings', {
     preserveScroll: true,
@@ -105,14 +118,42 @@ const inputClass = 'w-full rounded-md border border-line bg-panel px-3 py-2 text
                             </p>
                         </div>
                     </div>
+
+                    <!--
+                      Save first, then send: the test uses the STORED settings, not what is
+                      currently typed into the form. Sending is the only way to know mail
+                      works — a saved configuration reports success either way.
+                    -->
+                    <div class="mt-4 flex flex-wrap items-center gap-3 border-t border-line-soft pt-4">
+                        <button type="button" data-testid="send-test-email" :disabled="testing"
+                                class="min-h-11 rounded-md border border-line bg-panel px-3 py-1.5 text-sm font-semibold text-body hover:bg-ground disabled:opacity-60"
+                                @click="sendTestEmail">
+                            {{ testing ? 'Sending…' : 'Send test email' }}
+                        </button>
+                        <p class="text-xs text-muted">
+                            Sends one message to the alerts address above (or to your own, if that is blank).
+                            <strong class="text-ink">Save your changes first</strong> &mdash; the test uses what is stored.
+                        </p>
+                    </div>
                 </section>
 
                 <!-- Push / VAPID -->
                 <section class="channel-bar rounded-md border border-line bg-panel p-5">
                     <h3 class="mb-1 text-sm font-semibold text-ink">Push notifications (VAPID)</h3>
+                    <!--
+                      This used to say `npx web-push generate-vapid-keys`, which cannot be
+                      run where it matters: the production image ships no Node. The artisan
+                      command below uses the library already installed here.
+                    -->
+                    <p class="mb-1 text-xs text-muted">
+                        Sends the 07:30 and 15:30 handover reminders to phones. Optional —
+                        reminders still run without it, they just have nowhere to go.
+                    </p>
                     <p class="mb-3 text-xs text-muted">
-                        Generate once with <span class="readout">npx web-push generate-vapid-keys</span>.
-                        The private key is write-only.
+                        Generate the pair once, in a shell on the server:
+                        <span class="readout">php artisan push:vapid-keys</span>.
+                        The private key is write-only and stored encrypted.
+                        On iPhones, push only arrives if the site has been added to the Home Screen.
                     </p>
                     <div class="grid gap-3">
                         <div>

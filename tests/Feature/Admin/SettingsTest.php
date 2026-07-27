@@ -168,6 +168,58 @@ class SettingsTest extends TestCase
             ->assertSessionHasErrors('mail_port');
     }
 
+    /*
+     * The send-test-email control. docs/OWNER-CHECKLIST.md and docs/RUNBOOK-DEPLOY.md have
+     * both told the owner to "use the send test email button and confirm it arrives" since
+     * before one existed — the documentation described a control the application lacked.
+     *
+     * It earns its place: until 2026-07-27 saving SMTP settings did not select the smtp
+     * transport at all, so mail went to a log file and every screen reported success.
+     * Sending is the only way to know.
+     */
+
+    public function test_a_test_email_goes_to_the_alerts_address(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+        AppSettings::set('mail_host', 'smtp.example.org');
+        AppSettings::set('alert_email', 'oncall@example.org');
+
+        $this->actingAs($this->admin())->post('/admin/settings/test-email')->assertRedirect();
+
+        \Illuminate\Support\Facades\Mail::assertSent(
+            \App\Mail\TestMail::class,
+            fn ($mail) => $mail->hasTo('oncall@example.org'),
+        );
+        $this->assertDatabaseHas('audit_log', ['action' => 'settings_test_email']);
+    }
+
+    public function test_it_refuses_to_send_before_smtp_exists_instead_of_pretending(): void
+    {
+        // The exact state that made this necessary: no mail_host, so the mailer is 'log'.
+        // Writing to a log file and reporting "sent" is the failure being fixed.
+        \Illuminate\Support\Facades\Mail::fake();
+        config(['mail.default' => 'log']);
+
+        $this->actingAs($this->admin())->post('/admin/settings/test-email')
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
+        \Illuminate\Support\Facades\Mail::assertNothingSent();
+    }
+
+    public function test_only_a_settings_manager_may_send_one(): void
+    {
+        // It causes an outbound message to a chosen address, so it needs the same gate as
+        // the settings themselves rather than merely being signed in.
+        \Illuminate\Support\Facades\Mail::fake();
+
+        $this->actingAs(User::factory()->create(['position' => 4]))
+            ->post('/admin/settings/test-email')
+            ->assertForbidden();
+
+        \Illuminate\Support\Facades\Mail::assertNothingSent();
+    }
+
     public function test_unknown_setting_keys_are_rejected_not_stored(): void
     {
         $this->actingAs($this->admin())->put('/admin/settings', [

@@ -110,12 +110,26 @@ class TwoFactorAuthenticationController extends Controller
             ]);
         }
 
-        $user->forceFill(['two_factor_confirmed_at' => now()])->save();
+        // CONFIRMING IS CHOOSING. The method used to be set on a different route, on the
+        // profile page, and enrolment left it null — so the user had to come back and pick
+        // "Authenticator app" a second time, and picking it BEFORE enrolling was rejected by
+        // design. Two saves, the first of which could not succeed.
+        //
+        // It also left a state that contradicted itself: sign-in demanded a TOTP code
+        // (AuthenticatedSessionController's fallback for an enrolled-but-unchosen account)
+        // while EnforceTwoFactor read the null method and told the same user, on every page,
+        // that they had no second factor.
+        //
+        // Nobody proves possession of a TOTP secret in order to then not use it.
+        $user->forceFill([
+            'two_factor_confirmed_at' => now(),
+            'two_factor_method' => 'totp',
+        ])->save();
 
         AuditLog::record('2fa_enable', 'member='.$user->id, $user->id, $request->ip());
 
         return redirect()->route('two-factor.show')
-            ->with('status', 'Two-factor authentication is now enabled.');
+            ->with('status', 'Two-factor authentication is now enabled. You will be asked for a code at your next sign-in.');
     }
 
     /** Disable: clear the secret, recovery codes, and confirmation timestamp. */
@@ -129,6 +143,12 @@ class TwoFactorAuthenticationController extends Controller
             'two_factor_secret' => null,
             'two_factor_recovery_codes' => null,
             'two_factor_confirmed_at' => null,
+            // Stand the method down too, but ONLY if it was the authenticator. Leaving
+            // 'totp' behind with no secret is the same contradiction as before, mirrored:
+            // the profile insists the authenticator is selected while every page tells a
+            // privileged user they have no second factor. Someone relying on email codes
+            // must not have them silently switched off by this.
+            'two_factor_method' => $user->two_factor_method === 'totp' ? null : $user->two_factor_method,
         ])->save();
 
         if ($wasEnabled) {

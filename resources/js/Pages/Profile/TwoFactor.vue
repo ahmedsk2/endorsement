@@ -1,7 +1,8 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
-import { Head, useForm, usePage } from '@inertiajs/vue3';
+import { Link, useForm, usePage } from '@inertiajs/vue3';
 import QRCode from 'qrcode';
+import AppLayout from '../../Layouts/AppLayout.vue';
 
 const props = defineProps({
     enabled: { type: Boolean, default: false },
@@ -38,14 +39,23 @@ const disable = () => disableForm.delete('/user/two-factor', { preserveScroll: t
 const copyCodes = () => navigator.clipboard?.writeText((props.enrollment?.recoveryCodes ?? []).join('\n'));
 </script>
 
+<!--
+  Wrapped in AppLayout like every other signed-in page. It was not, and that was an
+  oversight rather than a decision: this page and Profile/Edit.vue were added in the same
+  commit, Edit.vue got the layout and this one did not. There is no default layout — a page
+  that imports none simply renders as the whole document — so the result was a screen with
+  no navigation and no way out except the browser's Back button, reached from a nav link.
+-->
 <template>
-    <Head title="Two-factor authentication" />
-    <main class="min-h-screen bg-ground p-6">
+    <AppLayout title="Two-factor authentication">
         <div class="mx-auto max-w-2xl space-y-6">
             <div>
-                <h1 class="text-xl font-semibold text-ink">Two-factor authentication</h1>
-                <p class="mt-1 text-sm text-muted">
+                <p class="text-sm text-muted">
                     Add a one-time code from an authenticator app as a second step when signing in.
+                    Confirming your first code switches it on — there is nothing to save afterwards.
+                </p>
+                <p class="mt-2 text-sm">
+                    <Link href="/profile" class="font-semibold text-channel-ink hover:underline">Back to my profile</Link>
                 </p>
             </div>
 
@@ -129,5 +139,5 @@ const copyCodes = () => navigator.clipboard?.writeText((props.enrollment?.recove
                 </button>
             </section>
         </div>
-    </main>
+    </AppLayout>
 </template>

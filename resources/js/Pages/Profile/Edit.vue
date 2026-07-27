@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import { router, useForm } from '@inertiajs/vue3';
+import { Link, router, useForm } from '@inertiajs/vue3';
 import AppLayout from '../../Layouts/AppLayout.vue';
 import SignaturePad from '../../Components/SignaturePad.vue';
 
@@ -237,19 +237,36 @@ const enablePush = async () => {
                                 <span class="block text-xs text-muted">Password only. Not recommended for accounts that can sign off handovers.</span>
                             </span>
                         </label>
-                        <label class="flex min-h-11 cursor-pointer items-start gap-3 rounded-md border border-line px-3 py-2 text-sm">
-                            <input v-model="methodForm.method" type="radio" value="totp" data-testid="tfa-totp" class="mt-1 h-4 w-4" />
+                        <!--
+                          Both of these are DISABLED until the thing they depend on exists.
+                          Offering a choice the server is going to reject is how the owner
+                          ended up saving twice: the first save could not have succeeded.
+                          Setting up the authenticator now selects it on confirmation, so
+                          the link is the whole action — there is nothing to save afterwards.
+                        -->
+                        <label class="flex min-h-11 items-start gap-3 rounded-md border border-line px-3 py-2 text-sm"
+                               :class="security.totp_confirmed ? 'cursor-pointer' : 'opacity-60'">
+                            <input v-model="methodForm.method" type="radio" value="totp" data-testid="tfa-totp"
+                                   :disabled="!security.totp_confirmed" class="mt-1 h-4 w-4" />
                             <span>
                                 <span class="font-medium text-ink">Authenticator app</span>
                                 <span class="block text-xs text-muted">
                                     A 6-digit code from an app on your phone. Works with no signal.
-                                    <a href="/user/two-factor" class="font-semibold text-channel-ink hover:underline">Set up the app</a>
-                                    <template v-if="!security.totp_confirmed"> — not set up yet.</template>
+                                    <template v-if="!security.totp_confirmed">
+                                        Not set up yet —
+                                        <Link href="/user/two-factor" class="font-semibold text-channel-ink hover:underline">set it up</Link>,
+                                        and it switches on as soon as you confirm the first code.
+                                    </template>
+                                    <template v-else>
+                                        <Link href="/user/two-factor" class="font-semibold text-channel-ink hover:underline">Manage</Link>
+                                    </template>
                                 </span>
                             </span>
                         </label>
-                        <label class="flex min-h-11 cursor-pointer items-start gap-3 rounded-md border border-line px-3 py-2 text-sm">
-                            <input v-model="methodForm.method" type="radio" value="email" data-testid="tfa-email" class="mt-1 h-4 w-4" />
+                        <label class="flex min-h-11 items-start gap-3 rounded-md border border-line px-3 py-2 text-sm"
+                               :class="security.email_verified ? 'cursor-pointer' : 'opacity-60'">
+                            <input v-model="methodForm.method" type="radio" value="email" data-testid="tfa-email"
+                                   :disabled="!security.email_verified" class="mt-1 h-4 w-4" />
                             <span>
                                 <span class="font-medium text-ink">Code by email</span>
                                 <span class="block text-xs text-muted">

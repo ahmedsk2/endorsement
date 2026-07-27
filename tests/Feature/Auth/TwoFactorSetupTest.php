@@ -119,4 +119,89 @@ class TwoFactorSetupTest extends TestCase
     {
         $this->post('/user/two-factor')->assertRedirect('/login');
     }
+
+    /**
+     * Confirming an enrolment must ACTIVATE it — the second save is the app's job.
+     *
+     * Reported by the owner as "I had to save multiple times", and it was not clumsiness.
+     * Enrolment set `two_factor_confirmed_at`; the METHOD lived on a different route and
+     * was left null. So the first save (choosing "Authenticator app" on the profile before
+     * enrolling) was rejected by design, and after enrolling the user had to return to the
+     * profile and choose it a second time — with nothing on the enrolment page saying so,
+     * or even linking back.
+     *
+     * Worse, the state in between was self-contradictory: sign-in DID demand a TOTP code
+     * (AuthenticatedSessionController's legacy fallback), while EnforceTwoFactor read the
+     * null method and kept telling the same user they had not set up a second factor.
+     */
+    public function test_confirming_an_enrolment_activates_it_without_a_second_save(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+
+        $this->actingAs($user)->post('/user/two-factor')->assertRedirect();
+        $user->refresh();
+
+        $this->actingAs($user)->post('/user/two-factor/confirm', [
+            'code' => $this->google2fa()->getCurrentOtp($user->two_factor_secret),
+        ])->assertRedirect();
+
+        $user->refresh();
+
+        $this->assertNotNull($user->two_factor_confirmed_at);
+        $this->assertSame('totp', $user->two_factor_method);
+        // The predicate the rest of the app actually consults.
+        $this->assertSame('totp', $user->activeTwoFactorMethod());
+    }
+
+    public function test_a_failed_confirmation_activates_nothing(): void
+    {
+        $user = User::factory()->create(['active' => true]);
+
+        $this->actingAs($user)->post('/user/two-factor')->assertRedirect();
+
+        $this->actingAs($user)->post('/user/two-factor/confirm', ['code' => '000000'])
+            ->assertSessionHasErrors('code');
+
+        $user->refresh();
+
+        $this->assertNull($user->two_factor_confirmed_at);
+        $this->assertNull($user->two_factor_method);
+    }
+
+    public function test_disabling_the_authenticator_also_stands_the_method_down(): void
+    {
+        // Otherwise the account keeps method='totp' with no secret. activeTwoFactorMethod()
+        // returns null, so a privileged user is bounced to the profile on every page with a
+        // banner saying they have no second factor, while the profile radio insists they
+        // chose the authenticator. That is the same contradiction from the other direction.
+        $user = User::factory()->create(['active' => true]);
+
+        $this->actingAs($user)->post('/user/two-factor');
+        $user->refresh();
+        $this->actingAs($user)->post('/user/two-factor/confirm', [
+            'code' => $this->google2fa()->getCurrentOtp($user->two_factor_secret),
+        ]);
+
+        $this->actingAs($user)->delete('/user/two-factor')->assertRedirect();
+
+        $user->refresh();
+
+        $this->assertNull($user->two_factor_secret);
+        $this->assertNull($user->two_factor_method);
+    }
+
+    public function test_an_email_method_is_left_alone_when_the_authenticator_is_disabled(): void
+    {
+        // Standing down TOTP must not silently switch off a second factor the user is
+        // actually relying on.
+        $user = User::factory()->create([
+            'active' => true,
+            'email_verified_at' => now(),
+            'two_factor_method' => 'email',
+        ]);
+
+        $this->actingAs($user)->delete('/user/two-factor')->assertRedirect();
+
+        $this->assertSame('email', $user->fresh()->two_factor_method);
+    }
 }

@@ -123,6 +123,10 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:settings.manage'])
     ->group(function () {
         Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
         Route::put('/settings', [SettingsController::class, 'update'])->name('settings.update');
+        // Tighter than `throttle:clinical` on purpose: this causes an outbound message, so
+        // left wide open it is a small relay. Six a minute is plenty for testing a config.
+        Route::post('/settings/test-email', [SettingsController::class, 'sendTestEmail'])
+            ->middleware('throttle:6,1')->name('settings.test-email');
     });
 
 /*

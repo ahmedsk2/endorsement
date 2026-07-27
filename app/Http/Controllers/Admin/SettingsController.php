@@ -96,4 +96,50 @@ class SettingsController extends Controller
 
         return back()->with('status', 'Settings saved.');
     }
+
+    /**
+     * Send one test message, and report what actually happened.
+     *
+     * docs/OWNER-CHECKLIST.md and docs/RUNBOOK-DEPLOY.md have both instructed the owner to
+     * "use the send test email button and confirm it arrives" since before this existed —
+     * the documentation described a control the application did not have.
+     *
+     * It matters more than a convenience: until 2026-07-27 a saved SMTP configuration did
+     * not even select the smtp transport, so mail was written to a log file and every
+     * screen reported success. The only way to know mail works is to send some.
+     */
+    public function sendTestEmail(Request $request): RedirectResponse
+    {
+        // Whatever was just saved applies to THIS request too.
+        AppSettings::applyOverrides();
+
+        if (config('mail.default') !== 'smtp') {
+            return back()->with('error', 'No SMTP server is configured yet — fill in the mail settings and save first.');
+        }
+
+        // The alert address if one is set, because that is the delivery path an operational
+        // alert would actually take; otherwise the admin doing the testing.
+        $to = AppSettings::get('alert_email') ?: $request->user()->member_email;
+
+        if (! is_string($to) || ! filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            return back()->with('error', 'No usable address to send to — set "Operational alerts to", or an email address on your own profile.');
+        }
+
+        try {
+            \Illuminate\Support\Facades\Mail::to($to)->send(new \App\Mail\TestMail);
+        } catch (\Throwable $e) {
+            // The transport's own words. "Connection refused", "535 authentication failed"
+            // and "could not resolve host" each point at a different wrong field, and a
+            // generic "sending failed" would make the owner guess between them. It carries
+            // no PHI — it is an SMTP diagnostic — but it can name the relay, which is why
+            // it goes to the admin's screen and not into the audit trail.
+            AuditLog::record('settings_test_email_failed', 'to=set', $request->user()->getKey(), $request->ip());
+
+            return back()->with('error', 'Could not send: '.$e->getMessage());
+        }
+
+        AuditLog::record('settings_test_email', 'to=set', $request->user()->getKey(), $request->ip());
+
+        return back()->with('status', 'Test message sent to '.$to.'. If it does not arrive within a few minutes, check the spam folder and the relay logs.');
+    }
 }

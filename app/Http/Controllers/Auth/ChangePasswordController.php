@@ -53,6 +53,12 @@ class ChangePasswordController extends Controller
             'pass_exp_date' => now()->toDateString(),
         ])->save();
 
+        // The 90-day rotation is the password change MOST users actually perform, so it is
+        // the one where "changing your password ends this everywhere" most needs to be true.
+        // Leaving it out gave one account two contradictory behaviours from what the user
+        // experiences as the same act.
+        \App\Support\TrustedDevice::revokeAll($user);
+
         $request->session()->forget(AuthenticatedSessionController::PASSWORD_EXPIRED_SESSION_KEY);
 
         return redirect()->route('login')->with('status', 'Password changed — please sign in.');

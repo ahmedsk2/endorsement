@@ -53,14 +53,34 @@ class InvitationController extends Controller
 
         // One open invitation per address. Without this, "resend" quietly multiplies live
         // credentials for the same person and revoking one leaves the others working.
-        Invitation::query()
+        //
+        // Each superseded invitation is authorised INDIVIDUALLY and audited. A blanket
+        // update was neither: a Chief Resident inviting an address that already held a
+        // Consultant invitation would have cancelled it — an action they cannot perform
+        // through the revoke route — and nothing would have recorded that it happened.
+        $superseded = Invitation::query()
             ->where('member_email', $email)
             ->whereNull('accepted_at')
             ->whereNull('revoked_at')
-            ->update([
+            ->get();
+
+        foreach ($superseded as $old) {
+            ManagerScope::assertMayTarget($request, (int) $old->position);
+        }
+
+        foreach ($superseded as $old) {
+            $old->forceFill([
                 'revoked_at' => now(),
                 'revoked_by_user_id' => $request->user()?->getKey(),
-            ]);
+            ])->save();
+
+            AuditLog::record(
+                'invitation_revoked',
+                'invitation='.$old->id.' reason=superseded',
+                $request->user()?->getKey(),
+                $request->ip(),
+            );
+        }
 
         [$invitation, $token] = Invitation::issue($email, (int) $data['position'], $request->user());
 

@@ -172,6 +172,69 @@ class TrustedDeviceTest extends TestCase
         $this->assertSame(0, TrustedDevice::countFor($user));
     }
 
+    /*
+     * The three revocation paths an adversarial review found missing. All three are the same
+     * user-visible act — "I changed my password" or "I turned it off" — and the UI promises
+     * on the checkbox that it ends trust everywhere. It has to be true on every route that
+     * performs the act, not just the one I happened to wire first.
+     */
+
+    public function test_a_password_RESET_ends_trust_everywhere(): void
+    {
+        // The sharpest of the three: this is the path taken by someone who CANNOT sign in,
+        // which is exactly the case where the authenticator is on the lost device. A reset
+        // that restored only the password would restore half the protection and leave the
+        // second-factor skip live on the machine in question.
+        $user = $this->totpUser();
+        TrustedDevice::remember($user, 'Lost laptop');
+        $this->assertSame(1, TrustedDevice::countFor($user));
+
+        $token = \Illuminate\Support\Facades\Password::createToken($user);
+
+        // The route takes `email`; the broker maps it onto member_email internally.
+        $this->post('/reset-password', [
+            'token' => $token,
+            'email' => $user->member_email,
+            'password' => 'An0ther!Passw0rd',
+            'password_confirmation' => 'An0ther!Passw0rd',
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $this->assertSame(0, TrustedDevice::countFor($user));
+    }
+
+    public function test_the_forced_expired_password_change_ends_trust_everywhere(): void
+    {
+        // The password change MOST users perform — the 90-day rotation — and therefore the
+        // one where the promise most needs to hold.
+        $user = $this->totpUser();
+        $user->forceFill(['pass_exp_date' => now()->subYear()->format('Y-m-d')])->save();
+        TrustedDevice::remember($user, 'Ward PC');
+
+        $this->post('/login', ['member_name' => $user->member_name, 'password' => 'Str0ng!Passw0rd'])
+            ->assertRedirect(route('password.change'));
+
+        $this->post(route('password.change'), [
+            'current_password' => 'Str0ng!Passw0rd',
+            'password' => 'An0ther!Passw0rd',
+            'password_confirmation' => 'An0ther!Passw0rd',
+        ])->assertRedirect();
+
+        $this->assertSame(0, TrustedDevice::countFor($user));
+    }
+
+    public function test_switching_two_step_sign_in_off_from_the_profile_ends_trust(): void
+    {
+        // The sibling route (DELETE /user/two-factor) already revoked, so the same act had
+        // two different outcomes depending on which control the user reached for.
+        $user = $this->totpUser();
+        TrustedDevice::remember($user, 'Ward PC');
+
+        $this->actingAs($user)->put('/profile/two-factor-method', ['method' => null])
+            ->assertRedirect();
+
+        $this->assertSame(0, TrustedDevice::countFor($user));
+    }
+
     public function test_turning_the_authenticator_off_ends_trust_everywhere(): void
     {
         $user = $this->totpUser();

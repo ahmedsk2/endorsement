@@ -30,6 +30,10 @@ class E2eSeeder extends Seeder
                 'position' => 0,
                 'active' => true,
                 'pass_exp_date' => now()->format('Y-m-d'),
+                // Past first-login setup. RequireSetup redirects every route to /setup while
+                // this is null, so without it the browser suite would sign in and then find
+                // the onboarding page instead of whatever each spec navigated to.
+                'setup_completed_at' => now(),
             ],
         );
     }

@@ -53,6 +53,16 @@ class NewPasswordController extends Controller
 
                 // A reset is a recovery action — a stolen live session must not survive it.
                 DB::table('sessions')->where('user_id', $user->id)->delete();
+
+                // Nor may a device that was skipping the second factor. This is the path a
+                // user takes when they cannot sign in at all, which is exactly the case
+                // where the authenticator is on the lost device — so a reset that restored
+                // only the password would restore only half the protection, and leave the
+                // TOTP skip live on the very machine in question for the rest of its window.
+                //
+                // It is also the promise the checkbox made: "Changing your password ends
+                // this everywhere." From the clinician's side a reset IS a password change.
+                \App\Support\TrustedDevice::revokeAll($user);
             }
         );
 

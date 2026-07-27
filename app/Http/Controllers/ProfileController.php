@@ -201,6 +201,14 @@ class ProfileController extends Controller
 
         $user->forceFill(['two_factor_method' => $method])->save();
 
+        // Turning two-step sign-in OFF must also forget the devices that were skipping it —
+        // otherwise "I switched it off" leaves a week of skipped codes outstanding, and the
+        // sibling route (DELETE /user/two-factor) already revokes, so the same user-visible
+        // act had two different outcomes depending on which control they reached for.
+        if ($method === null) {
+            \App\Support\TrustedDevice::revokeAll($user);
+        }
+
         AuditLog::record(
             'two_factor_method_set',
             'user='.$user->getKey().';method='.($method ?? 'none'),

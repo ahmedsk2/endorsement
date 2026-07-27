@@ -152,6 +152,37 @@ class InvitationTest extends TestCase
         $this->assertSame(2, Invitation::count());
     }
 
+    public function test_superseding_an_invitation_outside_your_tier_is_refused(): void
+    {
+        // Re-inviting an address revokes the open invitation for it. That revoke was a
+        // blanket update with no authorisation and no audit entry, so a Chief Resident
+        // inviting an address that already held a CONSULTANT invitation would cancel it —
+        // an action they cannot perform through the revoke route itself.
+        $this->actingAs($this->admin())
+            ->post('/admin/invitations', ['member_email' => 'shared@example.org', 'position' => 3]);
+
+        $this->actingAs($this->chief())
+            ->post('/admin/invitations', ['member_email' => 'shared@example.org', 'position' => 4])
+            ->assertForbidden();
+
+        // The consultant's invitation is untouched, and no second one was minted.
+        $this->assertSame(1, Invitation::whereNull('revoked_at')->count());
+        $this->assertSame(3, (int) Invitation::firstOrFail()->position);
+    }
+
+    public function test_superseding_an_invitation_is_audited(): void
+    {
+        $admin = $this->admin();
+
+        $this->actingAs($admin)->post('/admin/invitations', ['member_email' => 'a@example.org', 'position' => 4]);
+        $this->actingAs($admin)->post('/admin/invitations', ['member_email' => 'a@example.org', 'position' => 4]);
+
+        $detail = (string) \App\Models\AuditLog::where('action', 'invitation_revoked')
+            ->orderByDesc('id')->value('detail');
+
+        $this->assertStringContainsString('reason=superseded', $detail);
+    }
+
     public function test_an_existing_account_cannot_be_invited(): void
     {
         User::factory()->create(['member_email' => 'taken@example.org']);

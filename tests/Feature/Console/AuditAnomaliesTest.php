@@ -19,7 +19,10 @@ class AuditAnomaliesTest extends TestCase
     private function alertable(): void
     {
         \App\Support\AppSettings::set('alert_email', 'oncall@example.org');
-        config(['mail.mailers.smtp.host' => 'smtp.example.org']);
+        // Both halves: credentials AND a selected transport. Setting only the host used to
+        // be enough here because OpsAlert's guard read that same key — which is exactly why
+        // the suite never noticed that production had never selected the smtp mailer.
+        config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'smtp.example.org']);
     }
 
     public function test_a_quiet_window_reports_nothing(): void

@@ -37,7 +37,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // fixed. Proto/port/for are still honoured so isSecure() and audit IPs work behind
         // the proxy.
         $middleware->trustProxies(
-            at: env('TRUSTED_PROXIES', '*'),
+            // Never a raw env read, and never '*' — see App\Support\TrustedProxies. The old
+            // fallback here meant one missing environment variable turned the audit trail's
+            // actor IP into a client-supplied header.
+            at: \App\Support\TrustedProxies::list(),
             headers: Request::HEADER_X_FORWARDED_FOR
                 | Request::HEADER_X_FORWARDED_PORT
                 | Request::HEADER_X_FORWARDED_PROTO,

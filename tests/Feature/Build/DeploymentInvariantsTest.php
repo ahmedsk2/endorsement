@@ -155,6 +155,39 @@ class DeploymentInvariantsTest extends TestCase
         );
     }
 
+    /**
+     * The app sits behind Cloudflare, so Traefik appends the CDN edge as the last forwarded
+     * hop. Without the edge ranges in the trust list the audit trail records that CDN as the
+     * actor for every clinical action, and the per-IP lockout is keyed on an address shared
+     * by everyone behind the same edge. It fails silently — there is no error to notice.
+     */
+    public function test_the_deployment_trusts_the_cloudflare_edge(): void
+    {
+        $this->assertMatchesRegularExpression(
+            '/TRUSTED_PROXIES:[^\n]*cloudflare/',
+            $this->compose(),
+            'the proxy list must name the Cloudflare edge or every audit IP is the CDN',
+        );
+    }
+
+    /**
+     * The other direction: a wildcard means Symfony believes the client-supplied leftmost
+     * X-Forwarded-For entry — forgeable audit IPs and a lockout escaped with a header.
+     */
+    public function test_the_proxy_list_is_never_a_wildcard_anywhere(): void
+    {
+        $this->assertDoesNotMatchRegularExpression(
+            '/TRUSTED_PROXIES[^\n]*[:=][^\n]*\*/',
+            $this->compose(),
+        );
+
+        $this->assertStringNotContainsString(
+            "env('TRUSTED_PROXIES', '*')",
+            (string) file_get_contents(base_path('bootstrap/app.php')),
+            'a wildcard fallback puts one missing variable between this app and a forgeable trail',
+        );
+    }
+
     public function test_the_deployment_sets_the_wards_timezone(): void
     {
         $this->assertStringContainsString(

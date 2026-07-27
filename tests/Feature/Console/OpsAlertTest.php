@@ -31,7 +31,7 @@ class OpsAlertTest extends TestCase
     {
         Mail::fake();
         AppSettings::set('alert_email', 'oncall@example.org');
-        config(['mail.mailers.smtp.host' => 'smtp.example.org']);
+        config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'smtp.example.org']);
 
         OpsAlert::critical('Audit chain verification FAILED', 'The trail may have been altered.');
 
@@ -41,7 +41,7 @@ class OpsAlertTest extends TestCase
     public function test_it_stays_silent_when_no_address_is_configured(): void
     {
         Mail::fake();
-        config(['mail.mailers.smtp.host' => 'smtp.example.org']);
+        config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'smtp.example.org']);
 
         OpsAlert::critical('Nightly backup FAILED');
 
@@ -52,7 +52,24 @@ class OpsAlertTest extends TestCase
     {
         Mail::fake();
         AppSettings::set('alert_email', 'oncall@example.org');
-        config(['mail.mailers.smtp.host' => null]);
+        config(['mail.default' => 'log', 'mail.mailers.smtp.host' => null]);
+
+        OpsAlert::critical('Nightly backup FAILED');
+
+        Mail::assertNothingSent();
+    }
+
+    public function test_the_smtp_guard_engages_under_the_real_production_defaults(): void
+    {
+        // The condition that actually shipped, and that the test above never reproduced.
+        // The owner has not configured SMTP, so the mailer is still 'log' — but
+        // mail.mailers.smtp.host is NOT empty, because config/mail.php defaults it to
+        // 127.0.0.1. The guard read that default as "SMTP exists". Every test here set the
+        // host by hand, which is precisely the value being tested, so the suite agreed with
+        // itself while production quietly posted alerts to a port nothing listens on.
+        Mail::fake();
+        AppSettings::set('alert_email', 'oncall@example.org');
+        config(['mail.default' => 'log', 'mail.mailers.smtp.host' => '127.0.0.1']);
 
         OpsAlert::critical('Nightly backup FAILED');
 
@@ -64,7 +81,7 @@ class OpsAlertTest extends TestCase
         // This runs inside a scheduler onFailure handler. If alerting throws, a recoverable
         // job failure becomes an unhandled exception that takes out the rest of the run.
         AppSettings::set('alert_email', 'oncall@example.org');
-        config(['mail.mailers.smtp.host' => 'smtp.example.org']);
+        config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'smtp.example.org']);
 
         Mail::shouldReceive('to')->andThrow(new \RuntimeException('relay unreachable'));
 
@@ -77,7 +94,7 @@ class OpsAlertTest extends TestCase
     {
         Mail::fake();
         AppSettings::set('alert_email', 'oncall@example.org');
-        config(['mail.mailers.smtp.host' => 'smtp.example.org']);
+        config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'smtp.example.org']);
 
         OpsAlert::critical('Nightly backup FAILED', 'No recoverable copy was produced tonight.');
 

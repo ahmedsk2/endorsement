@@ -63,6 +63,11 @@ final class OpsAlert
         }
 
         // No point attempting delivery before SMTP exists; the log line still fires.
-        return config('mail.mailers.smtp.host') ? $to : null;
+        //
+        // Ask which TRANSPORT is selected, not whether the smtp host is set. config/mail.php
+        // defaults that host to 127.0.0.1, so the old check was true on every deployment
+        // that had never configured mail at all — the guard documented above had therefore
+        // never once engaged, and every alert was posted to a port nothing listens on.
+        return config('mail.default') === 'smtp' ? $to : null;
     }
 }

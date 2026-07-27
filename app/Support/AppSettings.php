@@ -136,6 +136,20 @@ final class AppSettings
             }
         }
 
+        // Setting the SMTP credentials is not the same as SELECTING the SMTP transport, and
+        // nothing else in this deployment does the second part: mail is deliberately not an
+        // environment variable (docs/RUNBOOK-DEPLOY.md), so without this line the owner fills
+        // in this screen, sees "Saved", and MAIL_MAILER stays 'log'. Every operational alert
+        // — failed backup, broken audit chain, failed retention sweep — is then written to a
+        // log file nobody reads, with no error and nothing to notice.
+        //
+        // Conditioned on the HOST, never on the settings row existing: selecting a transport
+        // with nowhere to connect to would turn login, password reset and registration into
+        // 500s instead of the silent no-ops they are today.
+        if (! empty($s['mail_host'])) {
+            config()->set('mail.default', 'smtp');
+        }
+
         if (! empty($s['remind_delay_minutes'])) {
             config()->set('endorsement.remind_delay_minutes', (int) $s['remind_delay_minutes']);
         }

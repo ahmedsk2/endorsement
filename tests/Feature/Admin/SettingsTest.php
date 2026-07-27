@@ -129,6 +129,33 @@ class SettingsTest extends TestCase
         $this->assertSame(['08:00', '14:00'], config('endorsement.handover_times'));
     }
 
+    public function test_storing_an_smtp_host_switches_the_mailer_away_from_log(): void
+    {
+        // The whole point of configuring SMTP here. Without it the owner fills in the form,
+        // sees "Saved", and every operational alert — a failed backup, a broken audit chain
+        // — is written to a log file instead of being delivered. Silently: no error, no
+        // bounce, nothing to notice. The runbook deliberately keeps mail OUT of the
+        // environment, so this screen is the only thing that can turn the mailer on.
+        config(['mail.default' => 'log']);
+        AppSettings::set('mail_host', 'smtp.live.example.org');
+
+        AppSettings::applyOverrides();
+
+        $this->assertSame('smtp', config('mail.default'));
+    }
+
+    public function test_the_mailer_stays_on_log_until_a_host_is_stored(): void
+    {
+        // The other half: never select a transport that has nowhere to connect to. Login,
+        // password reset and registration all send mail unguarded, so switching to smtp
+        // with no host would turn those into 500s rather than silent no-ops.
+        config(['mail.default' => 'log']);
+
+        AppSettings::applyOverrides();
+
+        $this->assertSame('log', config('mail.default'));
+    }
+
     public function test_reminder_settings_are_validated(): void
     {
         $admin = $this->admin();

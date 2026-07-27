@@ -71,9 +71,9 @@ const units = [
                 </div>
 
                 <div class="hidden lg:block">
-                    <p v-if="shift.greeting" class="auth-reveal channel-tag max-w-md !text-white/70"
+                    <p v-if="shift.label" class="auth-reveal channel-tag max-w-md !text-white/70"
                        style="--reveal-order: 1" data-testid="shift-greeting">
-                        {{ shift.greeting }} · {{ shift.label }}
+                        {{ shift.label }}
                     </p>
                     <h2 class="auth-reveal mt-2 max-w-md text-3xl leading-tight font-semibold text-white"
                         style="--reveal-order: 2">

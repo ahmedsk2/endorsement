@@ -74,6 +74,16 @@ class SecurityHeaders
             $response->headers->set('Pragma', 'no-cache');
         }
 
+        // This is an internal clinical system; none of it belongs in a search index. The
+        // signed-out page alone names the hospital, the department and all four units, so
+        // "only the login page is public" is not the same as "nothing is disclosed".
+        //
+        // Sent as a HEADER rather than `Disallow: /` in robots.txt, and the two are not
+        // interchangeable: a disallowed crawler never fetches the page, so it never reads a
+        // noindex, and a URL linked from anywhere else can still be indexed on the strength
+        // of that link alone. robots.txt therefore stays permissive so this is seen.
+        $response->headers->set('X-Robots-Tag', 'noindex, nofollow');
+
         return $response;
     }
 }

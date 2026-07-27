@@ -1,2 +1,10 @@
+# Deliberately permissive, which is NOT the same as "please index this".
+#
+# Indexing is refused by an `X-Robots-Tag: noindex, nofollow` header on every response
+# (App\Http\Middleware\SecurityHeaders). That is the stronger control, but a crawler only
+# obeys a header it has read — and `Disallow: /` here would stop it fetching the page at
+# all, leaving a URL that can still be indexed on the strength of an inbound link alone.
+#
+# So: crawling is allowed, indexing is refused, and the refusal is actually delivered.
 User-agent: *
 Disallow:

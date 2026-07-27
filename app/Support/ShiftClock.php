@@ -43,18 +43,26 @@ final class ShiftClock
         $next = $minutes < $morningAt ? $morning
             : ($minutes < $afternoonAt ? $afternoon : $morning);
 
-        // Phases drive the hero tint. Boundaries are deliberately generous: the point is
-        // "roughly when in the day", not a precise astronomical dawn.
-        [$phase, $greeting] = match (true) {
-            $minutes < 5 * 60 => ['night', 'Still on nights'],
-            $minutes < 11 * 60 => ['dawn', 'Good morning'],
-            $minutes < 16 * 60 => ['day', 'Good afternoon'],
-            $minutes < 20 * 60 => ['dusk', 'Good evening'],
-            default => ['night', 'Good evening'],
+        // Phases drive the hero tint — and ONLY the tint. Boundaries are deliberately
+        // generous: the point is "roughly when in the day", not a precise astronomical
+        // dawn, and an illustration that tracks the sun wants clock hours rather than shift
+        // boundaries.
+        //
+        // There is no greeting. The line rendered here is 10px uppercase monospace — the
+        // register the design system uses for labelling measured values — and a warm
+        // second-person greeting shouted in that type reads oddly. It also told the reader
+        // nothing: "Good morning" to someone who is demonstrably standing in the morning is
+        // a word doing no work. What is left, "Next handover 07:30", is a measured value in
+        // the class built for measured values.
+        $phase = match (true) {
+            $minutes < 5 * 60 => 'night',
+            $minutes < 11 * 60 => 'dawn',
+            $minutes < 16 * 60 => 'day',
+            $minutes < 20 * 60 => 'dusk',
+            default => 'night',
         };
 
         return [
-            'greeting' => $greeting,
             'phase' => $phase,
             'next' => $next,
             'label' => 'Next handover '.$next,

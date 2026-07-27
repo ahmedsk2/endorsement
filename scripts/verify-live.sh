@@ -38,6 +38,38 @@ if echo "$cert" | grep -q "CN=$HOST"; then
     note "TLS terminated at" "origin (direct)"
 else
     note "TLS terminated at" "Cloudflare proxy — confirm SSL mode is Full (strict)"
+
+    # Behind the proxy, the certificate checked above is CLOUDFLARE'S. The one that can
+    # take the site down is the ORIGIN's, and nothing was watching it: under SSL mode
+    # "Full", a failed Let's Encrypt renewal at the origin is invisible and harmless, but
+    # under "Full (strict)" it is a total outage on the expiry date. Replacing a 90-day
+    # diary entry with a check that runs itself is the difference between the two modes
+    # being a free improvement and being a trap.
+    #
+    # ORIGIN_IP lets this resolve past Cloudflare; without it the origin is not reachable
+    # by name and the check reports that rather than pretending to pass.
+    if [ -n "${ORIGIN_IP:-}" ]; then
+        origin_end=$(echo | openssl s_client -connect "$ORIGIN_IP:443" -servername "$HOST" 2>/dev/null \
+                     | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+
+        if [ -z "$origin_end" ]; then
+            bad "origin certificate" "no certificate served by $ORIGIN_IP"
+        else
+            end_epoch=$(date -d "$origin_end" +%s 2>/dev/null || echo 0)
+            now_epoch=$(date +%s)
+            days=$(( (end_epoch - now_epoch) / 86400 ))
+
+            if [ "$end_epoch" -eq 0 ]; then
+                note "origin certificate expires" "$origin_end (could not parse)"
+            elif [ "$days" -lt 21 ]; then
+                bad "origin certificate" "expires in ${days}d — renewal is failing; Full (strict) will 526"
+            else
+                note "origin certificate expires in" "${days} days"
+            fi
+        fi
+    else
+        note "origin certificate" "not checked (set ORIGIN_IP=... to enable)"
+    fi
 fi
 
 redirect=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "http://$HOST/")

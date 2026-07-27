@@ -25,7 +25,7 @@ class ShiftClockTest extends TestCase
         $shift = $this->at('06:15');
 
         $this->assertSame('07:30', $shift['next']);
-        $this->assertSame('Good morning', $shift['greeting']);
+        $this->assertSame('Next handover 07:30', $shift['label']);
     }
 
     public function test_between_the_two_handovers_it_points_at_the_afternoon(): void
@@ -49,7 +49,6 @@ class ShiftClockTest extends TestCase
         $shift = $this->at('03:00');
 
         $this->assertSame('night', $shift['phase']);
-        $this->assertSame('Still on nights', $shift['greeting']);
         $this->assertSame('07:30', $shift['next']);
     }
 
@@ -81,14 +80,32 @@ class ShiftClockTest extends TestCase
         $shift = $response->viewData('page')['props']['shift'] ?? null;
 
         $this->assertIsArray($shift);
-        $this->assertArrayHasKey('greeting', $shift);
         $this->assertArrayHasKey('phase', $shift);
 
-        // A greeting and a wall-pinned time. Nothing about any patient or any account.
+        // A wall-pinned time and a tint. Nothing about any patient or any account, and no
+        // greeting: `phase` survives because AuthLayout feeds it to the hero illustration.
         $this->assertSame(
-            ['greeting', 'phase', 'next', 'label'],
+            ['phase', 'next', 'label'],
             array_keys($shift),
             'the shared shift payload must stay minimal',
         );
+    }
+
+    public function test_the_signed_out_page_refuses_to_be_indexed(): void
+    {
+        // The login page names the hospital, the department and all four units, so "only
+        // the login page is public" is not the same as "nothing is disclosed". robots.txt
+        // stays permissive on purpose: a crawler that is told not to fetch the page never
+        // reads the noindex, and the URL can still be indexed from an inbound link.
+        $this->get('/login')->assertHeader('X-Robots-Tag', 'noindex, nofollow');
+
+        // Directives only — the comments in that file discuss `Disallow: /` at length,
+        // which is exactly the sort of thing a naive substring check trips over.
+        $directives = implode("\n", array_filter(
+            explode("\n", (string) file_get_contents(public_path('robots.txt'))),
+            fn (string $line) => ! str_starts_with(trim($line), '#'),
+        ));
+
+        $this->assertStringNotContainsString('Disallow: /', $directives);
     }
 }

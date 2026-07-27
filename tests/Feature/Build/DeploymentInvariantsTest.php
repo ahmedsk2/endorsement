@@ -204,10 +204,21 @@ class DeploymentInvariantsTest extends TestCase
      */
     public function test_the_deployment_trusts_the_cloudflare_edge(): void
     {
-        $this->assertMatchesRegularExpression(
-            '/TRUSTED_PROXIES:[^\n]*cloudflare/',
-            $this->compose(),
-            'the proxy list must name the Cloudflare edge or every audit IP is the CDN',
+        // Asserted against the CODE, not the compose default. Coolify sets TRUSTED_PROXIES
+        // explicitly, so `${TRUSTED_PROXIES:-...}` is dead code on this deployment — the
+        // first version of this fix shipped green and changed nothing at all.
+        $this->assertStringContainsString(
+            'TrustedProxies::list()',
+            (string) file_get_contents(base_path('bootstrap/app.php')),
+            'the client IP must be resolved through the audited proxy list',
+        );
+
+        $this->assertNotEmpty(
+            array_intersect(
+                \App\Support\TrustedProxies::CLOUDFLARE,
+                \App\Support\TrustedProxies::list('10.0.0.0/8'),
+            ),
+            'the edge must be trusted without the environment having to ask, or every audit IP is the CDN',
         );
     }
 

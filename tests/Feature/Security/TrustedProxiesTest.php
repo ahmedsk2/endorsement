@@ -69,12 +69,24 @@ class TrustedProxiesTest extends TestCase
         $this->assertNotContains('*', TrustedProxies::list(null));
     }
 
-    public function test_the_cloudflare_token_expands_to_the_published_ranges(): void
+    public function test_the_cloudflare_edge_is_trusted_even_when_the_environment_omits_it(): void
     {
-        $list = TrustedProxies::list('10.0.0.0/8,cloudflare');
+        // The value the deployment platform actually sets, with no mention of Cloudflare.
+        // The first version of this fix put the edge ranges in the docker-compose default
+        // instead — which never ran, because Coolify sets TRUSTED_PROXIES explicitly and
+        // `${TRUSTED_PROXIES:-...}` therefore always took the Coolify value. It deployed
+        // green and the app still recorded the CDN. The guarantee belongs in code.
+        $list = TrustedProxies::list('10.0.0.0/8,172.16.0.0/12,192.168.0.0/16');
 
         $this->assertContains('10.0.0.0/8', $list);
         $this->assertContains('172.64.0.0/13', $list);   // v4
         $this->assertContains('2400:cb00::/32', $list);  // v6
+    }
+
+    public function test_a_deployment_not_behind_cloudflare_can_refuse_the_edge(): void
+    {
+        $list = TrustedProxies::list('10.0.0.0/8,no-cloudflare');
+
+        $this->assertSame(['10.0.0.0/8'], $list);
     }
 }

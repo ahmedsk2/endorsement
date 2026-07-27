@@ -28,14 +28,23 @@ namespace App\Support;
  */
 final class TrustedProxies
 {
+    /** Private ranges: Traefik and the container network. */
+    public const DEFAULT = '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16';
+
     /**
-     * Private ranges (Traefik and the container network) plus the Cloudflare edge.
+     * Opt out of trusting the Cloudflare edge, for a deployment that is not behind it.
      *
-     * Cloudflare is in the DEFAULT, not only in docker-compose, deliberately: if this value
-     * is ever lost the app keeps resolving clinicians correctly instead of silently filing
-     * every audited action against a CDN — a failure with no error and no symptom.
+     * Cloudflare is trusted UNLESS this token appears — the safe default is the one that
+     * matches how this system is actually deployed, because getting it wrong in the other
+     * direction is silent. The first attempt at this fix put the edge ranges in the
+     * docker-compose default instead, which never executed: Coolify sets TRUSTED_PROXIES
+     * explicitly, so `${TRUSTED_PROXIES:-...}` always took the Coolify value and the
+     * default was dead code. Deployed, verified, and the app still recorded the CDN.
+     *
+     * A security property must not depend on a default that the deployment platform
+     * overrides. This one lives in code.
      */
-    public const DEFAULT = '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,cloudflare';
+    public const NO_CLOUDFLARE = 'no-cloudflare';
 
     /**
      * Cloudflare's published edge ranges — https://www.cloudflare.com/ips-v4 and ips-v6,
@@ -74,8 +83,9 @@ final class TrustedProxies
     ];
 
     /**
-     * @param  string|null  $configured  Comma-separated CIDRs and/or the token `cloudflare`.
-     *                                   Null reads TRUSTED_PROXIES, then DEFAULT.
+     * @param  string|null  $configured  Comma-separated CIDRs. `cloudflare` is accepted and
+     *                                   redundant; `no-cloudflare` opts out. Null reads
+     *                                   TRUSTED_PROXIES, then DEFAULT.
      * @return list<string>
      */
     public static function list(?string $configured = null): array
@@ -83,6 +93,7 @@ final class TrustedProxies
         $configured ??= (string) env('TRUSTED_PROXIES', self::DEFAULT);
 
         $proxies = [];
+        $cloudflare = true;
 
         foreach (explode(',', $configured) as $entry) {
             $entry = trim($entry);
@@ -93,13 +104,23 @@ final class TrustedProxies
                 continue;
             }
 
-            if (strcasecmp($entry, 'cloudflare') === 0) {
-                $proxies = array_merge($proxies, self::CLOUDFLARE);
+            if (strcasecmp($entry, self::NO_CLOUDFLARE) === 0) {
+                $cloudflare = false;
 
                 continue;
             }
 
+            // Accepted for self-documenting deployment config, but it changes nothing —
+            // the edge is trusted unless explicitly refused.
+            if (strcasecmp($entry, 'cloudflare') === 0) {
+                continue;
+            }
+
             $proxies[] = $entry;
+        }
+
+        if ($cloudflare) {
+            $proxies = array_merge($proxies, self::CLOUDFLARE);
         }
 
         return array_values(array_unique($proxies));

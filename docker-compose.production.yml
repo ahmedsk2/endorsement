@@ -83,10 +83,12 @@ services:
       # ranges, Symfony stops at the real client address Traefik appends. Ranges rather than
       # the current 10.0.2.0/24 so a Docker network renumber cannot silently break TLS
       # detection on a live clinical system.
-      # `cloudflare` expands to the published edge ranges (App\Support\TrustedProxies).
-      # Without it, Traefik appends the Cloudflare edge address as the last hop and the app
-      # records that CDN address as the actor for every audited action.
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,cloudflare}
+      # The Cloudflare edge ranges are added by App\Support\TrustedProxies regardless of
+      # what this says — Traefik appends the edge address as the last forwarded hop, and
+      # without trusting it the app records that CDN address as the actor for every audited
+      # action. Deliberately NOT expressed as a default here: Coolify sets this variable
+      # explicitly, so the `:-` fallback never executes. Pass `no-cloudflare` to opt out.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
 
       LOG_CHANNEL: stderr
       LOG_LEVEL: warning

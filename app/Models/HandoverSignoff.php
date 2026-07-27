@@ -117,6 +117,7 @@ class HandoverSignoff extends Model
         'endorsement_time_minutes',
         'signed_off_at',
         'signed_off_by_user_id',
+        'signed_off_by_name',
         'reopened_at',
         'reopened_by_user_id',
         'reopen_reason',

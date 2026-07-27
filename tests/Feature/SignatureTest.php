@@ -126,7 +126,11 @@ class SignatureTest extends TestCase
 
     public function test_signing_freezes_the_signature_and_the_print_sheet_shows_it(): void
     {
-        $editor = User::factory()->create(['position' => 2]);
+        // A Chief Resident, because this test is about FREEZING — that the stored path pins
+        // the exact image and a later redraw cannot alter a signed sheet. Who may apply
+        // another clinician's signature at all is the 2026-07-27 owner ruling, covered in
+        // SignatureAttributionTest; position 2 no longer may, which is the point of it.
+        $editor = User::factory()->create(['position' => 5]);
         $resident = User::factory()->create(['position' => 4, 'full_name' => 'Dr Sign']);
 
         $this->actingAs($resident)->post('/profile/signature', ['signature_data' => $this->pngDataUrl()]);
@@ -160,7 +164,7 @@ class SignatureTest extends TestCase
 
     public function test_removing_a_signature_leaves_already_signed_sheets_intact(): void
     {
-        $editor = User::factory()->create(['position' => 2]);
+        $editor = User::factory()->create(['position' => 5]);
         $resident = User::factory()->create(['position' => 4]);
 
         $this->actingAs($resident)->post('/profile/signature', ['signature_data' => $this->pngDataUrl()]);

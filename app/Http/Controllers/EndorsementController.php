@@ -332,6 +332,11 @@ class EndorsementController extends Controller
             unset($data['consultant_to_user_id']);
         }
 
+        // Needed inside the picker loop below: whose handwriting may be applied depends on
+        // whether this request actually attests the day, not merely edits it.
+        $signing = (bool) ($data['sign_off'] ?? false);
+        $provenance = [];
+
         foreach (['endorsed_by', 'endorsed_to', 'consultant_by', 'consultant_to'] as $field) {
             if (! array_key_exists($field.'_user_id', $data)) {
                 continue;
@@ -348,7 +353,10 @@ class EndorsementController extends Controller
             // pins the exact image this sheet was signed with (the consultant fields
             // carry no signature — legacy printed them as a typed name).
             if (in_array($field, ['endorsed_by', 'endorsed_to'], true)) {
-                $signoff->{$field.'_signature_path'} = $chosen?->signature_path;
+                [$path, $why] = $this->resolveSignature($request->user(), $chosen, $signing);
+
+                $signoff->{$field.'_signature_path'} = $path;
+                $provenance[$field === 'endorsed_by' ? 'sig_by' : 'sig_to'] = $why;
             }
         }
 
@@ -378,8 +386,6 @@ class EndorsementController extends Controller
             }
         }
 
-        $signing = (bool) ($data['sign_off'] ?? false);
-
         if ($signing && $signoff->endorsed_by_user_id === null) {
             throw ValidationException::withMessages([
                 'endorsed_by_user_id' => 'Select the endorsing clinician before signing off.',
@@ -389,15 +395,32 @@ class EndorsementController extends Controller
         if ($signing) {
             $signoff->signed_off_at = now();
             $signoff->signed_off_by_user_id = $request->user()?->getKey();
+            // Snapshotted for the same reason as the endorser names: accounts are
+            // deactivated rather than deleted, and this line is resolved through a plain
+            // belongsTo, so a soft delete used to make "Signed off … by …" vanish from every
+            // historical print. That line is now the whole attestation wherever a signature
+            // was withheld, so it cannot be allowed to move.
+            $signoff->signed_off_by_name = $request->user()?->full_name;
             // A fresh signature supersedes any earlier reopen; the reason stays for the trail.
             $signoff->reopened_at = null;
         }
 
         $signoff->save();
 
+        // PHI-free, and name-free: the printed sheet cannot distinguish "signature withheld
+        // because a colleague named them" from "this clinician has no signature on file", so
+        // the trail records which it was — as field names and a token, never a person.
+        $detail = 'unit='.$u->id.' date='.$date.' signoff='.$signoff->id;
+
+        if ($signing && $provenance !== []) {
+            foreach ($provenance as $key => $why) {
+                $detail .= ' '.$key.'='.$why;
+            }
+        }
+
         AuditLog::record(
             $signing ? 'endorsement_signoff' : 'endorsement_signoff_draft',
-            'unit='.$u->id.' date='.$date.' signoff='.$signoff->id,
+            $detail,
             $request->user()?->getKey(),
             $request->ip(),
         );
@@ -811,6 +834,11 @@ class EndorsementController extends Controller
 
         $canReopen = $this->canReopen($viewer);
 
+        // A signature is evidence of an attestation, so it is served only where there IS
+        // one. Withholding it in the template would not be enough — the URL must not leave
+        // the server for a day nobody has signed.
+        $isSignedOff = $s?->isSignedOff() ?? false;
+
         return [
             // Reopening needs `endorsement.reopen`. The sheet says up front whether THIS viewer has
             // it, and if not, names the people who do — so a ward is never left guessing at the
@@ -819,13 +847,16 @@ class EndorsementController extends Controller
             'reopen_contacts' => $canReopen ? [] : $this->reopenContacts(),
             'signed_off' => $s?->isSignedOff() ?? false,
             'signed_off_at' => $s?->signed_off_at?->format('Y-m-d H:i'),
-            'signed_off_by_name' => $s?->signedOffBy?->full_name,
+            // Snapshot first; the relation only as a fallback for rows written before the
+            // column existed. Resolving it live let a rename rewrite every historical sheet
+            // and a deactivated account erase the attribution altogether.
+            'signed_off_by_name' => $s?->signed_off_by_name ?? $s?->signedOffBy?->full_name,
             'endorsed_by_user_id' => $s?->endorsed_by_user_id,
             'endorsed_by_name' => $s?->endorsed_by_name,
-            'endorsed_by_signature' => self::signatureUrl($s?->endorsed_by_signature_path),
+            'endorsed_by_signature' => $isSignedOff ? self::signatureUrl($s?->endorsed_by_signature_path) : null,
             'endorsed_to_user_id' => $s?->endorsed_to_user_id,
             'endorsed_to_name' => $s?->endorsed_to_name,
-            'endorsed_to_signature' => self::signatureUrl($s?->endorsed_to_signature_path),
+            'endorsed_to_signature' => $isSignedOff ? self::signatureUrl($s?->endorsed_to_signature_path) : null,
             'consultant_by_user_id' => $s?->consultant_by_user_id,
             'consultant_by_name' => $s?->consultant_by_name,
             'consultant_to_user_id' => $s?->consultant_to_user_id,
@@ -857,6 +888,55 @@ class EndorsementController extends Controller
      * @var list<int>
      */
     private const CONSULTANT_POSITIONS = [3];
+
+    /**
+     * The roles that may apply ANOTHER clinician's handwritten signature — owner ruling,
+     * 2026-07-27: Administrator (0) and Chief Resident (5).
+     *
+     * These are the roles that complete records on others' behalf, and the ward needs some
+     * route to a fully-signed sheet. Everyone else may still NAME a colleague — a handover
+     * has two people and the sheet must say so — but only their own handwriting is applied.
+     *
+     * @var list<int>
+     */
+    private const SIGNATURE_PROXY_POSITIONS = [0, 5];
+
+    /**
+     * Whose signature image this write may freeze, and why — the medico-legal heart of the
+     * sheet, so it answers in one place and records its reasoning.
+     *
+     * Returns [path|null, reason], where reason is one of:
+     *   self     — applied; the actor is the person named
+     *   proxy    — applied; the actor holds SIGNATURE_PROXY_POSITIONS
+     *   withheld — the named clinician HAS a signature, but this actor may not apply it
+     *   none     — nobody named, or the named clinician has no signature on file
+     *   draft    — this request does not attest the day, so nothing is frozen at all
+     *
+     * @return array{0: ?string, 1: string}
+     */
+    private function resolveSignature(?User $actor, ?User $named, bool $signing): array
+    {
+        // An unsigned day carries no attestation, so it may carry no handwriting — not even
+        // the drafter's own. Freezing on every save meant a draft could be printed with a
+        // signature on it and no "signed off" line anywhere to qualify it.
+        if (! $signing) {
+            return [null, 'draft'];
+        }
+
+        if ($named === null || $named->signature_path === null) {
+            return [null, 'none'];
+        }
+
+        if ($actor !== null && $named->getKey() === $actor->getKey()) {
+            return [$named->signature_path, 'self'];
+        }
+
+        if (in_array((int) $actor?->position, self::SIGNATURE_PROXY_POSITIONS, true)) {
+            return [$named->signature_path, 'proxy'];
+        }
+
+        return [null, 'withheld'];
+    }
 
     /**
      * The staff pickers behind the four sign-off selects. Legacy left the two consultant fields as

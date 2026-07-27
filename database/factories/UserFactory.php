@@ -33,6 +33,13 @@ class UserFactory extends Factory
             'password' => static::$password ??= Hash::make('password'),
             'active' => true,
             'remember_token' => Str::random(10),
+            // An account in NORMAL USE, which is what almost every test means by "a user".
+            // Left null, RequireSetup would redirect every request in the suite to /setup
+            // and 150 tests would be asserting against the onboarding page.
+            //
+            // A genuinely new account is the deliberate case: state it with
+            // ->create(['setup_completed_at' => null]), as FirstLoginSetupTest does.
+            'setup_completed_at' => now(),
         ];
     }
 

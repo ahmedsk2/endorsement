@@ -4,6 +4,7 @@ use App\Http\Middleware\EnforceTwoFactor;
 use App\Http\Middleware\EnsureAccountActive;
 use App\Http\Middleware\EnsureCapability;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\RequireSetup;
 use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -21,6 +22,11 @@ return Application::configure(basePath: dirname(__DIR__))
             // Per-request `active` re-check (legacy require_auth.php parity). Declared
             // BEFORE HandleInertiaRequests so a revoked account never gets its auth props shared.
             EnsureAccountActive::class,
+            // A new account finishes choosing its second factor and its reminders before
+            // reaching the wards. BEFORE EnforceTwoFactor deliberately: both would redirect
+            // an unconfigured privileged account, and this one sends them to the page that
+            // can actually resolve it rather than to the profile.
+            RequireSetup::class,
             // Privileged accounts must carry a second factor (production default).
             EnforceTwoFactor::class,
             HandleInertiaRequests::class,

@@ -32,6 +32,10 @@ class EnforceTwoFactor
 
     /** Paths a gated user must still reach, or the redirect becomes a loop. */
     private const ALLOWED = [
+        // First-login setup asks for exactly the thing this middleware is enforcing, so
+        // gating it would put the two in a redirect loop: RequireSetup sends the user to
+        // /setup, this would send them straight back to /profile.
+        'setup*',
         'profile*',
         'user/two-factor*',
         'logout',

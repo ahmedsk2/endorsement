@@ -36,30 +36,6 @@ const form = useForm({
 
 const submit = () => form.patch('/profile', { preserveScroll: true });
 
-// ------------------------------------------------------------ password
-
-const passwordForm = useForm({
-    current_password: '',
-    password: '',
-    password_confirmation: '',
-});
-
-// Same four requirements the server enforces and the registration page checklists.
-const pwRequirements = [
-    { key: 'length', label: 'At least 8 characters', test: (p) => p.length >= 8 },
-    { key: 'case', label: 'Upper and lower case letters', test: (p) => /[a-z]/.test(p) && /[A-Z]/.test(p) },
-    { key: 'number', label: 'At least one number', test: (p) => /\d/.test(p) },
-    { key: 'symbol', label: 'At least one symbol', test: (p) => /[^A-Za-z0-9]/.test(p) },
-];
-const pwMet = computed(() => pwRequirements.map((r) => r.test(passwordForm.password)));
-const pwMismatch = computed(() => passwordForm.password !== '' && passwordForm.password_confirmation !== ''
-    && passwordForm.password !== passwordForm.password_confirmation);
-
-const changePassword = () => passwordForm.put('/profile/password', {
-    preserveScroll: true,
-    onSuccess: () => passwordForm.reset(),
-});
-
 // ------------------------------------------------------------ second factor
 
 const methodForm = useForm({ method: props.security.two_factor_method ?? '' });
@@ -287,51 +263,20 @@ const enablePush = async () => {
                 </form>
             </section>
 
-            <!-- Change password -->
+            <!--
+              Change password lives on its own page now. It was the third stacked form here,
+              below identity and sign-in security, each with its own Save button — which is a
+              good way to submit the wrong one. A password change should be deliberate.
+            -->
             <section class="channel-bar rounded-md border border-line bg-panel p-6" data-testid="password-section">
-                <h3 class="text-sm font-semibold text-ink">Change password</h3>
-                <form class="mt-4 space-y-3" @submit.prevent="changePassword">
-                    <div>
-                        <label for="current_password" class="channel-tag mb-1 block">Current password</label>
-                        <input id="current_password" v-model="passwordForm.current_password" type="password"
-                               autocomplete="current-password" data-testid="current-password"
-                               class="w-full rounded-md border border-line bg-panel px-3 py-2 text-base text-ink focus:border-channel focus:ring-2 focus:ring-channel focus:outline-none" />
-                        <p v-if="passwordForm.errors.current_password" class="mt-1 text-xs text-critical" role="alert">
-                            {{ passwordForm.errors.current_password }}
-                        </p>
-                    </div>
-                    <div>
-                        <label for="new_password" class="channel-tag mb-1 block">New password</label>
-                        <input id="new_password" v-model="passwordForm.password" type="password"
-                               autocomplete="new-password" data-testid="new-password"
-                               class="w-full rounded-md border border-line bg-panel px-3 py-2 text-base text-ink focus:border-channel focus:ring-2 focus:ring-channel focus:outline-none" />
-                        <ul class="mt-2 space-y-1 text-xs">
-                            <li v-for="(r, i) in pwRequirements" :key="r.key" :data-testid="`pf-req-${r.key}`"
-                                class="flex items-center gap-2" :class="pwMet[i] ? 'text-ok' : 'text-critical'">
-                                <span aria-hidden="true" class="readout">{{ pwMet[i] ? '✓' : '✗' }}</span>{{ r.label }}
-                            </li>
-                        </ul>
-                        <p v-if="passwordForm.errors.password" class="mt-1 text-xs text-critical" role="alert">
-                            {{ passwordForm.errors.password }}
-                        </p>
-                    </div>
-                    <div>
-                        <label for="confirm_password" class="channel-tag mb-1 block">Confirm new password</label>
-                        <input id="confirm_password" v-model="passwordForm.password_confirmation" type="password"
-                               autocomplete="new-password" data-testid="confirm-password"
-                               class="w-full rounded-md border border-line bg-panel px-3 py-2 text-base text-ink focus:border-channel focus:ring-2 focus:ring-channel focus:outline-none" />
-                        <p v-if="pwMismatch" data-testid="pf-mismatch" role="alert" class="mt-1 text-xs font-semibold text-critical">
-                            Passwords do not match.
-                        </p>
-                    </div>
-                    <div class="flex items-center justify-end gap-3">
-                        <span v-if="passwordForm.recentlySuccessful" class="text-sm text-ok" role="status">Password changed.</span>
-                        <button type="submit" data-testid="save-password" :disabled="passwordForm.processing"
-                                class="min-h-11 rounded-md bg-channel px-3 py-1.5 text-sm font-semibold text-white hover:bg-channel-ink disabled:opacity-60">
-                            Change password
-                        </button>
-                    </div>
-                </form>
+                <h3 class="text-sm font-semibold text-ink">Password</h3>
+                <p class="mt-1 text-sm text-muted">
+                    Passwords expire every 90 days and a previous password cannot be reused.
+                </p>
+                <p class="mt-3 text-sm">
+                    <Link href="/profile/password" data-testid="change-password-link"
+                          class="font-semibold text-channel-ink hover:underline">Change my password</Link>
+                </p>
             </section>
 
             <!-- Signature -->

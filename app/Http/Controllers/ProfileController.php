@@ -109,6 +109,20 @@ class ProfileController extends Controller
      * hijacked session must not be able to lock the real owner out — and the new one must
      * meet the same four requirements the registration page checklists.
      */
+    /**
+     * The change-password page.
+     *
+     * Deliberately separate from the FORCED change at `password.change`
+     * (App\Http\Controllers\Auth\ChangePasswordController), which runs before the user is
+     * authenticated, because their password has expired. These two look alike and must not
+     * be merged: this one requires a live session and the current password; that one
+     * cannot, because its user has not been logged in yet.
+     */
+    public function editPassword(): \Inertia\Response
+    {
+        return \Inertia\Inertia::render('Profile/Password');
+    }
+
     public function updatePassword(Request $request): RedirectResponse
     {
         $user = $request->user();

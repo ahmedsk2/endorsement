@@ -130,6 +130,17 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:settings.manage'])
     });
 
 /*
+ * First-login setup. `auth` only, no `cap:` — the capability catalogue is not the question
+ * here; every account, whatever its role, answers these two before reaching a ward. It is
+ * also the destination RequireSetup redirects to, so gating it on anything the new account
+ * might lack would be a trap.
+ */
+Route::middleware('auth')->group(function () {
+    Route::get('/setup', [\App\Http\Controllers\SetupController::class, 'show'])->name('setup.show');
+    Route::post('/setup', [\App\Http\Controllers\SetupController::class, 'complete'])->name('setup.complete');
+});
+
+/*
  * Own profile. Every seeded role holds `cap:profile.manage`; the update binds
  * to the SESSION identity only (IDOR-safe).
  */
@@ -140,6 +151,11 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:profile.manage'])->group(fu
 
     // Change your own password (current password required), choose the second factor,
     // and manage the handwritten signature that prints on sheets you sign.
+    // A page of its own rather than a panel on the profile: changing a password is a
+    // deliberate, single-purpose act, and it sat below two unrelated forms where an
+    // accidental submit of the wrong one was easy. NOT to be confused with the FORCED
+    // change at password.change, which runs UNAUTHENTICATED for an expired password.
+    Route::get('/profile/password', [ProfileController::class, 'editPassword'])->name('profile.password.edit');
     Route::put('/profile/password', [ProfileController::class, 'updatePassword'])
         ->middleware('throttle:6,1')->name('profile.password');
     Route::put('/profile/two-factor-method', [ProfileController::class, 'updateTwoFactorMethod'])->name('profile.two-factor-method');

@@ -177,4 +177,35 @@ class ProfileTest extends TestCase
 
         $this->assertSame('Renamed Only', $user->fresh()->full_name);
     }
+
+    public function test_changing_a_password_has_its_own_page(): void
+    {
+        // It used to be the third stacked form on /profile, each with its own Save button.
+        $user = User::factory()->create(['active' => true]);
+
+        $this->actingAs($user)->get('/profile/password')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->component('Profile/Password'));
+    }
+
+    public function test_the_voluntary_and_the_forced_password_changes_stay_separate(): void
+    {
+        // These two look alike and must never be merged. /profile/password requires a live
+        // session AND the current password. password.change exists precisely because its
+        // user is NOT authenticated — their password expired, so login was never completed.
+        // Collapsing them would either lock out the expired user or let an unauthenticated
+        // request change a password.
+        $this->get('/profile/password')->assertRedirect('/login');
+
+        $user = User::factory()->create([
+            'active' => true,
+            'pass_exp_date' => now()->subYear()->format('Y-m-d'),
+        ]);
+
+        $this->post('/login', ['member_name' => $user->member_name, 'password' => 'password'])
+            ->assertRedirect(route('password.change'));
+
+        // And the forced flow is reachable without a session, by design.
+        $this->get(route('password.change'))->assertOk();
+    }
 }

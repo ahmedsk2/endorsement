@@ -23,6 +23,12 @@ return Application::configure(basePath: dirname(__DIR__))
         // falls back to the session — which Laravel only updates on non-AJAX GETs, i.e.
         // never for an Inertia visit. These two put that right from both ends: page visits
         // ARE recorded, and `<img>` sub-resources are NOT. Three bugs shared that one cause.
+        // The trusted-device cookie is a high-entropy random token that is only ever looked
+        // up by SHA-256 hash against a row scoped to the signing-in user. Encrypting it adds
+        // nothing — tampering simply fails the lookup — and leaving it plain keeps the value
+        // the same on both sides of the wire, which is one less thing to be subtly wrong.
+        $middleware->encryptCookies(except: [\App\Support\TrustedDevice::COOKIE]);
+
         $middleware->replaceInGroup(
             'web',
             \Illuminate\Session\Middleware\StartSession::class,

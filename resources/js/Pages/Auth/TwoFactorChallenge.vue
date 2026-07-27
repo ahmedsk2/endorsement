@@ -2,7 +2,7 @@
 import { ref } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
-const form = useForm({ code: '' });
+const form = useForm({ code: '', trust_device: false });
 const recovery = ref(false);
 const submit = () => form.post('/two-factor-challenge', { onFinish: () => form.reset('code') });
 </script>
@@ -28,6 +28,21 @@ const submit = () => form.post('/two-factor-challenge', { onFinish: () => form.r
                     />
                     <p v-if="form.errors.code" class="mt-1 text-center text-xs text-critical">{{ form.errors.code }}</p>
                 </div>
+
+
+                <!--
+                  Offered only after the code is proven, and it skips the SECOND factor alone
+                  — never the password, never the account checks. Scoped to this user, so a
+                  cookie left on a shared ward workstation cannot carry a colleague past
+                  their own.
+                -->
+                <label class="flex min-h-11 cursor-pointer items-start gap-3 text-sm text-body">
+                    <input v-model="form.trust_device" type="checkbox" data-testid="trust-device" class="mt-1 h-4 w-4" />
+                    <span>
+                        <span class="font-medium text-ink">Don't ask for a code on this device for 7 days</span>
+                        <span class="block text-xs text-muted">Only on a device that is yours. Changing your password ends this everywhere.</span>
+                    </span>
+                </label>
 
                 <button
                     type="submit"

@@ -97,6 +97,11 @@ class EmailOtpChallengeController extends Controller
         $remember = (bool) $request->session()->get(self::SESSION_REMEMBER, false);
         $this->forget($request);
 
+        if ($request->boolean('trust_device')) {
+            \App\Support\TrustedDevice::remember($user, $request->userAgent());
+            AuditLog::record('trusted_device_added', 'user='.$user->getKey(), $user->getKey(), $request->ip());
+        }
+
         \App\Support\Login::complete($user, $remember);
         $request->session()->regenerate();
 

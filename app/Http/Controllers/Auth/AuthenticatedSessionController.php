@@ -106,6 +106,19 @@ class AuthenticatedSessionController extends Controller
         // choice per user; users with neither continue to log in exactly as before.
         $method = $user->activeTwoFactorMethod();
 
+        // "Don't ask on this device for a week." Checked AFTER the password, the active
+        // check and the expired-password hand-off — it skips the SECOND factor only, never
+        // the first, and never account state. The lookup is scoped to this user, so a cookie
+        // left by a colleague on a ward workstation cannot carry anyone else past their own.
+        if ($method !== null && \App\Support\TrustedDevice::trusts($request, $user)) {
+            \App\Support\Login::complete($user, (bool) $request->boolean('remember'));
+            $request->session()->regenerate();
+
+            AuditLog::record('login_trusted_device', 'member='.$user->id, $user->id, $request->ip());
+
+            return redirect()->intended('/endorsement');
+        }
+
         if ($method === 'totp') {
             $request->session()->put(self::TWO_FACTOR_LOGIN_ID_KEY, $user->id);
             $request->session()->put(self::TWO_FACTOR_LOGIN_REMEMBER_KEY, $request->boolean('remember'));

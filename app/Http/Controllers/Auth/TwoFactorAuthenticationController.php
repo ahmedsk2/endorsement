@@ -151,6 +151,11 @@ class TwoFactorAuthenticationController extends Controller
             'two_factor_method' => $user->two_factor_method === 'totp' ? null : $user->two_factor_method,
         ])->save();
 
+        // Turning a factor off must also forget every device that was skipping it — leaving
+        // those behind would mean "I disabled 2FA" quietly left a week of skipped codes
+        // outstanding on machines the user may no longer have.
+        \App\Support\TrustedDevice::revokeAll($user);
+
         if ($wasEnabled) {
             AuditLog::record('2fa_disable', 'member='.$user->id, $user->id, $request->ip());
         }

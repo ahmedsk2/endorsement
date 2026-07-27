@@ -117,6 +117,12 @@ class TwoFactorChallengeController extends Controller
 
         $this->forgetPending($request);
 
+        // "Don't ask on this device for a week", offered only once the code has been proven.
+        if ($request->boolean('trust_device')) {
+            \App\Support\TrustedDevice::remember($user, $request->userAgent());
+            AuditLog::record('trusted_device_added', 'member='.$user->id, $user->id, $request->ip());
+        }
+
         \App\Support\Login::complete($user, $remember);
         $request->session()->regenerate();
 

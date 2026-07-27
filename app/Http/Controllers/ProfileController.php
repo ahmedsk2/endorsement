@@ -161,9 +161,15 @@ class ProfileController extends Controller
 
         $request->session()->regenerate();
 
+        // Changing a password is what someone does when they think something is wrong, so it
+        // must also end "don't ask for a code on this device" everywhere. Otherwise the one
+        // action a worried user knows to take would leave the second factor still skipped on
+        // a machine they no longer trust.
+        \App\Support\TrustedDevice::revokeAll($user);
+
         AuditLog::record('password_changed', 'user='.$user->getKey(), $user->getKey(), $request->ip());
 
-        return back()->with('status', 'Password changed. Other devices have been signed out.');
+        return back()->with('status', 'Password changed. Other devices have been signed out, and each will be asked for a code again.');
     }
 
     /**

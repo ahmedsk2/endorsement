@@ -12,7 +12,7 @@ const props = defineProps({
     lifetimeMinutes: { type: Number, default: 10 },
 });
 
-const form = useForm({ code: '' });
+const form = useForm({ code: '', trust_device: false });
 const submit = () => form.post('/email-code', { onFinish: () => form.reset('code') });
 const resend = () => router.post('/email-code/resend', {}, { preserveScroll: true });
 
@@ -40,6 +40,21 @@ const notice = computed(() => usePage().props.flash?.status ?? null);
                     The code expires in {{ lifetimeMinutes }} minutes and can be used once.
                 </p>
             </div>
+
+
+            <!--
+              Offered only after the code is proven, and it skips the SECOND factor alone
+              — never the password, never the account checks. Scoped to this user, so a
+              cookie left on a shared ward workstation cannot carry a colleague past
+              their own.
+            -->
+            <label class="flex min-h-11 cursor-pointer items-start gap-3 text-sm text-body">
+                <input v-model="form.trust_device" type="checkbox" data-testid="trust-device" class="mt-1 h-4 w-4" />
+                <span>
+                    <span class="font-medium text-ink">Don't ask for a code on this device for 7 days</span>
+                    <span class="block text-xs text-muted">Only on a device that is yours. Changing your password ends this everywhere.</span>
+                </span>
+            </label>
 
             <button type="submit" :disabled="form.processing"
                     class="min-h-11 w-full rounded-md bg-channel px-4 py-2.5 font-semibold text-white transition hover:bg-channel-ink disabled:opacity-60">

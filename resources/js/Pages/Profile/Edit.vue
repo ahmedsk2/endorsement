@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { Link, router, useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '../../Layouts/AppLayout.vue';
 import SignaturePad from '../../Components/SignaturePad.vue';
@@ -82,6 +82,44 @@ const saveSignature = () => {
 
 const removeSignature = () => router.delete('/profile/signature', { preserveScroll: true });
 
+// ------------------------------------------------------------ is THIS device registered?
+
+/*
+ * Push subscriptions are per browser, per machine — enabling them on a phone registers the
+ * phone and nothing else. Nothing told the user that, so "I turned notifications on" and
+ * "this laptop will never notify me" were both true at once and looked identical.
+ *
+ * The browser can answer this alone: `Notification.permission` is synchronous and never
+ * prompts, and `getSubscription()` says whether THIS browser holds one. No server call, and
+ * no endpoints shipped to the page.
+ */
+const deviceState = ref('unknown');   // unknown | unsupported | blocked | unregistered | registered
+
+onMounted(async () => {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        deviceState.value = 'unsupported';
+        return;
+    }
+    if (Notification.permission === 'denied') {
+        deviceState.value = 'blocked';
+        return;
+    }
+
+    try {
+        // A wedged service worker leaves `ready` pending forever, which would leave the panel
+        // saying "unknown" with no explanation. Time out and treat it as unregistered — the
+        // button is still the right next step.
+        const registration = await Promise.race([
+            navigator.serviceWorker.ready,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+        ]);
+        const existing = await registration.pushManager.getSubscription();
+        deviceState.value = existing && Notification.permission === 'granted' ? 'registered' : 'unregistered';
+    } catch {
+        deviceState.value = 'unregistered';
+    }
+});
+
 // ------------------------------------------------------------ push self-test
 
 const pushTesting = ref(false);
@@ -151,12 +189,25 @@ const enablePush = async () => {
             keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
         }, {
             preserveScroll: true,
+            preserveState: true,
             onSuccess: () => {
                 pushState.value = 'Notifications enabled on this device.';
+                deviceState.value = 'registered';
+            },
+            // Without this the request was fire-and-forget: a server rejection left the
+            // button looking like it had done nothing at all, which is precisely the
+            // "autosave is never fire-and-forget" rule applied to a different button.
+            onError: (errors) => {
+                pushState.value = Object.values(errors)[0] ?? 'The server refused this device.';
             },
         });
-    } catch {
-        pushState.value = 'Could not enable notifications on this device.';
+    } catch (e) {
+        // Name the failure. "InvalidStateError" here means this browser holds a subscription
+        // minted for a DIFFERENT VAPID key — after a key rotation — and it must be dropped
+        // before a new one can be made.
+        pushState.value = e?.name === 'InvalidStateError'
+            ? 'This browser holds an old notification registration. Clear site data for this site, then try again.'
+            : 'Could not enable notifications on this device.';
     }
 };
 </script>
@@ -359,7 +410,7 @@ const enablePush = async () => {
                             class="rounded-md bg-channel px-3 py-1.5 text-sm font-semibold text-white hover:bg-channel-ink">
                         Save preferences
                     </button>
-                    <button type="button" data-testid="enable-push" @click="enablePush"
+                    <button v-if="deviceState !== 'registered'" type="button" data-testid="enable-push" @click="enablePush"
                             class="rounded-md border border-line px-3 py-1.5 text-sm font-semibold text-channel-ink hover:bg-channel-soft">
                         Enable notifications on this device
                     </button>
@@ -376,6 +427,31 @@ const enablePush = async () => {
                     <span v-if="reminderSaved" class="text-sm text-ok" role="status">Saved.</span>
                 </div>
                 <p v-if="pushState" class="mt-2 text-xs text-body" role="status" data-testid="push-state">{{ pushState }}</p>
+
+                <!--
+                  Whether THIS browser is registered. Subscriptions are per device, so
+                  "notifications are on" was true of a phone and false of the laptop reading
+                  it, with nothing on screen distinguishing the two.
+                -->
+                <div class="mt-3" data-testid="push-device-state">
+                    <p v-if="deviceState === 'unregistered'"
+                       class="channel-bar channel-bar-caution rounded-md bg-caution-soft px-3 py-2 text-sm text-caution">
+                        This device is not set up for notifications. Reminders will reach your other
+                        devices, but not this one — use the button above to add it.
+                    </p>
+                    <p v-else-if="deviceState === 'blocked'"
+                       class="channel-bar channel-bar-critical rounded-md bg-critical-soft px-3 py-2 text-sm text-critical">
+                        Notifications are blocked for this site in this browser. The button cannot
+                        undo that — allow them in the browser's site settings first.
+                    </p>
+                    <p v-else-if="deviceState === 'unsupported'" class="text-sm text-muted">
+                        This browser cannot receive notifications. On an iPhone, add this site to your
+                        Home Screen first.
+                    </p>
+                    <p v-else-if="deviceState === 'registered'" class="text-sm text-ok" role="status">
+                        This device is registered for notifications.
+                    </p>
+                </div>
 
                 <div role="status" aria-live="polite" class="mt-2" data-testid="push-test-result">
                     <p v-if="pushTest" class="channel-bar rounded-md px-3 py-2 text-sm"

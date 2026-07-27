@@ -210,8 +210,15 @@ class EndorsementController extends Controller
 
         // Remember the unit so /endorsement/today lands here next time. Quiet write; not
         // audited (a UI preference, not clinical data).
+        //
+        // ONLY on an in-app navigation. This is a state change performed by a GET, which is
+        // exactly what a cross-site link can trigger once the session cookie is SameSite=lax
+        // rather than strict — and lax is what phones need, since strict withholds the cookie
+        // on anything opened from a mail app or a home-screen shortcut. Requiring the Inertia
+        // header means only a navigation from inside the app can move the preference; the
+        // consequence of a stranger's link is now nothing at all.
         $user = $request->user();
-        if ($user !== null && $user->preferred_unit_id !== $u->id) {
+        if ($user !== null && $request->hasHeader('X-Inertia') && $user->preferred_unit_id !== $u->id) {
             $user->forceFill(['preferred_unit_id' => $u->id])->save();
         }
 

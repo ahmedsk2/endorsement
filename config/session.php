@@ -202,7 +202,25 @@ return [
     |
     */
 
-    'same_site' => env('SESSION_SAME_SITE', 'strict'),
+    /*
+     * LAX, not strict — and this is a correction, not a relaxation of an intended control.
+     *
+     * `strict` withholds the session cookie on any navigation whose initiator is not this
+     * site. On a desktop bookmark that never happens; on a phone it is most of the ways in.
+     * An iOS home-screen web app has its own cookie jar, a `target="_blank"` print opens the
+     * system browser, a push notification's `openWindow` is not a same-site click, and the
+     * invitation, password-reset and email-confirmation links all arrive in a mail app. Each
+     * one arrived cookie-less, was treated as anonymous, and bounced to /login — which reads
+     * as "it keeps logging me off", which is exactly what was reported from the ward.
+     *
+     * CSRF is not weakened: `lax` still withholds the cookie on cross-site POST/PATCH/DELETE,
+     * and the CSRF token remains the actual control on every write. The one thing that leaned
+     * on `strict` was a state change performed by a GET (the remembered unit), which now
+     * requires an in-app navigation — see EndorsementController::show.
+     *
+     * docs/spec/08-foundation.md specified `lax` originally.
+     */
+    'same_site' => env('SESSION_SAME_SITE', 'lax'),
 
     /*
     |--------------------------------------------------------------------------

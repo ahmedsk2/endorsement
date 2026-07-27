@@ -221,10 +221,16 @@ const submitReopen = () => {
                 <Link :href="`/endorsement/${unit.code}`" class="rounded-md border border-line px-3 py-1.5 text-sm text-body hover:bg-ground-deep">
                     Day index
                 </Link>
-                <a :href="`/endorsement/${unit.code}/${date}/print`" target="_blank"
-                   class="rounded-md border border-line px-3 py-1.5 text-sm text-body hover:bg-ground-deep">
+                <!--
+                  No target="_blank". From an installed PWA that opens the SYSTEM browser,
+                  which has a different cookie jar — so on a phone "Print" could land on the
+                  sign-in page instead of the sheet. The print page drives itself
+                  (window.print on mount) and carries its own way back.
+                -->
+                <Link :href="`/endorsement/${unit.code}/${date}/print`"
+                      class="rounded-md border border-line px-3 py-1.5 text-sm text-body hover:bg-ground-deep">
                     Print
-                </a>
+                </Link>
                 <button v-if="canEdit" type="button" data-testid="new-day" @click="newDay"
                         :title="`Carry this census forward to ${nextDate}`"
                         class="rounded-md bg-channel px-3 py-1.5 text-sm font-semibold text-panel hover:bg-channel-ink">

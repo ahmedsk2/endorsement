@@ -114,7 +114,7 @@ grep -qi "unsafe-eval" "$TMP/h" && bad "CSP" "allows unsafe-eval"
 
 echo "=== session cookie flags ==="
 cookie=$(grep -i '^set-cookie:.*session' "$TMP/h" | head -1)
-for flag in secure httponly samesite=strict; do
+for flag in secure httponly samesite=lax; do
     echo "$cookie" | grep -qi "$flag" && note "cookie $flag" present || bad "cookie $flag" missing
 done
 

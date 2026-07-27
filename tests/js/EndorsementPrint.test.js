@@ -5,6 +5,10 @@ import { resolve } from 'node:path';
 
 vi.mock('@inertiajs/vue3', () => ({
     Head: { name: 'Head', template: '<div><slot /></div>' },
+    // The print page carries its own "back to the sheet" link now that it is no longer
+    // opened in a throwaway tab — a new tab from an installed PWA lands in the system
+    // browser, with a different cookie jar and therefore a sign-in page.
+    Link: { name: 'Link', props: ['href'], template: '<a :href="href"><slot /></a>' },
 }));
 
 import Print from '../../resources/js/Pages/Endorsement/Print.vue';

@@ -61,9 +61,18 @@ class TodayRouteTest extends TestCase
 
     public function test_visiting_a_unit_sheet_remembers_the_unit(): void
     {
+        // An IN-APP visit. The remembered unit is a state change performed by a GET, so it
+        // is conditioned on the Inertia header now that the session cookie is SameSite=lax:
+        // a top-level cross-site GET carries the cookie under lax, and a stranger's link
+        // must not be able to move a clinician's preference. Normal use is unaffected —
+        // reaching a unit sheet means clicking through the app.
         $user = $this->editor();
 
-        $this->actingAs($user)->get('/endorsement/scbu/2026-07-10')->assertOk();
+        $this->actingAs($user)->withHeaders([
+            'X-Inertia' => 'true',
+            'X-Inertia-Version' => (string) (new \App\Http\Middleware\HandleInertiaRequests)->version(request()),
+            'X-Requested-With' => 'XMLHttpRequest',
+        ])->get('/endorsement/scbu/2026-07-10')->assertSuccessful();
 
         $scbu = Unit::where('code', 'SCBU')->firstOrFail();
         $this->assertSame($scbu->id, $user->fresh()->preferred_unit_id);

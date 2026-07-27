@@ -25,7 +25,7 @@ governance work that no code change can do for you.
 | Signature images: private disk, re-encoded through GD, uploaded only for oneself, served only to authenticated holders of `endorsement.view`, immutable/content-addressed, and never emitted for an unsigned day | `SignatureStore`, `SignatureController` |
 | A clinician's handwritten signature is applied only by that clinician, or by an Administrator / Chief Resident acting for them (owner ruling, see below) | `EndorsementController::resolveSignature()` |
 | Secrets encrypted at rest: TOTP secrets, recovery codes, SMTP password, VAPID private key | model casts, `AppSettings` |
-| Session cookie encrypted, `Secure` in production, `SameSite=strict`, 60-minute idle lifetime | `config/session.php` |
+| Session cookie encrypted, `Secure` in production, `SameSite=lax` (strict withheld the cookie on every phone entry point — home-screen PWA, emailed links, notification taps), 60-minute idle lifetime | `config/session.php` |
 | CSP, HSTS (TLS only), X-Frame-Options DENY, nosniff, `Referrer-Policy: no-referrer`, COOP/CORP, Permissions-Policy, `X-Robots-Tag: noindex` | `SecurityHeaders` |
 | The origin accepts 80/443 **only from Cloudflare's published ranges**, so the edge cannot be bypassed; asserted by `scripts/verify-live.sh` | OCI security list, 2026-07-27 |
 | The application's database user holds `SELECT, INSERT, UPDATE, DELETE` only — a compromised app cannot alter or drop the clinical schema | MySQL grants; see `docs/RUNBOOK-DEPLOY.md` |

@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted } from 'vue';
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 
 /**
  * The printable A4 endorsement sheet — ONE parameterised template for all four units
@@ -88,6 +88,18 @@ onMounted(() => {
 <template>
     <div class="print-sheet">
         <Head :title="`${unit.code} Endorsement ${date}`" />
+
+        <!--
+          Its own way back, since Print is no longer opened in a throwaway tab — a new tab
+          from an installed PWA lands in the system browser, with a different cookie jar and
+          therefore a sign-in page. `print:hidden` keeps it off the paper.
+        -->
+        <p class="print:hidden mb-4">
+            <Link :href="`/endorsement/${unit.code}/${date}`"
+                  class="rounded-md border border-line px-3 py-1.5 text-sm text-body hover:bg-ground-deep">
+                ← Back to the sheet
+            </Link>
+        </p>
 
         <header class="print-head">
             <h1>{{ unit.name }} — Shift Endorsement</h1>

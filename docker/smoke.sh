@@ -145,15 +145,31 @@ check "php-fpm worker user" app \
 
 # The scheduler — which is what runs backup:run and audit:verify — is unprivileged.
 #
-# KNOWN GAP, attempted and reverted 2026-07-26: the nginx and php-fpm MASTERS still run as
-# root. Dropping them needs `USER app` at the image level, because under Docker the
-# container's stdout/stderr are pipes owned by whoever starts PID 1, and both daemons open
-# their error log BY PATH at startup — as a different user that fails with
-# "open() /dev/stderr failed (13: Permission denied)" and neither serves at all. Changing
-# the image user also changes how the existing named volumes are owned, so it is a
-# deliberate migration rather than a one-line hardening. See docs/SECURITY-AUDIT-2026-07-26.md.
+# ACCEPTED, decided 2026-07-27: the nginx and php-fpm MASTERS still run as root. Dropping
+# them needs `USER app` at the image level, because under Docker the container's
+# stdout/stderr are pipes owned by whoever starts PID 1, and both daemons open their error
+# log BY PATH at startup — as a different user that fails with "open() /dev/stderr failed
+# (13: Permission denied)" and neither serves at all. The recurring cost is carrying that
+# workaround across base-image bumps, not the volume ownership (already uid 1000 and
+# trivially reset). Compensated instead by cap_drop + no-new-privileges below, and by
+# running the boot-time artisan commands as `app` — which is what actually closes
+# SPC-RPT-006. See docs/SECURITY-AUDIT-2026-07-26.md.
 check "scheduler user" app \
     "$(docker exec "$APP" sh -c 'ps -o user,args | grep "[s]chedule:work" | head -1 | awk "{print \$1}"')"
+
+# The compensating control, asserted rather than assumed: a capability set that silently
+# reverts to the Docker default is worth nothing, and nothing else here would notice.
+check "capabilities dropped" "ALL" \
+    "$(docker inspect -f '{{range .HostConfig.CapDrop}}{{.}}{{end}}' "$APP")"
+
+# SPC-RPT-006, asserted at runtime rather than by reading the entrypoint. These files are
+# written at every boot by `artisan config:cache` and are then `require`d by every request.
+# If root wrote them, root is executing PHP out of an app-writable directory, which is the
+# whole finding. Owned by `app` is the proof that su-exec took effect.
+check "boot caches not written by root" app \
+    "$(docker exec "$APP" sh -c 'stat -c %U bootstrap/cache/config.php')"
+check "no-new-privileges" true \
+    "$(docker inspect -f '{{range .HostConfig.SecurityOpt}}{{if eq . "no-new-privileges:true"}}true{{end}}{{end}}' "$APP")"
 
 echo "--- database isolation ---"
 # The DB must be on the internal network ONLY. On the shared proxy network every other app

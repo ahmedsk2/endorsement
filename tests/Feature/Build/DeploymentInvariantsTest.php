@@ -111,6 +111,47 @@ class DeploymentInvariantsTest extends TestCase
     }
 
     /**
+     * SPC-RPT-006. The entrypoint chowns bootstrap/cache to `app` and then, as root, runs
+     * artisan commands that bootstrap the framework out of that same directory. Anything
+     * able to write there as `app` therefore executes as uid 0 on the next restart — and
+     * restarts happen unattended.
+     *
+     * This is the finding itself, not the ambient "daemons run as root" observation. It is
+     * closed by dropping privileges for those four commands, which is cheap; it was once
+     * fixed and then reverted as collateral damage from an unrelated `USER app` attempt.
+     */
+    public function test_no_boot_time_artisan_command_runs_as_root(): void
+    {
+        $entrypoint = (string) file_get_contents(base_path('docker/entrypoint.sh'));
+
+        // Executions only — the file also prints `php artisan migrate --force` inside an
+        // echo, telling the operator what to run themselves.
+        preg_match_all('/^(?!\s*#)(?!.*echo).*\bphp\s+artisan\b.*$/mi', $entrypoint, $m);
+
+        $this->assertNotEmpty($m[0], 'expected the entrypoint to run artisan at boot');
+
+        foreach ($m[0] as $line) {
+            $this->assertStringContainsString(
+                'su-exec app php artisan',
+                trim($line),
+                'boot-time artisan must drop to `app`; as root it executes app-writable PHP',
+            );
+        }
+    }
+
+    public function test_the_app_container_drops_its_capabilities(): void
+    {
+        $compose = $this->compose();
+
+        $this->assertStringContainsString('no-new-privileges:true', $compose);
+        $this->assertMatchesRegularExpression(
+            '/cap_drop:\s*(\n\s*-\s*ALL|\[\s*ALL\s*\])/',
+            $compose,
+            'the app container should start from no capabilities and add back only what it needs',
+        );
+    }
+
+    /**
      * This build runs as root on the same docker daemon as the patient database, so a
      * dependency's postinstall script would execute in the worst possible place.
      */

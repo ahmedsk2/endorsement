@@ -27,6 +27,29 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    # What "root" is allowed to mean inside this container.
+    #
+    # supervisord and the two daemon masters run as uid 0 and cannot be dropped (the stdout
+    # pipe belongs to whoever starts PID 1 — see docker/entrypoint.sh). So instead of
+    # pretending otherwise, the container starts from NO capabilities and adds back only
+    # what boot actually needs. This reduces reach toward the HOST; it does not reduce
+    # authority inside the container, and it is not a substitute for the privilege drop on
+    # the boot-time artisan commands, which is what closes the real escalation path.
+    #
+    # Most valuable single line: NET_RAW is gone. The app sits on the shared `coolify`
+    # network with every other app on this host, and raw sockets there are the move that
+    # turns a foothold in this container into an attempt on a neighbour.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN          # entrypoint chowns storage/ and bootstrap/cache on a fresh volume
+      - DAC_OVERRIDE   # root writing into app-owned trees; also nginx's client_body_temp
+      - FOWNER         # chmod/chown semantics on those same paths
+      - SETGID         # su-exec and php-fpm dropping to app (initgroups)
+      - SETUID         # the same three privilege transitions
+      - KILL           # supervisord signalling children that no longer share its euid
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       db:
         condition: service_healthy
@@ -103,6 +126,11 @@ services:
     # from now must get the bits that were tested, not whatever `8.4` points at then.
     image: mysql:8.4@sha256:8dbcf531a03aade657e181b9cf2f1d1803ce621a1d55610cb44cb531ab7d7db6
     restart: unless-stopped
+    # No cap_drop here: the mysql entrypoint does its own uid juggling on first init and a
+    # minimal set is easy to get wrong on the container holding the clinical data. This one
+    # is free and cannot break a startup path.
+    security_opt:
+      - no-new-privileges:true
     command:
       # NO --default-authentication-plugin: MySQL 8.4 REMOVED it (deprecated in 8.0.27),
       # and passing it makes mysqld abort at startup with "unknown variable". It is also

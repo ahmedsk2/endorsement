@@ -24,7 +24,10 @@
 #  - composer runs --no-dev, and the vendor tree is baked into the image (no network at boot);
 #  - MIGRATIONS ARE NOT RUN AT BOOT. The owner runs them (project rule: production
 #    migrations and live-DB changes are theirs), so a restart can never alter the schema;
-#  - the app runs as a NON-ROOT user;
+#  - every application process runs as the NON-ROOT `app` user: the php-fpm pool workers,
+#    the scheduler, and the boot-time artisan commands. supervisord itself stays root and
+#    cannot be dropped — see the note in docker/entrypoint.sh — so the nginx and php-fpm
+#    MASTERS are root too, and the container drops its capabilities to compensate;
 #  - config/route/view caches are built at boot, when the real env is present.
 
 # ---------- stage 1: front-end assets ----------
@@ -54,6 +57,10 @@ RUN apk add --no-cache \
         nginx supervisor tzdata icu-data-full \
         libpng libjpeg-turbo freetype libzip icu-libs oniguruma gmp \
         mysql-client gzip openssl \
+        # Drops the boot-time artisan commands to `app`. They bootstrap the framework out
+        # of bootstrap/cache, which is app-writable — so running them as root means anything
+        # able to write there executes as uid 0 on the next restart.
+        su-exec \
         # Alpine's `mysql-client` is MariaDB's client, and on its own it CANNOT authenticate
         # to MySQL 8.4: the default auth is caching_sha2_password and the plugin .so is not
         # in that package. mariadb-connector-c ships it. Without this the nightly backup
@@ -123,11 +130,14 @@ RUN addgroup -g 1000 app && adduser -u 1000 -G app -s /bin/sh -D app \
     && mkdir -p storage/framework/{cache,sessions,views} storage/logs storage/app/private/signatures storage/backups bootstrap/cache \
     && chown -R app:app storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache \
-    # nginx and php-fpm run unprivileged, so every path their MASTERS touch at startup must
-    # belong to `app`. /var/lib/nginx/logs is a SYMLINK to /var/log/nginx and `chown -R`
-    # does not follow symlinks, so the real directory has to be named explicitly — missing
-    # it fails the master with "could not open error log file (13: Permission denied)"
-    # before it ever reads error_log from the config.
+    # nginx's temp and cache trees must belong to `app`, because its WORKERS write there.
+    # /var/lib/nginx/logs is a SYMLINK to /var/log/nginx and `chown -R` does not follow
+    # symlinks, so the real directory is named explicitly.
+    #
+    # (The masters run as root, so they can open their own logs regardless. These chowns
+    # were widened during an abandoned `USER app` attempt and the revert left the comment
+    # claiming more than it does; /var/log/nginx and /usr/local/var/log are now belt and
+    # braces rather than load-bearing.)
     && mkdir -p /var/lib/nginx/tmp /var/log/nginx /usr/local/var/log \
     && chown -R app:app /var/lib/nginx /var/log/nginx /usr/local/var/log
 

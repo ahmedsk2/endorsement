@@ -221,6 +221,26 @@
         .auth-hero-curve-narrow { display: none; }
     }
 
+    /* Below lg the hero is a VIEWPORT BAND, not the whole page.
+       ---------------------------------------------------------------------------------
+       This is the phone overlap, and it is a unit mismatch. `.auth-hero` is absolute to a
+       `min-h-dvh` container, so its real height is the DOCUMENT height, not the viewport's.
+       The curve is an SVG with `preserveAspectRatio="none"`, so its white edge at y=32 lands
+       at 32% OF THE DOCUMENT. The brand panel that holds the form beneath it is sized in
+       VIEWPORT units (34dvh). Those two agree only when the page does not scroll — and every
+       signed-out page scrolls on a phone, so the form rode up onto the dark illustration and
+       near-black `ink` text sat on the photograph at roughly 1:1 contrast.
+
+       Pinning the hero to the viewport makes both quantities the same one again, at any page
+       length. It also stops `object-fit: cover` cropping the 1920x1072 dawn image into a tall
+       narrow box. */
+    @media (max-width: 63.999rem) {
+        .auth-hero {
+            height: 100dvh;
+            bottom: auto;
+        }
+    }
+
     /* Frosted chips. ONLY for the lockup and the unit codes — never behind form text,
        where translucency over an unpredictable image is how contrast quietly fails. The
        scrim means legibility does not depend on the illustration being dark just there. */

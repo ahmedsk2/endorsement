@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { useCan } from '../Composables/useCan.js';
 
@@ -10,6 +10,32 @@ defineProps({
 
 const { can, user } = useCan();
 const page = usePage();
+
+/*
+ * The phone menu.
+ *
+ * `isDesktop` is tracked rather than left to CSS because the nav is COLLAPSED by default:
+ * a plain `lg:block` would still leave it hidden on desktop until something toggled it, and
+ * `v-show` has to answer to one source of truth. 64rem is the `lg` breakpoint — the two must
+ * stay in step, which is why the number is written down here and nowhere else.
+ */
+const DESKTOP = '(min-width: 64rem)';
+const isDesktop = ref(typeof window !== 'undefined' ? window.matchMedia(DESKTOP).matches : true);
+const navOpen = ref(false);
+
+let mq = null;
+const syncDesktop = (e) => { isDesktop.value = e.matches; };
+
+onMounted(() => {
+    mq = window.matchMedia(DESKTOP);
+    mq.addEventListener('change', syncDesktop);
+});
+
+onUnmounted(() => mq?.removeEventListener('change', syncDesktop));
+
+// Following a link on a phone must close the menu, or every navigation lands with the nav
+// covering the page the user just asked for.
+watch(() => page.url, () => { navOpen.value = false; });
 
 // Cosmetic active-link highlight. The real gate is the server-side `cap:` middleware.
 const isActive = (href) => {
@@ -84,9 +110,24 @@ const navClass = (active) => [
                     <div class="text-sm font-bold text-ink">Paediatric Endorsement</div>
                     <div class="channel-tag">Qatif Central</div>
                 </div>
+
+                <!--
+                  Phone only. The nav is a full-width stacked block below lg, and it ate
+                  roughly 300px before any clinical content appeared — on a 667px screen
+                  that is nearly half the page, on every page, forever. Collapsed by
+                  default; the current page's name is on the button so nothing is lost by
+                  it being shut.
+                -->
+                <button type="button" class="ml-auto flex min-h-11 items-center gap-2 rounded-md border border-line px-3 text-sm font-semibold text-body lg:hidden"
+                        data-testid="nav-toggle" :aria-expanded="navOpen ? 'true' : 'false'"
+                        aria-controls="primary-nav" @click="navOpen = !navOpen">
+                    <span aria-hidden="true" class="readout">{{ navOpen ? '✕' : '☰' }}</span>
+                    <span class="sr-only">{{ navOpen ? 'Close menu' : 'Open menu' }}</span>
+                    <span aria-hidden="true">Menu</span>
+                </button>
             </div>
 
-            <div v-if="user" class="flex items-center gap-3 px-5 py-4 border-b border-line">
+            <div v-if="user" v-show="navOpen || isDesktop" class="flex items-center gap-3 px-5 py-4 border-b border-line">
                 <span class="grid h-9 w-9 place-items-center rounded-full bg-channel-ink text-xs font-semibold text-white">{{ initials }}</span>
                 <div class="min-w-0 leading-tight">
                     <div class="truncate text-sm font-semibold capitalize text-ink">{{ user.full_name || user.member_name }}</div>
@@ -97,7 +138,7 @@ const navClass = (active) => [
                 </div>
             </div>
 
-            <nav aria-label="Primary" class="space-y-0.5 p-3">
+            <nav id="primary-nav" v-show="navOpen || isDesktop" aria-label="Primary" class="space-y-0.5 p-3">
                 <!-- The chooser: one card per unit with today's status. -->
                 <Link v-if="can('endorsement.view')" href="/endorsement"
                       :aria-current="isExactly('/endorsement') ? 'page' : undefined"

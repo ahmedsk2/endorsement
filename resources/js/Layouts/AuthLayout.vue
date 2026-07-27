@@ -49,18 +49,24 @@ const units = [
 <template>
     <Head :title="title" />
 
-    <div class="relative min-h-dvh">
+    <!-- bg-panel: below lg the hero is now a viewport band, so anything the page scrolls
+         past it must be the form surface, not the dark illustration colour showing through. -->
+    <div class="relative min-h-dvh bg-panel">
         <AuthHero :src="heroSrc" :phase="shift.phase" />
 
         <!-- Everything below sits over the hero. -->
         <div class="relative flex min-h-dvh flex-col lg:flex-row">
             <!-- Brand + orientation, over the illustration. -->
             <!--
-              min-h-[34vh] on narrow is load-bearing, not spacing: it holds the form column
-              below the hero curve's white edge (which begins at 24–32%). Without it the
-              form floats up onto the dark illustration and `ink` text sits on `dawn-near`.
+              min-h-[34dvh] on narrow is load-bearing, not spacing: it holds the form column
+              below the hero curve's white edge (which begins at 24–32%). Without it the form
+              floats up onto the dark illustration and `ink` text sits on `dawn-near`.
+
+              dvh, not vh — the hero is pinned to 100dvh below lg, and on iOS Safari `vh` is
+              the LARGE viewport (address bar hidden) while `dvh` is the current one. Mixing
+              them reintroduces the same mismatch by a smaller margin.
             -->
-            <aside class="flex min-h-[34vh] shrink-0 flex-col justify-between px-5 pt-5 pb-6 lg:min-h-0 lg:w-[54%] lg:px-12 lg:py-10">
+            <aside class="flex min-h-[34dvh] shrink-0 flex-col justify-between px-5 pt-5 pb-6 lg:min-h-0 lg:w-[54%] lg:px-12 lg:py-10">
                 <div class="auth-reveal auth-glass flex w-fit items-center gap-3 rounded-xl px-3 py-2.5"
                      style="--reveal-order: 0">
                     <BrandMark class="h-10 w-10" />

@@ -55,6 +55,19 @@ Schedule::command('audit:anomalies')
         \App\Support\OpsAlert::critical('Audit anomaly sweep FAILED', 'Suspicious-activity detection did not run.');
     });
 
+/*
+ * The backstop for the leaver process. The agreed review of active accounts is ANNUAL, so
+ * without this an account belonging to someone who left could stay live for twelve months.
+ * Weekly, on a Monday morning, so it lands in the working week rather than at 3am on a
+ * Sunday — nobody acts on an alert they read half-asleep, and this one asks for a judgement
+ * rather than reporting a failure.
+ */
+Schedule::command('users:dormant')
+    ->weeklyOn(1, '08:00')
+    ->onFailure(function (): void {
+        \App\Support\OpsAlert::critical('Dormant-account check FAILED', 'Nobody is watching for accounts left active after someone leaves.');
+    });
+
 Schedule::command('data:retention --force')
     ->dailyAt('02:30')
     ->onFailure(function (): void {

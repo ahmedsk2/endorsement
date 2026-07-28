@@ -208,7 +208,23 @@ period is the hospital's medical-records rule, not this application's.
 | One-time sign-in codes | On use or expiry | `data:retention` |
 | Idle sessions | 60 minutes | Session lifetime |
 | Trusted devices ("don't ask for 7 days") | 7 days, and immediately on password change or disabling the factor | `TrustedDevice` |
-| Backups | 14 archives locally, plus the off-host copy — **verified working 2026-07-28: 7 objects in `oci:endorsement-backups`, synced nightly at 02:05**. **Object-lock chosen** (owner, 2026-07-28) so credentials that can write cannot delete — the failure mode that turns an incident into permanent loss, since today whoever holds the storage credentials can erase every copy. **`[CONFIRM]`** the retention days, then set the rule on the `endorsement-backups` bucket |
+| Backups | 14 archives locally, plus the off-host copy — **verified working 2026-07-28: 7 objects in `oci:endorsement-backups`, synced nightly at 02:05**. A **30-day retention rule** is in force on that bucket (`endorsement-30d-no-delete`, applied 2026-07-28): an archive cannot be deleted or overwritten for 30 days after it is written, so a mistake or a compromised credential cannot erase the recovery window. The rule is deliberately **UNLOCKED** — see §4.2 |
+
+### 4.2 Object lock — why it is unlocked
+
+The rule prevents deletion for 30 days. It does not prevent *removal of the rule* by someone
+holding permissions on the bucket, because it was created unlocked.
+
+That is a deliberate stopping point rather than an oversight. **Locking a retention rule in
+OCI is irreversible** — once locked, neither an attacker nor the account owner can remove it
+until it expires, and a mistake in the duration becomes permanent. Unlocked protects against
+the two things that actually happen (an accidental delete, a script gone wrong, ransomware
+that finds the storage credentials and tries to erase the copies); locked additionally
+protects against a determined attacker who has both the credentials AND the patience to
+delete the rule first.
+
+**`[CONFIRM]`** whether to lock it. Worth doing eventually, worth doing on purpose, and not
+worth doing as a side effect of a conversation about something else.
 
 ### 4.1 On the retention figure
 
@@ -240,8 +256,7 @@ Two audiences, and they are not the same document.
   component used in both places, because a notice maintained in two copies eventually says
   two different things. `resources/js/Components/StaffPrivacyNotice.vue`.
 
-  **`[CONFIRM]`** the hospital is content with the wording; the text below is the current
-  version and I will change it on request.
+  **Approved as written by the system owner, 2026-07-28.** The text below is what is live.
 - **Patients and guardians** — almost certainly covered by the hospital's existing notice,
   since this is part of the clinical record rather than a separate collection.
   **Position taken, 2026-07-28: covered by the hospital's existing patient notice.** This
@@ -300,10 +315,21 @@ every account, and flags anything dormant 90 days or more. That column existed i
 database since July and was displayed nowhere, which meant an account belonging to someone
 who left six months ago looked exactly like one in daily use.
 
-**`[CONFIRM]`** the cadence and who does it. Monthly, or at each rotation changeover, are
-the two that fit a department like this — rotation changeover has the advantage of coinciding
-with when people actually leave. Record the date of each review; the review is the control,
-and an unrecorded control is one you cannot show anyone.
+**Cadence: annually, by the system owner** (2026-07-28), alongside the review in §8.
+
+**A weekly automated check backs it up**, because annually alone is a long time for a
+departed clinician's account to stay live — up to twelve months, in a department with
+rotating residents. `users:dormant` runs every Monday at 08:00 and raises an operational
+alert for any ACTIVE account not signed into for 90 days, or never signed into at all more
+than 90 days after it was created.
+
+It prompts; it never deactivates. A doctor back from long leave finding their account
+disabled is a worse failure than the one being prevented, and that is a judgement for a
+person. The alert carries **ids and day counts only** — a list of who is absent from a
+children's hospital does not belong in an external mailbox.
+
+Record the date of each annual review: the review is the control, and an unrecorded control
+is one you cannot show anyone.
 
 ---
 
@@ -320,8 +346,8 @@ and an unrecorded control is one you cannot show anyone.
 
 ## 8. Review
 
-**Annually** (owner, 2026-07-28). **`[CONFIRM]`** the month and who runs it, so it lands in
-a calendar rather than in an intention.
+**Annually in OCTOBER, by the system owner** (2026-07-28). Put it in a calendar; a review
+that lives in an intention is one that happens in the year somebody remembers.
 
 Worth knowing what an annual-only cycle accepts: a material change made in month two is not
 reviewed until month twelve. The changes that would matter most are a change to who can see

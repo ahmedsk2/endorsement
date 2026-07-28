@@ -125,6 +125,33 @@ It exists because three bugs reached a deployment while all 299 unit tests passe
 
 ---
 
+## The host scripts are NOT deployed by a deploy
+
+Two scripts run on the HOST, outside the container, and are installed by hand:
+
+    /usr/local/bin/endorsement-backup-sync     <- docker/backup-offhost-sync.sh
+    /usr/local/bin/endorsement-uptime-check    <- docker/uptime-check.sh
+
+**A `git push` and a Coolify deploy do not touch them.** On 2026-07-28 the host copy of the
+sync script was found to be 48 lines against the repository's 86 — it predated the backup
+heartbeat entirely, so a heartbeat URL placed on that server would have been pinged by
+nothing, while the repository said the feature existed. The repo was right about the code
+and wrong about reality, which is the worse way round.
+
+After changing either script, install it:
+
+```bash
+scp -i ~/.ssh/oci_server docker/backup-offhost-sync.sh ubuntu@145.241.105.239:/tmp/s.sh
+ssh -i ~/.ssh/oci_server ubuntu@145.241.105.239 '
+  sudo cp /usr/local/bin/endorsement-backup-sync /root/endorsement-backup-sync.$(date +%F).bak
+  bash -n /tmp/s.sh && sudo install -m 0755 -o root -g root /tmp/s.sh /usr/local/bin/endorsement-backup-sync
+  sudo /usr/local/bin/endorsement-backup-sync; echo "exit=$?"'
+```
+
+Back up first, syntax-check before installing, run it once, and roll back on a non-zero
+exit. These are the scripts that protect the only off-site copy of the clinical record, so
+"it looked fine" is not a verification.
+
 ## Database operations (yours to run)
 
 Open a shell from **Coolify → the app → Terminal**, or over SSH:

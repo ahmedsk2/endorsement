@@ -1,6 +1,8 @@
 # PDPL governance pack — DRAFT
 
-**Status: prepared 2026-07-27 for review. Not legal advice.**
+**Status: completed 2026-07-28 with the system owner. Awaiting his signature (§3.4) and
+a small number of confirmations with the hospital, each marked `[CONFIRM]`. Not legal
+advice.**
 
 Every technical claim here is drawn from the code and cross-referenced, so the parts that
 describe *the system* should be accurate and checkable. The parts that name **people,
@@ -61,7 +63,7 @@ Filled in from the code. Check it rather than retype it.
 | Field | Value |
 |---|---|
 | Controller | **Qatif Central Hospital** (owner, 2026-07-28). This system is one application within it, not a separate controller |
-| Processor(s) | Oracle Cloud Infrastructure (hosting, `me-riyadh-1`); Cloudflare (CDN/WAF); **`[DECIDE]`** SMTP provider once chosen |
+| Processor(s) | Oracle Cloud Infrastructure (hosting + backup object storage, `me-riyadh-1`); Cloudflare (CDN/WAF); **mail relay at `mail.towardpicu.com`** — the owner's own mail server, not a third-party provider, resolving to 35.212.69.243 (a Google Cloud address range). **`[CONFIRM]`** which region that server is in: it is the one processor whose location is not established, and it decides whether the SMTP ruling in §2.1 is about a transfer at all |
 | Purpose | Recording and handing over the clinical state of admitted children between shifts; a contemporaneous clinical record |
 | Lawful basis | **Provision of healthcare, under the hospital's existing basis** (owner, 2026-07-28). Explicitly NOT consent: a clinical record a patient could withdraw mid-admission is not a clinical record, and a consent that would not be honoured is not valid consent |
 | Categories of data subject | Admitted paediatric patients; clinical staff (users) |
@@ -91,8 +93,11 @@ and the mail views for any patient field (`patient_name`, `mrn`, `dob`, and the 
 clinical fields) returns **no reference in any outbound message** — the single match is a
 comment in `OpsAlertMail` stating that it never carries them.
 
-**What that means for the ruling:** an out-of-Kingdom mail provider sees staff email
-addresses, links and codes. It never sees a patient. **`[CONFIRM]`** with the hospital that
+**What that means for the ruling:** a mail relay sees staff email addresses, links and
+codes. It never sees a patient. Note that the relay in use is the owner's OWN server
+(`mail.towardpicu.com`) rather than a commercial provider, which narrows the question again
+— there is no third party reading it — but does not remove it, since the server's location
+is what decides whether anything crosses a border at all. **`[CONFIRM]`** with the hospital that
 staff addresses alone are acceptable to send abroad — they are still personal data, just not
 health data, so the question is narrower rather than absent. Re-check this table if a new
 message type is ever added; that is the change that would quietly invalidate the ruling.
@@ -132,12 +137,13 @@ teaching set of real handovers, or a report of who signs off late.
 | A clinician reading records they have no involvement with | **Accepted deviation — see §3.3.** Reads are audited and swept for anomalies, but not prevented | **Medium — the main accepted risk** |
 | Data exposed at rest | MRN, name, DOB and all four clinical fields encrypted at rest with a key held outside the database; backups encrypted; volume encryption at the provider | Low |
 | Data exposed in transit | TLS only; HSTS; origin reachable only via Cloudflare | Low |
-| Loss of the record | Nightly encrypted backup, verified by decrypting; off-host copy to in-Kingdom object storage; restore drill **`[DECIDE]`** quarterly | Low |
+| Loss of the record | Nightly encrypted backup, verified by decrypting; off-host copy to in-Kingdom object storage; **quarterly restore drill by the system owner** (2026-07-28) | Low |
 | Tampering with the record | Clinical rows soft-deleted, never removed; every change written to an append-only, HMAC-chained audit log verified hourly; prior values retained | Low |
 | A signature on a sheet asserting more than it should | Owner ruling — a handwritten signature is applied only by that clinician, or by an Administrator/Chief Resident acting for them; everyone else prints as a typed name; provenance recorded in the trail | **Medium — accepted, see `docs/COMPLIANCE.md`** |
 | PHI escaping into logs, URLs or alerts | Enforced by rule and by tests: audit details, push payloads and operational alerts carry ids, field names and counts only | Low |
+| **A backup silently stops running** | **ACCEPTED, 2026-07-28.** The monitoring service in use offers HTTP monitors only, not heartbeats, so nothing alarms if the nightly backup simply stops. The site being up says nothing about whether a backup ran. Compensated by the quarterly restore drill and by `backup:run` escalating a FAILURE to an operational alert — what is not covered is the backup that never starts at all | **Medium — accepted, revisit if a heartbeat becomes available** |
 | An account left active after someone leaves | **Periodic review of active accounts** (§6), supported by a *Last signed in* column on Admin → Users that flags anything dormant 90 days or more | **Medium — depends on the review actually happening** |
-| Paper leaving the ward | Out of the system's control. Sheets carry an attribution footer; printing is audited | **`[DECIDE]`** — hospital paper-handling policy applies |
+| Paper leaving the ward | Out of the system's control. Sheets carry an attribution footer; printing is audited | **The hospital's existing paper-handling policy applies** — this system does not create a separate regime for printed clinical records |
 
 ### 3.3 Accepted deviations
 
@@ -148,14 +154,32 @@ Two, both recorded with reasoning in `docs/COMPLIANCE.md`:
    creation and audited reads.
 2. **Signature by proxy for two roles.** As above.
 
-**`[DECIDE]`** Both need a named person to own them at the next review.
+Both are owned by the system owner, who signs this assessment (§3.4), and are reviewed at the annual review in §8.
 
-### 3.4 Conclusion
+### 3.4 Conclusion and sign-off
 
-**`[DECIDE]`** — the DPIA's conclusion is a judgement, not an output. Expected form: *the
-residual risks are acceptable given the patient-safety benefit and the controls listed, and
-will be reviewed [when]*. Sign and date it. An unsigned DPIA is a draft, and a draft is what
-a regulator treats as "not done".
+**Conclusion.** The residual risks identified above are acceptable given the patient-safety
+benefit of a recorded, attributable shift handover and the controls listed in §3.2 and in
+`docs/COMPLIANCE.md`. Three risks are accepted rather than eliminated and are named as such:
+unrestricted access across the four units, signature-by-proxy for two roles, and the absence
+of monitoring for a backup that stops running. Each has a stated compensating control and a
+trigger that reopens it.
+
+**Signed:**
+
+| | |
+|---|---|
+| Name | ................................................ |
+| Role | System owner, Paediatric Endorsement |
+| Date | ................................................ |
+| Signature | ................................................ |
+
+**One thing to note beside that signature**, because an auditor will: the signatory is also
+the system's owner, administrator and the person who commissioned it. That is normal for a
+departmental application of this size and it does not invalidate the assessment — but it
+does mean no independent party has reviewed these risks. If the hospital's compliance
+function is willing to countersign, that closes the only structural weakness in this
+document. It is recorded here rather than left for someone else to notice.
 
 ---
 
@@ -167,36 +191,25 @@ period is the hospital's medical-records rule, not this application's.
 
 | Data | Retention | Enforced by |
 |---|---|---|
-| Handover rows (clinical) | **4 years** (owner, 2026-07-28) — see the note below, which needs hospital confirmation | Not automated. Soft-deleted only; nothing removes them |
+| Handover rows (clinical) | **4 years — the hospital's own policy for these records** (owner, 2026-07-28) | Not automated. Soft-deleted only; nothing removes them |
 | Audit log | ≥ 12 months hot, and never truncated in place — it is append-only and hash-chained | `data:retention` leaves it alone by design |
 | Abandoned registrations / expired invitations | 30 days | `data:retention` |
 | One-time sign-in codes | On use or expiry | `data:retention` |
 | Idle sessions | 60 minutes | Session lifetime |
 | Trusted devices ("don't ask for 7 days") | 7 days, and immediately on password change or disabling the factor | `TrustedDevice` |
-| Backups | 14 archives locally, plus the off-host copy. **Object-lock chosen** (owner, 2026-07-28) so credentials that can write cannot delete — the failure mode that turns an incident into permanent loss, since today whoever holds the storage credentials can erase every copy. **`[CONFIRM]`** the retention days, then set the rule on the `endorsement-backups` bucket |
+| Backups | 14 archives locally, plus the off-host copy — **verified working 2026-07-28: 7 objects in `oci:endorsement-backups`, synced nightly at 02:05**. **Object-lock chosen** (owner, 2026-07-28) so credentials that can write cannot delete — the failure mode that turns an incident into permanent loss, since today whoever holds the storage credentials can erase every copy. **`[CONFIRM]`** the retention days, then set the rule on the `endorsement-backups` bucket |
 
-### 4.1 The retention period needs a second opinion — `[CONFIRM]`
+### 4.1 On the retention figure
 
-**Recorded: 4 years.** Written down, which is already better than the blank it replaced.
+**4 years, inherited from the hospital's existing policy for these records** — not a number
+invented for this system. That distinction is the whole of it: a handover is part of the
+clinical record, so its retention should be whatever the hospital already applies, and a
+system-specific figure that quietly differed from the hospital's would be the actual problem.
 
-**One concern, stated once and then left with you.** Four years is short for a *paediatric*
-record, and the reason is specific rather than general caution: a child may only become able
-to raise a question about their own care once they reach majority. A record created for a
-two-year-old and destroyed four years later is gone twelve years before that child could ask
-about it. Paediatric retention rules commonly run to majority plus a further period for
-exactly that reason, and a hospital's MOH-derived medical-records schedule will usually say
-so explicitly.
-
-**This is very likely not a decision this system should be making at all.** The handover is
-part of the clinical record, so its retention should be whatever the hospital already applies
-to paediatric records — and if that is longer than four years, this document should not be
-the one place that says otherwise. Please check the number against the hospital's own
-schedule and tell me; I will change it here in one edit.
-
-**Nothing acts on it today**, which limits the harm of getting it wrong for now: clinical
-rows are soft-deleted and nothing removes them, so a short number here does not currently
-destroy anything. It becomes load-bearing the moment disposal is automated — which is a
-thing to build *after* the number is confirmed, not before.
+**Nothing acts on it today.** Clinical rows are soft-deleted and no job removes them, so the
+figure is currently a documented policy rather than an enforced one. If automated disposal
+is ever built, it should be built against this figure and audited when it runs — and given
+what it destroys, it should be reviewed once more before it is switched on.
 
 ---
 
@@ -220,8 +233,10 @@ Two audiences, and they are not the same document.
   version and I will change it on request.
 - **Patients and guardians** — almost certainly covered by the hospital's existing notice,
   since this is part of the clinical record rather than a separate collection.
-  **`[DECIDE]`** — confirm with compliance; do not write a second patient-facing notice
-  unless they say one is needed.
+  **Position taken, 2026-07-28: covered by the hospital's existing patient notice.** This
+  system is part of the clinical record rather than a separate collection, so a second
+  patient-facing notice would duplicate — and eventually contradict — the hospital's.
+  **`[CONFIRM]`** with compliance.
 
 > **Draft staff notice.** This system records the handover you write and the actions you
 > take in it. Specifically: your name and, if you sign a handover, your signature appear on
@@ -229,8 +244,8 @@ Two audiences, and they are not the same document.
 > editing, signing and reopening a handover — is written to a tamper-evident log with the
 > time and the network address you acted from. This exists so that a clinical record can be
 > shown to be accurate and attributable, which protects you as much as the patient. The log
-> is retained for at least 12 months. You can ask [**`[DECIDE]`** contact] what is recorded
-> about you.
+> is retained for at least 12 months. You can ask an administrator of this system what is
+> recorded about you.
 
 ---
 
@@ -245,7 +260,7 @@ is the clock's start — which is why detection matters as much as response.
 each failure to an operational alert. Reads are audited, so "what did this account see?" has
 an answer.
 
-**`[DECIDE]` — the parts no code can supply:**
+**Decided 2026-07-28; the remainder are `[CONFIRM]` with the hospital:**
 
 1. **Who decides it is a breach — ANSWERED, 2026-07-28: hospital compliance.** The
    declaration, the SDAIA notification and any notification to families go through the

@@ -63,7 +63,7 @@ Filled in from the code. Check it rather than retype it.
 | Field | Value |
 |---|---|
 | Controller | **Qatif Central Hospital** (owner, 2026-07-28). This system is one application within it, not a separate controller |
-| Processor(s) | Oracle Cloud Infrastructure (hosting + backup object storage, `me-riyadh-1`); Cloudflare (CDN/WAF); **mail relay at `mail.towardpicu.com`** — the owner's own mail server, not a third-party provider, resolving to 35.212.69.243 (a Google Cloud address range). **`[CONFIRM]`** which region that server is in: it is the one processor whose location is not established, and it decides whether the SMTP ruling in §2.1 is about a transfer at all |
+| Processor(s) | Oracle Cloud Infrastructure (hosting + backup object storage, `me-riyadh-1`, **in-Kingdom**); Cloudflare (CDN/WAF, edge outside the Kingdom); mail relay at `mail.towardpicu.com` — the owner's own Google Cloud VM in **`me-central2`, Dammam, also in-Kingdom** (confirmed 2026-07-28; rDNS `243.69.212.35.bc.googleusercontent.com`, serving a valid `*.towardpicu.com` certificate). Not a third-party provider: no external party reads this mail |
 | Purpose | Recording and handing over the clinical state of admitted children between shifts; a contemporaneous clinical record |
 | Lawful basis | **Provision of healthcare, under the hospital's existing basis** (owner, 2026-07-28). Explicitly NOT consent: a clinical record a patient could withdraw mid-admission is not a clinical record, and a consent that would not be honoured is not valid consent |
 | Categories of data subject | Admitted paediatric patients; clinical staff (users) |
@@ -71,7 +71,7 @@ Filled in from the code. Check it rather than retype it.
 | Personal data — staff | Full name, username, email address, role, handwritten signature image, last sign-in, audit trail of actions and IP address |
 | Sensitive data | Yes — health data concerning children |
 | Recipients | Clinical staff holding `endorsement.view`; printed sheets leave the system on paper |
-| Cross-border transfer | **None for the clinical record** — stored only in-Kingdom (OCI Riyadh). **SMTP may be outside KSA** (owner ruling, 2026-07-28) on the basis that it never handles patient data — verified in code, see §2.1. Cloudflare terminates TLS at an edge that may be outside the Kingdom; that is traffic in transit, not stored personal data |
+| Cross-border transfer | **None.** Every store of personal data is in-Kingdom: the clinical record in OCI Riyadh, the backups in OCI object storage, and the mail relay on the owner's own VM in Dammam. The only element outside the Kingdom is **Cloudflare's edge**, which terminates TLS in transit and stores nothing — no personal data at rest leaves Saudi Arabia |
 | Retention | See §4 |
 | Security measures | See `docs/COMPLIANCE.md` — the full technical list, kept current with the code |
 
@@ -93,14 +93,14 @@ and the mail views for any patient field (`patient_name`, `mrn`, `dob`, and the 
 clinical fields) returns **no reference in any outbound message** — the single match is a
 comment in `OpsAlertMail` stating that it never carries them.
 
-**What that means for the ruling:** a mail relay sees staff email addresses, links and
-codes. It never sees a patient. Note that the relay in use is the owner's OWN server
-(`mail.towardpicu.com`) rather than a commercial provider, which narrows the question again
-— there is no third party reading it — but does not remove it, since the server's location
-is what decides whether anything crosses a border at all. **`[CONFIRM]`** with the hospital that
-staff addresses alone are acceptable to send abroad — they are still personal data, just not
-health data, so the question is narrower rather than absent. Re-check this table if a new
-message type is ever added; that is the change that would quietly invalidate the ruling.
+**What that means, now that the relay is located:** the question is moot rather than
+answered. The owner's earlier ruling — that a mail provider outside the Kingdom would be
+acceptable because it never handles patient data — turns out not to be needed: the relay is
+his own VM in Dammam (`me-central2`), so nothing crosses a border and no third party reads
+it. The verification above is kept anyway, because it is the thing that would matter if the
+relay were ever moved or replaced, and that is a change nobody would think to re-assess. Re-check this table if a new message type is ever added, or if the relay is ever moved
+outside the Kingdom — either change would quietly invalidate the position above without
+anyone noticing, because neither looks like a data-protection decision at the time.
 
 ---
 

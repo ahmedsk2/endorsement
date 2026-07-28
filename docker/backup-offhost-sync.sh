@@ -60,6 +60,18 @@ HEARTBEAT_FILE=/etc/endorsement/heartbeat.url
 if [ -r "$HEARTBEAT_FILE" ]; then
     url=$(tr -d '[:space:]' < "$HEARTBEAT_FILE")
 
+    # A file containing the literal placeholder is NOT a configured heartbeat, and the
+    # difference matters: a monitoring service that never hears from you looks identical
+    # whether the backup stopped or the URL was never real. It happened on the first
+    # attempt — the paste kept the placeholder — and a non-empty check called it configured.
+    case "$url" in
+        https://*|http://*) : ;;
+        *)
+            log "heartbeat NOT configured: $HEARTBEAT_FILE does not contain a URL (found ${#url} characters). Backups are unaffected; nothing is watching them."
+            url=""
+            ;;
+    esac
+
     if [ -n "$url" ]; then
         # Never let monitoring fail the thing it monitors: short timeout, errors swallowed,
         # and the URL kept out of the log because it is a credential.

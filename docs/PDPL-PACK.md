@@ -73,8 +73,21 @@ risk being mitigated — an unrecorded or lost handover — is a patient-safety 
 data collected is the minimum a receiving clinician needs to take over care safely. No
 field exists for analytics, billing or research.
 
-**`[DECIDE]`** Confirm that no data from this system is used for any secondary purpose. If
-it ever is, that is a new processing activity and needs its own entry above.
+**CONFIRMED by the owner, 2026-07-28: no data from this system is used for any secondary
+purpose.** Not for research, not for audit statistics, not for teaching material, not for
+performance measurement of individuals.
+
+This is load-bearing for the assessment, so it is worth stating why rather than just
+recording it. Purpose limitation is what makes the rest of the DPIA hold together: the
+retention period can be the clinical one because there is no analytical copy outliving it;
+the lawful basis can be provision of healthcare because nothing is being done that a patient
+would not expect from their own care record; and no consent question arises for a secondary
+use, because there is none.
+
+**If that ever changes it is a NEW processing activity** — a new ROPA row, its own lawful
+basis, and very likely its own DPIA. The obvious candidates to watch for are the ones that
+arrive without anyone thinking of them as "data use": a service-improvement audit, a
+teaching set of real handovers, or a report of who signs off late.
 
 ### 3.2 Risks identified, and what answers each
 

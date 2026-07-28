@@ -63,15 +63,39 @@ Filled in from the code. Check it rather than retype it.
 | Controller | **`[DECIDE]`** — Qatif Central Hospital, Department of Paediatrics (confirm the legal entity) |
 | Processor(s) | Oracle Cloud Infrastructure (hosting, `me-riyadh-1`); Cloudflare (CDN/WAF); **`[DECIDE]`** SMTP provider once chosen |
 | Purpose | Recording and handing over the clinical state of admitted children between shifts; a contemporaneous clinical record |
-| Lawful basis | **`[DECIDE]`** — expected to be provision of healthcare under the hospital's existing basis, *not* consent. Consent is the wrong basis for a clinical record: it cannot meaningfully be withdrawn mid-admission |
+| Lawful basis | **Provision of healthcare, under the hospital's existing basis** (owner, 2026-07-28). Explicitly NOT consent: a clinical record a patient could withdraw mid-admission is not a clinical record, and a consent that would not be honoured is not valid consent |
 | Categories of data subject | Admitted paediatric patients; clinical staff (users) |
 | Personal data — patients | Name, MRN, date of birth or age, bed/room, unit, and four free-text clinical fields (problem list, clinical condition, plan of care, follow-ups) |
 | Personal data — staff | Full name, username, email address, role, handwritten signature image, last sign-in, audit trail of actions and IP address |
 | Sensitive data | Yes — health data concerning children |
 | Recipients | Clinical staff holding `endorsement.view`; printed sheets leave the system on paper |
-| Cross-border transfer | **None for the record itself** — hosted in-Kingdom (OCI Riyadh). Note: Cloudflare terminates TLS at an edge that may be outside the Kingdom, and any non-Saudi SMTP provider handles staff email addresses (never patient data). **`[DECIDE]`** whether the hospital treats those as transfers requiring an Art. 29 assessment |
+| Cross-border transfer | **None for the clinical record** — stored only in-Kingdom (OCI Riyadh). **SMTP may be outside KSA** (owner ruling, 2026-07-28) on the basis that it never handles patient data — verified in code, see §2.1. Cloudflare terminates TLS at an edge that may be outside the Kingdom; that is traffic in transit, not stored personal data |
 | Retention | See §4 |
 | Security measures | See `docs/COMPLIANCE.md` — the full technical list, kept current with the code |
+
+### 2.1 What the mail path actually carries — verified, not asserted
+
+The SMTP ruling above rests on a factual claim, so it is checked rather than taken on trust.
+Everything this system can send by email:
+
+| Message | Contents |
+|---|---|
+| `InvitationMail` | A one-time link and its expiry. No role, no inviter, no unit |
+| `LoginOtpCode` | A six-digit code |
+| `VerifyEmailAddress` | A signed confirmation link |
+| `OpsAlertMail` | A job name, a timestamp and the host — and it says so on its face |
+| `TestMail` | A timestamp and the host |
+
+Plus the recipient's own address. A repo-wide search of `app/Mail/`, `app/Notifications/`
+and the mail views for any patient field (`patient_name`, `mrn`, `dob`, and the four
+clinical fields) returns **no reference in any outbound message** — the single match is a
+comment in `OpsAlertMail` stating that it never carries them.
+
+**What that means for the ruling:** an out-of-Kingdom mail provider sees staff email
+addresses, links and codes. It never sees a patient. **`[CONFIRM]`** with the hospital that
+staff addresses alone are acceptable to send abroad — they are still personal data, just not
+health data, so the question is narrower rather than absent. Re-check this table if a new
+message type is ever added; that is the change that would quietly invalidate the ruling.
 
 ---
 
@@ -112,7 +136,7 @@ teaching set of real handovers, or a report of who signs off late.
 | Tampering with the record | Clinical rows soft-deleted, never removed; every change written to an append-only, HMAC-chained audit log verified hourly; prior values retained | Low |
 | A signature on a sheet asserting more than it should | Owner ruling — a handwritten signature is applied only by that clinician, or by an Administrator/Chief Resident acting for them; everyone else prints as a typed name; provenance recorded in the trail | **Medium — accepted, see `docs/COMPLIANCE.md`** |
 | PHI escaping into logs, URLs or alerts | Enforced by rule and by tests: audit details, push payloads and operational alerts carry ids, field names and counts only | Low |
-| An account left active after someone leaves | **`[DECIDE]`** — this is a *process* gap, not a technical one. The system can deactivate instantly; somebody has to be told to do it. See §6 |
+| An account left active after someone leaves | **Periodic review of active accounts** (§6), supported by a *Last signed in* column on Admin → Users that flags anything dormant 90 days or more | **Medium — depends on the review actually happening** |
 | Paper leaving the ward | Out of the system's control. Sheets carry an attribution footer; printing is audited | **`[DECIDE]`** — hospital paper-handling policy applies |
 
 ### 3.3 Accepted deviations
@@ -143,7 +167,7 @@ period is the hospital's medical-records rule, not this application's.
 
 | Data | Retention | Enforced by |
 |---|---|---|
-| Handover rows (clinical) | **`[DECIDE]`** — per the MOH medical-records schedule the hospital already follows. Likely measured in years | Not automated. Soft-deleted only; nothing removes them |
+| Handover rows (clinical) | **4 years** (owner, 2026-07-28) — see the note below, which needs hospital confirmation | Not automated. Soft-deleted only; nothing removes them |
 | Audit log | ≥ 12 months hot, and never truncated in place — it is append-only and hash-chained | `data:retention` leaves it alone by design |
 | Abandoned registrations / expired invitations | 30 days | `data:retention` |
 | One-time sign-in codes | On use or expiry | `data:retention` |
@@ -151,8 +175,28 @@ period is the hospital's medical-records rule, not this application's.
 | Trusted devices ("don't ask for 7 days") | 7 days, and immediately on password change or disabling the factor | `TrustedDevice` |
 | Backups | 14 archives locally, plus the off-host copy — **`[DECIDE]`** how long the off-host copy is kept, and whether an object-lock rule enforces it |
 
-**`[DECIDE]`** The clinical retention number is the one gap that matters. Until it is
-written down, "how long do you keep it?" has no answer.
+### 4.1 The retention period needs a second opinion — `[CONFIRM]`
+
+**Recorded: 4 years.** Written down, which is already better than the blank it replaced.
+
+**One concern, stated once and then left with you.** Four years is short for a *paediatric*
+record, and the reason is specific rather than general caution: a child may only become able
+to raise a question about their own care once they reach majority. A record created for a
+two-year-old and destroyed four years later is gone twelve years before that child could ask
+about it. Paediatric retention rules commonly run to majority plus a further period for
+exactly that reason, and a hospital's MOH-derived medical-records schedule will usually say
+so explicitly.
+
+**This is very likely not a decision this system should be making at all.** The handover is
+part of the clinical record, so its retention should be whatever the hospital already applies
+to paediatric records — and if that is longer than four years, this document should not be
+the one place that says otherwise. Please check the number against the hospital's own
+schedule and tell me; I will change it here in one edit.
+
+**Nothing acts on it today**, which limits the harm of getting it wrong for now: clinical
+rows are soft-deleted and nothing removes them, so a short number here does not currently
+destroy anything. It becomes load-bearing the moment disposal is automated — which is a
+thing to build *after* the number is confirmed, not before.
 
 ---
 
@@ -241,9 +285,14 @@ and an unrecorded control is one you cannot show anyone.
 
 ## 8. Review
 
-**`[DECIDE]`** — a date and an owner. Annually is the usual answer; also review on any of:
-a change to who can see which units, a new category of data, a new processor, a breach, or
-the system extending beyond the Department of Paediatrics.
+**Annually** (owner, 2026-07-28). **`[CONFIRM]`** the month and who runs it, so it lands in
+a calendar rather than in an intention.
+
+Worth knowing what an annual-only cycle accepts: a material change made in month two is not
+reviewed until month twelve. The changes that would matter most are a change to who can see
+which units, a new category of data, a new processor, a breach, or this system extending
+beyond the Department of Paediatrics. None of those is required to trigger a review under
+the choice made — but if one happens, this is the document to reopen early.
 
 The technical half of this pack is generated from a codebase that changes — treat
 `docs/COMPLIANCE.md` as the live document and re-check this one against it at each review.

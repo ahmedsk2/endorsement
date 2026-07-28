@@ -1,8 +1,13 @@
 # PDPL governance pack — DRAFT
 
-**Status: completed 2026-07-28 with the system owner. Awaiting his signature (§3.4) and
-a small number of confirmations with the hospital, each marked `[CONFIRM]`. Not legal
-advice.**
+**Status: SIGNED 2026-07-28 by Ahmed Al Khalifah, system owner (§3.4).**
+
+Outstanding: a small number of confirmations with the hospital, each marked `[CONFIRM]`, and
+the first restore drill. Neither blocks the assessment — the confirmations record reasoning
+the hospital already holds, and the untested restore is stated as a Medium residual risk in
+§3.2 rather than glossed.
+
+Not legal advice.
 
 Every technical claim here is drawn from the code and cross-referenced, so the parts that
 describe *the system* should be accurate and checkable. The parts that name **people,
@@ -169,10 +174,16 @@ trigger that reopens it.
 
 | | |
 |---|---|
-| Name | ................................................ |
+| Name | **Ahmed Al Khalifah** |
 | Role | System owner, Paediatric Endorsement |
-| Date | ................................................ |
-| Signature | ................................................ |
+| Date | **28 July 2026** |
+| Signature | Recorded in version control — see the commit that added this block |
+
+The signature is the commit rather than an image. That is deliberate and it is stronger
+here: a scanned signature is stapled to a document and says nothing about what the document
+said at the time, whereas the commit fixes this exact text, to this name, at this date, in a
+history that cannot be altered without leaving a trace. If the hospital's process requires a
+wet signature as well, print this section and sign it; the two do not conflict.
 
 **One thing to note beside that signature**, because an auditor will: the signatory is also
 the system's owner, administrator and the person who commissioned it. That is normal for a

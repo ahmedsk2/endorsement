@@ -32,14 +32,25 @@ regulator.
 PDPL and its Implementing Regulations require a DPO where processing sensitive personal
 data is a core activity. Handover of paediatric clinical records is exactly that.
 
-- **`[DECIDE]` Who.** Name, role, and how they are contacted. If the hospital already has a
-  DPO, this system falls under them — say so explicitly here rather than appointing a second.
-- **`[DECIDE]` Independence.** The DPO must be able to raise a concern without it being
-  overruled by the person who runs the system. Today one person is owner, administrator and
-  developer of this application; that is normal for a system this size and it is precisely
-  why the DPO should not also be that person.
-- **`[DECIDE]` Registration.** Confirm with the hospital whether SDAIA registration is
-  required at your processing volume, and record the answer either way.
+**ANSWERED, 2026-07-28: the hospital's position is that a formal DPO is not required.**
+
+That conclusion is recorded here rather than left as a silence, because a documented "we
+assessed this and concluded no" is audit evidence and a blank is not. Two things follow from
+it, and both should be checked with whoever gave that answer:
+
+- **`[CONFIRM]` The basis.** PDPL's Implementing Regulations tie the requirement to
+  processing sensitive personal data as a *core activity*. This system processes health data
+  about children, so the conclusion is not self-evident from the data alone — it presumably
+  rests on scale, or on the hospital treating this as one small part of a larger clinical
+  function. Write down which, in one sentence. That sentence is what an auditor is asking for.
+- **`[CONFIRM]` Who answers instead.** "No DPO" cannot mean "no one". Breach declaration
+  already routes to hospital compliance (§6), so name that function here too, so the pack
+  does not point at a role it has just said does not exist.
+
+**Independence still matters even without the title.** One person is currently owner,
+administrator and developer of this system. Whoever reviews it should not be that person —
+not because of any doubt about them, but because a control nobody independent ever looks at
+is indistinguishable from one that does not work.
 
 ---
 
@@ -183,8 +194,13 @@ an answer.
 
 **`[DECIDE]` — the parts no code can supply:**
 
-1. **Who decides it is a breach.** One named person, with a named deputy. Without this the
-   72 hours is spent deciding who decides.
+1. **Who decides it is a breach — ANSWERED, 2026-07-28: hospital compliance.** The
+   declaration, the SDAIA notification and any notification to families go through the
+   hospital's existing incident process; the system's administrator raises it to them and
+   supplies the evidence. This is the answer that scales: it does not depend on one clinician
+   being reachable, and family notification is done by people who already do that work.
+   **`[CONFIRM]`** the contact point and how it is reached out of hours — a process that only
+   works on a weekday is not a process, and the 72 hours runs from awareness.
 2. **Who notifies SDAIA**, and from which account.
 3. **Who tells affected families**, and with the hospital's involvement — not the system's
    administrator acting alone.
@@ -194,10 +210,21 @@ an answer.
    a doctor who left, and it read 200 records" — and time it. A procedure nobody has
    rehearsed is a document, not a capability.
 
-**A process gap worth naming here:** the system can deactivate an account instantly, but
-somebody has to be told that a person has left. **`[DECIDE]`** — how does this system learn
-about a leaver? If the answer is "the administrator happens to hear", that is the weakest
-link in the whole assessment, and it is organisational rather than technical.
+**The leaver process — ANSWERED, 2026-07-28: a periodic review of active accounts.**
+
+The system cannot be told when someone leaves, so it is checked instead. This is the more
+robust of the two options: a notification that is never sent is invisible, whereas a review
+that is skipped is a missed diary entry somebody can notice.
+
+**Supported in the product as of 2026-07-28**: Admin → Users now shows *Last signed in* for
+every account, and flags anything dormant 90 days or more. That column existed in the
+database since July and was displayed nowhere, which meant an account belonging to someone
+who left six months ago looked exactly like one in daily use.
+
+**`[CONFIRM]`** the cadence and who does it. Monthly, or at each rotation changeover, are
+the two that fit a department like this — rotation changeover has the advantage of coinciding
+with when people actually leave. Record the date of each review; the review is the control,
+and an unrecorded control is one you cannot show anyone.
 
 ---
 

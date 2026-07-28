@@ -276,6 +276,14 @@ const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : '—');
                                 <th scope="col" class="channel-tag px-4 py-2.5">Email</th>
                                 <th scope="col" class="channel-tag px-4 py-2.5">Role</th>
                                 <th scope="col" class="channel-tag px-4 py-2.5">2FA</th>
+                                <!--
+                                  The leaver control, made visible. The chosen process is a
+                                  periodic review of active accounts, and that review is only
+                                  as good as this column: without it, an account belonging to
+                                  someone who left six months ago looks exactly like one in
+                                  daily use.
+                                -->
+                                <th scope="col" class="channel-tag px-4 py-2.5">Last signed in</th>
                                 <th scope="col" class="channel-tag px-4 py-2.5">Status</th>
                                 <th scope="col" class="channel-tag px-4 py-2.5 text-right">Actions</th>
                             </tr>
@@ -313,6 +321,16 @@ const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : '—');
                                 <td class="px-4 py-2.5">
                                     <span v-if="u.has_two_factor" class="rounded bg-ok-soft px-2 py-0.5 text-xs font-semibold text-ok">Enabled</span>
                                     <span v-else class="text-xs text-muted">—</span>
+                                </td>
+                                <td class="px-4 py-2.5" :data-testid="`last-login-${u.id}`">
+                                    <span v-if="!u.last_login_at" class="text-xs text-muted">Never</span>
+                                    <span v-else class="readout text-xs"
+                                          :class="u.dormant_days >= 90 ? 'font-semibold text-caution' : 'text-body'">
+                                        {{ u.last_login_at }}
+                                        <span v-if="u.dormant_days >= 90" class="block text-xs font-normal">
+                                            {{ u.dormant_days }} days ago
+                                        </span>
+                                    </span>
                                 </td>
                                 <td class="px-4 py-2.5">
                                     <span :class="['rounded px-2 py-0.5 text-xs font-semibold', u.active ? 'bg-ok-soft text-ok' : 'bg-ground-deep text-muted']">

@@ -367,4 +367,25 @@ class UserManagementTest extends TestCase
 
         $this->assertSame(4, $victim->fresh()->position);
     }
+    public function test_the_user_list_shows_when_each_account_last_signed_in(): void
+    {
+        // The leaver control, made checkable. The chosen process (docs/PDPL-PACK.md) is a
+        // periodic review of active accounts, and that review is only as good as this
+        // column — without it an account belonging to someone who left six months ago looks
+        // exactly like one in daily use. `last_login_at` had been recorded since July and
+        // read by nothing at all.
+        $stale = User::factory()->create(['position' => 4, 'last_login_at' => now()->subDays(200)]);
+        $never = User::factory()->create(['position' => 4, 'last_login_at' => null]);
+
+        $this->actingAs($this->admin())->get('/admin/users')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('users', function ($users) use ($stale, $never) {
+                    $rows = collect($users)->keyBy('id');
+
+                    return $rows[$stale->id]['last_login_at'] !== null
+                        && $rows[$stale->id]['dormant_days'] >= 90
+                        && $rows[$never->id]['last_login_at'] === null;
+                }));
+    }
+
 }

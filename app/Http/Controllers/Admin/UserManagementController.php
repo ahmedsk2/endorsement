@@ -80,6 +80,14 @@ class UserManagementController extends Controller
                     'position' => (int) $u->position,
                     'active' => (bool) $u->active,
                     'has_two_factor' => $u->hasTwoFactorEnabled(),
+                    // The leaver control, made visible. The owner's chosen process is a
+                    // periodic review of active accounts (docs/PDPL-PACK.md §6) — and that
+                    // review is only as good as what this screen shows. `last_login_at` has
+                    // been recorded since July and read by nothing until now, which meant an
+                    // account belonging to someone who left six months ago looked exactly
+                    // like one in daily use.
+                    'last_login_at' => $u->last_login_at?->format('Y-m-d'),
+                    'dormant_days' => $u->last_login_at?->diffInDays(now()),
                 ]),
             'positions' => Position::orderBy('id')->get(['id', 'name']),
 

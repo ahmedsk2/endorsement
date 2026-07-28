@@ -2,6 +2,7 @@
 import { useForm } from '@inertiajs/vue3';
 import AuthLayout from '../../Layouts/AuthLayout.vue';
 import { usePasswordStrength } from '../../Composables/usePasswordStrength.js';
+import StaffPrivacyNotice from '../../Components/StaffPrivacyNotice.vue';
 
 const props = defineProps({
     token: { type: String, required: true },
@@ -48,6 +49,10 @@ const submit = () =>
                     changed here.
                 </p>
             </div>
+
+            <!-- Before the account exists, not after. PDPL requires the person be
+                 informed; being told once they are already committed is not being informed. -->
+            <StaffPrivacyNotice context="invitation" />
 
             <div>
                 <label class="channel-tag mb-1.5 block">Full name</label>

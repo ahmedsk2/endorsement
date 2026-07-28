@@ -60,7 +60,7 @@ Filled in from the code. Check it rather than retype it.
 
 | Field | Value |
 |---|---|
-| Controller | **`[DECIDE]`** — Qatif Central Hospital, Department of Paediatrics (confirm the legal entity) |
+| Controller | **Qatif Central Hospital** (owner, 2026-07-28). This system is one application within it, not a separate controller |
 | Processor(s) | Oracle Cloud Infrastructure (hosting, `me-riyadh-1`); Cloudflare (CDN/WAF); **`[DECIDE]`** SMTP provider once chosen |
 | Purpose | Recording and handing over the clinical state of admitted children between shifts; a contemporaneous clinical record |
 | Lawful basis | **Provision of healthcare, under the hospital's existing basis** (owner, 2026-07-28). Explicitly NOT consent: a clinical record a patient could withdraw mid-admission is not a clinical record, and a consent that would not be honoured is not valid consent |
@@ -173,7 +173,7 @@ period is the hospital's medical-records rule, not this application's.
 | One-time sign-in codes | On use or expiry | `data:retention` |
 | Idle sessions | 60 minutes | Session lifetime |
 | Trusted devices ("don't ask for 7 days") | 7 days, and immediately on password change or disabling the factor | `TrustedDevice` |
-| Backups | 14 archives locally, plus the off-host copy — **`[DECIDE]`** how long the off-host copy is kept, and whether an object-lock rule enforces it |
+| Backups | 14 archives locally, plus the off-host copy. **Object-lock chosen** (owner, 2026-07-28) so credentials that can write cannot delete — the failure mode that turns an incident into permanent loss, since today whoever holds the storage credentials can erase every copy. **`[CONFIRM]`** the retention days, then set the rule on the `endorsement-backups` bucket |
 
 ### 4.1 The retention period needs a second opinion — `[CONFIRM]`
 
@@ -204,11 +204,20 @@ thing to build *after* the number is confirmed, not before.
 
 Two audiences, and they are not the same document.
 
-- **Staff** — what the system records *about them*: their name and signature on handovers
-  they sign, and an audit trail of what they viewed, printed, edited and signed, with the
-  time and source address. **They should be told this plainly before they are invited**,
-  because "activity on this system is recorded" on the sign-in page is a warning, not a
-  notice. **`[DECIDE]`** — draft below, needs the hospital's wording and a delivery method.
+- **Staff — DONE IN THE PRODUCT, 2026-07-28.** The notice is shown on the
+  invitation-acceptance page (*before* the account exists) and again in first-login setup.
+  It states what is recorded — the name and signature on handovers they sign, and which
+  actions are logged — for how long, that the log cannot be altered even by an
+  administrator, and who to ask.
+
+  Delivered BY THE SYSTEM rather than circulated, on purpose: a notice that depends on
+  somebody remembering to send it is a notice some people never received, and the person
+  who never received it is the one who later disputes what was recorded. It is a single
+  component used in both places, because a notice maintained in two copies eventually says
+  two different things. `resources/js/Components/StaffPrivacyNotice.vue`.
+
+  **`[CONFIRM]`** the hospital is content with the wording; the text below is the current
+  version and I will change it on request.
 - **Patients and guardians** — almost certainly covered by the hospital's existing notice,
   since this is part of the clinical record rather than a separate collection.
   **`[DECIDE]`** — confirm with compliance; do not write a second patient-facing notice
@@ -277,9 +286,9 @@ and an unrecorded control is one you cannot show anyone.
 | Right | How it is served today |
 |---|---|
 | To be informed | §5 |
-| Access | Manual — a request is served by an Administrator. **`[DECIDE]`** who handles it and within what timeframe |
+| Access | **Through the hospital's existing process** (owner, 2026-07-28); an Administrator supplies what this system holds. Consistent with the breach path in §6 — one route in, not two. **`[CONFIRM]`** the response timeframe the hospital already works to |
 | Correction | Clinical corrections go through the normal record path: reopen a signed handover with a reason, which is audited. The prior value is retained rather than overwritten |
-| Destruction | **Constrained by law, not by the system.** A clinical record cannot generally be erased on request while the hospital's retention obligation stands. **`[DECIDE]`** — record that position and its basis, so a refusal is a policy, not an improvisation |
+| Destruction | **Refused while the retention obligation stands** (owner, 2026-07-28). PDPL's erasure right does not override a legal retention duty, and a clinical record is held under one. Recorded in advance deliberately: this is the one right where the answer is usually "no", and a refusal improvised under pressure reads very differently from a stated policy. Requests still go to the hospital (above), which decides whether this case is the exception |
 
 ---
 

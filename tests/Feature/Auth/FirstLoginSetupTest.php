@@ -176,4 +176,5 @@ class FirstLoginSetupTest extends TestCase
             ->getJson('/endorsement')
             ->assertForbidden();
     }
+
 }

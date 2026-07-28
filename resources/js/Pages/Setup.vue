@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import StaffPrivacyNotice from '../Components/StaffPrivacyNotice.vue';
 
 /*
  * First-login setup. Two questions this system must not answer on a clinician's behalf:
@@ -93,6 +94,8 @@ const finish = () => finishForm.post('/setup');
                     Two things before you start. This takes a minute and you only do it once.
                 </p>
             </header>
+
+            <StaffPrivacyNotice context="setup" />
 
             <!-- STEP 1 — required. -->
             <section class="channel-bar rounded-md border border-line bg-panel p-6"

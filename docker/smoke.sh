@@ -100,6 +100,40 @@ check "GET /login" 200 "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0
 # An unauthenticated request to a clinical route must bounce to the login form, not render.
 check "GET /endorsement (anon)" 302 "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/endorsement")"
 
+# A request body big enough that nginx BUFFERS IT TO DISK.
+#
+# nginx keeps a body in memory up to client_body_buffer_size (~16k) and spills anything
+# larger to /var/lib/nginx/tmp. If that directory is not writable by the worker user, small
+# requests succeed and larger ones 500 — which is how a broken signature upload looked like
+# an intermittent fault for days rather than a permissions bug. Every check here used tiny
+# GETs, so none of them could see it.
+#
+# Unauthenticated on purpose: a 419/422/302 all prove nginx read the body. Only a 500 fails.
+# Via a FILE, not an argument: 200k on the command line overflows argv
+# ("Argument list too long"), which is how this check failed the first time it ran.
+BIGBODY=$(mktemp)
+{ printf 'member_name=smoke&password='; head -c 200000 /dev/zero | tr '\0' 'x'; } > "$BIGBODY"
+code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+       -X POST "http://127.0.0.1:${PORT}/login" --data-binary "@$BIGBODY")
+rm -f "$BIGBODY"
+
+# Any of 419/422/302 proves nginx read the body and handed it to PHP. Only 500 (or no
+# response at all) means it could not write the temp file.
+case "$code" in
+    500|000) buffered="REFUSED-$code" ;;
+    *)       buffered=accepted ;;
+esac
+check "large request body buffered to disk" accepted "$buffered"
+
+# And the same property asserted DIRECTLY, because the request-level check above passed
+# against a knowingly-broken build once: whether a body spills to disk depends on
+# client_body_buffer_size, the container's age and what nginx's root master happened to
+# create at startup, none of which a regression test should depend on. Ownership does not
+# vary. The worker user must own the tree it writes into.
+check "nginx temp dir owned by the worker user" \
+    "$(docker exec "$APP" sh -c 'ps -o user,args | grep "[n]ginx: worker" | head -1 | awk "{print \$1}"')" \
+    "$(docker exec "$APP" sh -c 'stat -c %U /var/lib/nginx/tmp')"
+
 echo "--- security headers ---"
 headers="$(curl -sI "http://127.0.0.1:${PORT}/login")"
 for h in content-security-policy x-frame-options referrer-policy x-content-type-options; do

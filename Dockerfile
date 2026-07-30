@@ -130,16 +130,25 @@ RUN addgroup -g 1000 app && adduser -u 1000 -G app -s /bin/sh -D app \
     && mkdir -p storage/framework/{cache,sessions,views} storage/logs storage/app/private/signatures storage/backups bootstrap/cache \
     && chown -R app:app storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache \
-    # nginx's temp and cache trees must belong to `app`, because its WORKERS write there.
+    # nginx's temp trees must belong to the user its WORKERS run as, which is `nginx` —
+    # NOT `app`. They were chowned to `app` during an abandoned `USER app` attempt and left
+    # that way when it was reverted, which produced a bug that hid for days:
+    #
+    #   open() "/var/lib/nginx/tmp/client_body/0000000001" failed (13: Permission denied)
+    #
+    # nginx buffers a request body in memory up to client_body_buffer_size (~16k) and spills
+    # anything larger to a file under /var/lib/nginx/tmp. So a SMALL signature worked and a
+    # slightly larger one returned 500 — intermittent by size, which reads as random.
+    #
+    # `app` is deliberately not used here: it owns the application tree, and nginx workers
+    # serve static files and proxy to php-fpm without ever needing to write there. Keeping
+    # them as `nginx` with their own writable temp is the better isolation AND the fix.
+    #
     # /var/lib/nginx/logs is a SYMLINK to /var/log/nginx and `chown -R` does not follow
     # symlinks, so the real directory is named explicitly.
-    #
-    # (The masters run as root, so they can open their own logs regardless. These chowns
-    # were widened during an abandoned `USER app` attempt and the revert left the comment
-    # claiming more than it does; /var/log/nginx and /usr/local/var/log are now belt and
-    # braces rather than load-bearing.)
     && mkdir -p /var/lib/nginx/tmp /var/log/nginx /usr/local/var/log \
-    && chown -R app:app /var/lib/nginx /var/log/nginx /usr/local/var/log
+    && chown -R nginx:nginx /var/lib/nginx /var/log/nginx \
+    && chown -R app:app /usr/local/var/log
 
 EXPOSE 8080
 

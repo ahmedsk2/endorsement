@@ -1,8 +1,33 @@
 # 8. Foundation
 
-### Authentication (cloned whole from the reference)
+### Authentication (cloned whole from the reference, identity re-platformed in P0c)
 
-Login by member name + password; per-(name+IP) rate limiter (5 attempts) with a **timing-equalised** bcrypt verify when the user doesn't exist; inactive accounts get a fixed message; 3-month password expiry forces a change before session creation; remember-me; forgot/reset via member_email (reset rotates remember_token and deletes the user's session rows); hand-rolled TOTP 2FA (pragmarx/google2fa, confirm-before-active enrolment, 8 recovery codes, encrypted casts, per-user challenge limiter + replay cache). **Self-registration → `pending_registrations` → admin approval** (approval copies the hash without rehashing) **[RULING]**. `EnsureAccountActive` middleware re-checks `active` on every request and revokes live sessions immediately on deactivation.
+Identity is two tables (P0c/D3 reversed): `people` is the roster and the name/role of record, no
+credential columns; `users` is purely the account, linked 1:1 via `person_id`. A roster-only
+person has no `users` row and cannot authenticate by construction — see `docs/spec/04-data-model.md`.
+
+Login by member name + password; per-(name+IP) rate limiter (5 attempts) with a
+**timing-equalised** bcrypt verify when the user doesn't exist; inactive accounts get a fixed
+message; 3-month password expiry forces a change before session creation; remember-me;
+forgot/reset resolves by joining through `person_id` to `people.email` (`member_email` is now a
+read-through accessor onto it, not a stored column — P0c/D9, owner decision 2026-08-08; reset
+rotates remember_token and deletes the user's session rows); hand-rolled TOTP 2FA
+(pragmarx/google2fa, confirm-before-active enrolment, 8 recovery codes, encrypted casts, per-user
+challenge limiter + replay cache).
+
+**Accounts are created by invitation only** — self-registration was closed 2026-07-27 (owner
+decision): `GET /register` now redirects to the login page (`RegisteredUserController::closed()`)
+instead of 404ing. An Administrator or Chief Resident issues one address + one role as a
+single-use, expiring, revocable link (`Admin\InvitationController::store()`); redemption
+(`Auth\InvitationAcceptController::store()`) CLAIMS the invitation's linked `people` row rather
+than inserting a second one, writes a fresh-hashed `users` row, active immediately — no approval
+step. The pre-invitation `pending_registrations` queue is frozen, no live writer since 2026-07-27,
+but its `approve()`/`reject()` path still serves rows older than that date; approval there still
+copies the pending row's already-hashed password verbatim, never rehashing (exactly like
+`LegacyImport`) **[RULING]** — this no longer applies to invitation redemption, which always
+hashes fresh.
+
+`EnsureAccountActive` middleware re-checks `active` on every request and revokes live sessions immediately on deactivation.
 
 ### Access control (cloned whole)
 

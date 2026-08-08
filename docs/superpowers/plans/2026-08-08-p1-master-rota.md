@@ -115,6 +115,31 @@ predict, a behaviour that differs between SQLite and MySQL or between UTC and As
 record it here, dated, with what was found and how it was resolved. Findings caught
 empirically rather than by inspection are the ones worth writing down.)*
 
+**2026-08-09, Task 6 — three of Step 2's details did not match the tree; the shape was right,
+the specifics were not.** (1) `Users.vue:126`'s `new Date(iso).toLocaleString()` was already
+applied only to `PendingRegistration::requested_at` (rendered via a `fmt()` helper) — a prior
+change had already server-formatted `last_login_at` as `'Y-m-d'` (via `UserManagementController`)
+with no client conversion left on that field, so there is no `last_login_display` prop to add;
+`requested_at` is what now arrives pre-formatted (`Y-m-d H:i`, replacing an ISO8601 string), and
+`fmt()` is deleted entirely rather than partially. (2) `Index.vue`'s replacement is not a flat
+`days` array of `{date, hijri, weekend, has_sheet, signed}` — the existing `dates` prop (one
+entry per date WITH a sheet) is kept, dual-dated in place, and a second `listing` prop carries
+the full day/gap/gap-summary merge `EndorsementController::buildListing()` computes from it via
+`Calendar::datesBetween()`, replacing the deleted client computed of the same name one-for-one.
+This matches the removed code's actual behaviour (only known-sheet dates plus the gaps between
+them are ever shown — never an unbounded enumeration of "every date in the range") more closely
+than the plan's literal array shape would have. (3) The guard test itself needed a subtlety the
+plan's PHP-side precedent didn't need: `Calendar.php`'s own docblock is allowed to WRITE
+`strtotime()` in prose (a carve-out `CalendarIsTheOnlyConverterTest` already has), but the new
+`resources/js` guard has NO such carve-out (deliberately — "Allow-list empty at the end of this
+task"), so an early draft of this task's own explanatory comments (e.g. "replacing the deleted
+`new Date()` computation") tripped the guard on itself; comments in the three touched Vue files
+now describe the removed calls in prose without reproducing the literal call syntax.
+
+`previous_date` (Sheet.vue) had no removed client computation to replace — only `next_date` did
+(the deleted `nextDate` computed). It is still sent, per the plan's explicit text, and given a
+real consumer (a "Previous day" link beside "Day index") rather than shipped as an unused prop.
+
 **2026-08-08, Task 5 — `newDay()`'s `->max('handover_date')` returns a raw, uncast DB scalar,
 which `Calendar::parse()`'s Y-m-d-only strictness correctly rejects; caught by the full suite,
 not by inspection.** After rewriting `EndorsementController::newDay()`'s
@@ -1477,12 +1502,12 @@ git commit -m "refactor: five date converters become one, and three stay out on 
 Decision A. Four hand-rolled JS date helpers exist; each carries a warning comment recording a
 real +03:00 bug. This task deletes all four and replaces them with server-supplied props.
 
-- [ ] **Step 1: Extend the guard, and watch it go red**
+- [x] **Step 1: Extend the guard, and watch it go red**
 
 Add to `CalendarIsTheOnlyConverterTest`: no file under `resources/js/` contains `new Date(`,
 `toISOString(`, or `toLocaleString(`. Allow-list empty at the end of this task.
 
-- [ ] **Step 2: Server-supplied dates**
+- [x] **Step 2: Server-supplied dates**
 
 - **`Index.vue`** — `localYmd()` (`:106`) and `datesBetween()` (`:108-118`) go. The controller
   sends a `days` array, one entry per date in the range, each
@@ -1494,7 +1519,7 @@ Add to `CalendarIsTheOnlyConverterTest`: no file under `resources/js/` contains 
   sends `last_login_display` already formatted. This is the app's only browser-timezone-dependent
   rendering; removing it removes a whole class of "the timestamp is wrong on my laptop".
 
-- [ ] **Step 3: Dual dating appears (UX-04)**
+- [x] **Step 3: Dual dating appears (UX-04)**
 
 The sheet header and the index gain the Hijri date beside the Gregorian, from
 `Calendar::label()`:
@@ -1513,13 +1538,13 @@ This is also how the owner verifies the −1 calibration: open two consecutive d
 Hijri month boundary and compare against the department's published calendar. Say so in the
 commit message.
 
-- [ ] **Step 4: Update the component and e2e tests**
+- [x] **Step 4: Update the component and e2e tests**
 
 `tests/js/EndorsementIndex.test.js` and `EndorsementSheet.test.js` must feed the new props.
 `tests/e2e/mobile-sheet.spec.js:5-9,57-61` asserts persistence after reload by
 `data-row-id` — that shape is unchanged; only the date props move.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```bash
 npm run build 2>&1 | tail -5

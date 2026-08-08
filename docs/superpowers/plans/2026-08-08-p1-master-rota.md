@@ -1,3 +1,30 @@
+> ## OWNER DECISIONS — ROUND 2, 2026-08-08 (three more, all binding)
+>
+> **4. The academic year RESETS to a fixed start date; it does not drift.**
+> Blocks run 13 × 4 weeks, but the year always begins on the department's set date, so the
+> **final block absorbs whatever days remain** — which is why block 13 is longer. Its length
+> therefore **varies year to year** and must not be hardcoded to five weeks. MR-01 explicitly
+> supports varying block lengths within a year; the generator must compute the last block from
+> the next year's start date rather than from a constant. The plan's 371-day arithmetic and any
+> fixture derived from it need revisiting: a year is 365 or 366 days, and block 13 is whatever
+> is left.
+>
+> **5. Invitation expiry is CONFIGURABLE, default 7 days.**
+> Munawib AC-02 specifies 14; this codebase uses 7 and keeps 7 as the default, because an
+> invitation is a credential — redeeming it creates an account that reaches children's clinical
+> records — and a shorter window means a forwarded link is live for less time. A department that
+> genuinely needs longer can raise it. Validate the setting (a sane upper bound, an integer, no
+> zero-or-negative) so the knob cannot be turned to something absurd. Record the deviation from
+> AC-02 in the design doc's override table alongside the others.
+>
+> **6. The missed-days compliance counter is UNCHANGED.**
+> Every day still counts. Making it weekend- and holiday-aware would silently alter every
+> historical compliance figure the system has produced — a change in what the number *means*,
+> not a refactor, and nothing records which definition produced an earlier figure. P1a must pin
+> the current behaviour with a test so the new calendar's day-type knowledge cannot leak into it
+> by accident. If this is ever revisited it should be a deliberate, dated change with the old
+> figures preserved.
+
 > ## OWNER DECISIONS, 2026-08-08 — READ BEFORE ANY TASK
 >
 > **1. The level ladder is `R1`, `R2`, `R3`, `R4`, `EXT` (External) — seed it.** This is the

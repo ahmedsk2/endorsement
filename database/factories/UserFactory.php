@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\Person;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -40,6 +41,21 @@ class UserFactory extends Factory
             // A genuinely new account is the deliberate case: state it with
             // ->create(['setup_completed_at' => null]), as FirstLoginSetupTest does.
             'setup_completed_at' => now(),
+
+            // Every account belongs to a person (P0c). This key is LAST on purpose: factory
+            // closures are resolved against the already-expanded attribute array, so the person
+            // inherits whatever the caller overrode — `full_name`, `position`, `member_email`,
+            // `institution_id` — with no per-test change anywhere.
+            'person_id' => fn (array $attributes) => Person::factory()->create([
+                'full_name' => $attributes['full_name'] ?? fake()->name(),
+                'position' => $attributes['position'] ?? 4,
+                'email' => $attributes['member_email'] ?? null,
+                'institution_id' => $attributes['institution_id'] ?? null,
+                // The ACCOUNT's kill switch is not the PERSON's. `->inactive()` means "cannot log
+                // in", which is what every existing test that uses it means; the person stays
+                // nameable, which is exactly the distinction P0c introduces.
+                'active' => true,
+            ])->id,
         ];
     }
 

@@ -23,6 +23,7 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'institution_id',
+        'person_id',
         'position',
         'preferred_unit_id',
         'full_name',
@@ -168,6 +169,19 @@ class User extends Authenticatable
     public function institution(): BelongsTo
     {
         return $this->belongsTo(Institution::class);
+    }
+
+    /**
+     * The person this account belongs to — the name of record.
+     *
+     * Since P0c (D3 reversed) `users` is the AUTHENTICATION record and nothing else. Who this
+     * account belongs to, what their job role is and what they are called all live on `people`.
+     *
+     * @return BelongsTo<Person, $this>
+     */
+    public function person(): BelongsTo
+    {
+        return $this->belongsTo(Person::class);
     }
 
     /**

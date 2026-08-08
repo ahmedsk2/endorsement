@@ -380,3 +380,24 @@ SELECT COUNT(*) FROM units WHERE bar_class IS NULL OR display_order = 1000;
 A NULL `bar_class` or a `display_order` of 1000 (the column's unconfigured-department default)
 means the row's `code` did not match the migration's constant — fix the data, do not edit the
 migration after it has run.
+
+---
+
+## Verifying the 2026-08-10 identity migrations
+
+### 2026_08_10_120001_create_people_and_link_users
+
+Every account must have gained exactly one person. Run all three; all three must return 0.
+
+    SELECT COUNT(*) FROM users WHERE person_id IS NULL;                    -- unlinked accounts
+    SELECT COUNT(*) FROM people p LEFT JOIN users u ON u.person_id = p.id
+      WHERE u.id IS NULL;                                                  -- orphan people
+    SELECT COUNT(*) FROM (SELECT person_id FROM users WHERE person_id IS NOT NULL
+      GROUP BY person_id HAVING COUNT(*) > 1) d;                           -- shared people
+
+And the counts must match, including soft-deleted accounts:
+
+    SELECT (SELECT COUNT(*) FROM users) AS accounts, (SELECT COUNT(*) FROM people) AS people;
+
+A non-zero first query means the backfill did not run — do NOT edit the migration after it has
+run. Re-link by hand, or roll back with `php artisan migrate:rollback --step=1` and re-run.

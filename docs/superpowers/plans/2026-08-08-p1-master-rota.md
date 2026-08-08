@@ -115,6 +115,42 @@ predict, a behaviour that differs between SQLite and MySQL or between UTC and As
 record it here, dated, with what was found and how it was resolved. Findings caught
 empirically rather than by inspection are the ones worth writing down.)*
 
+**2026-08-08, Task 4 — the plan's own week-block fixtures were written before round-2 owner
+decision 4 and are wrong; recomputed.** Task 4's Step 1 test list (and the Step 6 commit
+message) describe a run of 13 blocks — twelve of four weeks plus a fixed five-week block 13 —
+spanning 371 days, taken verbatim from reconnaissance finding 7's pre-decision reading. Decision
+4 (round 2, binding) settles finding 7's open question the other way: the academic year resets
+to a FIXED start date each year, so block 13 absorbs whatever remains before the FOLLOWING
+year's start, and its length varies year to year. `PeriodGenerator::weekBlocks()` was written
+to this corrected shape, not the plan's: it takes an optional `?CarbonImmutable $nextYearStart`
+absent from the plan's Step 4 signature. When supplied, the final block's `ends_on` is computed
+as the day before it — the last entry of `$blockWeeks` becomes a nominal fallback used only when
+`$nextYearStart` is not yet known (previewing a year before the next one is configured). Worked
+example for the QCH shape (13 blocks, start 2026-07-01, next year fixed at 2027-07-01): blocks
+1-12 are each exactly 28 days; block 13 is **2027-06-02 .. 2027-06-30, 29 days** — not 35 — and
+the whole run is **365 days**, not 371. `tests/Feature/Calendar/PeriodGenerationTest.php` pins
+both the corrected fixture and the no-next-year-known fallback (35 days, matching the plan's
+original nominal assumption, kept as the fallback behaviour rather than discarded).
+
+**2026-08-08, Task 4 — the orphaned migration's unique index broke the D11 "institution-blind"
+pattern; caught by the existing `InstitutionProvenanceTest` guard.** The migration left
+uncommitted by the disconnected session (`2026_08_12_120002_create_periods_table.php`) declared
+`unique(['institution_id', 'academic_year', 'position'])`. Every other compound unique index in
+this schema deliberately omits `institution_id` (`people.short_name`, `levels.code`,
+`handover_signoffs(unit_id, handover_date)`, each with a comment citing D11: one database is one
+customer, so a plain unique is both honest and enforceable, and a composite including
+`institution_id` would be toothless for the null-institution bootstrap/fixture rows it is
+usually NULL for). `Period::booted()`'s overlap-guard closure, written to match the migration,
+then filtered `->where('institution_id', $period->institution_id)` — a real query filter on
+`institution_id`, which `tests/Feature/Identity/InstitutionProvenanceTest.php`'s
+`test_no_query_filters_on_institution_id` exists specifically to catch (D11: the isolation
+boundary is the database, not the row; a `where('institution_id', ...)` anywhere in `app/` fails
+that guard by source-level regex, regardless of intent). Caught empirically: the guard went red
+on the first full-suite run after Task 4's implementation. Fixed both the migration (unique on
+`academic_year, position` only, matching precedent, with a docblock explaining why) and
+`Period::booted()` (overlap check scoped by `academic_year` only). `institution_id` remains on
+the table as a nullable, non-unique provenance/grouping column, consistent with D11.
+
 **2026-08-08, Task 2 — the strtotime() allow-list needed two more entries than finding 2
 enumerated.** Writing `CalendarIsTheOnlyConverterTest`'s guard against the actual tree (not
 against finding 2's list) turned up `strtotime(` in two files reconnaissance did not name:
@@ -1118,7 +1154,7 @@ git commit -m "test: the suite has been proving day boundaries at the wrong offs
 Owner decision 2. Both systems are first-class; no code path may assume a period is a calendar
 month.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/Feature/Calendar/PeriodGenerationTest.php`:
 
@@ -1149,7 +1185,7 @@ month.
 php artisan test --filter PeriodGeneration | tail -30
 ```
 
-- [ ] **Step 2: The migration**
+- [x] **Step 2: The migration**
 
 ```php
 Schema::create('periods', function (Blueprint $table) {
@@ -1178,7 +1214,7 @@ Schema::create('periods', function (Blueprint $table) {
 
 `position`, not `index` — `index` is a reserved word in MySQL and a Blueprint method name.
 
-- [ ] **Step 3: The model, with the overlap guard**
+- [x] **Step 3: The model, with the overlap guard**
 
 `app/Models/Period.php`: `$fillable`, casts (`starts_on`/`ends_on` → `date`, `position` →
 `integer`), `institution()`, `scopeForYear()`, `scopeOrdered()` (`orderBy('starts_on')`), and
@@ -1213,7 +1249,7 @@ Note the `whereDate` — not equality. `EndorsementController.php:325-331` docum
 hazard: a `'date'` cast round-trips from MySQL as `'Y-m-d 00:00:00'`, so equality comparisons
 against a `Y-m-d` string never match. Every date comparison in this module uses `whereDate`.
 
-- [ ] **Step 4: `App\Support\PeriodGenerator`**
+- [x] **Step 4: `App\Support\PeriodGenerator`**
 
 Pure functions returning arrays; **no database writes**, so a preview screen and the committing
 caller share one definition. Signatures:
@@ -1239,7 +1275,7 @@ caller share one definition. Signatures:
     public static function warningsAgainstNeighbours(array $generated, ?Period $previousYearLast, ?Period $nextYearFirst): array
 ```
 
-- [ ] **Step 5: Teach `Calendar` about periods**
+- [x] **Step 5: Teach `Calendar` about periods**
 
 Add to `Calendar`:
 
@@ -1256,7 +1292,7 @@ Add to `Calendar`:
 inclusive — say so in the docblock and name `Person::levelAt()` as the idiom it matches, so a
 future reader does not "fix" one of them to be half-open.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 ```bash
 npm run build 2>&1 | tail -5
@@ -1265,8 +1301,15 @@ php artisan test | tail -5
 
 ```bash
 git add database/migrations app/Models/Period.php app/Support/ database/factories tests/
-git commit -m "feat: months and week-blocks, and a year that is 371 days long"
+git commit -m "feat: months and week-blocks, and a year whose last block varies"
 ```
+
+> **Amended commit message.** The plan's original message — "a year that is 371 days long" —
+> was written under reconnaissance finding 7's pre-decision-4 reading (13 blocks of 4 weeks
+> plus a fixed 5-week block 13 = 371 days). Owner decision 4, round 2, overrides that: the
+> academic year does not drift, block 13 absorbs whatever remains before the next year's fixed
+> start, and its length varies. 371 days was never shipped; using it in the commit message
+> would have documented an arithmetic error as a fact. See the Amendments entry below.
 
 ---
 

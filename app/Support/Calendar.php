@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Institution;
+use App\Models\Period;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use DateTimeZone;
@@ -205,6 +206,50 @@ final class Calendar
     public static function isWeekend(DateTimeInterface|string $date): bool
     {
         return in_array((int) self::coerce($date)->isoWeekday(), self::weekendDays(), true);
+    }
+
+    /** MR-01: 'months' or 'week_blocks' (`Institution::PERIOD_MONTHS`/`PERIOD_WEEK_BLOCKS`). */
+    public static function periodType(): string
+    {
+        return self::settings()['period_type'];
+    }
+
+    /** @return list<int> block lengths in weeks, in order — see `PeriodGenerator::weekBlocks()`. */
+    public static function blockWeeks(): array
+    {
+        return self::settings()['block_weeks'];
+    }
+
+    /** The first day of the CURRENT academic year (department-set); null until configured. */
+    public static function academicYearStart(): ?CarbonImmutable
+    {
+        $start = self::settings()['academic_year_start'];
+
+        return $start === null ? null : self::parse($start);
+    }
+
+    /**
+     * The period a date falls in, both bounds INCLUSIVE — the same idiom `Person::levelAt()`
+     * uses. Null when the date falls outside every generated period.
+     */
+    public static function periodFor(DateTimeInterface|string $date): ?Period
+    {
+        $day = self::coerce($date)->format(self::YMD);
+
+        return Period::query()
+            ->whereDate('starts_on', '<=', $day)
+            ->whereDate('ends_on', '>=', $day)
+            ->first();
+    }
+
+    /** @return list<Period> every period for one academic year, ordered by start date. */
+    public static function periodsForYear(string $academicYear): array
+    {
+        return Period::query()
+            ->where('academic_year', $academicYear)
+            ->orderBy('starts_on')
+            ->get()
+            ->all();
     }
 
     private static function coerce(DateTimeInterface|CarbonImmutable|string $date): CarbonImmutable

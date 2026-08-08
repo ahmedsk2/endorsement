@@ -55,14 +55,96 @@ class CalendarIsTheOnlyConverterTest extends TestCase
      * A permanently kills by having the server send formatted labels and enumerated ranges
      * instead.
      *
+     * `toLocaleDateString(`/`toLocaleTimeString(` were added because `toLocaleString(` — the
+     * needle already here — does NOT substring-match either: "toLocaleDateString(" inserts
+     * "Date" between "toLocale" and "String(", so the original needle silently missed the two
+     * most natural client-side formatters. `Date.now(`, `Date.parse(`, `Date.UTC(`,
+     * `Intl.DateTimeFormat` and `getTimezoneOffset(` cover the remaining built-in date-reading
+     * and construction surface `new Date(`/`toISOString(` did not.
+     *
      * @var list<string>
      */
-    private const JS_DATE_NEEDLES = ['new Date(', 'toISOString(', 'toLocaleString('];
+    private const JS_DATE_NEEDLES = [
+        'new Date(', 'toISOString(', 'toLocaleString(',
+        'toLocaleDateString(', 'toLocaleTimeString(',
+        'Date.now(', 'Date.parse(', 'Date.UTC(',
+        'Intl.DateTimeFormat', 'getTimezoneOffset(',
+    ];
+
+    /**
+     * Every file allowed to construct a date/time value directly (`Carbon::parse()`,
+     * `CarbonImmutable::parse()`, `new DateTime`, `DateTime::createFromFormat`) instead of going
+     * through `App\Support\Calendar` — the exact three sites Calendar's own docblock names
+     * (Calendar.php:18-33) as deliberately outside the module.
+     *
+     * @var list<string>
+     */
+    private const CARBON_DATETIME_ALLOW_LIST = [
+        // PHI `dob` (Calendar.php:29-31 / App\Casts\EncryptedDateTime's own docblock) — must
+        // not route through the calendar; Calendar::parse() would throw on the ciphertext
+        // marker this cast's getter can return.
+        'app/Casts/EncryptedDateTime.php',
+        // Byte-verbatim canonicalization (Calendar.php:25-27): `AuditChain::canonical()` v3
+        // hashes the stored naive datetime verbatim precisely so no timezone can reinterpret
+        // history. A timezone change must never re-render an already-hashed audit row.
+        'app/Support/AuditChain.php',
+        // A scheduler H:i TIME, not a calendar DATE — the cron dispatcher parses a
+        // time-of-day for `Schedule::at()`, never a Y-m-d application date Calendar governs.
+        'routes/console.php',
+    ];
+
+    /**
+     * Carbon/DateTime construction needles Decision A forbids outside `App\Support\Calendar`.
+     * Neither the ICU-symbol nor the strtotime() check above catches these — `Carbon::parse()`
+     * is the single most natural way a Laravel developer would convert a date, and it silently
+     * skips the instance timezone and department `hijriOffsetDays` Calendar applies.
+     *
+     * @var list<string>
+     */
+    private const CARBON_DATETIME_NEEDLES = [
+        'Carbon::parse', 'CarbonImmutable::parse', 'new DateTime', 'DateTime::createFromFormat',
+    ];
 
     /** @return list<\SplFileInfo> */
     private function phpFilesUnderApp(): array
     {
         return File::allFiles(app_path());
+    }
+
+    /**
+     * I1 (InstitutionProvenanceTest) proved narrow scope is the recurring weakness in these
+     * source-level guards: a migration or route closure is a live conversion surface too, not
+     * just app/. The ICU-symbol and strtotime checks below scan all three for the same reason.
+     *
+     * @return list<\SplFileInfo>
+     */
+    private function phpFilesUnderAppDatabaseAndRoutes(): array
+    {
+        return $this->phpFilesUnder([app_path(), base_path('database'), base_path('routes')]);
+    }
+
+    /**
+     * The Carbon/DateTime check's scope, per the reviewer's finding: app/ and routes/ only —
+     * database/ is migrations, which build schema, not application date VALUES.
+     *
+     * @return list<\SplFileInfo>
+     */
+    private function phpFilesUnderAppAndRoutes(): array
+    {
+        return $this->phpFilesUnder([app_path(), base_path('routes')]);
+    }
+
+    /** @return list<\SplFileInfo> */
+    private function phpFilesUnder(array $dirs): array
+    {
+        $files = [];
+        foreach ($dirs as $dir) {
+            if (File::exists($dir)) {
+                $files = array_merge($files, File::allFiles($dir));
+            }
+        }
+
+        return $files;
     }
 
     /** @return list<\SplFileInfo> */
@@ -89,7 +171,7 @@ class CalendarIsTheOnlyConverterTest extends TestCase
 
         $offenders = [];
 
-        foreach ($this->phpFilesUnderApp() as $file) {
+        foreach ($this->phpFilesUnderAppDatabaseAndRoutes() as $file) {
             $relative = $this->relativePath($file);
 
             if ($relative === self::CALENDAR_FILE) {
@@ -117,7 +199,7 @@ class CalendarIsTheOnlyConverterTest extends TestCase
     {
         $offenders = [];
 
-        foreach ($this->phpFilesUnderApp() as $file) {
+        foreach ($this->phpFilesUnderAppDatabaseAndRoutes() as $file) {
             $relative = $this->relativePath($file);
 
             // Calendar.php's own docblock names strtotime() in prose, explaining the exact
@@ -164,6 +246,80 @@ class CalendarIsTheOnlyConverterTest extends TestCase
             $stale,
             'These allow-listed files no longer call strtotime() (or no longer exist) — remove '
             .'them from STRTOTIME_ALLOW_LIST: '.implode(', ', $stale)
+        );
+    }
+
+    /**
+     * I2: `Carbon::parse()` is how a Laravel developer would most naturally convert a date —
+     * the ICU-symbol check and the strtotime() check above needle for the wrong pattern for
+     * this exact mistake and would let it ship green. Scope is app/ and routes/ per the
+     * reviewer's finding (database/ is schema, not application date values).
+     *
+     * Assert over the whole SET, never inside a foreach that can silently stop guarding once
+     * the last offender is fixed — same discipline as the two checks above.
+     */
+    public function test_carbon_and_datetime_construction_appears_only_on_the_allow_list(): void
+    {
+        $offenders = [];
+
+        foreach ($this->phpFilesUnderAppAndRoutes() as $file) {
+            $relative = $this->relativePath($file);
+
+            // Calendar.php's own docblock explains, in prose, exactly why these three sites are
+            // excused — a mention/necessary exception, not an unaudited conversion. Same
+            // carve-out shape as the IntlCalendar and strtotime checks above.
+            if ($relative === self::CALENDAR_FILE || in_array($relative, self::CARBON_DATETIME_ALLOW_LIST, true)) {
+                continue;
+            }
+
+            $contents = (string) file_get_contents($file->getPathname());
+
+            foreach (self::CARBON_DATETIME_NEEDLES as $needle) {
+                if (str_contains($contents, $needle)) {
+                    $offenders[] = "{$relative} contains \"{$needle}\"";
+                }
+            }
+        }
+
+        $this->assertSame(
+            [],
+            $offenders,
+            'AR-08: Carbon::parse()/CarbonImmutable::parse()/new DateTime/DateTime::createFromFormat '
+            .'bypass the instance timezone and department hijriOffsetDays that App\\Support\\Calendar '
+            .'applies. New callers must go through Calendar instead. Found:'."\n".implode("\n", $offenders)
+        );
+    }
+
+    /**
+     * The other direction: every entry on CARBON_DATETIME_ALLOW_LIST must still be earning its
+     * place, same discipline as test_every_allow_listed_file_still_calls_strtotime above.
+     */
+    public function test_every_carbon_datetime_allow_listed_file_still_needs_it(): void
+    {
+        $stale = [];
+
+        foreach (self::CARBON_DATETIME_ALLOW_LIST as $relative) {
+            $path = base_path($relative);
+            $contents = file_exists($path) ? (string) file_get_contents($path) : '';
+
+            $stillNeedsIt = false;
+            foreach (self::CARBON_DATETIME_NEEDLES as $needle) {
+                if (str_contains($contents, $needle)) {
+                    $stillNeedsIt = true;
+                    break;
+                }
+            }
+
+            if (! $stillNeedsIt) {
+                $stale[] = $relative;
+            }
+        }
+
+        $this->assertSame(
+            [],
+            $stale,
+            'These allow-listed files no longer contain any Carbon/DateTime construction needle '
+            .'(or no longer exist) — remove them from CARBON_DATETIME_ALLOW_LIST: '.implode(', ', $stale)
         );
     }
 

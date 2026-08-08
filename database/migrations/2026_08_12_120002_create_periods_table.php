@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\Schema;
  * it is NOT part of the unique key below either. D11 makes one database one customer, so a
  * plain UNIQUE on (academic_year, position) is both honest and enforceable — a composite
  * including institution_id would be toothless for exactly the bootstrap/fixture rows where it
- * is NULL, and would invite a future `where('institution_id', ...)` "to match the index".
+ * is NULL, and would invite a future query filtered on institution_id "to match the index".
  */
 return new class extends Migration
 {

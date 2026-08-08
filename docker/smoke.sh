@@ -21,11 +21,16 @@
 #   - the database is NOT reachable from the shared proxy network.
 #
 # Everything is torn down on exit, including on failure.
+#
+# A second concurrent run (e.g. this script and a customer's throwaway drill stack, or two
+# people running it at once) must not collide on the compose project name — `cleanup()`'s
+# `down -v --remove-orphans` would tear down the OTHER run's volumes mid-test. Pass both
+# PROJECT and PORT to run more than one at a time.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-PROJECT=endorse-smoke
+PROJECT="${PROJECT:-endorse-smoke}"
 PORT="${PORT:-9911}"
 ENVFILE="$(mktemp)"
 OVERRIDE="$(mktemp --suffix=.yml)"

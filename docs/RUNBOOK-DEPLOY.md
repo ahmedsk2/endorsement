@@ -13,9 +13,17 @@ the PDPL data-residency position simple). Coolify 4.1.2, Traefik owns :80/:443 o
 | Coolify app | `endorsement` (Docker Compose build pack) |
 | Repo | `github.com/ahmedsk2/endorsement`, branch `main` |
 | Compose file | `/docker-compose.production.yml` |
+| Coolify app UUID | `oo7d7si62yhyi7fx10hrck6q` — pass this to `docker/instance-env.sh` |
+| Instance slug (`INSTANCE_SLUG`) | see Task 1/Task 10 owner-action note below; not yet confirmed set in Coolify |
 
 Identifiers (project/app/DNS-record/deploy-key UUIDs) are recorded in
 `ORACLE MCP/infra/state.env` as `ENDORSE_*`, alongside the other apps on this host.
+
+**A second customer gets its own row in this table and its own entry in
+`docs/RUNBOOK-PROVISION.md`.** Never reuse this deployment's UUID or slug for another
+customer, and never select the database container by matching the shared MySQL image name —
+with two stacks on one host that picks an arbitrary one. Every command below resolves a
+stack with `docker/instance-env.sh <uuid>`, which refuses rather than guessing.
 
 ---
 
@@ -157,8 +165,13 @@ exit. These are the scripts that protect the only off-site copy of the clinical 
 Open a shell from **Coolify → the app → Terminal**, or over SSH:
 
 ```bash
-docker exec -it $(docker ps -qf name=app-oo7d7si62yhyi7fx10hrck6q) sh
+eval "$(sudo bash docker/instance-env.sh oo7d7si62yhyi7fx10hrck6q)" && sudo docker exec -it "$APP" sh
 ```
+
+**Read the stderr line `instance-env.sh` prints and confirm the database name is the
+customer you meant** before typing anything else — `instance-env.sh` refuses to guess when
+zero or more than one stack matches, but a UUID typo that happens to match a *different*
+real stack will not refuse, and this line is the only thing that catches it.
 
 ### Migrations need a privilege the app does not have
 
@@ -177,19 +190,24 @@ Setting `-e DB_USERNAME=root` on the exec does **not** work either: the config i
 boot, so `env()` is not consulted at runtime.
 
 So: grant, migrate, revoke. Run from the HOST (not inside the app container), so the root
-credential is read from the database container's own environment and never typed or logged:
+credential is read from the database container's own environment and never typed or logged.
+
+**Never select the database container by matching the shared MySQL image name** — with two
+customer stacks on one host that picks an arbitrary one, and the `GRANT ALTER` / `migrate` /
+`REVOKE` sequence below then lands coherently on the **wrong customer's clinical database**.
+`docker/instance-env.sh` resolves the one stack matching a Coolify app UUID, or refuses:
 
 ```bash
-APP=$(sudo docker ps -qf name=app-oo7d7si62yhyi7fx10hrck6q | head -1)
-DB=$(sudo docker ps -qf ancestor=mysql:8.4 | head -1)
-PW=$(sudo docker exec "$DB" printenv MYSQL_ROOT_PASSWORD)
-DBNAME=$(sudo docker exec "$DB" printenv MYSQL_DATABASE)
-DBUSER=$(sudo docker exec "$DB" printenv MYSQL_USER)
-
-sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "GRANT ALTER ON \`$DBNAME\`.* TO '$DBUSER'@'%'; FLUSH PRIVILEGES;"
-sudo docker exec -u app "$APP" php artisan migrate --force
+eval "$(sudo bash docker/instance-env.sh oo7d7si62yhyi7fx10hrck6q)" && \
+PW=$(sudo docker exec "$DB" printenv MYSQL_ROOT_PASSWORD) && \
+sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "GRANT ALTER ON \`$DBNAME\`.* TO '$DBUSER'@'%'; FLUSH PRIVILEGES;" && \
+sudo docker exec -u app "$APP" php artisan migrate --force && \
 sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "REVOKE ALTER ON \`$DBNAME\`.* FROM '$DBUSER'@'%'; FLUSH PRIVILEGES;"
 ```
+
+The `&&` chaining is load-bearing: `instance-env.sh` prints `false` on refusal, so nothing
+downstream runs. **Read the stderr line it prints and confirm the database name is the
+customer you meant** before typing anything else.
 
 `MYSQL_PWD` rather than `-p"$PW"` keeps the credential out of the container's process list.
 `-u app` keeps the artisan process unprivileged inside the container. **Verify the revoke

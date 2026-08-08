@@ -6,13 +6,18 @@ use App\Models\Institution;
 use App\Models\Position;
 use App\Models\Unit;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Arr;
 
 class ReferenceSeeder extends Seeder
 {
     /**
      * Seed the reference/lookup rows every environment needs.
      *
-     * Idempotent: safe to run repeatedly (uses updateOrCreate on natural keys).
+     * Idempotent: safe to run repeatedly. Positions and the institution are upserted via
+     * updateOrCreate on their natural keys. Units use firstOrNew instead — a re-seed must
+     * refresh `name` without silently reverting an administrator's configuration, so every
+     * profile column below (display_order, active, extra_row_fields, ...) is written on
+     * CREATE only.
      * Capabilities are intentionally NOT seeded here (AccessControlSeeder owns those).
      */
     public function run(): void
@@ -44,28 +49,62 @@ class ReferenceSeeder extends Seeder
         // department — a re-seed refreshes `name` only, so an admin's configuration is never
         // silently reverted. Existing databases were backfilled by the 2026_08_08 migration.
         $units = [
-            'PICU' => ['Pediatric Intensive Care Unit', 1, [], 'Bed', true, 'Consultant covering', 'channel-bar-picu', 'Plan Of Care', 'New events'],
-            'NICU' => ['Neonatal Intensive Care Unit', 2, ['dob'], 'Bed', true, 'Consultant covering', 'channel-bar-nicu', 'Plan Of Care', 'To be followed'],
-            'SCBU' => ['Special Care Baby Unit', 3, ['dob'], 'Bed', true, 'Consultant covering', 'channel-bar-scbu', 'Plan Of Care', 'To be followed'],
-            'WARD' => ['Pediatric Ward', 4, ['age', 'ward_unit'], 'Room', false, 'Consultant Oncall', 'channel-bar-ward', 'Management', 'To be followed'],
+            'PICU' => [
+                'name' => 'Pediatric Intensive Care Unit',
+                'display_order' => 1,
+                'active' => true,
+                'extra_row_fields' => [],
+                'bed_label' => 'Bed',
+                'consultant_pair' => true,
+                'consultant_by_label' => 'Consultant covering',
+                'bar_class' => 'channel-bar-picu',
+                'print_plan_label' => 'Plan Of Care',
+                'print_narrative_label' => 'New events',
+            ],
+            'NICU' => [
+                'name' => 'Neonatal Intensive Care Unit',
+                'display_order' => 2,
+                'active' => true,
+                'extra_row_fields' => ['dob'],
+                'bed_label' => 'Bed',
+                'consultant_pair' => true,
+                'consultant_by_label' => 'Consultant covering',
+                'bar_class' => 'channel-bar-nicu',
+                'print_plan_label' => 'Plan Of Care',
+                'print_narrative_label' => 'To be followed',
+            ],
+            'SCBU' => [
+                'name' => 'Special Care Baby Unit',
+                'display_order' => 3,
+                'active' => true,
+                'extra_row_fields' => ['dob'],
+                'bed_label' => 'Bed',
+                'consultant_pair' => true,
+                'consultant_by_label' => 'Consultant covering',
+                'bar_class' => 'channel-bar-scbu',
+                'print_plan_label' => 'Plan Of Care',
+                'print_narrative_label' => 'To be followed',
+            ],
+            'WARD' => [
+                'name' => 'Pediatric Ward',
+                'display_order' => 4,
+                'active' => true,
+                'extra_row_fields' => ['age', 'ward_unit'],
+                'bed_label' => 'Room',
+                'consultant_pair' => false,
+                'consultant_by_label' => 'Consultant Oncall',
+                'bar_class' => 'channel-bar-ward',
+                'print_plan_label' => 'Management',
+                'print_narrative_label' => 'To be followed',
+            ],
         ];
 
         foreach ($units as $code => $u) {
             $unit = Unit::firstOrNew(['code' => $code]);
-            $unit->name = $u[0];
+            $unit->name = $u['name'];
 
             if (! $unit->exists) {
-                $unit->fill([
-                    'display_order' => $u[1],
-                    'active' => true,
-                    'extra_row_fields' => $u[2],
-                    'bed_label' => $u[3],
-                    'consultant_pair' => $u[4],
-                    'consultant_by_label' => $u[5],
-                    'bar_class' => $u[6],
-                    'print_plan_label' => $u[7],
-                    'print_narrative_label' => $u[8],
-                ]);
+                $unit->fill(Arr::except($u, ['name']));
             }
 
             $unit->save();

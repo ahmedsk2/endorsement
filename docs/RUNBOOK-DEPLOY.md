@@ -353,7 +353,26 @@ confirm the backfill landed. Expect exactly four rows, none with a NULL `bar_cla
            consultant_by_label, bar_class, print_plan_label, print_narrative_label
     FROM units ORDER BY display_order;
 
-PICU must read `Bed / 1 / Consultant covering / channel-bar-picu / Plan Of Care / New events`;
-WARD must read `Room / 0 / Consultant Oncall / channel-bar-ward / Management / To be followed`.
-A NULL `bar_class` means the row's `code` did not match the migration's constant — fix the
-data, do not edit the migration after it has run.
+    -- code  display_order  active  bed_label  consultant_pair  consultant_by_label  bar_class         print_plan_label  print_narrative_label
+    -- PICU  1              1       Bed        1                Consultant covering  channel-bar-picu  Plan Of Care      New events
+    -- NICU  2              1       Bed        1                Consultant covering  channel-bar-nicu  Plan Of Care      To be followed
+    -- SCBU  3              1       Bed        1                Consultant covering  channel-bar-scbu  Plan Of Care      To be followed
+    -- WARD  4              1       Room       0                Consultant Oncall    channel-bar-ward  Management        To be followed
+
+Read columns by POSITION against the header above, not by eye against a neighbouring row —
+`consultant_pair` and `display_order`/`active` are all small integers next to each other, and
+PICU's is 1 in every one of those columns while WARD's is 0 only in `consultant_pair`. It is
+easy to align on the wrong column and still believe you verified.
+
+Then run the counter-check, which is the query that actually catches a missed row —
+`display_order` gives no visual signal on its own, since a row the backfill skipped just sorts
+to the end rather than looking wrong:
+
+```sql
+-- Must return 0. A non-zero count means the backfill missed a row.
+SELECT COUNT(*) FROM units WHERE bar_class IS NULL OR display_order = 1000;
+```
+
+A NULL `bar_class` or a `display_order` of 1000 (the column's unconfigured-department default)
+means the row's `code` did not match the migration's constant — fix the data, do not edit the
+migration after it has run.

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\ExtraRowFields;
 use App\Support\UnitProfile;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -39,7 +40,7 @@ class Unit extends Model
             'display_order' => 'integer',
             'active' => 'boolean',
             'consultant_pair' => 'boolean',
-            'extra_row_fields' => 'array',
+            'extra_row_fields' => ExtraRowFields::class,
         ];
     }
 

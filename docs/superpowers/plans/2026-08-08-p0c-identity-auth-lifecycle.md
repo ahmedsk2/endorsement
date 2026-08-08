@@ -1,3 +1,35 @@
+> ## OWNER DECISIONS, 2026-08-08 — READ BEFORE ANY TASK
+>
+> Three open items from the first draft are now settled. Two overrode the drafter's
+> recommendation; both are implemented as decided, with the reasoning recorded rather than
+> re-argued.
+>
+> **1. Drop `users.full_name` and `users.position` — CONFIRMED as planned (Task 3).**
+> Keep the two-commit split so rolling back the drop does not roll back the move, and keep
+> the runbook's mandated dump-first plus single permitted rollback order.
+>
+> **2. Unify onto `people.email` — OVERRIDES the draft.** The plan's dual-column
+> `users.member_email` + `people.email` sync is CANCELLED. There is to be one email column,
+> on `people`.
+>
+> *Consequence, stated plainly:* Laravel's password broker resolves users by
+> `User::where('member_email', …)`, so unifying requires overriding retrieval to join through
+> `person_id` — reintroducing exactly the provider-level indirection the D3 reversal removed,
+> on the credential path reconnaissance showed is easiest to get wrong. The reset broker
+> already bypasses the provider once.
+>
+> **Therefore this is a hard requirement, not a nicety:** the task that unifies email must
+> ship tests proving, end to end through the real HTTP kernel, that (a) password reset resolves
+> the right account through the join, (b) a person with **no** `users` row cannot obtain a
+> reset link, verification link, or OTP by any path, and (c) `routeNotificationForMail()` and
+> `getEmailForPasswordReset()` both follow the link. Do not mark that task done on unit tests
+> alone.
+>
+> **3. Encrypt neither `people.notes` nor `people.constraints` — OVERRIDES the draft.**
+> Both stay plaintext. Note in `docs/COMPLIANCE.md` that free-text staff notes are stored in
+> the clear and therefore appear in backups, so the choice is visible to an auditor rather
+> than implicit. `constraints` stays `json` and queryable, as the solver needs.
+
 # P0c — Identity & Auth Lifecycle Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -5,6 +5,7 @@ namespace Tests\Feature\Endorsement;
 use App\Models\AuditLog;
 use App\Models\Handover;
 use App\Models\Unit;
+use App\Models\UnitFieldDefinition;
 use App\Models\User;
 use Database\Seeders\AccessControlSeeder;
 use Database\Seeders\ReferenceSeeder;
@@ -57,6 +58,21 @@ class EndorsementTest extends TestCase
             'bed' => '1',
             'mrn' => 'M-'.fake()->unique()->numerify('#####'),
             'patient_name' => 'Test Child',
+        ], $overrides));
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     */
+    private function defineField(string $unitCode, string $key, array $overrides = []): UnitFieldDefinition
+    {
+        $unit = Unit::where('code', $unitCode)->firstOrFail();
+
+        return UnitFieldDefinition::create(array_merge([
+            'unit_id' => $unit->id,
+            'key' => $key,
+            'label' => ucfirst($key),
+            'type' => 'text',
         ], $overrides));
     }
 
@@ -661,5 +677,228 @@ class EndorsementTest extends TestCase
                 ->has('rows', 1)
                 ->where('rows.0.id', $row->id)
             );
+    }
+
+    /**
+     * P0b — finding 1, the highest-risk bug in the plan. Autosave PATCHes one field at a
+     * time, but the whole custom-field map is ONE encrypted column. Assigning the submitted
+     * subset directly would replace the map and silently wipe every sibling key. Without a
+     * merge-on-write, the second PATCH here would leave `weight` gone.
+     */
+    public function test_saving_one_custom_field_does_not_wipe_the_others(): void
+    {
+        $this->defineField('PICU', 'weight');
+        $this->defineField('PICU', 'allergy');
+
+        $row = $this->handover('PICU', '2026-07-10');
+
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['extra_fields' => ['weight' => '3.2']])
+            ->assertRedirect();
+
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['extra_fields' => ['allergy' => 'penicillin']])
+            ->assertRedirect();
+
+        $stored = $row->fresh()->extra_fields;
+        $this->assertSame('3.2', $stored['weight'] ?? null, 'the first field must survive the second PATCH');
+        $this->assertSame('penicillin', $stored['allergy'] ?? null);
+    }
+
+    public function test_a_required_custom_field_rejects_an_empty_value(): void
+    {
+        $this->defineField('PICU', 'weight', ['required' => true]);
+        $row = $this->handover('PICU', '2026-07-10');
+
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['extra_fields' => ['weight' => '']])
+            ->assertSessionHasErrors('extra_fields.weight');
+    }
+
+    public function test_a_select_custom_field_rejects_a_value_outside_its_options(): void
+    {
+        $this->defineField('PICU', 'feed_type', ['type' => 'select', 'options' => ['breast', 'formula']]);
+        $row = $this->handover('PICU', '2026-07-10');
+
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['extra_fields' => ['feed_type' => 'unknown']])
+            ->assertSessionHasErrors('extra_fields.feed_type');
+
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['extra_fields' => ['feed_type' => 'formula']])
+            ->assertSessionHasNoErrors();
+    }
+
+    public function test_a_date_custom_field_rejects_a_non_date(): void
+    {
+        $this->defineField('PICU', 'admitted_on', ['type' => 'date']);
+        $row = $this->handover('PICU', '2026-07-10');
+
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['extra_fields' => ['admitted_on' => 'not-a-date']])
+            ->assertSessionHasErrors('extra_fields.admitted_on');
+    }
+
+    /**
+     * Namespacing under extra_fields.* (only a rule per KNOWN definition) is what keeps this
+     * safe: a key with no active definition never has a validation rule, so Laravel's
+     * excludeUnvalidatedArrayKeys drops it from the validated data before it ever reaches
+     * the merge — it is never persisted.
+     */
+    public function test_an_unknown_custom_field_key_is_ignored_rather_than_stored(): void
+    {
+        $this->defineField('PICU', 'weight');
+        $row = $this->handover('PICU', '2026-07-10');
+
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['extra_fields' => ['weight' => '3.2', 'hacked' => 'x']])
+            ->assertRedirect();
+
+        $stored = $row->fresh()->extra_fields;
+        $this->assertSame('3.2', $stored['weight'] ?? null);
+        $this->assertArrayNotHasKey('hacked', $stored);
+    }
+
+    /**
+     * Retiring a definition must not delete the values already stored under its key
+     * (UnitFieldDefinition's own docblock) — it only stops the key from being rendered or
+     * accepting new writes. The merge-on-write is what actually protects this: the retired
+     * key never appears in a later PATCH's validated data, so it can only survive if the
+     * merge preserves untouched keys rather than replacing the map.
+     */
+    public function test_a_value_for_a_retired_definition_survives_a_later_save(): void
+    {
+        $weight = $this->defineField('PICU', 'weight');
+        $this->defineField('PICU', 'allergy');
+        $row = $this->handover('PICU', '2026-07-10');
+
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['extra_fields' => ['weight' => '3.2']])
+            ->assertRedirect();
+
+        $weight->update(['active' => false]);
+
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['extra_fields' => ['allergy' => 'penicillin']])
+            ->assertRedirect();
+
+        $stored = $row->fresh()->extra_fields;
+        $this->assertSame('3.2', $stored['weight'] ?? null, 'retiring a definition must not delete its stored value');
+        $this->assertSame('penicillin', $stored['allergy'] ?? null);
+    }
+
+    /**
+     * A definition row whose `type` did not come through UnitFieldDefinition's model guard
+     * (e.g. inserted by SQL) must still be validated as `text` rather than silently getting
+     * no rule at all — an unbounded, unvalidated string is worse than treating it as text.
+     */
+    public function test_an_unknown_definition_type_is_validated_as_text(): void
+    {
+        $unitId = Unit::where('code', 'PICU')->value('id');
+
+        DB::table('unit_field_definitions')->insert([
+            'unit_id' => $unitId,
+            'key' => 'mystery',
+            'label' => 'Mystery Field',
+            'type' => 'number', // not text|date|select — bypasses the model's saving guard
+            'required' => false,
+            'display_order' => 1000,
+            'active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $row = $this->handover('PICU', '2026-07-10');
+
+        // Over the text fallback's max:500 — proves a rule actually ran, not just "no error".
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['extra_fields' => ['mystery' => str_repeat('x', 501)]])
+            ->assertSessionHasErrors('extra_fields.mystery');
+
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['extra_fields' => ['mystery' => 'ok value']])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('ok value', $row->fresh()->extra_fields['mystery'] ?? null);
+    }
+
+    public function test_unit_payload_exposes_active_field_definitions_for_generic_rendering(): void
+    {
+        $this->defineField('PICU', 'weight', ['label' => 'Weight (kg)', 'type' => 'text']);
+        $this->defineField('PICU', 'retired', ['active' => false]);
+
+        $this->actingAs($this->admin())
+            ->get('/endorsement/PICU/2026-07-10')
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('unit.profile.field_definitions', 1)
+                ->where('unit.profile.field_definitions.0.key', 'weight')
+                ->where('unit.profile.field_definitions.0.label', 'Weight (kg)')
+                ->where('unit.profile.field_definitions.0.type', 'text')
+            );
+    }
+
+    public function test_rows_carry_the_saved_custom_field_values(): void
+    {
+        $this->defineField('PICU', 'weight');
+        $row = $this->handover('PICU', '2026-07-10');
+        $row->update(['extra_fields' => ['weight' => '3.2']]);
+
+        $this->actingAs($this->admin())
+            ->get('/endorsement/PICU/2026-07-10')
+            ->assertInertia(fn (Assert $page) => $page->where('rows.0.extra_fields.weight', '3.2'));
+    }
+
+    /**
+     * rowsFor() casts to (object) so the JSON shape is a stable `{}` rather than flipping
+     * between `{}` and `[]`, which would break client code that assumes an object.
+     */
+    public function test_extra_fields_serializes_as_an_object_even_when_empty(): void
+    {
+        $this->handover('PICU', '2026-07-10');
+
+        $response = $this->actingAs($this->admin())->withHeaders([
+            'X-Inertia' => 'true',
+            'X-Inertia-Version' => (string) (new \App\Http\Middleware\HandleInertiaRequests)->version(request()),
+            'X-Requested-With' => 'XMLHttpRequest',
+        ])->get('/endorsement/PICU/2026-07-10');
+
+        $response->assertOk();
+        $this->assertStringContainsString('"extra_fields":{}', $response->getContent());
+    }
+
+    /**
+     * Step 7 — `assertNotOverwritingForeignCiphertext()` throws a bare RuntimeException, and
+     * nothing upstream of updateRow() catches it, so an autosave against a wrong-key row
+     * would otherwise 500 with the reason only in the log. The project rule is that autosave
+     * reflects the server response, so the controller must convert it to a ValidationException
+     * — and the foreign ciphertext must survive the refused write untouched, since refusing is
+     * what keeps it recoverable once the correct APP_KEY is restored.
+     */
+    public function test_a_wrong_key_extra_fields_refusal_is_a_validation_error_not_a_500(): void
+    {
+        $this->defineField('PICU', 'weight');
+        $unitId = Unit::where('code', 'PICU')->value('id');
+
+        $foreignCiphertext = $this->foreignCiphertext('{"weight":"3.2"}');
+
+        DB::table('handovers')->insert([
+            'unit_id' => $unitId,
+            'handover_date' => '2026-07-10',
+            'bed' => '5',
+            'mrn' => 'WRONGKEY-EXTRA',
+            'patient_name' => 'Unreadable Extra Fields Child',
+            'extra_fields' => $foreignCiphertext,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $row = Handover::where('mrn', 'WRONGKEY-EXTRA')->firstOrFail();
+
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['extra_fields' => ['weight' => '4.0']])
+            ->assertSessionHasErrors('extra_fields');
+
+        $raw = DB::table('handovers')->where('id', $row->id)->value('extra_fields');
+        $this->assertSame($foreignCiphertext, $raw, 'a refused write must leave the recoverable ciphertext untouched');
     }
 }

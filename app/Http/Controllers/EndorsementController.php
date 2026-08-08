@@ -6,10 +6,10 @@ use App\Models\AuditLog;
 use App\Models\Handover;
 use App\Models\HandoverSignoff;
 use App\Models\Unit;
+use App\Models\UnitFieldDefinition;
 use App\Models\User;
 use App\Support\AccessControl;
 use App\Support\MissedDays;
-use App\Support\UnitProfile;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -642,7 +642,7 @@ class EndorsementController extends Controller
         $date = $this->normalizeDate($date);
         $this->assertDayUnlocked($u->id, $date);
 
-        $data = $this->validateRow($request, $u->profile());
+        $data = $this->validateRow($request, $u);
 
         $row = Handover::create(array_merge($data, [
             'unit_id' => $u->id,
@@ -663,7 +663,44 @@ class EndorsementController extends Controller
         $this->assertEnabledUnitRow($handover);
         $this->assertDayUnlocked($handover->unit_id, $handover->handover_date?->format('Y-m-d'));
 
-        $data = $this->validateRow($request, $handover->unit->profile());
+        $data = $this->validateRow($request, $handover->unit);
+
+        // P0b finding 1 (the highest-risk bug in the plan): autosave PATCHes ONE custom
+        // field at a time, but the whole map lives in a SINGLE encrypted column
+        // (`extra_fields`). Assigning the submitted subset directly would replace the map
+        // and silently wipe every sibling key. Read the currently-stored map ONCE —
+        // EncryptedJson::get() is not cast-cached (see its docblock), so re-reading it in a
+        // loop would re-decrypt every time — and array_replace() the submitted keys into it.
+        // array_replace(), not array_merge(): array_merge() renumbers integer-looking keys,
+        // so a numeric-looking definition key (e.g. "2024") would be silently renamed
+        // instead of having its value overwritten.
+        if (array_key_exists('extra_fields', $data)) {
+            $existingExtraFields = $handover->extra_fields;
+            $submittedExtraFields = $data['extra_fields'];
+
+            try {
+                // Direct property assignment — not left in $data for update() below — is
+                // what actually invokes EncryptedJson::set(), whose FIRST statement is the
+                // wrong-key guard (assertNotOverwritingForeignCiphertext). Assigning here
+                // lets the guard's RuntimeException be caught below instead of propagating
+                // out of update()/save() as an uncaught 500.
+                $handover->extra_fields = array_replace($existingExtraFields, $submittedExtraFields);
+            } catch (\RuntimeException $e) {
+                // Step 7 — the project rule is that autosave reflects the server response.
+                // A bare 500 with the reason only in the log is not that; surface the same
+                // message as a normal validation failure instead.
+                throw ValidationException::withMessages(['extra_fields' => $e->getMessage()]);
+            }
+
+            $this->recordExtraFieldRevisions(
+                $handover,
+                $existingExtraFields,
+                $submittedExtraFields,
+                $request->user()?->getKey(),
+            );
+
+            unset($data['extra_fields']);
+        }
 
         // Keep what the record SAID before this edit. The audit row proves that a change
         // happened; without this, nothing anywhere retains what was originally attested,
@@ -752,8 +789,10 @@ class EndorsementController extends Controller
      *
      * @return array<string, mixed>
      */
-    private function validateRow(Request $request, UnitProfile $profile): array
+    private function validateRow(Request $request, Unit $unit): array
     {
+        $profile = $unit->profile();
+
         $rules = [
             'bed' => ['sometimes', 'nullable', 'string', 'max:100'],
             'mrn' => ['sometimes', 'nullable', 'string', 'max:100'],
@@ -770,7 +809,47 @@ class EndorsementController extends Controller
                 : ['sometimes', 'nullable', 'string', 'max:100'];
         }
 
+        // P0b (design §6.2) — the unit's OWN custom fields, namespaced under extra_fields.*
+        // so they can never collide with a real column name. That namespacing is what keeps
+        // EncryptedJson's mass-assignment note inapplicable: these rule keys never become
+        // model attribute names. It also means a key with no ACTIVE definition (unknown, or
+        // retired) gets no rule at all, so Laravel's excludeUnvalidatedArrayKeys (on by
+        // default) drops it from the validated data rather than letting it through to be
+        // stored or overwrite an existing value.
+        foreach ($unit->fieldDefinitions as $definition) {
+            $rules['extra_fields.'.$definition->key] = $this->extraFieldRules($definition);
+        }
+
         return $request->validate($rules);
+    }
+
+    /**
+     * The validation rule for one custom field, driven entirely by its definition row.
+     *
+     * @return list<mixed>
+     */
+    private function extraFieldRules(UnitFieldDefinition $definition): array
+    {
+        // A `type` outside text|date|select can only reach here via a write that bypassed
+        // UnitFieldDefinition's model-level `saving` guard (e.g. raw SQL against
+        // production). It falls into the `text` branch below rather than silently getting
+        // no type rule at all — an unbounded, unvalidated string is worse than treating an
+        // unrecognized type as text.
+        //
+        // Each element of this array must be ONE rule, never a pipe-joined string: mixing
+        // "string|max:500" into an array alongside plain rule names is not exploded by
+        // Laravel's parser the way a top-level string rule would be, and fails with
+        // "Method ...::validateString|max does not exist."
+        $typeRules = match ($definition->type) {
+            'date' => ['date'],
+            'select' => [Rule::in($definition->options ?? [])],
+            default => ['string', 'max:500'],
+        };
+
+        return array_merge(
+            ['sometimes', $definition->required ? 'required' : 'nullable'],
+            $typeRules,
+        );
     }
 
     /**
@@ -807,6 +886,10 @@ class EndorsementController extends Controller
                 'details' => $h->details,
                 'plan' => $h->plan,
                 'nevent' => $h->nevent,
+                // P0b (design §6.2) — cast to object so the JSON shape is a stable `{}`
+                // rather than flipping between `{}` and `[]` depending on whether the map
+                // is empty, which would break client code that assumes an object.
+                'extra_fields' => (object) $h->extra_fields,
             ]);
     }
 
@@ -974,10 +1057,7 @@ class EndorsementController extends Controller
      */
     private function recordRevisions(Handover $handover, array $incoming, ?int $userId): void
     {
-        $signed = HandoverSignoff::where('unit_id', $handover->unit_id)
-            ->whereDate('handover_date', $handover->handover_date?->format('Y-m-d'))
-            ->whereNotNull('signed_off_at')
-            ->exists();
+        $signed = $this->dayIsSigned($handover);
 
         foreach (\App\Models\HandoverRevision::TRACKED as $field) {
             if (! array_key_exists($field, $incoming)) {
@@ -1005,6 +1085,55 @@ class EndorsementController extends Controller
                 'created_at' => now(),
             ]);
         }
+    }
+
+    /**
+     * The extra_fields.* twin of recordRevisions(). `extra_fields` cannot be added to
+     * HandoverRevision::TRACKED as-is (P0b finding 3): TRACKED's loop casts the before-image
+     * to `(string)`, and casting an array raises "Array to string conversion" — promoted to a
+     * thrown ErrorException by this app's HandleExceptions. Custom fields get their own
+     * before-image path instead: one row per submitted SUBKEY that actually changed, named
+     * `extra_fields.{key}` so a reopen-rewrite-resign case still has something to reconstruct
+     * from, and so history stays queryable per field rather than as one opaque blob.
+     *
+     * @param  array<string, string|null>  $before  the map as stored BEFORE this write
+     * @param  array<string, string|null>  $submitted  only the subkeys THIS request carried
+     */
+    private function recordExtraFieldRevisions(Handover $handover, array $before, array $submitted, ?int $userId): void
+    {
+        if ($submitted === []) {
+            return;
+        }
+
+        $signed = $this->dayIsSigned($handover);
+
+        foreach ($submitted as $subKey => $after) {
+            $beforeValue = $before[$subKey] ?? null;
+            $beforeString = $beforeValue === null ? '' : (string) $beforeValue;
+            $afterString = $after === null ? '' : (string) $after;
+
+            if ($beforeString === $afterString) {
+                continue;
+            }
+
+            \App\Models\HandoverRevision::create([
+                'handover_id' => $handover->getKey(),
+                'field' => 'extra_fields.'.$subKey,
+                'old_value' => $beforeString === '' ? null : $beforeString,
+                'changed_by_user_id' => $userId,
+                'day_was_signed' => $signed,
+                'created_at' => now(),
+            ]);
+        }
+    }
+
+    /** Whether the day this row belongs to is currently signed off — shared by both revision paths. */
+    private function dayIsSigned(Handover $handover): bool
+    {
+        return HandoverSignoff::where('unit_id', $handover->unit_id)
+            ->whereDate('handover_date', $handover->handover_date?->format('Y-m-d'))
+            ->whereNotNull('signed_off_at')
+            ->exists();
     }
 
     /**
@@ -1118,10 +1247,26 @@ class EndorsementController extends Controller
      */
     private function unitPayload(Unit $unit): array
     {
+        $profile = $unit->profile()->toArray();
+
+        // P0b (design §6.2) — the unit's ACTIVE custom field definitions, so the client can
+        // render them generically instead of a per-unit code path. A retired definition is
+        // simply absent here; its stored values are untouched (UnitFieldDefinition's own
+        // docblock — retiring hides a definition, never deletes its data).
+        $profile['field_definitions'] = $unit->fieldDefinitions
+            ->map(fn (UnitFieldDefinition $d): array => [
+                'key' => $d->key,
+                'label' => $d->label,
+                'type' => $d->type,
+                'options' => $d->options,
+                'required' => $d->required,
+            ])
+            ->all();
+
         return [
             'code' => $unit->code,
             'name' => $unit->name,
-            'profile' => $unit->profile()->toArray(),
+            'profile' => $profile,
         ];
     }
 

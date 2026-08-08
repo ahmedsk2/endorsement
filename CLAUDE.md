@@ -47,6 +47,14 @@ SCBU and WARD are seed data for the QCH institution.
   Production migrations and live-DB changes: prepare + document, the owner runs them.
 - The legacy import is one-way, read-only against its source, idempotent (provenance
   keyed), audited — and only the owner runs it against production.
+- Per-unit custom field values (`handovers.extra_fields`, design §6.2 "Ceiling 2") are plain
+  text and are NEVER purified server-side (unlike the four rich-text fields). Every consumer
+  must escape on render — `{{ }}` interpolation / `:value` binding in Vue, never `v-html`.
+- Never add a key allow-list to `App\Casts\EncryptedJson`. Its keys are map keys inside one
+  column, not model attribute names, so `ExtraRowFields`' mass-assignment reason for an
+  allow-list does not apply — and an allow-list keyed on `unit_field_definitions` would
+  actively delete a value from history the moment its definition is retired. A clinical value
+  must survive the removal of the definition that produced it.
 
 ## Toolchain (this machine)
 

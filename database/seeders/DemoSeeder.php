@@ -50,7 +50,6 @@ class DemoSeeder extends Seeder
                 ['member_name' => $name],
                 [
                     'person_id' => $person->id,
-                    'member_email' => $email,
                     'password' => 'demo-pass-1234',
                     'active' => true,
                     'pass_exp_date' => now()->format('Y-m-d'),

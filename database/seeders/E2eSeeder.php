@@ -35,7 +35,6 @@ class E2eSeeder extends Seeder
             ['member_name' => 'admin'],
             [
                 'person_id' => $person->id,
-                'member_email' => 'e2e-admin@example.org',
                 'password' => 'AdminPass123!',
                 'active' => true,
                 'pass_exp_date' => now()->format('Y-m-d'),

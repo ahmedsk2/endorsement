@@ -310,6 +310,16 @@ class UserManagementController extends Controller
      */
     public function updateProfile(Request $request, User $user): RedirectResponse
     {
+        // Normalize BEFORE validating: `Rule::unique('people', 'email')` below runs a raw `WHERE
+        // email = ?` against the submitted value, but every stored address is normalized
+        // (Person::normalizeEmail — lowercased, trimmed) on write. Production MySQL's
+        // utf8mb4_unicode_ci collation happens to catch a differently-cased duplicate anyway, but
+        // that is a collation accident, not something this check should depend on — a
+        // case-sensitive collation would let a duplicate through validation and then hit
+        // `people.email`'s unique index as a raw 500. Normalizing the input first makes the
+        // comparison correct regardless of collation.
+        $request->merge(['member_email' => \App\Models\Person::normalizeEmail($request->input('member_email'))]);
+
         $data = $request->validate([
             'full_name' => ['required', 'string', 'max:255'],
             'member_name' => [

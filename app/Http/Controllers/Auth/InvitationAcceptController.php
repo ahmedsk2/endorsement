@@ -140,6 +140,22 @@ class InvitationAcceptController extends Controller
                 ]);
             }
 
+            // Guard against THIS invitation's OWN person having claimed an account through some
+            // other route since it was issued (e.g. a second invitation to the same address,
+            // redeemed first). The collision check above only catches a DIFFERENT person holding
+            // the address — without this, the insert below would hit `users.person_id`'s UNIQUE
+            // index directly, a raw 23000 surfaced as a 500. `UserManagementController::
+            // assertStillUnique()` guards the pending-registration path the same way, via the
+            // same `hasAccount()` call. Reachability is very low (two links to the same person,
+            // the earlier one redeemed in the gap), so this is defence in depth, not a race fix —
+            // note `hasAccount()` excludes soft-deleted accounts while the UNIQUE index does not,
+            // so it cannot catch every case the database itself would refuse.
+            if ($person->hasAccount()) {
+                throw ValidationException::withMessages([
+                    'member_name' => 'This invitation can no longer be completed. Ask the person who invited you to send a new one.',
+                ]);
+            }
+
             $userId = DB::table('users')->insertGetId([
                 'person_id' => $person->getKey(),
                 'institution_id' => $locked->institution_id,

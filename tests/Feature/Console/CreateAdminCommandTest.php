@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Console;
 
+use App\Models\Person;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -75,6 +76,24 @@ class CreateAdminCommandTest extends TestCase
             ->expectsQuestion('Email address', 'admin@example.org')
             ->expectsQuestion('Password', 'Str0ng-pass!x')
             ->expectsQuestion('Confirm password', 'Str0ng-pass!y')
+            ->assertExitCode(1);
+
+        $this->assertDatabaseCount('users', 0);
+    }
+
+    public function test_it_refuses_an_email_that_differs_only_in_case_from_an_existing_person(): void
+    {
+        // people.email is globally unique; production MySQL's collation catches a
+        // differently-cased duplicate. The raw submitted value must be normalized before this
+        // validation runs for that to hold everywhere, not just on a case-insensitive collation.
+        Person::factory()->create(['email' => 'existing@example.org']);
+
+        $this->artisan('user:create-admin')
+            ->expectsQuestion('Username (used to sign in)', 'ahmed')
+            ->expectsQuestion('Full name (shown on printed handovers)', 'Dr Ahmed Administrator')
+            ->expectsQuestion('Email address', 'EXISTING@EXAMPLE.ORG')
+            ->expectsQuestion('Password', 'Str0ng-pass!x')
+            ->expectsQuestion('Confirm password', 'Str0ng-pass!x')
             ->assertExitCode(1);
 
         $this->assertDatabaseCount('users', 0);

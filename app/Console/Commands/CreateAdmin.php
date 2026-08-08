@@ -39,7 +39,14 @@ class CreateAdmin extends Command
     {
         $username = trim((string) $this->ask('Username (used to sign in)'));
         $fullName = trim((string) $this->ask('Full name (shown on printed handovers)'));
-        $email = trim((string) $this->ask('Email address'));
+        // Normalized BEFORE validating: `Rule::unique('people', 'email')` below runs a raw
+        // `WHERE email = ?` against this value, but every stored address is normalized
+        // (Person::normalizeEmail — lowercased, trimmed) on write. Production MySQL's
+        // utf8mb4_unicode_ci collation happens to catch a differently-cased duplicate anyway, but
+        // a case-sensitive collation would let one through validation and then hit
+        // `people.email`'s unique index directly, in `Person::create()` below, as a raw crash
+        // instead of the clean validation error this command is supposed to give.
+        $email = (string) Person::normalizeEmail($this->ask('Email address'));
 
         // secret() so the password is never echoed to the terminal or captured by a
         // scrollback buffer someone else can read.

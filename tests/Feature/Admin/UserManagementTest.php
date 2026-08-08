@@ -367,6 +367,28 @@ class UserManagementTest extends TestCase
 
         $this->assertSame(4, $victim->fresh()->position);
     }
+
+    // ---------------------------------------------------------------- profile edit (H / GAP 14)
+
+    public function test_admin_profile_edit_email_uniqueness_is_case_insensitive(): void
+    {
+        // Same gap as ProfileTest's own case: production MySQL's collation catches a
+        // differently-cased duplicate, but the raw submitted value must be normalized before the
+        // uniqueness check runs for that to be true everywhere, including here.
+        $admin = $this->admin();
+        $user = User::factory()->create(['position' => 4]);
+        User::factory()->create(['member_email' => 'taken3@example.com']);
+
+        $this->actingAs($admin)
+            ->patchJson('/admin/users/'.$user->id.'/profile', [
+                'full_name' => 'Whatever',
+                'member_name' => $user->member_name,
+                'member_email' => 'TAKEN3@EXAMPLE.COM',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('member_email');
+    }
+
     public function test_the_user_list_shows_when_each_account_last_signed_in(): void
     {
         // The leaver control, made checkable. The chosen process (docs/PDPL-PACK.md) is a

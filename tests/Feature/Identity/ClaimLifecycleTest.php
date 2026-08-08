@@ -132,6 +132,35 @@ class ClaimLifecycleTest extends TestCase
     }
 
     /**
+     * Case 4b — the invitation's own person claims an account through a DIFFERENT route (here,
+     * directly) between issue and redemption. The existing collision check only looks for a
+     * DIFFERENT person holding the address; it never re-checks the invitation's own person, so
+     * without a guard `insertGetId` hits `users.person_id`'s UNIQUE index directly — a raw 23000
+     * surfaced as a 500. `UserManagementController::assertStillUnique()` guards the
+     * pending-registration path via the same `hasAccount()` call; this proves the invitation path
+     * does too, refusing cleanly with a 422 instead.
+     */
+    public function test_redemption_is_refused_when_the_invitations_own_person_already_claimed_an_account(): void
+    {
+        $admin = $this->admin();
+        $person = Person::factory()->create(['email' => 'raced.claim@example.org', 'position' => 4]);
+
+        [, $token] = Invitation::issue('raced.claim@example.org', 4, $admin, $person);
+
+        // The SAME person acquires an account through a different path before this token is
+        // redeemed (e.g. a second invitation to the same address, redeemed first).
+        User::factory()->create(['person_id' => $person->id]);
+
+        $this->postJson("/invitation/{$token}", [
+            'full_name' => 'Someone Else',
+            'member_name' => 'lateclaim',
+            'password' => 'Str0ng!Passw0rd', 'password_confirmation' => 'Str0ng!Passw0rd',
+        ])->assertStatus(422)->assertJsonValidationErrors('member_name');
+
+        $this->assertDatabaseMissing('users', ['member_name' => 'lateclaim']);
+    }
+
+    /**
      * Case 5 — redemption does not let the invitee rename a rostered person, but DOES take the
      * name for a placeholder person created at issue time (whose name was blank).
      */

@@ -3,7 +3,6 @@
 namespace App\Support;
 
 use App\Models\Unit;
-use InvalidArgumentException;
 
 /**
  * The SHAPE of per-unit variation (spec §3) — every surface (sheet columns, sign-off
@@ -44,7 +43,8 @@ final class UnitProfile
 
         return new self(
             code: $code,
-            extraRowFields: array_values($unit->extra_row_fields ?? []),
+            // ExtraRowFields cast guarantees a list<string>, never null.
+            extraRowFields: $unit->extra_row_fields,
             bedLabel: $unit->bed_label ?? 'Bed',
             consultantPair: $unit->consultant_pair ?? true,
             consultantByLabel: $unit->consultant_by_label ?? 'Consultant covering',
@@ -52,32 +52,6 @@ final class UnitProfile
             printPlanLabel: $unit->print_plan_label ?? 'Plan Of Care',
             printNarrativeLabel: $unit->print_narrative_label ?? 'To be followed',
         );
-    }
-
-    /**
-     * @deprecated Temporary DB-backed shim for callers not yet migrated to `Unit::codes()`.
-     * `Unit::codes()` is the real API. Task 5 removes this once nothing calls it.
-     *
-     * The four first-class unit codes, in display order. @return list<string>
-     */
-    public static function codes(): array
-    {
-        return Unit::codes();
-    }
-
-    /**
-     * @deprecated Temporary DB-backed shim for callers not yet migrated to `$unit->profile()`.
-     * `$unit->profile()` is the real API. Task 5 removes this once nothing calls it.
-     */
-    public static function for(string $code): self
-    {
-        $unit = Unit::findByCode($code);
-
-        if ($unit === null || ! $unit->active) {
-            throw new InvalidArgumentException("Unknown unit code [{$code}].");
-        }
-
-        return self::fromUnit($unit);
     }
 
     /**

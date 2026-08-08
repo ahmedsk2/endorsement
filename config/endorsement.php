@@ -41,4 +41,14 @@ return [
         'slug' => env('INSTANCE_SLUG'),
     ],
 
+    /*
+     * The customer this deployment belongs to. D11 makes the database the isolation boundary,
+     * so there is exactly one of these per deployment and it is provenance, not a filter.
+     * Defaults preserve the first deployment's identity.
+     */
+    'institution' => [
+        'code' => env('INSTITUTION_CODE', 'QCH'),
+        'name' => env('INSTITUTION_NAME', 'Qatif Central Hospital'),
+    ],
+
 ];

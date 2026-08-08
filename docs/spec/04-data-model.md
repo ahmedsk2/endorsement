@@ -72,6 +72,30 @@ Reference schema verbatim, plus the same provenance pair:
 - `push_subscriptions`: user_id FK, endpoint (unique), p256dh, auth, timestamps
 - `reminder_preferences`: user_id FK, unit_id FK, unique (user_id, unit_id)
 
+### Calendar addendum (P1a, 2026-08-09)
+
+`institutions` gains six additive, nullable-or-defaulted columns read by the one converter,
+`App\Support\Calendar` (design doc §7, Decision A): `hijri_enabled` bool, `hijri_offset_days`
+smallint (department calibration; timezone itself stays `APP_TIMEZONE`, per-instance, never a
+column here — owner decision 3), `weekend_days` json (ISO-8601 weekday numbers), `period_type`
+string (`months` | `week_blocks`), `block_weeks` json, `academic_year_start` date.
+
+- `periods` — id; institution_id FK nullable; academic_year string; kind (`month` |
+  `week_block`); position; label; starts_on, ends_on date; unique (institution_id,
+  academic_year, position); overlap guarded at the model layer (the database cannot express
+  it). Both period systems are first-class (owner decision 2, MR-01) — no code path assumes a
+  period is a calendar month. The final week-block of an academic year absorbs whatever days
+  remain before the following year's set start date rather than a fixed length (owner decision
+  4, round 2).
+- `holidays` — id; institution_id FK nullable; name; calendar (`gregorian` | `hijri`); month,
+  day, year (nullable — null recurs every year), duration_days, equity_tracked, active. A
+  Hijri-ruled holiday resolves through the department's `hijri_offset_days`, so it moves with a
+  recalibration rather than staying pinned to whichever Gregorian date it first resolved to.
+
+`App\Support\Calendar::dayType()` (weekday/weekend/holiday) is never consulted by
+`MissedDays` — the compliance denominator counts every calendar day exactly as it always has
+(owner decision 6, round 2; §14 item 14).
+
 ### Schema governance
 
 Additive, nullable migrations; soft deletes everywhere clinical; no destructive change to a column holding real data; clinical rows never hard-deleted; accounts deactivated, never deleted.

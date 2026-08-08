@@ -6,7 +6,9 @@ Last 30 days newest-first with date-range filter (reference parity), each day sh
 
 ### New day (carry census forward)
 
-- Target date = requested date or today (Asia/Riyadh). **Idempotent**: if the unit already has rows for the target date, nothing is copied and the user is sent to the existing sheet.
+- Target date = requested date or `Calendar::todayYmd()` (P1a; the INSTANCE timezone —
+  `APP_TIMEZONE`, Asia/Riyadh for QCH today, not a hardcoded system constant — see
+  `docs/spec/04-data-model.md`'s calendar-config addendum). **Idempotent**: if the unit already has rows for the target date, nothing is copied and the user is sent to the existing sheet.
 - Carry copies, per source row: institution_id, bed, mrn, patient_name, dob, age, ward_unit, disease, details, plan **and nevent** — nevent carries forward verbatim, per legacy **[RULING]**.
 - **Carry dialog** **[RULING]**: when the most recent prior sheet is exactly the day before the target, carry happens silently (the normal flow). When it is **older than yesterday**, a dialog shows "Last endorsement was {date}" and offers **carry that census forward** or **start blank**. Starting blank creates the day with one empty row.
 - If nothing exists to carry, the day is created with one blank row so it exists.

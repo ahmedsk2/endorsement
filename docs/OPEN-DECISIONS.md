@@ -173,6 +173,40 @@ P0d's per-customer bucket and per-customer monitor (owner decision 2, `docs/RUNB
 
 ---
 
+## DECIDED — 2026-08-08 (P1a, round-2 owner decisions 5 and 6)
+
+P1a's planning surfaced two standing questions the calendar module made answerable for the
+first time — both settled the same day, before P1a's implementation tasks began, so neither
+ever shipped as merely a default.
+
+### AC-02 invitation lifetime — 7 days stays the default, and becomes configurable
+
+Munawib AC-02 specifies 14 days; this codebase has run `Invitation::LIFETIME_DAYS = 7` since
+P0c. The owner kept 7 **deliberately**: an invitation is a credential that reaches children's
+clinical records once redeemed, and a shorter window means a forwarded link stays live for
+less time. The decision goes beyond "keep 7 as a constant" — lifetime is to become an
+**admin-configurable setting**, default 7, with validation (a sane upper bound, an integer, no
+zero-or-negative) so the knob cannot be turned to something absurd. *Blocks:* the P1c task that
+builds the configurable setting (not yet implemented as of P1a). *Until then:* the constant
+stays 7, exactly as today.
+
+### The missed-days compliance denominator — UNCHANGED, deliberately
+
+Every calendar day still counts toward `MissedDays`' `total_days`, including weekends and
+holidays, even though P1a gives the system its first weekend/holiday knowledge
+(`App\Support\Calendar::dayType()`). Making the denominator day-type-aware would silently
+alter **every historical compliance figure** the system has ever produced — a change in what
+the number *means*, not a refactor, and nothing records which definition produced an earlier
+figure. `MissedDays` never consults `Calendar::dayType()`/`isHoliday()`/`isWeekend()`; pinned by
+`tests/Feature/Calendar/ConverterAbsorptionTest.php` (weekends) and
+`tests/Feature/Calendar/HolidayTest.php::test_missed_days_denominator_is_unaffected_by_a_holiday`
+(holidays), so the new calendar module's day-type knowledge cannot leak into the metric by
+accident. *Blocks:* nothing — this was a standing question with no P1 task waiting on it.
+*If ever revisited:* it must be a deliberate, dated change with the old figures preserved
+alongside the new definition, never an in-place redefinition.
+
+---
+
 ## Still yours, unchanged
 
 **Rotate the two Coolify tokens** — the deploy token was still working on 2026-07-27, so

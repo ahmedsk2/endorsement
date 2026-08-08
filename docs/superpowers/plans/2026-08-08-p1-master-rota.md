@@ -115,6 +115,31 @@ predict, a behaviour that differs between SQLite and MySQL or between UTC and As
 record it here, dated, with what was found and how it was resolved. Findings caught
 empirically rather than by inspection are the ones worth writing down.)*
 
+**2026-08-09, Task 9 — the plan's own Step 3 instruction (add the AC-02 lifetime and
+missed-days-denominator items to design doc §14 and to `docs/OPEN-DECISIONS.md` as questions)
+was written before round-2 owner decisions 5 and 6 resolved both of them, so both landed as
+DECIDED entries, not open ones.** The plan's own text for these two items (§14 and the "Owner
+decisions still needed" section, both further down this same file) predates the round-2
+decisions block at the top of this document — decision 5 settles AC-02 lifetime (7 days stays
+default, becomes admin-configurable) and decision 6 settles the missed-days denominator
+(unchanged, deliberately). Writing them into §14 as still-open questions, or into
+`docs/OPEN-DECISIONS.md`'s "STILL OPEN" section, would have been false as of the tree Task 9
+actually ran against — both design doc §14 items 13-14 and `docs/OPEN-DECISIONS.md`'s new
+"DECIDED — 2026-08-08 (P1a, round-2 owner decisions 5 and 6)" section record them as resolved,
+each with what remains unbuilt (AC-02's configurable-setting UI is P1c scope) rather than what
+is undecided. Every other Task 9 claim was checked against the tree before writing: `04-data-
+model.md` gained a calendar/periods/holidays addendum (P1a added these, the data-model spec
+was silent on them); `05-day-lifecycle.md` and `10-compliance-pwa.md`'s "(Asia/Riyadh)"
+parentheticals were softened to "the instance timezone, Asia/Riyadh for QCH today" since
+`APP_TIMEZONE` is explicitly not a system constant (Calendar's own docblock, owner decision 3);
+`DESIGN-TOKENS.md`'s stale `muted`/`ok`/`caution` hex values, its `laravel/resources/css/`
+path (this repo's path has no `laravel/` prefix — that prefix names the READ-ONLY reference
+codebase in CLAUDE.md, not this tree), and its "PICU is the only unit hue" claim (self-
+contradicted by the same document's own already-correct "Unit hues" section at the bottom)
+were all confirmed against `resources/css/app.css` directly before correcting. No claim the
+plan asked for was found to be false in a way that required *omitting* it rather than
+correcting its wording.
+
 **2026-08-09, Task 8 — the plan's own `golden.json` draft is the same superseded 371-day
 arithmetic Task 4's amendment already fixed once, plus a genuinely new leap-year fixture the
 plan did not include.** The plan's Step 1 JSON snippet was written from reconnaissance finding
@@ -1820,7 +1845,7 @@ git commit -m "test: the golden calendar corpus P2's mirror will have to agree w
 - Modify: `docs/OPEN-DECISIONS.md`
 - Modify: `docs/DESIGN-TOKENS.md`
 
-- [ ] **Step 1: `CLAUDE.md`**
+- [x] **Step 1: `CLAUDE.md`**
 
 Add to *Non-negotiable rules*:
 
@@ -1838,7 +1863,7 @@ Add to *Toolchain*: the suite's timezone status after Task 3 Step 3 — either "
 covered explicitly by `DayBoundaryTest`, and `config(['app.timezone' => …])` alone still proves
 nothing".
 
-- [ ] **Step 2: The design doc**
+- [x] **Step 2: The design doc**
 
 - §6.1: `user_levels` → `person_levels`; note the ladder is **seeded** per owner decision 1
   and that UN-02's flags and UN-03's aliases are **not** shipped and land in P1b.
@@ -1849,7 +1874,7 @@ nothing".
 - §14: add an item for the `MissedDays` denominator ruling, and one for the AC-02 invitation
   lifetime (see below).
 
-- [ ] **Step 3: `docs/RUNBOOK-DEPLOY.md` and `docs/OPEN-DECISIONS.md`**
+- [x] **Step 3: `docs/RUNBOOK-DEPLOY.md` and `docs/OPEN-DECISIONS.md`**
 
 - The identifiers table gains `HIJRI_OFFSET_DAYS` beside `INSTANCE_SLUG`, with QCH's value and
   the sentence that it must be verified against the department's own published calendar across
@@ -1860,7 +1885,7 @@ nothing".
 - `docs/OPEN-DECISIONS.md` gains the two owner decisions still needed (below), each with what
   it blocks and what happens by default until it is made.
 
-- [ ] **Step 4: `docs/DESIGN-TOKENS.md`**
+- [x] **Step 4: `docs/DESIGN-TOKENS.md`**
 
 Finding 14: correct the stale colour table (`muted #526d70`, `ok #0c7358`,
 `caution #8f5d13`), the claim that PICU is the only unit hue, and the token path — and add a
@@ -1873,7 +1898,7 @@ work (finding 13). Those three sites are cosmetically wrong today and changing t
 visual change, not a documentation fix — P1c touches `Users.vue` anyway and can correct them
 there with the change visible in its own diff.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```bash
 npm run build 2>&1 | tail -5

@@ -61,6 +61,15 @@ use Illuminate\Support\Facades\Crypt;
  *     `ErrorException`. Callers must read the array out, mutate the local copy, and reassign
  *     the whole thing: `$map = $handover->extra_fields; $map['x'] = 'y'; $handover->extra_fields = $map;`.
  *
+ * RESIDUAL GAP, pre-existing in `DetectsForeignCiphertext` and shared by every cast that uses
+ * it, not introduced here: `looksEncrypted()` can only recognise the shape of a Laravel
+ * encrypted payload. CORRUPTED ciphertext — bit rot, a truncated column, a bad restore — does
+ * not have that shape, so it falls through to "never encrypted", `Crypt::decryptString()`
+ * having already thrown, and this cast returns `[]` rather than the `UNREADABLE_KEY` sentinel.
+ * That degrades to "no custom fields were ever entered" — the very indistinguishability the
+ * sentinel exists to prevent. Known, not fixed; fixing it needs a signal beyond payload shape
+ * (e.g. a stored checksum) that no cast in this directory currently carries.
+ *
  * @implements CastsAttributes<array<string, string|null>, string|null>
  */
 class EncryptedJson implements CastsAttributes
@@ -82,11 +91,12 @@ class EncryptedJson implements CastsAttributes
      *
      * Laravel's `Crypt::encryptString()` base64-encodes the AES output, then base64-encodes
      * the whole `{iv,value,mac}` envelope — so ciphertext growth is approximately 1.78x the
-     * plaintext plus ~170 bytes of envelope overhead, NOT the ~1.4x the
-     * `2026_07_25_150001_widen_handover_columns_for_encryption` migration's docblock claims
-     * for single-value columns (that estimate is for a different growth curve). 32,000 bytes
-     * of JSON becomes roughly 57,000 bytes of ciphertext — inside MySQL TEXT's 65,535-byte
-     * limit with headroom for the row's other columns.
+     * plaintext plus 194-199 bytes of envelope overhead (measured, not estimated), NOT the
+     * ~1.4x the `2026_07_25_150001_widen_handover_columns_for_encryption` migration's
+     * docblock claims for single-value columns (that estimate is for a different growth
+     * curve). 32,000 bytes of JSON becomes roughly 57,000 bytes of ciphertext — inside MySQL
+     * TEXT's 65,535-byte limit, which is that column's OWN limit, not a budget shared with the
+     * row's other columns: InnoDB stores TEXT off-row, behind a 20-byte in-row pointer.
      */
     public const MAX_BYTES = 32_000;
 
@@ -117,10 +127,14 @@ class EncryptedJson implements CastsAttributes
 
         $decoded = json_decode($json, true, 16);
 
-        if (! is_array($decoded)) {
+        if (! is_array($decoded) || array_is_list($decoded)) {
             // Not a JSON object at all — a bare scalar, a JSON array (sequential keys, none
             // of them a string), or malformed JSON. All degrade to "no custom fields" rather
-            // than throwing.
+            // than throwing. A JSON list (`array_is_list()`) is excluded here rather than in
+            // normalize(), because normalize() must still accept a PHP array like
+            // `[2024 => 'x']` — not a list, since its one key isn't the sequential-from-zero
+            // int keys a list requires — arriving from an all-numeric-string definition key
+            // that PHP coerced to int. See normalize()'s own comment.
             return [];
         }
 
@@ -168,7 +182,8 @@ class EncryptedJson implements CastsAttributes
 
         $json = json_encode(
             $normalized,
-            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE
+                | JSON_THROW_ON_ERROR | JSON_FORCE_OBJECT
         );
 
         if (strlen($json) > self::MAX_BYTES) {
@@ -194,6 +209,13 @@ class EncryptedJson implements CastsAttributes
         $out = [];
 
         foreach ($decoded as $mapKey => $mapValue) {
+            // PHP coerces an all-digit ('canonical decimal') string array key to int, both when
+            // json_decode() builds $decoded from a definition key like "2024" and again below
+            // when $out[$mapKey] is assigned. Left as-is, `! is_string($mapKey)` would silently
+            // discard it here — exactly the silent clinical-data loss the non-scalar branch a
+            // few lines down THROWS to prevent. Coerce back to string instead.
+            $mapKey = is_int($mapKey) ? (string) $mapKey : $mapKey;
+
             if (! is_string($mapKey) || $mapKey === '' || $mapKey === self::UNREADABLE_KEY) {
                 continue;
             }

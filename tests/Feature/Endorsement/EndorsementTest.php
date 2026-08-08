@@ -9,6 +9,7 @@ use App\Models\User;
 use Database\Seeders\AccessControlSeeder;
 use Database\Seeders\ReferenceSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -565,6 +566,85 @@ class EndorsementTest extends TestCase
         $this->assertStringContainsString('carried=1', (string) $audit->detail);
         $this->assertStringNotContainsString('AUD-1', (string) $audit->detail);
         $this->assertStringNotContainsString('Audit Child', (string) $audit->detail);
+    }
+
+    /** A payload produced under a key this application no longer has (WrongKeyProtectionTest's helper). */
+    private function foreignCiphertext(string $plaintext = '2020-01-01 00:00:00'): string
+    {
+        $foreign = new \Illuminate\Encryption\Encrypter(random_bytes(32), 'aes-256-cbc');
+
+        return $foreign->encryptString($plaintext);
+    }
+
+    /**
+     * Fix 2 regression coverage: closing EncryptedDateTime's wrong-key gap widened
+     * `Handover::dob`'s get() to Carbon|string|null. A row whose dob is foreign ciphertext
+     * must still render the sheet 200 (EndorsementController::rowsFor()) and must not block
+     * New Day for the rest of the unit (EndorsementController::newDay()'s carry-forward).
+     * Bypasses the Eloquent cast on insert (DB::table(), same as
+     * PhiEncryptionAtRestTest::test_a_plaintext_legacy_row_is_still_readable()) because the
+     * cast's own set() would reject writing unparsable text into a date column.
+     */
+    public function test_a_wrong_key_dob_renders_the_sheet_instead_of_500ing(): void
+    {
+        $unitId = Unit::where('code', 'PICU')->value('id');
+
+        DB::table('handovers')->insert([
+            'unit_id' => $unitId,
+            'handover_date' => '2026-07-10',
+            'bed' => '5',
+            'mrn' => 'WRONGKEY-1',
+            'patient_name' => 'Unreadable Dob Child',
+            'dob' => $this->foreignCiphertext(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($this->admin())
+            ->get('/endorsement/PICU/2026-07-10')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Endorsement/Sheet')
+                ->has('rows', 1)
+                ->where('rows.0.mrn', 'WRONGKEY-1')
+                ->where('rows.0.dob', fn (?string $dob) => $dob !== null
+                    && str_contains(strtolower($dob), 'unreadable'))
+            );
+    }
+
+    public function test_a_wrong_key_dob_does_not_block_new_day_for_the_rest_of_the_unit(): void
+    {
+        $unitId = Unit::where('code', 'PICU')->value('id');
+
+        DB::table('handovers')->insert([
+            'unit_id' => $unitId,
+            'handover_date' => '2026-07-10',
+            'bed' => '5',
+            'mrn' => 'WRONGKEY-2',
+            'patient_name' => 'Unreadable Dob Child',
+            'dob' => $this->foreignCiphertext(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        // A normal sibling row on the same source day — proves the whole unit is not blocked.
+        $this->handover('PICU', '2026-07-10', ['bed' => '6', 'mrn' => 'NORMAL-1']);
+
+        $this->actingAs($this->editor())
+            ->post('/endorsement/PICU/new-day', ['date' => '2026-07-11'])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $carried = Handover::where('unit_id', $unitId)->whereDate('handover_date', '2026-07-11')->get();
+        $this->assertCount(2, $carried);
+
+        $wrongKeyRow = $carried->firstWhere('mrn', 'WRONGKEY-2');
+        $this->assertNotNull($wrongKeyRow);
+        // The foreign-ciphertext marker is dropped rather than passed through — carry-forward
+        // creates a NEW row, so the source row's own ciphertext was never at risk either way.
+        $this->assertNull($wrongKeyRow->dob);
+
+        $normalRow = $carried->firstWhere('mrn', 'NORMAL-1');
+        $this->assertNotNull($normalRow);
     }
 
     public function test_print_view_renders_for_a_unit_and_date(): void

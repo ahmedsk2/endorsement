@@ -41,6 +41,38 @@ class ClinicalSchemaTest extends TestCase
         $this->assertFalse(Schema::hasColumn('handovers', 'draft'));
     }
 
+    /**
+     * Static, source-level pin: `Schema::getColumns()` reports `text()` and `json()` IDENTICALLY
+     * on SQLite (`type_name=text` either way), so no runtime test — including
+     * test_handovers_carries_the_full_spec_column_set() above — can tell them apart. This is
+     * exactly the migration's own docblock warning: a `json()` column here would pass every
+     * test in this suite and then fail only in production, because MySQL's JSON column type
+     * rejects the base64 ciphertext `App\Casts\EncryptedJson` actually stores ("Invalid JSON
+     * text"). The only way to pin the choice is to read the migration source itself.
+     */
+    public function test_the_extra_fields_migration_uses_text_not_json(): void
+    {
+        $path = base_path('database/migrations/2026_08_09_120002_add_extra_fields_to_handovers.php');
+        $source = file_get_contents($path);
+
+        $this->assertNotFalse($source, "Could not read migration: {$path}");
+
+        $this->assertStringContainsString(
+            "->text('extra_fields')",
+            $source,
+            'handovers.extra_fields must be declared with ->text(), not ->json() — see the '.
+            "migration's own docblock and App\\Casts\\EncryptedJson's."
+        );
+
+        $this->assertStringNotContainsString(
+            "->json('extra_fields')",
+            $source,
+            'handovers.extra_fields must never be declared with ->json() — MySQL rejects the '.
+            'base64 ciphertext this column actually stores as "Invalid JSON text", a failure '.
+            'that only surfaces in production, never against this suite\'s SQLite connection.'
+        );
+    }
+
     public function test_handover_signoffs_carries_the_full_spec_column_set(): void
     {
         foreach ([

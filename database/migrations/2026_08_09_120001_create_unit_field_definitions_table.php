@@ -30,6 +30,14 @@ return new class extends Migration
             // The map key inside handovers.extra_fields. Immutable once values exist:
             // renaming it orphans every stored value under the old key, so the (not yet
             // built) admin path must forbid renaming a key that has ever been used.
+            //
+            // Shape constrained to ^[a-z][a-z0-9_]{0,63}$ (App\Models\UnitFieldDefinition's
+            // `saving` guard — there is no admin UI yet, so that guard is the whole
+            // enforcement, not just documentation here). Not merely tidiness: Laravel's
+            // `extra_fields.*` validation-rule namespacing reads a dot in the rule key as a
+            // NESTED path, and a `*` in the rule key makes the rule silently match nothing,
+            // so a `required`/`in:` rule on a badly-shaped key would never apply. `type` is
+            // constrained to text|date|select by the same guard.
             $table->string('key', 64);
             $table->string('label');
             $table->string('type', 16)->default('text'); // text | date | select

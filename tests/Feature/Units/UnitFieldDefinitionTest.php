@@ -129,4 +129,60 @@ class UnitFieldDefinitionTest extends TestCase
             $this->assertSame([], $unit->fieldDefinitions->all(), $code);
         }
     }
+
+    /**
+     * A key containing '*' or '.' breaks Laravel's `extra_fields.*` validation-rule
+     * namespacing — a dot reads as a nested path, and '*' makes the rule silently match
+     * nothing — so a `required`/`in:` rule on such a key would be an unenforceable no-op.
+     * There is no admin UI yet, so this `saving` guard is the only enforcement.
+     */
+    public function test_an_invalid_key_is_refused(): void
+    {
+        $unit = Unit::where('code', 'PICU')->firstOrFail();
+
+        foreach (['x*y', 'a.b', 'Weight', '2weight', '', '_weight', 'we-ight'] as $badKey) {
+            try {
+                UnitFieldDefinition::create([
+                    'unit_id' => $unit->id, 'key' => $badKey, 'label' => 'Bad',
+                ]);
+                $this->fail("Expected key [{$badKey}] to be refused.");
+            } catch (\InvalidArgumentException $e) {
+                $this->assertStringContainsString('key', $e->getMessage(), "key [{$badKey}]");
+            }
+        }
+    }
+
+    public function test_a_valid_key_is_accepted(): void
+    {
+        $unit = Unit::where('code', 'PICU')->firstOrFail();
+
+        $definition = UnitFieldDefinition::create([
+            'unit_id' => $unit->id, 'key' => 'weight_kg', 'label' => 'Weight (kg)',
+        ]);
+
+        $this->assertSame('weight_kg', $definition->fresh()->key);
+    }
+
+    public function test_an_invalid_type_is_refused(): void
+    {
+        $unit = Unit::where('code', 'PICU')->firstOrFail();
+
+        $this->expectException(\InvalidArgumentException::class);
+
+        UnitFieldDefinition::create([
+            'unit_id' => $unit->id, 'key' => 'weight', 'label' => 'Weight', 'type' => 'richtext',
+        ]);
+    }
+
+    /** The DB-level default('text') is a valid type, so an omitted type must not be refused. */
+    public function test_an_omitted_type_falls_back_to_the_database_default(): void
+    {
+        $unit = Unit::where('code', 'PICU')->firstOrFail();
+
+        $definition = UnitFieldDefinition::create([
+            'unit_id' => $unit->id, 'key' => 'weight', 'label' => 'Weight',
+        ]);
+
+        $this->assertSame('text', $definition->fresh()->type);
+    }
 }

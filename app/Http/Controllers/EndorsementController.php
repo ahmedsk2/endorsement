@@ -595,7 +595,12 @@ class EndorsementController extends Controller
                         'bed' => $row->bed,
                         'mrn' => $row->mrn,
                         'patient_name' => $row->patient_name,
-                        'dob' => $row->dob,
+                        // $row->dob is Carbon|string|null (EncryptedDateTime's wrong-key marker
+                        // is a string) — create() below is a NEW row, so a foreign-ciphertext
+                        // marker string must not be handed to it as if it were a date. Dropping
+                        // it to null costs nothing here: the source row's own ciphertext is
+                        // untouched by this create() either way.
+                        'dob' => $row->dob instanceof \DateTimeInterface ? $row->dob : null,
                         'age' => $row->age,
                         'ward_unit' => $row->ward_unit,
                         'disease' => $row->disease,
@@ -791,7 +796,11 @@ class EndorsementController extends Controller
                 'mrn' => $h->mrn,
                 'patient_name' => $h->patient_name,
                 // Per-unit identity columns; the UnitProfile decides which of these render.
-                'dob' => $h->dob?->format('Y-m-d H:i'),
+                // $h->dob is Carbon|string|null: the nullsafe operator only guards null, not
+                // "not an object" — a foreign-ciphertext marker string reaching ->format()
+                // fatals. Passing the marker through as-is lets it reach the clinician as
+                // visible text instead of a 500.
+                'dob' => is_string($h->dob) ? $h->dob : $h->dob?->format('Y-m-d H:i'),
                 'age' => $h->age,
                 'ward_unit' => $h->ward_unit,
                 'disease' => $h->disease,

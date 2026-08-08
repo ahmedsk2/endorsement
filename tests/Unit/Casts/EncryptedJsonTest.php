@@ -225,6 +225,41 @@ class EncryptedJsonTest extends TestCase
         );
     }
 
+    /**
+     * PHP coerces an all-digit ("canonical decimal") string array key to int on assignment —
+     * so a definition key like `'2024'` arrives at normalize() as int(2024), not string
+     * '2024'. Before this fix, `! is_string($mapKey)` silently dropped it: a numeric key
+     * alongside a non-numeric sibling lost only the numeric entry (proven by the reviewer).
+     */
+    public function test_a_numeric_key_round_trips(): void
+    {
+        $cast = $this->cast();
+        $model = new Handover();
+
+        $stored = $cast->set($model, 'extra_fields', ['2024' => 'x', 'weight' => '3.2'], []);
+
+        $this->assertSame(
+            ['2024' => 'x', 'weight' => '3.2'],
+            $cast->get($model, 'extra_fields', $stored, [])
+        );
+    }
+
+    /**
+     * The more severe half of the same bug: a map with ONLY a numeric key had nothing left
+     * after the drop, so normalize() returned [], set() treated that as "clear the field",
+     * and the whole write silently became NULL — total, silent loss of the one value entered.
+     */
+    public function test_a_numeric_key_alone_does_not_store_null(): void
+    {
+        $cast = $this->cast();
+        $model = new Handover();
+
+        $stored = $cast->set($model, 'extra_fields', ['2024' => 'x'], []);
+
+        $this->assertNotNull($stored);
+        $this->assertSame(['2024' => 'x'], $cast->get($model, 'extra_fields', $stored, []));
+    }
+
     public function test_keys_store_in_canonical_order(): void
     {
         $cast = $this->cast();

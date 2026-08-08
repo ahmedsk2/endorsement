@@ -24,15 +24,24 @@ use Illuminate\Support\Facades\Crypt;
  * See `tests/Feature/Security/WrongKeyProtectionTest.php`, the home of this contract.
  *
  * CONSUMER HAZARD, unavoidable given the fix above: `get()` now returns `Carbon|string|null`
- * instead of `?Carbon`, because the marker is text, not a date. Every existing `->format(...)`
- * call on this attribute is written as `$model->dob?->format(...)`, and the nullsafe operator
- * only guards against `null` — it does NOT guard against "not an object". If `dob` is ever the
- * marker string, that call fatals with "Call to a member function format() on string" instead
- * of degrading. `EndorsementController::rowsFor()` (`'dob' => $h->dob?->format('Y-m-d H:i')`)
- * has exactly this shape today and is NOT yet guarded — this is a real, currently-open gap
- * flagged here for whoever next touches that call site: it must check
- * `is_string($h->dob) ? $h->dob : $h->dob?->format(...)` (or equivalent) before this cast's
- * marker path can be considered fully safe end to end.
+ * instead of `?Carbon`, because the marker is text, not a date. It is NOT only a `->format(...)`
+ * hazard — ANY call site that assumed `?Carbon` can break, including one that never calls
+ * `->format()` at all. Every known call site, and how each is guarded:
+ *
+ *  - `EndorsementController::rowsFor()` (`'dob' => ...`) — formats `dob` for the sheet/print
+ *    view. Guarded: `is_string($h->dob) ? $h->dob : $h->dob?->format('Y-m-d H:i')`. The nullsafe
+ *    operator alone only guards against `null`, not "not an object" — unguarded, this call
+ *    fatals with "Call to a member function format() on string" the moment `dob` is the marker.
+ *  - `EndorsementController::newDay()` carry-forward (`'dob' => ...` into `Handover::create()`)
+ *    — passes the PRIOR day's `dob` to a NEW row. Guarded:
+ *    `$row->dob instanceof \DateTimeInterface ? $row->dob : null`. This one does not call
+ *    `->format()`, so the nullsafe pattern above does not even apply — the marker STRING was
+ *    being handed straight to `Handover::create()`, which routes it through `EncryptedDateTime::
+ *    set()` and `Carbon::parse()`, which throws `InvalidFormatException` on the marker text and
+ *    500s New Day for the whole unit. Dropping it to `null` costs nothing: `create()` writes a
+ *    new row, so the source row's own ciphertext was never at risk from this call site either way.
+ *
+ * Any new call site must be checked against this same hazard before assuming `?Carbon`.
  *
  * @implements CastsAttributes<Carbon|string|null, string|null>
  */

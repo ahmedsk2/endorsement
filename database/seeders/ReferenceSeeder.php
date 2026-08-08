@@ -37,16 +37,38 @@ class ReferenceSeeder extends Seeder
         // never deleted by a seeder (legacy nurse accounts are simply no longer imported).
         Position::whereKey(1)->delete();
 
-        // The four first-class clinical units. Codes are the routing identity
+        // The first-class clinical units. Codes are the routing identity
         // (/endorsement/{code}); names appear on screens and the printed sheet.
+        //
+        // Profile columns are seeded ONCE for a fresh install and then belong to the
+        // department — a re-seed refreshes `name` only, so an admin's configuration is never
+        // silently reverted. Existing databases were backfilled by the 2026_08_08 migration.
         $units = [
-            'PICU' => 'Pediatric Intensive Care Unit',
-            'NICU' => 'Neonatal Intensive Care Unit',
-            'SCBU' => 'Special Care Baby Unit',
-            'WARD' => 'Pediatric Ward',
+            'PICU' => ['Pediatric Intensive Care Unit', 1, [], 'Bed', true, 'Consultant covering', 'channel-bar-picu', 'Plan Of Care', 'New events'],
+            'NICU' => ['Neonatal Intensive Care Unit', 2, ['dob'], 'Bed', true, 'Consultant covering', 'channel-bar-nicu', 'Plan Of Care', 'To be followed'],
+            'SCBU' => ['Special Care Baby Unit', 3, ['dob'], 'Bed', true, 'Consultant covering', 'channel-bar-scbu', 'Plan Of Care', 'To be followed'],
+            'WARD' => ['Pediatric Ward', 4, ['age', 'ward_unit'], 'Room', false, 'Consultant Oncall', 'channel-bar-ward', 'Management', 'To be followed'],
         ];
-        foreach ($units as $code => $name) {
-            Unit::updateOrCreate(['code' => $code], ['name' => $name]);
+
+        foreach ($units as $code => $u) {
+            $unit = Unit::firstOrNew(['code' => $code]);
+            $unit->name = $u[0];
+
+            if (! $unit->exists) {
+                $unit->fill([
+                    'display_order' => $u[1],
+                    'active' => true,
+                    'extra_row_fields' => $u[2],
+                    'bed_label' => $u[3],
+                    'consultant_pair' => $u[4],
+                    'consultant_by_label' => $u[5],
+                    'bar_class' => $u[6],
+                    'print_plan_label' => $u[7],
+                    'print_narrative_label' => $u[8],
+                ]);
+            }
+
+            $unit->save();
         }
 
         // Tenant anchor.

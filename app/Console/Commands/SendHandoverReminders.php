@@ -5,7 +5,6 @@ namespace App\Console\Commands;
 use App\Models\HandoverSignoff;
 use App\Models\Unit;
 use App\Support\Push\PushSender;
-use App\Support\UnitProfile;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -36,13 +35,7 @@ class SendHandoverReminders extends Command
         $today = now()->format('Y-m-d');
         $pushed = 0;
 
-        foreach (UnitProfile::codes() as $code) {
-            $unit = Unit::where('code', $code)->first();
-
-            if ($unit === null) {
-                continue;
-            }
-
+        foreach (Unit::query()->active()->ordered()->get() as $unit) {
             $signed = HandoverSignoff::where('unit_id', $unit->id)
                 ->whereDate('handover_date', $today)
                 ->whereNotNull('signed_off_at')

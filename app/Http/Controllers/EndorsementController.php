@@ -25,7 +25,7 @@ use Inertia\Response;
  * tables collapsed into the single `handovers` table discriminated by `unit_id`; the four
  * units — PICU, NICU, SCBU, WARD — are each first-class (spec §3), with their per-unit
  * variation (identity columns, consultant shape, labels, hue) defined ONCE in
- * `App\Support\UnitProfile` rather than drifting per code path.
+ * the unit's own `profile()` rather than drifting per code path.
  *
  * Gates (routes/web.php owns the `auth`+`cap:` wiring): reads are `endorsement.view`, every write
  * is `endorsement.edit` (legacy server gate [0,2,3,4] — excludes Nurse). The four rich-text fields
@@ -43,10 +43,8 @@ class EndorsementController extends Controller
     {
         $today = now()->format('Y-m-d');
 
-        $units = Unit::whereIn('code', UnitProfile::codes())
+        $units = Unit::query()->active()->ordered()
             ->get()
-            ->sortBy(fn (Unit $u): int => (int) array_search($u->code, UnitProfile::codes(), true))
-            ->values()
             ->map(function (Unit $u) use ($today): array {
                 $rows = Handover::where('unit_id', $u->id)->whereDate('handover_date', $today)->count();
                 $signed = HandoverSignoff::where('unit_id', $u->id)
@@ -57,7 +55,7 @@ class EndorsementController extends Controller
                 return [
                     'code' => $u->code,
                     'name' => $u->name,
-                    'bar_class' => UnitProfile::for($u->code)->barClass,
+                    'bar_class' => $u->profile()->barClass,
                     'today' => [
                         'date' => $today,
                         'has_sheet' => $rows > 0,
@@ -162,17 +160,15 @@ class EndorsementController extends Controller
         $from = $filters['from'] ?? now()->subDays(29)->format('Y-m-d');
         $to = $filters['to'] ?? now()->format('Y-m-d');
 
-        $units = Unit::whereIn('code', UnitProfile::codes())
+        $units = Unit::query()->active()->ordered()
             ->get()
-            ->sortBy(fn (Unit $u): int => (int) array_search($u->code, UnitProfile::codes(), true))
-            ->values()
             ->map(function (Unit $u) use ($from, $to): array {
                 $result = MissedDays::forRange($u->id, $from, $to);
 
                 return [
                     'code' => $u->code,
                     'name' => $u->name,
-                    'bar_class' => UnitProfile::for($u->code)->barClass,
+                    'bar_class' => $u->profile()->barClass,
                     'total_days' => $result['total_days'],
                     'missed' => $result['missed'],
                 ];
@@ -192,7 +188,7 @@ class EndorsementController extends Controller
     {
         $unit = Unit::find($request->user()?->preferred_unit_id);
 
-        if ($unit === null || ! in_array($unit->code, UnitProfile::codes(), true)) {
+        if ($unit === null || ! $unit->active) {
             return redirect()->route('endorsement.root');
         }
 
@@ -335,7 +331,7 @@ class EndorsementController extends Controller
 
         // Ruling 5 — WARD has ONE consultant field ("Consultant Oncall"), stored in
         // consultant_by_*. A submitted receiving consultant is dropped, not persisted.
-        if (! UnitProfile::for($u->code)->consultantPair) {
+        if (! $u->profile()->consultantPair) {
             unset($data['consultant_to_user_id']);
         }
 
@@ -641,7 +637,7 @@ class EndorsementController extends Controller
         $date = $this->normalizeDate($date);
         $this->assertDayUnlocked($u->id, $date);
 
-        $data = $this->validateRow($request, UnitProfile::for($u->code));
+        $data = $this->validateRow($request, $u->profile());
 
         $row = Handover::create(array_merge($data, [
             'unit_id' => $u->id,
@@ -662,7 +658,7 @@ class EndorsementController extends Controller
         $this->assertEnabledUnitRow($handover);
         $this->assertDayUnlocked($handover->unit_id, $handover->handover_date?->format('Y-m-d'));
 
-        $data = $this->validateRow($request, UnitProfile::for((string) $handover->unit?->code));
+        $data = $this->validateRow($request, $handover->unit->profile());
 
         // Keep what the record SAID before this edit. The audit row proves that a change
         // happened; without this, nothing anywhere retains what was originally attested,
@@ -715,29 +711,32 @@ class EndorsementController extends Controller
 
     /**
      * The row-write verbs bind `{handover}` by BARE ID, so they need the same unit scoping
-     * every read path gets from resolveUnit(). A row belonging to a unit outside the
-     * four-profile surface 404s, matching what a read of the same row would do.
+     * every read path gets from resolveUnit(). A row belonging to a unit that is not active
+     * (unknown, or deactivated) 404s, matching what a read of the same row would do.
      */
     private function assertEnabledUnitRow(Handover $handover): void
     {
-        if (! in_array(strtoupper((string) $handover->unit?->code), UnitProfile::codes(), true)) {
+        if ($handover->unit === null || ! $handover->unit->active) {
             abort(404);
         }
     }
 
     /**
-     * Resolve + validate the `{unit}` route param against the four first-class units.
-     * Lowercase URLs keep resolving (legacy links and the nav both use them).
+     * Resolve + validate the `{unit}` route param against the active units on the `units`
+     * table — an unknown code and a deactivated one both 404, exactly like `firstOrFail()`
+     * did. Lowercase URLs keep resolving (legacy links and the nav both use them):
+     * `Unit::findByCode()` normalizes the lookup the same way the `code` mutator normalizes
+     * storage.
      */
     private function resolveUnit(string $unit): Unit
     {
-        $code = strtoupper($unit);
+        $u = Unit::findByCode($unit);
 
-        if (! in_array($code, UnitProfile::codes(), true)) {
+        if ($u === null || ! $u->active) {
             abort(404);
         }
 
-        return Unit::where('code', $code)->firstOrFail();
+        return $u;
     }
 
     /**
@@ -1113,7 +1112,7 @@ class EndorsementController extends Controller
         return [
             'code' => $unit->code,
             'name' => $unit->name,
-            'profile' => UnitProfile::for($unit->code)->toArray(),
+            'profile' => $unit->profile()->toArray(),
         ];
     }
 

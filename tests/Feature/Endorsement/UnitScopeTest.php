@@ -14,7 +14,7 @@ use Tests\TestCase;
 /**
  * Phase 4 — all FOUR units are first-class (spec §3). Each has its own day index, sheet,
  * and per-unit writable identity columns, all unit-partitioned; unknown units 404; rows of
- * a unit outside the four-profile surface are unreachable through the bare-ID verbs.
+ * an inactive (retired) unit are unreachable through the bare-ID verbs.
  */
 class UnitScopeTest extends TestCase
 {
@@ -127,7 +127,12 @@ class UnitScopeTest extends TestCase
         $this->assertSame('2026-06-15 08:00', $row->fresh()->dob->format('Y-m-d H:i'));
     }
 
-    public function test_rows_of_a_unit_outside_the_surface_are_unreachable_via_bare_id_verbs(): void
+    /**
+     * `Unit::create()` here sets no `active` flag, so the migration's default (`false`)
+     * applies — this unit is retired the moment it exists, not merely absent from a
+     * hardcoded list.
+     */
+    public function test_rows_of_an_inactive_unit_are_unreachable_via_bare_id_verbs(): void
     {
         $extra = Unit::create(['code' => 'XX', 'name' => 'Somewhere Else']);
         $row = Handover::create([
@@ -173,6 +178,8 @@ class UnitScopeTest extends TestCase
                 ->where('units.0.today.signed_off', false)
                 ->where('units.1.code', 'NICU')
                 ->where('units.1.today.has_sheet', false)
+                ->where('units.2.code', 'SCBU')
+                ->where('units.3.code', 'WARD')
             );
     }
 }

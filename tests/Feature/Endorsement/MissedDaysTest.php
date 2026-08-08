@@ -140,6 +140,9 @@ class MissedDaysTest extends TestCase
                 ->where('units.0.total_days', 2)
                 ->has('units.0.missed', 1)
                 ->where('units.0.missed.0.kind', 'no_sheet')
+                ->where('units.1.code', 'NICU')
+                ->where('units.2.code', 'SCBU')
+                ->where('units.3.code', 'WARD')
             );
     }
 

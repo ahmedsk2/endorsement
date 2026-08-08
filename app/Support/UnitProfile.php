@@ -2,12 +2,14 @@
 
 namespace App\Support;
 
-use InvalidArgumentException;
+use App\Models\Unit;
 
 /**
- * The SINGLE source of per-unit variation (spec §3). Every surface — sheet columns,
- * sign-off fields, print schema, nav/chooser hues — reads from here, so the four units
- * can never drift apart the way the four copy-pasted legacy code families did.
+ * The SHAPE of per-unit variation (spec §3) — every surface (sheet columns, sign-off
+ * fields, print schema, nav/chooser hues) reads a value object of this shape. Since P0a
+ * (design §6.1) the VALUES themselves live on the `units` table row, not in this class:
+ * `fromUnit()` builds the value object from a `Unit`, so adding a department is
+ * configuration (a new row) rather than code (a new case here).
  *
  * Per-unit facts (legacy parity, confirmed against the deployed *-endorsement-*.php):
  *   PICU  — bed/mrn/name only; consultant covering+receiving pair; print narrative "New events".
@@ -34,71 +36,22 @@ final class UnitProfile
     ) {
     }
 
-    /** @var array<string, UnitProfile>|null */
-    private static ?array $profiles = null;
-
-    /** @return array<string, UnitProfile> */
-    private static function profiles(): array
+    /** Build the value object from a `units` row — the real, current API. */
+    public static function fromUnit(Unit $unit): self
     {
-        return self::$profiles ??= [
-            'PICU' => new self(
-                code: 'PICU',
-                extraRowFields: [],
-                bedLabel: 'Bed',
-                consultantPair: true,
-                consultantByLabel: 'Consultant covering',
-                barClass: 'channel-bar-picu',
-                printPlanLabel: 'Plan Of Care',
-                printNarrativeLabel: 'New events',
-            ),
-            'NICU' => new self(
-                code: 'NICU',
-                extraRowFields: ['dob'],
-                bedLabel: 'Bed',
-                consultantPair: true,
-                consultantByLabel: 'Consultant covering',
-                barClass: 'channel-bar-nicu',
-                printPlanLabel: 'Plan Of Care',
-                printNarrativeLabel: 'To be followed',
-            ),
-            'SCBU' => new self(
-                code: 'SCBU',
-                extraRowFields: ['dob'],
-                bedLabel: 'Bed',
-                consultantPair: true,
-                consultantByLabel: 'Consultant covering',
-                barClass: 'channel-bar-scbu',
-                printPlanLabel: 'Plan Of Care',
-                printNarrativeLabel: 'To be followed',
-            ),
-            'WARD' => new self(
-                code: 'WARD',
-                extraRowFields: ['age', 'ward_unit'],
-                bedLabel: 'Room',
-                consultantPair: false,
-                consultantByLabel: 'Consultant Oncall',
-                barClass: 'channel-bar-ward',
-                printPlanLabel: 'Management',
-                printNarrativeLabel: 'To be followed',
-            ),
-        ];
-    }
+        $code = strtoupper((string) $unit->code);
 
-    /** The four first-class unit codes, in display order. @return list<string> */
-    public static function codes(): array
-    {
-        return array_keys(self::profiles());
-    }
-
-    public static function for(string $code): self
-    {
-        $profile = self::profiles()[strtoupper($code)] ?? null;
-
-        if ($profile === null) {
-            throw new InvalidArgumentException("Unknown unit code [{$code}].");
-        }
-
-        return $profile;
+        return new self(
+            code: $code,
+            // ExtraRowFields cast guarantees a list<string>, never null.
+            extraRowFields: $unit->extra_row_fields,
+            bedLabel: $unit->bed_label ?? 'Bed',
+            consultantPair: $unit->consultant_pair ?? true,
+            consultantByLabel: $unit->consultant_by_label ?? 'Consultant covering',
+            barClass: $unit->bar_class ?? 'channel-bar-'.strtolower($code),
+            printPlanLabel: $unit->print_plan_label ?? 'Plan Of Care',
+            printNarrativeLabel: $unit->print_narrative_label ?? 'To be followed',
+        );
     }
 
     /**

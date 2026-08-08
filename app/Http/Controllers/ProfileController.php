@@ -43,7 +43,7 @@ class ProfileController extends Controller
             // Spec §10.2 — the per-unit reminder opt-in + the public half of the VAPID
             // pair (public by definition; the private key never leaves the server env).
             'reminders' => [
-                'units' => \App\Models\Unit::whereIn('code', \App\Support\UnitProfile::codes())
+                'units' => \App\Models\Unit::query()->active()->ordered()
                     ->get(['id', 'code', 'name'])
                     ->map(fn ($u) => ['id' => $u->id, 'code' => $u->code, 'name' => $u->name]),
                 'selected' => $user->reminderUnits()->pluck('units.id'),

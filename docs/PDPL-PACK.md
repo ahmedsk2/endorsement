@@ -7,6 +7,13 @@ the first restore drill. Neither blocks the assessment — the confirmations rec
 the hospital already holds, and the untested restore is stated as a Medium residual risk in
 §3.2 rather than glossed.
 
+**Needs re-signing (not yet done): identity became two tables on 2026-08-08 (P0c), after this
+DPIA was signed.** §2's staff data row is updated to describe it; §3's risk analysis is
+unchanged in substance — this is a new category of personal data (staff who may have no
+account at all, e.g. an external rotator named as a covering consultant) rather than a new risk
+to the conclusions already reached — but the signature in §3.4 predates the change and should
+be refreshed to say so explicitly.
+
 Not legal advice.
 
 Every technical claim here is drawn from the code and cross-referenced, so the parts that
@@ -73,7 +80,7 @@ Filled in from the code. Check it rather than retype it.
 | Lawful basis | **Provision of healthcare, under the hospital's existing basis** (owner, 2026-07-28). Explicitly NOT consent: a clinical record a patient could withdraw mid-admission is not a clinical record, and a consent that would not be honoured is not valid consent |
 | Categories of data subject | Admitted paediatric patients; clinical staff (users) |
 | Personal data — patients | Name, MRN, date of birth or age, bed/room, unit, and four free-text clinical fields (problem list, clinical condition, plan of care, follow-ups) |
-| Personal data — staff | Full name, username, email address, role, handwritten signature image, last sign-in, audit trail of actions and IP address |
+| Personal data — staff | Full name, `short_name`, job role, training level, email address, phone, free-text notes, scheduling constraints, username, handwritten signature image, last sign-in, audit trail of actions and IP address. Since P0c (2026-08-08) this is held on TWO tables: `people` (the roster — name/role of record, held about staff **whether or not they ever hold an account**) and `users` (the account — created only for staff who log in). An external rotator named as a covering consultant is the clearest case of the first without the second |
 | Sensitive data | Yes — health data concerning children |
 | Recipients | Clinical staff holding `endorsement.view`; printed sheets leave the system on paper |
 | Cross-border transfer | **None.** Every store of personal data is in-Kingdom: the clinical record in OCI Riyadh, the backups in OCI object storage, and the mail relay on the owner's own VM in Dammam. The only element outside the Kingdom is **Cloudflare's edge**, which terminates TLS in transit and stores nothing — no personal data at rest leaves Saudi Arabia |

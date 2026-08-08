@@ -74,8 +74,24 @@ SCBU and WARD are seed data for the QCH institution.
   says "New events"). nevent CARRIES FORWARD on new day (owner ruling).
 - Day identity: (unit_id, handover_date). Sign-off is a per-day header row
   (`handover_signoffs`, UNIQUE on that pair); `signed_off_at` = locked.
-- Endorsed by/to pickers: active Residents (4) and Chief Residents (5). Consultants: position 3.
+- Identity is TWO tables (P0c, D3 reversed 2026-08-08): `people` is the roster and the name/role
+  of record — `full_name`, `short_name`, `position`, level history (`person_levels`,
+  `Person::levelAt()`), `email`/`phone`, `notes`/`constraints` (both plaintext — owner decision
+  3), `external`, `active` = may be NAMED. `users` is purely the account — `member_name`,
+  `password`, 2FA, signature, `active` = may LOG IN — linked by `users.person_id` (UNIQUE,
+  nullable). A roster-only person has **no `users` row and therefore cannot authenticate by
+  construction** — that replaced a design that would have needed a gate at twelve separate
+  places. Never add a credential column to `people`, and never reintroduce a `person_status`
+  lifecycle enum: "claimed" is a join (`Person::hasAccount()`), not a column.
+  `people.id` and `users.id` are INDEPENDENT sequences — never compare or copy them positionally.
+- Endorsed by/to pickers: active people at position 4 or 5 WHO HAVE A CLAIMED ACCOUNT (D9 — their
+  signature is the evidence). Consultant pickers: any active person at position 3, account or
+  not — the on-call consultant is a name of record and frequently never logs in. Both the offer
+  and the write-side rule come from ONE predicate per field in `App\Support\SignoffPickers`.
   WARD has a single "Consultant Oncall" stored in `consultant_by_*`.
+- `SignatureStore` stays keyed on `users`, not `people` — that is what keeps naming separate
+  from signing. A named person with no account has no signature; that is a valid, documented
+  attestation state (2026-07-27 ruling), not a bug.
 - Roles: 0 Admin, 2 Charge Nurse, 3 Consultant, 4 Resident, 5 Chief Resident. Position 1
   (Nurse) is RETIRED — never revive it or reuse the number.
 - Unit variation lives in ONE place: the `units` row. `App\Support\UnitProfile` is the value
@@ -89,9 +105,32 @@ SCBU and WARD are seed data for the QCH institution.
 
 ## Invariants the 2026-07-26 audit had to restore (don't regress these)
 
-- A picker's write-side validation must match what it OFFERS. `exists:users,id` let any
-  account be named as endorser — and sign-off freezes that person's signature onto
-  medico-legal evidence. See `pickerRule()`.
+- A picker's write-side validation must match what it OFFERS, PER FIELD since D9. `exists:users,id`
+  let any account be named as endorser — and sign-off freezes that person's signature onto
+  medico-legal evidence. `App\Support\SignoffPickers` holds one predicate per field (a closure
+  over a query builder), applied to both the `Rule::exists` and the offered list, because
+  `Rule::exists` runs on the raw query builder and never sees Eloquent's SoftDeletes global scope
+  — a predicate written once as Eloquent and once as raw SQL is two predicates that drift.
+  `tests/Feature/Endorsement/PickerParityTest.php` asserts it as a matrix (every fixture x all
+  four fields).
+- `handover_signoffs`' four NAMED roles are `*_person_id`; `signed_off_by_user_id` and
+  `reopened_by_user_id` stay `users` — names of record versus actors. `people.id` and `users.id`
+  are independent sequences: never move an id between them without a join through
+  `users.person_id`.
+- `$user->full_name`, `$user->position` and `$user->member_email` are READ-THROUGH ACCESSORS onto
+  the linked `Person` (P0c) — none is a real column on `users` any more. Any
+  `select()`/`pluck()`/`value()`/constrained `with()` that omits `person_id` loses the accessor's
+  ability to resolve, and the read silently returns null — no error, no exception. This broke
+  four live sites with zero test coverage before it was caught empirically: the Access Control
+  picker, `EndorsementController::staffPickers()`, `InvitationController::openInvitations()`'s
+  `with('invitedBy:id,full_name')`, and a test's own `User::where(...)->value('position')`.
+  Always carry `person_id` through a narrowed query, or fetch the whole model.
+- `users.member_email` is DEAD: it still physically exists, still carries its original UNIQUE
+  index, but nothing on any live write path writes it any more — `people.email` is the single
+  authoritative address, and the password broker/uniqueness checks resolve through
+  `Person::matchByEmail()`/`Person::accountEmailRule()`, not the raw column. The one exception is
+  `LegacyImport`'s one-time historical upsert, deliberately left alone. Never read or write the
+  raw column directly; dropping it is an open item (design doc §14).
 - `TRUSTED_PROXIES` is never `*` (Symfony then takes the client-supplied leftmost
   X-Forwarded-For: forgeable audit IPs, bypassable lockout), and X-Forwarded-Host is never
   trusted (password-reset link poisoning). `trustHosts` must keep loopback — the

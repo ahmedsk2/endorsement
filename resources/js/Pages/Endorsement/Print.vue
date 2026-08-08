@@ -70,6 +70,39 @@ const richColumns = computed(() => [
     { key: 'nevent', label: profile.value.narrative_label ?? 'New events' },
 ]);
 
+/*
+ * P0b (design §6.2, "Ceiling 2") — a unit's OWN custom fields, printed as a SECOND, separate
+ * set of columns after the named identity columns and before the four rich-text columns
+ * (same order as Sheet.vue). Print is a fixed A4 page, unlike the scrolling on-screen table,
+ * so an unbounded number of definitions could overflow it and produce an unusable sheet —
+ * print caps what it renders and says so, rather than doing that silently.
+ */
+const PRINT_FIELD_CAP = 6;
+
+const allCustomFields = computed(() => profile.value.field_definitions ?? []);
+
+const customColumns = computed(() => allCustomFields.value
+    .slice(0, PRINT_FIELD_CAP)
+    .map((d) => ({ key: d.key, label: d.label })));
+
+const omittedCustomFieldCount = computed(() => (
+    Math.max(0, allCustomFields.value.length - customColumns.value.length)
+));
+
+// Custom-field values are PLAIN TEXT and are NEVER PURIFIED server-side (App\Casts\EncryptedJson's
+// own docblock) — unlike the four rich-text columns above, which ARE sanitized on write and safe
+// for the `v-html` cells below. This value must stay a plain interpolation, never `v-html`.
+const customFieldValue = (row, key) => (row.extra_fields ?? {})[key] ?? '';
+
+// EncryptedJson's sentinel: the row's WHOLE extra_fields column failed to decrypt (foreign
+// APP_KEY). Dropping this silently on a printed, signed, legal sheet would hand the next shift
+// a clean-looking but incomplete census — the warning must survive onto paper.
+const extraFieldsWarning = (row) => (row.extra_fields ?? {}).__unreadable ?? null;
+
+const printColumnCount = computed(() => (
+    identityColumns.value.length + customColumns.value.length + richColumns.value.length
+));
+
 const consultantByLabel = computed(() => profile.value.consultant_by_label ?? 'Consultant Covering');
 const hasConsultantPair = computed(() => profile.value.consultant_pair !== false);
 
@@ -113,18 +146,38 @@ onMounted(() => {
 
         <p v-if="rows.length === 0" class="print-empty">No handover rows for this day.</p>
 
-        <table v-else class="print-table" data-testid="print-table">
+        <!--
+          P0b — print is a fixed A4 page, so a unit with more custom-field definitions than
+          fit on it gets a capped set of columns PLUS a visible note saying so, rather than an
+          overflowing, unusable sheet. Deliberately NOT print:hidden — it must survive onto
+          paper, since that is exactly the situation it warns about.
+        -->
+        <p v-if="rows.length > 0 && omittedCustomFieldCount > 0" class="print-note" data-testid="print-custom-fields-note">
+            Showing {{ customColumns.length }} of {{ allCustomFields.length }} custom fields for this unit —
+            {{ omittedCustomFieldCount }} more not shown on this printed sheet. See the online sheet for the rest.
+        </p>
+
+        <table v-if="rows.length > 0" class="print-table" data-testid="print-table">
             <thead>
                 <tr>
                     <th v-for="c in identityColumns" :key="c.key">{{ c.label }}</th>
+                    <th v-for="c in customColumns" :key="c.key">{{ c.label }}</th>
                     <th v-for="c in richColumns" :key="c.key">{{ c.label }}</th>
                 </tr>
             </thead>
             <tbody>
-                <tr v-for="r in rows" :key="r.id" data-testid="print-row">
+                <template v-for="r in rows" :key="r.id">
+                <tr data-testid="print-row">
                     <td v-for="c in identityColumns" :key="c.key">{{ r[c.key] }}</td>
+                    <!-- P0b — custom fields: plain interpolation, NEVER v-html (values are never sanitised). -->
+                    <td v-for="c in customColumns" :key="c.key">{{ customFieldValue(r, c.key) }}</td>
                     <td v-for="c in richColumns" :key="c.key" v-html="r[c.key]"></td>
                 </tr>
+                <!-- P0b — the sentinel: this row's whole custom-field map failed to decrypt. -->
+                <tr v-if="extraFieldsWarning(r)" data-testid="print-row-extra-fields-unreadable" class="print-warning-row">
+                    <td :colspan="printColumnCount">Custom fields unreadable: {{ extraFieldsWarning(r) }}</td>
+                </tr>
+                </template>
             </tbody>
         </table>
 
@@ -227,6 +280,22 @@ onMounted(() => {
     margin-top: 2px;
     max-width: 220px;
     object-fit: contain;
+}
+
+/* P0b — the "N more custom fields not shown" note. Deliberately visible on paper (never
+   print:hidden): it exists to warn whoever reads the printed sheet that it is incomplete. */
+.print-note {
+    margin: 4px 0 8px;
+    font-size: 10px;
+    font-style: italic;
+    color: #333;
+}
+
+/* P0b — the row-level "custom fields unreadable" (EncryptedJson sentinel) warning. Bold and
+   shaded so it cannot be mistaken for ordinary clinical text on a printed page. */
+.print-warning-row td {
+    background: #eee;
+    font-weight: 700;
 }
 
 .print-attribution {

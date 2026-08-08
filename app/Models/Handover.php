@@ -33,6 +33,7 @@ class Handover extends Model
         'details',
         'plan',
         'nevent',
+        'extra_fields',
         'author_user_id',
         'legacy_source_table',
         'legacy_id',
@@ -57,6 +58,13 @@ class Handover extends Model
             'details' => SanitizedHtml::class,
             'plan' => SanitizedHtml::class,
             'nevent' => SanitizedHtml::class,
+            // P0b bounded custom fields (design §6.2) — a per-unit {key: value} map driven by
+            // unit_field_definitions, encrypted at rest (docs/COMPLIANCE.md layer 4) for the
+            // same reason as the identity columns above: whatever a department chooses to
+            // collect here (weight, allergy, whatever else) is clinical text about a named
+            // child the moment it sits next to mrn/patient_name on the same row. A stolen
+            // dump or compromised DB account must yield ciphertext, not a readable map.
+            'extra_fields' => \App\Casts\EncryptedJson::class,
         ];
     }
 

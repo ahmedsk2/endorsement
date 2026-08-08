@@ -22,6 +22,7 @@ class ClinicalSchemaTest extends TestCase
             'bed', 'mrn', 'patient_name',
             'dob', 'age', 'ward_unit',            // per-unit legacy columns — NEVER drop
             'disease', 'details', 'plan', 'nevent',
+            'extra_fields',                       // P0b bounded custom fields (EncryptedJson)
             'author_user_id',
             'legacy_source_table', 'legacy_id',   // lossless import provenance
             'created_at', 'updated_at', 'deleted_at',

@@ -115,6 +115,17 @@ predict, a behaviour that differs between SQLite and MySQL or between UTC and As
 record it here, dated, with what was found and how it was resolved. Findings caught
 empirically rather than by inspection are the ones worth writing down.)*
 
+**2026-08-09, Task 7 — the plan's own migration snippet indexes `['institution_id', 'active']`,
+which repeats the D11 mistake Task 4's amendment already caught and fixed on `periods`.** Every
+query this task adds (`Calendar::activeHolidays()`) filters on `active` alone, never on
+`institution_id` — D11 keeps `institution_id` as provenance/in-instance grouping, never a query
+boundary, and `InstitutionProvenanceTest::test_no_query_filters_on_institution_id` is the
+source-level guard that would catch a future site that tried. An index led by a column nothing
+ever filters on is dead weight and, worse, an invitation for a future `where('institution_id',
+...)` "to match the index" — the exact drift the periods migration's own docblock warns against.
+Shipped as `$table->index(['active', 'calendar', 'month', 'day'])` instead, covering the columns
+`Holiday::anchoredOn()`'s candidates are actually filtered and compared on.
+
 **2026-08-09, Task 6 — three of Step 2's details did not match the tree; the shape was right,
 the specifics were not.** (1) `Users.vue:126`'s `new Date(iso).toLocaleString()` was already
 applied only to `PendingRegistration::requested_at` (rendered via a `fmt()` helper) — a prior
@@ -1572,7 +1583,7 @@ git commit -m "feat: dual Gregorian-Hijri dates, and no date arithmetic left in 
 Munawib §30 `holidays/{holId} { name, rule:{greg?|hijri?}, equityTracked }`. The model and the
 resolver land here; the **CRUD screen lands in P1b** with the rest of structure administration.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 - a Gregorian rule (month 9, day 23) matches 2026-09-23 and 2027-09-23 and nothing else;
 - a Gregorian rule with an explicit `year` matches that year only;
@@ -1587,7 +1598,7 @@ resolver land here; the **CRUD screen lands in P1b** with the rest of structure 
 - `dayType()` returns `'WE'` for a plain Friday and `'WD'` for a Tuesday;
 - an inactive holiday matches nothing.
 
-- [ ] **Step 2: The migration**
+- [x] **Step 2: The migration**
 
 ```php
 Schema::create('holidays', function (Blueprint $table) {
@@ -1616,7 +1627,7 @@ Schema::create('holidays', function (Blueprint $table) {
 });
 ```
 
-- [ ] **Step 3: The resolver**
+- [x] **Step 3: The resolver**
 
 Add to `Calendar`:
 
@@ -1645,7 +1656,7 @@ and clear it in `Calendar::flush()`.
 Extend `Calendar::label()` with `holiday` (the name or null) and `day_type`, so the one shape
 every screen renders keeps being the one shape.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```bash
 npm run build 2>&1 | tail -5

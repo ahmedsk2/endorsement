@@ -23,7 +23,7 @@ settles, is the merge.
 |---|---|---|
 | D1 | How tightly joined? | **One Laravel application.** Munawib becomes a module in this codebase: one login, one schema, one audit chain, one backup. |
 | D2 | Who is it for? | **Full platform now.** Both modules become department-agnostic immediately; PICU/NICU/SCBU/WARD become seed data, not code. |
-| D3 | Person vs account? | **One `users` table holds everyone**, including people who never log in. |
+| D3 | Person vs account? | ~~One `users` table holds everyone.~~ **REVERSED 2026-08-08 after P0c reconnaissance → a separate `people` table holds the roster; `users` stays purely the auth record, linked by `person_id`.** See §5. |
 | D4 | Where does the engine run? | **One TypeScript engine, two runtimes** — browser for hints, Node sidecar for server authority. |
 | D5 | Which cross-module links? | **All four** (§8). |
 | D6 | Go-live? | **Single launch.** Reaffirmed after sizing; objection logged in §1.3. |
@@ -241,7 +241,40 @@ boundaries), `holiday_equity` (multi-year lookback reduced to a per-schedule vio
 
 ---
 
-## 5. Identity (D3)
+## 5. Identity (D3 — REVERSED 2026-08-08)
+
+> **This whole section is superseded.** It was written for one `users` table holding everyone.
+> P0c reconnaissance showed that model cannot be made safe cheaply here, and the owner reversed
+> D3. §5.1–§5.2's `person_status` machinery is **obsolete**; §5.3's per-field picker rule (D9)
+> still stands, restated at the end.
+>
+> **Why it was reversed.** There is no single authentication chokepoint to gate: the app never
+> calls `Auth::attempt()`, so `EloquentUserProvider::validateCredentials()` is never invoked.
+> Keeping roster people in `users` would have required `person_status` as an extra predicate at
+> **six defence sites** (login, `EnsureAccountActive`, both 2FA challenge resolvers,
+> `AccessControl::holdersOf()`, `pickerRule()`/`staffPickers()`) **plus a dedicated gate on six
+> credential paths** (password login, the reset broker — which is keyed by email and bypasses
+> the provider entirely — email verification, email OTP, trusted devices, remember-me). Twelve
+> places that must each be right, forever, on a system holding children's PHI.
+>
+> **The replacement shape.** A new `people` table is the roster: short name, full name, level
+> (effective-dated), position, phone, email, status, constraints, `external` flag. `users`
+> stays exactly as it is — `password` NOT NULL, `member_name` unique, `active` keeping its
+> current meaning — and gains a `person_id` link. **A roster-only person has no `users` row and
+> therefore cannot authenticate by construction; no gate is needed on any credential path, and
+> all six existing defences keep working untouched.**
+>
+> Consequences P0c must handle: `handover_signoffs`' four named-role FKs move from `user_id` to
+> `person_id` (the frozen `*_name` snapshots already protect the medico-legal record); every
+> read of `user.full_name` follows the link; and `SignatureStore` stays keyed on `users`, which
+> is what keeps **naming separate from signing** — a consultant can be named without an account,
+> but signing still requires one.
+>
+> **D9 still stands, restated:** `endorsed_by`/`endorsed_to` may name only people who have a
+> claimed `users` row; `consultant_by`/`consultant_to` may name any active person;
+> `signed_off_by` is the authenticated user by construction.
+
+### Superseded text follows, kept for the reasoning it records
 
 `users` holds everyone who appears in a rota or on a handover sheet, whether or not they ever
 authenticate.

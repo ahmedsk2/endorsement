@@ -244,6 +244,50 @@ class BackupInstanceIdentityTest extends TestCase
         array_map('unlink', glob($dir.DIRECTORY_SEPARATOR.'*') ?: []);
     }
 
+    /**
+     * Review Minor 3 (2026-08-08): an archive written after this code shipped but before
+     * `INSTANCE_SLUG` was actually set in Coolify carries `Instance::slug()`'s
+     * `Str::slug(APP_NAME)` fallback — already slug-SHAPED, just under the wrong slug — so the
+     * original "fully unslugged only" glob never caught it, and it was neither pruned nor
+     * warned about, forever. The signature archive has the same problem under its own pattern.
+     */
+    public function test_archives_under_a_foreign_slug_including_the_derived_fallback_are_warned_about(): void
+    {
+        if (! $this->hasOpenssl()) {
+            $this->markTestSkipped('openssl is not on PATH in this environment.');
+        }
+
+        config(['endorsement.instance.slug' => 'qch']);
+        $source = $this->sqliteSource('backup-foreign-slug-source.sqlite');
+        $this->useSqliteSource($source);
+
+        $dir = storage_path('framework/testing/backups-foreign-slug');
+        @mkdir($dir, 0777, true);
+        array_map('unlink', glob($dir.DIRECTORY_SEPARATOR.'*') ?: []);
+
+        // The derived-fallback shape: already slug-shaped, just not the current slug.
+        touch($dir.DIRECTORY_SEPARATOR.'endorsement-paediatric-endorsement-2019-06-01_010000.sql.gz.enc');
+        // The fully-unslugged pre-P0d shape, still covered.
+        touch($dir.DIRECTORY_SEPARATOR.'endorsement-2019-06-02_010000.sql.gz.enc');
+        // A signature archive under the derived fallback — same problem, separate pattern.
+        touch($dir.DIRECTORY_SEPARATOR.'endorsement-signatures-paediatric-endorsement-2019-06-01_010000.tar.gz.enc');
+
+        putenv('BACKUP_PASSPHRASE=a-long-test-passphrase-1234567890');
+        $exitCode = Artisan::call('backup:run', ['--path' => $dir]);
+        $output = Artisan::output();
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('3 archive(s)', $output);
+        $this->assertStringContainsString('qch', $output);
+
+        // None of the foreign-slug archives are touched — warn only, never widen the prune.
+        $this->assertFileExists($dir.DIRECTORY_SEPARATOR.'endorsement-paediatric-endorsement-2019-06-01_010000.sql.gz.enc');
+        $this->assertFileExists($dir.DIRECTORY_SEPARATOR.'endorsement-2019-06-02_010000.sql.gz.enc');
+        $this->assertFileExists($dir.DIRECTORY_SEPARATOR.'endorsement-signatures-paediatric-endorsement-2019-06-01_010000.tar.gz.enc');
+
+        array_map('unlink', glob($dir.DIRECTORY_SEPARATOR.'*') ?: []);
+    }
+
     public function test_the_audit_row_records_the_instance_without_a_path_or_phi(): void
     {
         if (! $this->hasOpenssl()) {

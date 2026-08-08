@@ -442,14 +442,25 @@ class BackupRun extends Command
     }
 
     /**
-     * Finding 4: slugging the filename means the fourteen archives the live deployment wrote
+     * Finding 4, widened per review Minor 3: slugging the filename means archives written
      * before this change no longer match any glob, so they are never pruned automatically —
-     * and never eaten by another customer's retention either. Warn, by count; never widen the
-     * prune pattern back to catch them, which is finding 3 restored under a new name.
+     * and never eaten by another customer's retention either. That is not only the
+     * fully-unslugged pre-P0d shape: an archive written after this code shipped but before
+     * `INSTANCE_SLUG` was actually set in Coolify carries `Instance::slug()`'s fallback
+     * (`Str::slug(APP_NAME)`, e.g. `endorsement-paediatric-endorsement-<stamp>.sql.gz.enc`) —
+     * already slug-SHAPED, just under the wrong slug, so a glob for the unslugged shape alone
+     * misses it. Catch any archive, database or signature, whose slug segment is not the
+     * CURRENT slug. Warn, by count; never widen the prune pattern to reach them — the stamp
+     * anchoring there is what stops one slug's retention sweep eating another slug's archives.
      */
     private function warnAboutLegacyArchives(string $dir): void
     {
-        $legacy = glob($dir.DIRECTORY_SEPARATOR.'endorsement-'.self::STAMP_GLOB.'.sql.gz.enc') ?: [];
+        $slug = Instance::slug();
+
+        $legacy = [
+            ...self::archivesWithForeignSlug($dir, 'endorsement-', '.sql.gz.enc', $slug),
+            ...self::archivesWithForeignSlug($dir, 'endorsement-signatures-', '.tar.gz.enc', $slug),
+        ];
 
         if ($legacy === []) {
             return;
@@ -457,10 +468,37 @@ class BackupRun extends Command
 
         $count = count($legacy);
         $this->warn(
-            "{$count} archive(s) in this directory predate the instance slug and are no longer "
-            .'pruned automatically. They belong to this instance. Remove or rename them once you '
-            .'have confirmed a slugged archive restores: docs/RUNBOOK-BACKUP.md.'
+            "{$count} archive(s) in this directory do not carry the current instance slug "
+            ."({$slug}) — including any written before INSTANCE_SLUG was set, which used a "
+            .'derived name rather than no slug at all — and are no longer pruned automatically. '
+            .'Confirm they belong to this instance, then remove or rename them once a '
+            .'current-slug archive has restored successfully: docs/RUNBOOK-BACKUP.md.'
         );
+    }
+
+    /**
+     * Every archive this command writes is `{$prefix}{slug}-{stamp}{$suffix}`, or, from before
+     * a slug existed at all, `{$prefix}{stamp}{$suffix}` with no slug segment. Glob broadly on
+     * prefix/suffix, then parse the slug segment out of each match and keep only the ones that
+     * are not the current slug — that "not the unslugged shape" was finding 4's original,
+     * narrower check.
+     *
+     * @return array<int, string>
+     */
+    private static function archivesWithForeignSlug(string $dir, string $prefix, string $suffix, string $currentSlug): array
+    {
+        $pattern = '/^'.preg_quote($prefix, '/').'(?:(?<slug>.+)-)?'
+            .'\d{4}-\d{2}-\d{2}_\d{6}'.preg_quote($suffix, '/').'$/';
+
+        $found = [];
+
+        foreach (glob($dir.DIRECTORY_SEPARATOR.$prefix.'*'.$suffix) ?: [] as $path) {
+            if (preg_match($pattern, basename($path), $m) === 1 && ($m['slug'] ?? '') !== $currentSlug) {
+                $found[] = $path;
+            }
+        }
+
+        return $found;
     }
 
     private function hasBinary(string $name): bool

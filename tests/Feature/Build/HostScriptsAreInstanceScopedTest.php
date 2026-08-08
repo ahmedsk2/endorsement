@@ -181,4 +181,22 @@ class HostScriptsAreInstanceScopedTest extends TestCase
         $this->assertStringContainsString('{{DATABASE}}', $sql);
         $this->assertStringContainsString('{{USER}}', $sql);
     }
+
+    /**
+     * Minor 6 (review, 2026-08-08): `set -uo pipefail` has no `-e`, so a failed `printenv`
+     * above this guard leaves `dbname`/`dbuser` empty and the script would otherwise exit 0,
+     * printing `DBNAME=; DBUSER=;` — failing closed only because MySQL happens to reject an
+     * empty database name. This is a static check (the script needs `docker` to actually run)
+     * that the guard exists rather than being delegated to MySQL's parser.
+     */
+    public function test_instance_env_refuses_when_dbname_or_dbuser_could_not_be_read(): void
+    {
+        $script = (string) file_get_contents(base_path('docker/instance-env.sh'));
+
+        $this->assertMatchesRegularExpression(
+            '/\[\s*-n\s*"\$dbname"\s*\]\s*&&\s*\[\s*-n\s*"\$dbuser"\s*\]\s*\|\|\s*refuse/',
+            $script,
+            'instance-env.sh must refuse, not rely on MySQL, when MYSQL_DATABASE/MYSQL_USER cannot be read from the db container',
+        );
+    }
 }

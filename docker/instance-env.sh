@@ -34,6 +34,12 @@ db=$(docker ps -qf "name=db-${uuid}")
 dbname=$(docker exec "$db" printenv MYSQL_DATABASE)
 dbuser=$(docker exec "$db" printenv MYSQL_USER)
 
+# Without `-e`, a failed `printenv` above leaves dbname/dbuser empty and the script would
+# otherwise exit 0, printing `DBNAME=; DBUSER=;` — failing closed only because MySQL happens
+# to reject an empty database name. A guard whose whole job is refusing ambiguity should not
+# delegate that to MySQL's parser.
+[ -n "$dbname" ] && [ -n "$dbuser" ] || refuse "could not read MYSQL_DATABASE/MYSQL_USER from the db container"
+
 # Say out loud which customer is about to be operated on. Correct selection is necessary;
 # VISIBLE selection is what stops the wrong one being operated on confidently.
 printf 'instance-env.sh: app=%s db=%s database=%s user=%s\n' \

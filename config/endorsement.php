@@ -51,4 +51,11 @@ return [
         'name' => env('INSTITUTION_NAME', 'Qatif Central Hospital'),
     ],
 
+    /*
+     * The department's Hijri calibration, verified against ITS OWN published calendar
+     * across a month boundary. Set once at provisioning; changing it afterwards changes
+     * every Hijri date the system has ever displayed. QCH: -1.
+     */
+    'hijri_offset_days' => env('HIJRI_OFFSET_DAYS'),
+
 ];

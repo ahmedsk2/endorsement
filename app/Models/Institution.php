@@ -7,6 +7,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Institution extends Model
 {
+    public const PERIOD_MONTHS = 'months';
+
+    public const PERIOD_WEEK_BLOCKS = 'week_blocks';
+
+    /** The bounds a calibration may take. Beyond this it is a wrong timezone, not an offset. */
+    public const HIJRI_OFFSET_BOUNDS = [-2, 2];
+
     /**
      * @var list<string>
      */
@@ -14,6 +21,35 @@ class Institution extends Model
         'name',
         'code',
         'active',
+        'hijri_enabled',
+        'hijri_offset_days',
+        'weekend_days',
+        'period_type',
+        'block_weeks',
+        'academic_year_start',
+    ];
+
+    /**
+     * MySQL cannot carry a literal DEFAULT on a JSON column (weekend_days, block_weeks), so
+     * their defaults live here instead — applied to every row created after the
+     * 2026_08_12_120001 migration. Pre-encoded JSON: this is the RAW attribute value Eloquent
+     * stores before the 'array' cast below decodes it on read. The migration's own backfill
+     * covers the one row that already existed when it ran.
+     *
+     * hijri_enabled/hijri_offset_days/period_type DO carry a DB-level default (the column
+     * types support it), but that default is only visible after a re-fetch — Eloquent never
+     * reads it back into the in-memory model after INSERT. Repeating it here keeps a freshly
+     * created, not-yet-reloaded Institution instance consistent with what the database will
+     * actually hold, and keeps every calendar default defined in exactly one place.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'hijri_enabled' => true,
+        'hijri_offset_days' => 0,
+        'weekend_days' => '[5,6]',
+        'period_type' => self::PERIOD_WEEK_BLOCKS,
+        'block_weeks' => '[4,4,4,4,4,4,4,4,4,4,4,4,5]',
     ];
 
     /**
@@ -23,6 +59,11 @@ class Institution extends Model
     {
         return [
             'active' => 'boolean',
+            'hijri_enabled' => 'boolean',
+            'hijri_offset_days' => 'integer',
+            'weekend_days' => 'array',
+            'block_weeks' => 'array',
+            'academic_year_start' => 'date',
         ];
     }
 

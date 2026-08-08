@@ -310,4 +310,28 @@ class DeploymentInvariantsTest extends TestCase
             .'the compose file itself, for the same reason as INSTITUTION_CODE above.',
         );
     }
+
+    /**
+     * P1a Task 1 taught `config/endorsement.php` and `ReferenceSeeder` to read
+     * `HIJRI_OFFSET_DAYS`, but — same defect as `test_instance_and_institution_variables_reach_
+     * the_container` above, found in P0d Task 9's dress rehearsal — neither of those wires a
+     * variable into THIS file's `environment:` block. A value pasted into Coolify's
+     * Environment Variables screen has zero effect unless it is referenced here.
+     *
+     * The default matters as much as the passthrough, for the same reason as
+     * INSTITUTION_CODE/NAME: `env('X', 'default')` returns `''`, NOT `'default'`, for a
+     * variable that is PRESENT but empty — which is what a bare `${HIJRI_OFFSET_DAYS}` (no
+     * `:-` fallback) would put in the container's environment for every deployment that has
+     * never set it in Coolify, silently rendering every Hijri date one day wrong.
+     */
+    public function test_hijri_offset_reaches_the_container(): void
+    {
+        $this->assertMatchesRegularExpression(
+            '/HIJRI_OFFSET_DAYS:\s*\$\{HIJRI_OFFSET_DAYS:-0\}/',
+            $this->compose(),
+            'HIJRI_OFFSET_DAYS must be passed through to the container AND default to 0 in the '
+            .'compose file itself — a value set only in config/ or .env.example never reaches '
+            .'the process environment unless this environment: block references it.',
+        );
+    }
 }

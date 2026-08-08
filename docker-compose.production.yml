@@ -85,6 +85,14 @@ services:
       INSTITUTION_CODE: ${INSTITUTION_CODE:-QCH}
       INSTITUTION_NAME: ${INSTITUTION_NAME:-Qatif Central Hospital}
 
+      # The department's Hijri calibration (P1a Task 1), read by ReferenceSeeder on every
+      # `db:seed --force`. Present-but-empty must not become 0 for a calibrated deployment —
+      # the compose default exists for the same reason INSTITUTION_CODE's does above (P0d
+      # Task 9's dress rehearsal found exactly this class of defect: a value taught to
+      # config/ and .env.example but never wired into this environment: block has zero
+      # effect when set in Coolify).
+      HIJRI_OFFSET_DAYS: ${HIJRI_OFFSET_DAYS:-0}
+
       DB_CONNECTION: mysql
       DB_HOST: db
       DB_PORT: "3306"

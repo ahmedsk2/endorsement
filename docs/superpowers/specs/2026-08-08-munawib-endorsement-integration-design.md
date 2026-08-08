@@ -500,11 +500,27 @@ write-side validation matches what the picker offers — the 2026-07-26 invarian
 and narrative labels, hue token. `EndorsementController::UNIT_CODES` and the four-unit
 assumption are removed; PICU/NICU/SCBU/WARD become seed rows.
 
-Units also gain Munawib UN-02's three independent capability flags (training rotation /
-on-call coverage target / clinic owner) and UN-03 import aliases. `positions` become
-admin-managed; **capabilities stay code-defined** (they name features) with role→capability
-defaults as data. Position 1 (Nurse) remains retired and is never reused. New: `levels`
-(LV-01), `user_levels` (LV-04).
+**Units gain UN-02's three independent capability flags (training rotation / on-call coverage
+target / clinic owner) and UN-03 import aliases in P1b, not P0a.** This section originally
+claimed they shipped with P0a; they did not — P0a's
+`2026_08_08_120001_add_configuration_to_units.php` added `display_order`, `active`,
+`extra_row_fields`, `bed_label`, `consultant_pair`, `consultant_by_label`, `bar_class`,
+`print_plan_label`, `print_narrative_label`, and nothing else. There is no `rotation`/
+`call_target`/`clinic_owner` flag and no `aliases` column on `units` as of P1a
+(2026-08-09). `positions` become admin-managed; **capabilities stay code-defined** (they name
+features) with role→capability defaults as data. Position 1 (Nurse) remains retired and is
+never reused.
+
+**The level ladder table is `person_levels`, not `user_levels`.** P0c's
+`2026_08_10_120002_create_levels_and_person_levels.php` shipped it under that name, matching
+the `people`/`users` split (D3 reversed) — a level history belongs to the roster identity
+(`Person`), not the account (`User`). `levels` itself exists but is **still empty** as of P1a
+(2026-08-09); P0c deliberately seeded no rows ("the QCH level set is departmental data the
+owner supplies; inventing one here would be a clinical guess this plan has no standing to
+make"). A 2026-08-08 owner decision has since settled what the ladder is —
+`R1, R2, R3, R4, EXT` (External), code/name/order/`external` all administrator-owned data after
+the seed — but seeding it and building the CRUD/LV-03 promotion workflow on top is P1b scope,
+not yet done.
 
 ### 6.2 Bounded custom fields (D8, "Ceiling 2")
 
@@ -572,13 +588,48 @@ datetime is never re-parsed in the current timezone.
 
 ## 7. Calendar
 
-One `App\Support\Calendar` (PHP) plus a mirrored calendar inside `packages/engine` for
-client-side date math, both reading the same per-institution configuration: period type,
-weekend days, Hijri display, `hijri_offset_days`, timezone (default `Asia/Riyadh`),
-academic-year start. **Nothing outside those two converts dates** (AR-08).
+**Decision A (P1a, 2026-08-08): ONE implementation, not two — this section's original "PHP
+plus a mirrored `packages/engine`" plan is superseded.** `App\Support\Calendar` is the sole
+converter; the client performs **no** date arithmetic at all. `packages/` does not exist in
+this repository and there is no client-side date library (no dayjs/date-fns/luxon/moment).
+Shipping a second implementation now would have been two definitions of one fact — the same
+failure class `AuditChain::canonical()` and `Person::levelAt()` already carry docblocks
+against — so P1a's screens receive pre-formatted Gregorian/Hijri labels, enumerated date
+ranges, and day types as Inertia props, computed server-side, every time.
+
+This is a **stricter** reading of AR-08 ("nothing outside that module converts dates"), not a
+weaker one: it also permanently retires the four hand-rolled JS date helpers P1a found and
+deleted, each of which carried a comment recording a real production bug — at +03:00,
+`toISOString()` rewinds local midnight to the previous Gregorian date, which silently broke
+"Start next day" once already.
+
+**What this defers, and how it stays honest:** P2's `packages/engine` conditions engine needs
+client-side date math for UX-05 (evaluating hints without a network round trip), so the
+TypeScript mirror this section originally described is not cancelled — it is deferred to P2,
+built alongside the package and its TypeScript toolchain that P2 creates anyway. P1a builds the
+contract that mirror must satisfy **now**, while the semantics are fresh:
+`tests/fixtures/calendar/golden.json`, a framework-free JSON corpus (day-level Hijri/weekend/
+day-type cases across an offset recalibration and a Hijri month boundary, a +03:00 day-boundary
+case, holiday cases including a span crossing a Hijri month end, a leap year, and both
+period-generation systems including the week-block run's variable final block) that
+`tests/Feature/Calendar/GoldenFixtureTest.php` already asserts against the PHP implementation.
+P2's mirror asserts the same file against itself; a change to one side that is not matched on
+the other is exactly the drift §4.3's cross-validation job exists to catch, applied here a
+stage early.
+
+**Timezone stays per-INSTANCE, not per-department** (owner decision 3, 2026-08-08, overriding
+this section's earlier implication of a per-institution timezone): `APP_TIMEZONE`
+(`config/app.php`), never an `institutions.timezone` column. Under D11 there is one institution
+per database, so a per-department column beside the env var would be one fact in two places —
+the same drift class that produced the audit-chain false alarm §15 records — and it would make
+the handover day boundary (`UNIQUE(unit_id, handover_date)`, uncorrectable after the first
+clinical write per `docs/RUNBOOK-PROVISION.md`) editable from a screen. Only
+`hijri_offset_days` is per-department (`institutions.hijri_offset_days`, additive nullable
+migration, P1a Task 1).
 
 The prototype established `hijri_offset_days = −1` for this hospital, verified against the
-department's published calendar across a month boundary; that value seeds the QCH institution.
+department's published calendar across a month boundary; that value is set via
+`HIJRI_OFFSET_DAYS` in Coolify (owner action, `docs/RUNBOOK-DEPLOY.md`), not hardcoded.
 
 The calendar converts for display and scheduling day-boundary math only — **never** for audit
 canonicalization, which stays byte-verbatim.
@@ -720,8 +771,8 @@ paediatrics goes live once, with both modules ready.
 
 | Phase | Content |
 |---|---|
-| **P0 — Platform foundation** | Save Munawib Part B as `docs/munawib/SPEC.md`. Units and `UnitProfile` become configuration; **Ceiling-2 custom fields** (definitions, encrypted JSON, dynamic validation, generic print renderer, import mapping); `levels` + `user_levels`; `users` extended with §5.1 columns and CHECK constraints; **auth lifecycle reconciled into one state machine**; the password-reset and email-collision gates; `pickerRule()` rewritten per D9; provisioning script for database-per-customer. Endorsement stays green throughout. |
-| **P1 — Munawib Stage 1** | People, invitations, roles on the merged identity; master rota (both period systems, splits, vacations, import/export, publish view); clinics; holidays. |
+| **P0 — Platform foundation** | Save Munawib Part B as `docs/munawib/SPEC.md`. Units and `UnitProfile` become configuration; **Ceiling-2 custom fields** (definitions, encrypted JSON, dynamic validation, generic print renderer, import mapping); `levels` + `person_levels` (shipped under this name, not `user_levels` — §6.1); `users` extended with §5.1 columns and CHECK constraints; **auth lifecycle reconciled into one state machine**; the password-reset and email-collision gates; `pickerRule()` rewritten per D9; provisioning script for database-per-customer. Endorsement stays green throughout. |
+| **P1 — Munawib Stage 1** | People, invitations, roles on the merged identity; master rota (both period systems, splits, vacations, import/export, publish view); clinics; holidays. **Split into five sub-plans** (`docs/superpowers/plans/2026-08-08-p1-master-rota.md`) once reconnaissance found the operational layer above `Person`/`PersonLevel` entirely empty and P1 too large to plan as one unit: **P1a** the calendar module, per-department calendar settings, both period systems, holidays, and absorption of every existing date converter (no new route); **P1b** units CRUD with UN-02/UN-03, the level ladder CRUD, and the calendar/period/holiday settings screens; **P1c** the People screen, external people made real, bulk level operations, annual promotion, invitation resend/unbinding/per-person roles, roster import; **P1d** the master rota grid itself — periods × people, split assignments, vacations, fill-down/copy, import/export, the publish view; **P1e** clinics, the weekly clinic map, and the setup wizard threading every step above, plus the removable demo department seed. Each sub-plan is written when its predecessor merges, per the P0a–P0d convention. |
 | **P2 — Engine** | `packages/engine` with **all 21 CG-07 types** (D13), golden fixtures, plain-language previews, severity/rank model; `services/engine`; the CI cross-validation job. |
 | **P3 — Munawib Stage 2** | Slots, call windows, coverage templates, conditions gate with drag ranking, draft workbench with live hints, trackers, undo ≥30, unfilled lens, publish + archive, morning coverage, who's-on-call board, personal pages, tallies, exports. **L1 and the §9.1 share-token feed land here.** |
 | **P4 — Munawib Stage 3** | *Prerequisite: host scaled to 4 OCPU / 24 GB.* Solver service, §4.2 evaluation mode, ranked-sacrifice report, per-placement explanations, partial modes, infeasibility reporting, AU-06 against §11.2's fixture; requests with deadlines and reminders; approval queue with coverage impact; versioned change log; ICS feeds. **L4 lands here.** |
@@ -796,6 +847,24 @@ None block starting P0.
     env-only (P0d Task 3), read once by `ReferenceSeeder` on `db:seed --force`. There is no
     screen to view or change them after go-live — doing so today means a direct database edit,
     outside the audit trail that covers every other administrative change in this system.
+13. ~~**AC-02 invitation lifetime: 7 days or 14?**~~ **SETTLED, owner decision, round 2,
+    2026-08-08.** `Invitation::LIFETIME_DAYS = 7` today, deliberately shorter than Munawib
+    AC-02's 14 — an invitation is a credential that reaches children's clinical records once
+    redeemed, and a shorter window means a forwarded link is live for less time. The decision
+    goes further than "keep 7": lifetime becomes **admin-configurable**, default 7, validated
+    (a sane upper bound, an integer, no zero-or-negative) so the knob cannot be turned to
+    something absurd. Recorded as a deliberate spec deviation from AC-02, not an oversight.
+    Building the configurable setting is P1c scope; not yet implemented as of P1a.
+14. ~~**Does the missed-days denominator become weekend/holiday-aware?**~~ **SETTLED,
+    UNCHANGED, owner decision, round 2, 2026-08-08.** Every calendar day still counts toward
+    `MissedDays`' `total_days`, exactly as before P1a gave the system its first weekend and
+    holiday knowledge. Making the denominator day-type-aware would silently alter every
+    historical compliance figure the system has ever produced — a change in what the number
+    *means*, not a refactor, and nothing records which definition produced an earlier figure.
+    `MissedDays` never consults `Calendar::dayType()`/`isHoliday()`/`isWeekend()`; pinned by
+    `HolidayTest::test_missed_days_denominator_is_unaffected_by_a_holiday` and
+    `ConverterAbsorptionTest`'s weekend-day equivalent (P1a Tasks 5 and 7). If ever revisited,
+    it must be a deliberate, dated change with the old figures preserved, not this one.
 
 ---
 

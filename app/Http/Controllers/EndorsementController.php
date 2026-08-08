@@ -10,11 +10,11 @@ use App\Models\Unit;
 use App\Models\UnitFieldDefinition;
 use App\Models\User;
 use App\Support\AccessControl;
+use App\Support\Calendar;
 use App\Support\MissedDays;
 use App\Support\SignoffPickers;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -37,13 +37,21 @@ use Inertia\Response;
 class EndorsementController extends Controller
 {
     /**
+     * Spec §10.4 — a run of missing days longer than this collapses into one summary listing
+     * entry instead of one row per date. Moved server-side by Task 6 (Decision A): this used to
+     * be a client constant (`Index.vue`'s deleted `GAP_RENDER_LIMIT`) guarding a client-side
+     * `new Date()` loop.
+     */
+    private const GAP_RENDER_LIMIT = 7;
+
+    /**
      * The four-unit chooser: one card per unit with today's census count and sign-off state,
      * so a missing or unsigned day is visible the moment the app opens (the compliance
      * problem this system exists to fix is FORGETTING).
      */
     public function root(Request $request): Response
     {
-        $today = now()->format('Y-m-d');
+        $today = Calendar::todayYmd();
 
         $units = Unit::query()->active()->ordered()
             ->get()
@@ -123,14 +131,17 @@ class EndorsementController extends Controller
             ->where('unit_id', $u->id)
             ->whereNotNull('signed_off_at')
             ->get()
-            ->keyBy(fn (HandoverSignoff $s): string => Carbon::parse($s->handover_date)->format('Y-m-d'));
+            ->keyBy(fn (HandoverSignoff $s): string => Calendar::ymd($s->handover_date));
 
         $dates = $dates->map(function ($r) use ($signoffs): array {
-            $date = Carbon::parse($r->handover_date)->format('Y-m-d');
+            $date = Calendar::ymd($r->handover_date);
             $s = $signoffs->get($date);
 
             return [
-                'date' => $date,
+                // UX-04 dual dating — `Calendar::label()` is the one shape every screen renders
+                // a date as, so `date`/`hijri`/`weekend` come from it rather than being
+                // recomputed here.
+                ...Calendar::label($date),
                 'count' => (int) $r->row_count,
                 'signed_off' => $s !== null,
                 // The frozen snapshot, never a live user lookup (see HandoverSignoff).
@@ -143,8 +154,65 @@ class EndorsementController extends Controller
         return Inertia::render('Endorsement/Index', [
             'unit' => $this->unitPayload($u),
             'dates' => $dates,
+            // Decision A — the merged day/gap/gap-summary listing the client used to build
+            // itself with `new Date()` arithmetic (localYmd/datesBetween, deleted in Task 6) is
+            // now computed here, so `resources/js` performs no date construction at all.
+            'listing' => $this->buildListing($dates),
             'filters' => ['from' => $from, 'to' => $to],
         ]);
+    }
+
+    /**
+     * Spec §10.4 — merge the day list (newest first) with inline "no endorsement" gap markers,
+     * replacing the client-side computation Decision A removes. A run of missing calendar days
+     * between two consecutive known dates is enumerated via `Calendar::datesBetween()` and
+     * either listed individually (each dual-dated) or, past GAP_RENDER_LIMIT, collapsed into
+     * one summary entry — exactly the split the deleted `Index.vue` computed property made,
+     * just computed here instead of in the browser.
+     *
+     * @param  Collection<int, array<string, mixed>>  $dates  newest first
+     * @return list<array<string, mixed>>
+     */
+    private function buildListing(Collection $dates): array
+    {
+        $items = $dates->values();
+        $listing = [];
+
+        foreach ($items as $i => $entry) {
+            $listing[] = ['type' => 'day', ...$entry];
+
+            $next = $items->get($i + 1);
+            if ($next === null) {
+                continue;
+            }
+
+            // Strictly between the older ($next) and newer ($entry) known dates — both ends
+            // exclusive, so trim the inclusive result Calendar::datesBetween() returns.
+            $span = Calendar::datesBetween($next['date'], $entry['date']);
+            $missing = array_slice($span, 1, -1);
+
+            if ($missing === []) {
+                continue;
+            }
+
+            if (count($missing) > self::GAP_RENDER_LIMIT) {
+                $listing[] = [
+                    'type' => 'gap-summary',
+                    'count' => count($missing),
+                    'from' => $next['date'],
+                    'to' => $entry['date'],
+                ];
+
+                continue;
+            }
+
+            // Newest first, matching the list.
+            foreach (array_reverse($missing) as $date) {
+                $listing[] = ['type' => 'gap', ...Calendar::label($date)];
+            }
+        }
+
+        return $listing;
     }
 
     /**
@@ -159,8 +227,8 @@ class EndorsementController extends Controller
             'to' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
         ]);
 
-        $from = $filters['from'] ?? now()->subDays(29)->format('Y-m-d');
-        $to = $filters['to'] ?? now()->format('Y-m-d');
+        $from = $filters['from'] ?? Calendar::addDays(Calendar::todayYmd(), -29)->format(Calendar::YMD);
+        $to = $filters['to'] ?? Calendar::todayYmd();
 
         $units = Unit::query()->active()->ordered()
             ->get()
@@ -196,7 +264,7 @@ class EndorsementController extends Controller
 
         return redirect()->route('endorsement.show', [
             'unit' => $unit->code,
-            'date' => now()->format('Y-m-d'),
+            'date' => Calendar::todayYmd(),
         ]);
     }
 
@@ -243,6 +311,13 @@ class EndorsementController extends Controller
         return Inertia::render('Endorsement/Sheet', [
             'unit' => $this->unitPayload($u),
             'date' => $date,
+            // UX-04 dual dating, and Decision A's adjacent-day navigation — Sheet.vue's deleted
+            // `nextDate` computed built a `new Date()` from the route param to find "tomorrow";
+            // the server now hands over both neighbours already formatted, so "Start next day"
+            // and a "Previous day" link need no client-side date arithmetic at all.
+            'date_hijri' => Calendar::hijriLabel($date),
+            'next_date' => Calendar::addDays($date, 1)->format(Calendar::YMD),
+            'previous_date' => Calendar::addDays($date, -1)->format(Calendar::YMD),
             'rows' => $rows,
             // The viewer is passed so the sheet can state up front whether THIS user may reopen a
             // signed day, and who to ask if not.
@@ -278,7 +353,7 @@ class EndorsementController extends Controller
             // produced it, so a census found on a desk or in a bin was anonymous. This
             // makes it attributable — which is also the cheapest deterrent there is.
             'printed_by' => (string) ($request->user()?->full_name ?? ''),
-            'printed_at' => now()->format('Y-m-d H:i'),
+            'printed_at' => Calendar::now()->format('Y-m-d H:i'),
         ]);
     }
 
@@ -543,11 +618,12 @@ class EndorsementController extends Controller
     {
         $u = $this->resolveUnit($unit);
 
-        // date_format, not a bare string: this went to strtotime(), so "+5 years" or
-        // "last monday" created real handover rows at arbitrary dates — and a backdated day
-        // makes the missed-days page report a handover that never happened, corrupting the
-        // one metric this system exists to improve. Every other date route is regex-pinned
-        // in routes/web.php; this one was not.
+        // date_format, not a bare string: this went through the old strtotime-based parser
+        // (Task 5 absorbed it into Calendar::parse()), so "+5 years" or "last monday" created
+        // real handover rows at arbitrary dates — and a backdated day makes the missed-days
+        // page report a handover that never happened, corrupting the one metric this system
+        // exists to improve. Every other date route is regex-pinned in routes/web.php; this
+        // one was not.
         $data = $request->validate([
             'date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'carry_choice' => ['sometimes', 'nullable', 'in:carry,blank'],
@@ -569,14 +645,20 @@ class EndorsementController extends Controller
             return redirect()->route('endorsement.show', ['unit' => $u->code, 'date' => $target]);
         }
 
-        // The most recent PRIOR day for this unit is the census source.
+        // The most recent PRIOR day for this unit is the census source. A real model, not
+        // ->max('handover_date') — an aggregate query's scalar result skips the 'date' cast
+        // entirely and returns the raw column value (e.g. "2026-07-10 00:00:00" on this
+        // schema), which Calendar::ymd() then rejects: it is deliberately Y-m-d-only, the same
+        // strictness that makes it reject "+5 years". Fetching the model keeps the cast in the
+        // loop and matches every other handover_date read in this file.
         $source = Handover::where('unit_id', $u->id)
             ->whereDate('handover_date', '<', $target)
-            ->max('handover_date');
-        $sourceDate = $source !== null ? Carbon::parse($source)->format('Y-m-d') : null;
+            ->orderByDesc('handover_date')
+            ->first();
+        $sourceDate = $source !== null ? Calendar::ymd($source->handover_date) : null;
 
         $isConsecutive = $sourceDate !== null
-            && $sourceDate === Carbon::parse($target)->subDay()->format('Y-m-d');
+            && $sourceDate === Calendar::addDays($target, -1)->format(Calendar::YMD);
 
         // A gap needs an explicit human choice — surface the dialog instead of guessing.
         if ($sourceDate !== null && ! $isConsecutive && $choice === null) {
@@ -888,6 +970,11 @@ class EndorsementController extends Controller
                 // "not an object" — a foreign-ciphertext marker string reaching ->format()
                 // fatals. Passing the marker through as-is lets it reach the clinician as
                 // visible text instead of a 500.
+                //
+                // Deliberately NOT routed through Calendar (Task 5): dob is PHI held by
+                // App\Casts\EncryptedDateTime, whose getter can return that string marker —
+                // Calendar::parse()/ymd() are not built for a value that might not be a real
+                // date at all, and Calendar's own docblock names dob as out of scope.
                 'dob' => is_string($h->dob) ? $h->dob : $h->dob?->format('Y-m-d H:i'),
                 'age' => $h->age,
                 'ward_unit' => $h->ward_unit,
@@ -1269,22 +1356,19 @@ class EndorsementController extends Controller
     /** Normalize a `{date}` route param to `Y-m-d`, rejecting anything unparseable with a 404. */
     private function normalizeDate(string $date): string
     {
-        $ts = strtotime($date);
+        $parsed = Calendar::tryParse($date);
 
-        if ($ts === false) {
+        if ($parsed === null) {
             abort(404);
         }
 
-        return date('Y-m-d', $ts);
+        return $parsed->format(Calendar::YMD);
     }
 
     /** Parse a submitted date to `Y-m-d`, defaulting to today's date when absent/empty. */
     private function parseDateOrToday(mixed $value): string
     {
-        if (is_string($value) && trim($value) !== '' && ($ts = strtotime($value)) !== false) {
-            return date('Y-m-d', $ts);
-        }
-
-        return now()->format('Y-m-d');
+        return (is_string($value) ? Calendar::tryParse($value)?->format(Calendar::YMD) : null)
+            ?? Calendar::todayYmd();
     }
 }

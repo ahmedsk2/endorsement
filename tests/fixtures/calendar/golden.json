@@ -1,0 +1,155 @@
+{
+  "_purpose": "The shared contract between App\\Support\\Calendar (PHP, this repo, P1a) and the packages/engine calendar mirror P2 will build (Decision A, design doc §7). Every value below was produced by RUNNING the code, not derived by hand — see GoldenFixtureTest.php. A change here that is not matched by an equivalent change in P2's mirror is exactly the drift this file exists to catch.",
+  "version": 1,
+  "timezone": "Asia/Riyadh",
+
+  "cases": [
+    {
+      "_description": "offset 0 (an uncalibrated department's default). Includes a Gregorian-year boundary (2026-01-01/2026-12-31) and a leap-year day (2028-02-29).",
+      "settings": { "hijri_offset_days": 0, "weekend_days": [5, 6] },
+      "dates": [
+        { "date": "2026-08-08", "hijri": "1448-02-25", "iso_weekday": 6, "weekend": true,  "day_type": "WE" },
+        { "date": "2026-07-15", "hijri": "1448-02-01", "iso_weekday": 3, "weekend": false, "day_type": "WD" },
+        { "date": "2026-01-01", "hijri": "1447-07-12", "iso_weekday": 4, "weekend": false, "day_type": "WD" },
+        { "date": "2026-12-31", "hijri": "1448-07-22", "iso_weekday": 4, "weekend": false, "day_type": "WD" },
+        { "date": "2028-02-29", "hijri": "1449-10-04", "iso_weekday": 2, "weekend": false, "day_type": "WD" }
+      ]
+    },
+    {
+      "_description": "offset -1 (QCH's calibration, verified against its own published calendar). Same four dates as the offset-0 case's month-boundary pair, shifted, plus the weekend pair — this is the case a reader checks by hand against a printed calendar.",
+      "settings": { "hijri_offset_days": -1, "weekend_days": [5, 6] },
+      "dates": [
+        { "date": "2026-08-07", "hijri": "1448-02-23", "iso_weekday": 5, "weekend": true,  "day_type": "WE" },
+        { "date": "2026-08-08", "hijri": "1448-02-24", "iso_weekday": 6, "weekend": true,  "day_type": "WE" },
+        { "date": "2026-07-15", "hijri": "1448-01-29", "iso_weekday": 3, "weekend": false, "day_type": "WD" },
+        { "date": "2026-07-16", "hijri": "1448-02-01", "iso_weekday": 4, "weekend": false, "day_type": "WD" }
+      ]
+    }
+  ],
+
+  "hijri_month_boundary": {
+    "_description": "THE reason the offset is applied to the GREGORIAN instant before conversion, never by decrementing the resulting Hijri day number: doing the latter produces the impossible 1448-02-00 at this exact boundary. 2026-07-15 is the FIRST day of Hijri month 2 (Safar) at offset 0, and the LAST day of Hijri month 1 (Muharram) at offset -1 — see `cases` above for the paired values (2026-07-15 -> 1448-02-01 at offset 0, -> 1448-01-29 at offset -1; 2026-07-16 -> 1448-02-02 at offset 0, -> 1448-02-01 at offset -1).",
+    "offset_0":  { "date": "2026-07-15", "hijri": "1448-02-01" },
+    "offset_-1": { "date": "2026-07-15", "hijri": "1448-01-29" }
+  },
+
+  "day_boundary_cases": [
+    {
+      "_description": "The 00:00-03:00 UTC window where UTC's calendar day and Asia/Riyadh's disagree. The concrete reason APP_TIMEZONE cannot change after the first clinical write: handover_signoffs carries UNIQUE(unit_id, handover_date), and the same instant files under a different day depending on which timezone is active.",
+      "instant_utc": "2026-08-08T22:30:00Z",
+      "today_ymd_by_timezone": {
+        "UTC": "2026-08-08",
+        "Asia/Riyadh": "2026-08-09"
+      }
+    }
+  ],
+
+  "holiday_cases": [
+    {
+      "_description": "A Hijri-ruled holiday (Eid al-Fitr, Shawwal 1) resolves THROUGH hijri_offset_days and moves with it, rather than staying pinned to a fixed Gregorian date. At offset 0, Shawwal 1, 1448 falls on 2027-03-09 (Gregorian); recalibrating to -1 shifts the underlying Hijri reading of every Gregorian instant by a day, so the same rule now anchors on 2027-03-10 instead.",
+      "rule": { "calendar": "hijri", "month": 10, "day": 1, "duration_days": 1, "year": null },
+      "expect": [
+        { "settings": { "hijri_offset_days": 0, "weekend_days": [5, 6] },  "date": "2027-03-09", "holiday": true },
+        { "settings": { "hijri_offset_days": 0, "weekend_days": [5, 6] },  "date": "2027-03-10", "holiday": false },
+        { "settings": { "hijri_offset_days": -1, "weekend_days": [5, 6] }, "date": "2027-03-09", "holiday": false },
+        { "settings": { "hijri_offset_days": -1, "weekend_days": [5, 6] }, "date": "2027-03-10", "holiday": true }
+      ]
+    },
+    {
+      "_description": "duration_days is counted in GREGORIAN days throughout, so a span anchored near a Hijri month end (Ramadan 29, 1448 = 2027-03-08 at offset 0) crosses into the next Hijri month (Shawwal 1 = 2027-03-09) one day in, with no special-casing of the Hijri month boundary in the walk-back.",
+      "rule": { "calendar": "hijri", "month": 9, "day": 29, "duration_days": 4, "year": null },
+      "expect": [
+        { "settings": { "hijri_offset_days": 0, "weekend_days": [5, 6] }, "date": "2027-03-07", "holiday": false },
+        { "settings": { "hijri_offset_days": 0, "weekend_days": [5, 6] }, "date": "2027-03-08", "holiday": true },
+        { "settings": { "hijri_offset_days": 0, "weekend_days": [5, 6] }, "date": "2027-03-09", "holiday": true },
+        { "settings": { "hijri_offset_days": 0, "weekend_days": [5, 6] }, "date": "2027-03-10", "holiday": true },
+        { "settings": { "hijri_offset_days": 0, "weekend_days": [5, 6] }, "date": "2027-03-11", "holiday": true },
+        { "settings": { "hijri_offset_days": 0, "weekend_days": [5, 6] }, "date": "2027-03-12", "holiday": false }
+      ]
+    },
+    {
+      "_description": "SL-03 precedence: a holiday on a day that is also a weekend day reports as a holiday, never a weekend.",
+      "rule": { "calendar": "gregorian", "month": 8, "day": 7, "duration_days": 1, "year": null },
+      "expect": [
+        { "settings": { "hijri_offset_days": 0, "weekend_days": [5, 6] }, "date": "2026-08-07", "holiday": true, "day_type": "HOL" }
+      ]
+    }
+  ],
+
+  "period_runs": [
+    {
+      "_description": "Owner decision 4 (round 2, binding): the academic year resets to a FIXED start date each year rather than drifting; block 13 absorbs whatever remains before the FOLLOWING year's fixed start, so its length VARIES. This is the primary case decision 4 exists to produce — 13 contiguous blocks spanning exactly 365 days (a Gregorian year), NOT the plan's superseded 371-day/fixed-five-week reading.",
+      "kind": "week_block",
+      "starts_on": "2026-07-01",
+      "block_weeks": [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5],
+      "next_year_starts_on": "2027-07-01",
+      "expect": {
+        "count": 13,
+        "total_days": 365,
+        "first": { "position": 1,  "label": "Block 1",  "starts_on": "2026-07-01", "ends_on": "2026-07-28" },
+        "last":  { "position": 13, "label": "Block 13", "starts_on": "2027-06-02", "ends_on": "2027-06-30" }
+      }
+    },
+    {
+      "_description": "Without a known next-year start (previewing a year before the following one is configured), the final block falls back to its NOMINAL length taken from block_weeks — a preview convenience only, superseded the moment the next year's start date is entered. This is the one case in this file where 371 is the CORRECT number, not the superseded one.",
+      "kind": "week_block",
+      "starts_on": "2026-07-01",
+      "block_weeks": [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5],
+      "next_year_starts_on": null,
+      "expect": {
+        "count": 13,
+        "total_days": 371,
+        "first": { "position": 1,  "label": "Block 1",  "starts_on": "2026-07-01", "ends_on": "2026-07-28" },
+        "last":  { "position": 13, "label": "Block 13", "starts_on": "2027-06-02", "ends_on": "2027-07-06" }
+      }
+    },
+    {
+      "kind": "month",
+      "starts_on": "2026-07-01",
+      "count": 12,
+      "expect": {
+        "count": 12,
+        "total_days": 365,
+        "first": { "position": 1,  "label": "July 2026", "starts_on": "2026-07-01", "ends_on": "2026-07-31" },
+        "last":  { "position": 12, "label": "June 2027",  "starts_on": "2027-06-01", "ends_on": "2027-06-30" }
+      }
+    },
+    {
+      "_description": "Leap year: February 2028 gets 29 days. Run started a year later than the plain-months case above so month 8 of the run lands on Feb 2028.",
+      "kind": "month",
+      "starts_on": "2027-07-01",
+      "count": 12,
+      "expect": {
+        "count": 12,
+        "at_position_8": { "position": 8, "label": "February 2028", "starts_on": "2028-02-01", "ends_on": "2028-02-29" }
+      }
+    },
+    {
+      "_description": "Decision 4's varying final block, run against a LEAP year boundary — the case a mirror hardcoding 29 days for block 13 (the value in the 365-day run above) would fail. Blocks 1-12 are always fixed 28-day (4-week) spans regardless of where a leap day falls inside them, so all 366 vs 365 of the difference between this run and the primary case above lands entirely on block 13, which absorbs whatever remains before the next year's fixed start (owner decision 4) — 366 total minus 12*28=336 leaves 30, one more than the non-leap run's 29. Verified by RUNNING PeriodGenerator::weekBlocks(), not derived by hand: block 13 = 2028-06-01..2028-06-30 (30 days), total 366.",
+      "kind": "week_block",
+      "starts_on": "2027-07-01",
+      "block_weeks": [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5],
+      "next_year_starts_on": "2028-07-01",
+      "expect": {
+        "count": 13,
+        "total_days": 366,
+        "first": { "position": 1,  "label": "Block 1",  "starts_on": "2027-07-01", "ends_on": "2027-07-28" },
+        "last":  { "position": 13, "label": "Block 13", "starts_on": "2028-06-01", "ends_on": "2028-06-30" }
+      }
+    }
+  ],
+
+  "parse_rejects": {
+    "_description": "Calendar::parse() is Y-m-d ONLY and throws on anything else — the most safety-critical behaviour in the module, since strtotime() leniency accepted \"+5 years\" and created real backdated clinical rows (Calendar.php's own docblock, EndorsementController.php:551-554 pre-fix). A lenient mirror that silently accepted either input below would pass every other case in this file. Both Calendar::parse() (throws InvalidArgumentException) and Calendar::tryParse() (returns null) must reject each entry.",
+    "inputs": ["+5 years", "2026-02-30"]
+  },
+
+  "hijri_labels": {
+    "_description": "The Umm al-Qura month-name vocabulary (lang/en/calendar.php), keyed 1-12. Contractual so a mirror's own month-name table can be checked against the same list rather than transcribed by hand.",
+    "months": {
+      "1": "Muharram", "2": "Safar", "3": "Rabi al-Awwal", "4": "Rabi al-Thani",
+      "5": "Jumada al-Ula", "6": "Jumada al-Akhirah", "7": "Rajab", "8": "Sha'ban",
+      "9": "Ramadan", "10": "Shawwal", "11": "Dhu al-Qidah", "12": "Dhu al-Hijjah"
+    }
+  }
+}

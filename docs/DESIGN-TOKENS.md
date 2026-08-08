@@ -1,5 +1,11 @@
 # PICU Registry — design system: "Monitor, in daylight"
 
+> **`resources/css/app.css` (`@theme`) is authoritative.** This document records the rules and
+> should match it; where the two disagree, the CSS wins. It has drifted before (P1a Task 9,
+> 2026-08-09 — recon finding 14 caught `muted`/`ok`/`caution`'s hex values, the token path, and
+> a stale PICU-only claim all wrong at once) and it will drift again if a token changes here
+> without updating there, or vice versa.
+
 **Direction.** The instruments already in a PICU (patient monitors) have a visual language the staff
 read fluently: cool channel traces, tiny uppercase channel tags, monospaced numerals. This interface
 is that instrument rendered on a light clinical ground — not a generic admin template.
@@ -7,7 +13,7 @@ is that instrument rendered on a light clinical ground — not a generic admin t
 **LIGHT THEME ONLY.** There is no dark variant and none should be added: a handover screen must look
 identical to the day and night staff reading it. Any `dark:` utility is a bug.
 
-Tokens live in `laravel/resources/css/app.css` (`@theme`). Use the semantic class names below —
+Tokens live in `resources/css/app.css` (`@theme`). Use the semantic class names below —
 never raw Tailwind palette classes (`gray-*`, `blue-*`, `slate-*`, …) and never hex values in markup.
 
 ## Colour tokens
@@ -16,7 +22,7 @@ never raw Tailwind palette classes (`gray-*`, `blue-*`, `slate-*`, …) and neve
 |---|---|---|
 | `ink` | `#0b2e33` | headings, primary text, key values |
 | `body` | `#2c4f53` | body copy |
-| `muted` | `#6b8b8e` | secondary/meta text, channel tags, placeholders |
+| `muted` | `#526d70` | secondary/meta text, channel tags, placeholders |
 | `line` | `#cbdedc` | hairline borders |
 | `line-soft` | `#e0ecea` | subtle dividers, table stripes |
 | `ground` | `#edf4f3` | page ground |
@@ -25,10 +31,10 @@ never raw Tailwind palette classes (`gray-*`, `blue-*`, `slate-*`, …) and neve
 | `channel` | `#0d7c8a` | primary fills, brand mark, bars |
 | `channel-ink` | `#0a6b75` | primary **text** and links (AA on white) |
 | `channel-soft` | `#dff0f1` | active nav wash, chips, selected rows |
-| `ok` / `ok-soft` | `#0f8a6a` / `#dcf1ea` | success, "done" badges, computed scores |
-| `caution` / `caution-soft` | `#b7791f` / `#fbf0dc` | warnings, `[NEEDS SIGN-OFF]`, data gaps |
+| `ok` / `ok-soft` | `#0c7358` / `#dcf1ea` | success, "done" badges, computed scores |
+| `caution` / `caution-soft` | `#8f5d13` / `#fbf0dc` | warnings, `[NEEDS SIGN-OFF]`, data gaps |
 | `critical` / `critical-soft` | `#b3261e` / `#fbe4e2` | destructive actions, errors, mortality |
-| `unit-picu` | `#0d7c8a` | the unit channel hue (G1 — the registry is PICU-only, so this is the only one) |
+| `unit-picu` | `#0d7c8a` | PICU's unit channel hue — one of **four** first-class units; see [Unit hues](#unit-hues-this-project) below, not PICU-only |
 
 ## Type
 
@@ -43,10 +49,11 @@ never raw Tailwind palette classes (`gray-*`, `blue-*`, `slate-*`, …) and neve
 ## Signature — the channel bar
 
 `.channel-bar` puts a 3px left edge on a card/panel/active nav item. It **encodes meaning**, never
-decorates: on the patient board it carries the unit (`.channel-bar-picu` — the only unit variant,
-since G1 made the registry PICU-only); elsewhere `.channel-bar-ok` / `.channel-bar-critical` carry
-status. Anything without a unit hue uses the plain `.channel-bar` default. One bar per element; if
-nothing meaningful is encoded, omit it.
+decorates: on the patient board it carries the unit (`.channel-bar-picu` / `-nicu` / `-scbu` /
+`-ward` — four first-class units, see [Unit hues](#unit-hues-this-project) below); elsewhere
+`.channel-bar-ok` / `.channel-bar-caution` / `.channel-bar-critical` carry status. Anything
+without a unit hue uses the plain `.channel-bar` default. One bar per element; if nothing
+meaningful is encoded, omit it.
 
 ## Conversion map (old → new)
 

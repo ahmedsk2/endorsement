@@ -15,6 +15,7 @@ the PDPL data-residency position simple). Coolify 4.1.2, Traefik owns :80/:443 o
 | Compose file | `/docker-compose.production.yml` |
 | Coolify app UUID | `oo7d7si62yhyi7fx10hrck6q` — pass this to `docker/instance-env.sh` |
 | Instance slug (`INSTANCE_SLUG`) | see Task 1/Task 10 owner-action note below; not yet confirmed set in Coolify |
+| Hijri calibration (`HIJRI_OFFSET_DAYS`) | QCH: `-1`. Not yet set in Coolify — see the P1a owner action below. Until set, QCH renders every Hijri date **one day late**. Must be verified against the department's own published calendar across a month boundary before anyone trusts a Hijri date on screen — do not just trust the seeded default. |
 
 Identifiers (project/app/DNS-record/deploy-key UUIDs) are recorded in
 `ORACLE MCP/infra/state.env` as `ENDORSE_*`, alongside the other apps on this host.
@@ -548,6 +549,65 @@ A non-zero `users` count is not automatically a failed backfill: an invitation i
 (`InvitationAcceptController`) copies it forward verbatim — so a registration completed
 *after* the upgrade, from an invite issued *before* it, still yields a NULL user. Check
 `invitations.institution_id` on the offending row before treating this as a bug.
+
+---
+
+## Verifying the 2026-08-12 calendar migrations (P1a)
+
+Three additive migrations: `2026_08_12_120001_add_calendar_settings_to_institutions`,
+`2026_08_12_120002_create_periods_table`, `2026_08_12_120003_create_holidays_table`. None
+retypes or drops anything; `periods` and `holidays` are new, empty tables until P1b's settings
+screen (or a seeder) populates them.
+
+```sql
+-- Expect one row: hijri_enabled=1, hijri_offset_days=0 (or -1 once the owner action below is
+-- done), period_type='week_blocks'.
+SELECT hijri_enabled, hijri_offset_days, period_type FROM institutions;
+
+-- Both 0 immediately after this migration — the tables exist but nothing has been generated
+-- into them yet. Non-zero later is normal, once P1b's settings screen is used.
+SELECT COUNT(*) FROM periods;
+SELECT COUNT(*) FROM holidays;
+```
+
+A `hijri_offset_days` other than what you expect almost always means `HIJRI_OFFSET_DAYS` was
+not set (or not passed through the compose file — see the D11/P0d Task 9 pattern this repeats)
+before `db:seed --force` ran. Re-running `db:seed --force` after fixing the environment
+variable will NOT overwrite an existing non-null value — `ReferenceSeeder` deliberately never
+reverts a live department's calibration — so a wrong value must be corrected by hand:
+
+```sql
+UPDATE institutions SET hijri_offset_days = -1 WHERE code = 'QCH';
+```
+
+---
+
+## OWNER ACTION — set `HIJRI_OFFSET_DAYS=-1` for QCH (P1a)
+
+QCH's Hijri calibration was established once, against the department's own published calendar
+across a month boundary (`hijri_offset_days = -1`) — but it is configuration, not a constant,
+and it defaults to `0` (uncalibrated) for any deployment that has not set it. Until this is
+done, QCH's screens render every Hijri date **one day late**.
+
+1. Set `HIJRI_OFFSET_DAYS=-1` in Coolify's Environment Variables screen for the `endorsement`
+   app.
+2. Deploy. The compose file passes it through as `HIJRI_OFFSET_DAYS: ${HIJRI_OFFSET_DAYS:-0}`
+   (asserted by `DeploymentInvariantsTest::test_hijri_offset_reaches_the_container`, the same
+   discipline `INSTANCE_SLUG` and `INSTITUTION_CODE` needed per P0d Task 9 — a value set only
+   in Coolify's UI and not threaded through this file's `environment:` block has **zero**
+   effect on the running container).
+3. Confirm it landed:
+
+   ```bash
+   eval "$(sudo bash docker/instance-env.sh oo7d7si62yhyi7fx10hrck6q)" && \
+   sudo docker exec -u app "$APP" php artisan tinker --execute="echo App\Models\Institution::current()->hijri_offset_days;"
+   ```
+
+   Expect `-1`.
+4. Open two consecutive days on screen that cross a Hijri month boundary and compare the
+   displayed Hijri date against the department's own published calendar — that comparison is
+   the actual calibration check, not just reading the number back from the database.
+5. Update the identifiers table row above once confirmed.
 
 ---
 

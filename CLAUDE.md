@@ -76,6 +76,40 @@ SCBU and WARD are seed data for the QCH institution.
   $-interpolates env values, so a `$` in a password is silently truncated into something
   weaker. `APP_KEY` and `BACKUP_PASSPHRASE` are stored in DIFFERENT places — a backup and its
   key never sit together, and both are needed to read an archive.
+- **All date logic goes through `App\Support\Calendar`** (Munawib AR-08, P1a). Nothing else
+  constructs an `IntlCalendar`/`IntlDateFormatter`, or does date arithmetic — including
+  `resources/js`, which receives formatted labels, enumerated date ranges and day types as
+  Inertia props and performs none of its own (Decision A: the `packages/engine` mirror design
+  §7 once described is deferred to P2, not built twice now). Guarded by
+  `tests/Feature/Build/CalendarIsTheOnlyConverterTest.php`, asserted over the whole match set,
+  never a `foreach` that stops guarding once the last offender is fixed. `strtotime()` is
+  allow-listed for exactly three files, each commented at its site with why: `LegacyImport`,
+  `LegacyReconcile`, `Plausibility::plausibleDates()` — all read a FOREIGN system's date
+  strings from the frozen legacy import source, never an application date. Two further,
+  conceptually separate exemptions that never route through Calendar at all: `AuditChain`
+  (v3 hashes the stored datetime byte-verbatim; re-parsing it in the current timezone is the
+  exact defect that once made the live system declare its own audit trail tampered) and
+  `App\Casts\EncryptedDateTime` (PHI, unqueryable, whose getter can return a string marker for
+  foreign ciphertext). Timezone is per-INSTANCE (`APP_TIMEZONE`); the Hijri offset
+  (`institutions.hijri_offset_days`) is per-DEPARTMENT — never add an `institutions.timezone`
+  column "for symmetry" (D11: one institution per database makes it one fact in two places).
+- **A shared, framework-free fixture corpus is the contract between this PHP calendar and
+  P2's future TypeScript mirror.** `tests/fixtures/calendar/golden.json`
+  (`tests/Feature/Calendar/GoldenFixtureTest.php` asserts it here) is a durable artifact, not
+  test scaffolding — P2's `packages/engine` calendar must assert the same file against itself.
+  A change to one side not matched on the other is the drift this file exists to catch.
+- **An index or unique key led by `institution_id` is a recurring mistake, not a one-off.**
+  D11 keeps `institution_id` as provenance/in-instance grouping, never a query filter — but a
+  plan-supplied migration snippet has twice proposed one anyway (P1a Task 4's `periods` unique
+  index, P1a Task 7's `holidays` index), and both times the mistake was only caught empirically,
+  by `InstitutionProvenanceTest::test_no_query_filters_on_institution_id` going red once the
+  matching query code was written against the wrongly-shaped index. An index led by a column
+  nothing ever filters on is dead weight, and worse, an invitation for a future
+  `where('institution_id', ...)` "to match the index" — exactly the drift D11 forbids. When
+  adding an index or unique constraint to any table carrying `institution_id`, lead with the
+  columns actually filtered/compared on (see `periods_year_position_unique` on
+  `(academic_year, position)` and `holidays`' `(active, calendar, month, day)` index for the
+  corrected shape), and never with `institution_id` itself.
 
 ## Toolchain (this machine)
 
@@ -87,6 +121,18 @@ SCBU and WARD are seed data for the QCH institution.
   (PowerShell) or `tail -5`; on failure re-run only the failing filter with
   `--filter <TestName> | Select-Object -First 30`. Never dump a full failing
   suite into context.
+- The whole PHP suite runs at `Asia/Riyadh` (`phpunit.xml`'s `APP_TIMEZONE` env), matching
+  production — not UTC (P1a Task 3, 2026-08-08). It was genuinely proven green there, not just
+  config-flipped: `config(['app.timezone' => ...])` alone does **not** move PHP's default
+  timezone, so `now()`/`Carbon::parse()` would not have moved with it either, and that trap
+  would have made a false "green" indistinguishable from a real one.
+  `tests/Feature/Calendar/DayBoundaryTest.php` is what actually exercises the 00:00–03:00
+  UTC/Riyadh disagreement window with PHP's default timezone genuinely moved
+  (`TestCase::withTimezone()`), independent of whichever timezone `phpunit.xml` happens to run
+  the rest of the suite at.
+- **Run test/build commands via Bash, not PowerShell.** PowerShell's PATH on this machine lacks
+  `openssl`, so the backup tests self-skip there rather than fail — a false "green" that looks
+  identical to a real one unless you know to check for it.
 
 ## Domain vocabulary
 

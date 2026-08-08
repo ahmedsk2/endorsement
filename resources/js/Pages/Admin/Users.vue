@@ -123,7 +123,10 @@ const saveProfile = (u) => {
 // account degrades the accountability trail, while deactivation revokes access and keeps every
 // past action attributable. The server route was removed too — see routes/web.php.
 
-const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : '—');
+// Task 6 / Decision A — `requested_at` used to arrive as an ISO string and be locale-formatted
+// in the browser here, which renders in the BROWSER's own locale and timezone rather than the
+// instance's. UserManagementController::index() now sends it already formatted, so this
+// component performs no date construction at all (guarded by CalendarIsTheOnlyConverterTest).
 </script>
 
 <template>
@@ -230,7 +233,7 @@ const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : '—');
                                 <td class="readout px-4 py-2.5">{{ p.member_name }}</td>
                                 <td class="px-4 py-2.5">{{ p.member_email || '—' }}</td>
                                 <td class="px-4 py-2.5">{{ positionName(p.position) }}</td>
-                                <td class="readout px-4 py-2.5 text-muted">{{ fmt(p.requested_at) }}</td>
+                                <td class="readout px-4 py-2.5 text-muted">{{ p.requested_at || '—' }}</td>
                                 <td class="px-4 py-2.5 text-right whitespace-nowrap">
                                     <!-- Per-row aria-labels: a bare "Approve" repeated down the table
                                          gives a screen-reader user no way to tell the rows apart. -->

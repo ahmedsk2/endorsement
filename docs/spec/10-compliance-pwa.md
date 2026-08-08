@@ -8,7 +8,9 @@ Web manifest + service worker caching the **app shell only — never patient dat
 
 ### 10.2 Reminders — in-app + web push [RULING]
 
-- Scheduled job a few minutes after each handover time (07:30/13:30 Asia/Riyadh, config-driven): for each unit whose today-sheet is missing or unsigned, push to users opted in for that unit.
+- Scheduled job a few minutes after each handover time (07:30/13:30, config-driven times —
+  resolved against the instance timezone via `App\Support\Calendar`, P1a; Asia/Riyadh is QCH's
+  current `APP_TIMEZONE`, not a value baked into the job): for each unit whose today-sheet is missing or unsigned, push to users opted in for that unit.
 - Payload strictly `unit + date + status` — never patient data.
 - Opt-in per unit on the profile page; VAPID subscriptions in `push_subscriptions`. Works for installed PWAs on iOS 16.4+ and Android; deployment is public HTTPS.
 - In-app equivalents: chooser cards show today's per-unit status; a banner appears when a unit is unfilled past handover time.

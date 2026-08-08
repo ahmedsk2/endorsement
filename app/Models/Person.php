@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Calendar;
 use Carbon\Carbon;
 use Database\Factories\PersonFactory;
 use Illuminate\Database\Eloquent\Builder;
@@ -118,7 +119,7 @@ class Person extends Model
      */
     public function levelAt(Carbon|string|null $date = null): ?Level
     {
-        $on = $date === null ? today() : Carbon::parse($date)->startOfDay();
+        $on = $date === null ? Calendar::todayYmd() : Calendar::ymd($date);
 
         return $this->levels()
             ->whereDate('effective_from', '<=', $on)

@@ -7,6 +7,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.3",
+        "ext-intl": "*",
         "ezyang/htmlpurifier": "^4.19",
         "inertiajs/inertia-laravel": "^3.1",
         "laravel/framework": "^13.8",

@@ -4,9 +4,9 @@ namespace App\Console\Commands;
 
 use App\Models\HandoverSignoff;
 use App\Models\Unit;
+use App\Support\Calendar;
 use App\Support\Push\PushSender;
 use Illuminate\Console\Command;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -32,7 +32,7 @@ class SendHandoverReminders extends Command
             return self::SUCCESS;
         }
 
-        $today = now()->format('Y-m-d');
+        $today = Calendar::todayYmd();
         $pushed = 0;
 
         foreach (Unit::query()->active()->ordered()->get() as $unit) {
@@ -86,9 +86,9 @@ class SendHandoverReminders extends Command
         $open = null;
 
         foreach (config('endorsement.handover_times', []) as $time) {
-            $fires = Carbon::parse(now()->format('Y-m-d').' '.$time)->addMinutes($delay);
+            $fires = Calendar::today()->setTimeFromTimeString($time)->addMinutes($delay);
 
-            if (now()->greaterThanOrEqualTo($fires)) {
+            if (Calendar::now()->greaterThanOrEqualTo($fires)) {
                 $open = $time;
             }
         }

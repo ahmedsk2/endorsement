@@ -226,13 +226,19 @@ describe('Endorsement/Sheet — shift sign-off', () => {
 });
 
 describe('Endorsement/Index — signed vs unsigned days', () => {
+    // Decision A — Index.vue renders whatever `listing` the server hands it; `dates` alone no
+    // longer drives rendering (the day/gap merge moved server-side), so the fixture supplies
+    // both, matching what EndorsementController::index() would send for two consecutive days.
+    const dates = [
+        { date: '2026-07-11', count: 4, signed_off: true, endorsed_by_name: 'Dr Alpha', endorsed_to_name: 'Dr Beta', endorsement_time: '7:30 Am' },
+        { date: '2026-07-10', count: 3, signed_off: false },
+    ];
+
     const mountIndex = () => mount(Index, {
         props: {
             unit: { code: 'PICU', name: 'PICU' },
-            dates: [
-                { date: '2026-07-11', count: 4, signed_off: true, endorsed_by_name: 'Dr Alpha', endorsed_to_name: 'Dr Beta', endorsement_time: '7:30 Am' },
-                { date: '2026-07-10', count: 3, signed_off: false },
-            ],
+            dates,
+            listing: dates.map((d) => ({ type: 'day', hijri: '', weekend: false, ...d })),
             filters: { from: null, to: null },
         },
     });

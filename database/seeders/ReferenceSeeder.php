@@ -122,5 +122,26 @@ class ReferenceSeeder extends Seeder
 
         $institution->active = true;
         $institution->save();
+
+        // Written on CREATE, or when HIJRI_OFFSET_DAYS is explicitly provided. NEVER reverted
+        // to 0 by a re-seed of a deployment that has since calibrated: `db:seed --force` runs
+        // on every deploy, and silently un-calibrating a live department's calendar is the
+        // same defect the `name` write above already fixed once.
+        $configured = config('endorsement.hijri_offset_days');
+
+        if ($configured !== null && $configured !== '') {
+            $offset = (int) $configured;
+            [$min, $max] = Institution::HIJRI_OFFSET_BOUNDS;
+
+            if ($offset < $min || $offset > $max) {
+                throw new \InvalidArgumentException(
+                    "HIJRI_OFFSET_DAYS must be between {$min} and {$max}. Got {$offset} — an "
+                    .'offset that large is a wrong timezone or a wrong hospital, not a calibration.'
+                );
+            }
+
+            $institution->hijri_offset_days = $offset;
+            $institution->save();
+        }
     }
 }

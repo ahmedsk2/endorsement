@@ -341,3 +341,19 @@ sudo tail /var/log/endorsement-uptime.log
 
 It logs transitions only, plus one daily heartbeat at 07:00 so a silent log can be told
 apart from a stopped cron. **It has no notification channel yet** — see the owner checklist.
+
+---
+
+## Verifying the 2026-08-08 unit-configuration migration
+
+After running `php artisan migrate` for `2026_08_08_120001_add_configuration_to_units`,
+confirm the backfill landed. Expect exactly four rows, none with a NULL `bar_class`:
+
+    SELECT code, display_order, active, bed_label, consultant_pair,
+           consultant_by_label, bar_class, print_plan_label, print_narrative_label
+    FROM units ORDER BY display_order;
+
+PICU must read `Bed / 1 / Consultant covering / channel-bar-picu / Plan Of Care / New events`;
+WARD must read `Room / 0 / Consultant Oncall / channel-bar-ward / Management / To be followed`.
+A NULL `bar_class` means the row's `code` did not match the migration's constant — fix the
+data, do not edit the migration after it has run.

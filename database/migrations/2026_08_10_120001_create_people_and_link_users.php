@@ -63,8 +63,11 @@ return new class extends Migration
             // details, exception messages, URLs or push payloads — the same rule as PHI.
             $table->string('phone', 32)->nullable();
             $table->date('joined_at')->nullable();
-            // Free text ABOUT A NAMED PERSON is the field most likely to acquire something
-            // sensitive, and nothing searches it, so it is encrypted at rest like `reopen_reason`.
+            // Deliberately PLAINTEXT (owner decision 3, 2026-08-08 — OVERRIDES this migration's
+            // original comment, which said this would be encrypted like `reopen_reason` before
+            // the owner decided). `$hidden` on the Person model keeps it out of any serialised
+            // response; docs/COMPLIANCE.md records that it is therefore legible in a raw DB read
+            // and in backups.
             $table->text('notes')->nullable();
 
             // PE-01 structured scheduling constraints, read by the solver. Deliberately NOT

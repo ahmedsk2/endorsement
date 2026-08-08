@@ -59,8 +59,12 @@ class Person extends Model
             'active' => 'boolean',
             'external' => 'boolean',
             'joined_at' => 'date',
+            // Deliberately PLAINTEXT (owner decision 3, 2026-08-08 — OVERRIDES the plan's
+            // original draft, which cast this through EncryptedString before the owner decided).
+            // Both `notes` and `constraints` stay unencrypted; see docs/COMPLIANCE.md for the
+            // stated reasoning (free-text staff notes are visible in a raw DB read and therefore
+            // in backups — an auditable choice, not an oversight).
             'constraints' => 'array',
-            'notes' => \App\Casts\EncryptedString::class,
         ];
     }
 

@@ -12,8 +12,8 @@ use Tests\TestCase;
 /**
  * `people` is the roster; `users` is the account. This test covers the shape of `Person` itself —
  * the structural "no account" case, the read-through from a claimed account, the two UNIQUE
- * constraints (`users.person_id`, `people.short_name`), `matchByEmail()`'s normalization, and the
- * `notes` encrypted cast — none of which any other test yet exercises.
+ * constraints (`users.person_id`, `people.short_name`), `matchByEmail()`'s normalization, and that
+ * `notes` stays plaintext (owner decision 3) — none of which any other test yet exercises.
  */
 class PersonRosterTest extends TestCase
 {
@@ -78,12 +78,19 @@ class PersonRosterTest extends TestCase
         $this->assertTrue($found->trashed());
     }
 
-    public function test_notes_round_trip_through_the_encrypted_cast(): void
+    /**
+     * Owner decision 3 (2026-08-08) OVERRIDES the plan's original draft, which cast this through
+     * EncryptedString before the owner decided: `people.notes` stays PLAINTEXT, same as
+     * `people.constraints`. This asserts the stored value round-trips unchanged and that the raw
+     * column genuinely holds the plaintext — the opposite of what an earlier version of this test
+     * asserted — so a future re-introduction of the cast turns this red.
+     */
+    public function test_notes_round_trip_as_plaintext(): void
     {
         $person = Person::factory()->create(['notes' => 'Left in June']);
 
         $this->assertSame('Left in June', $person->fresh()->notes);
-        $this->assertNotSame(
+        $this->assertSame(
             'Left in June',
             DB::table('people')->where('id', $person->id)->value('notes')
         );

@@ -73,30 +73,54 @@ return new class extends Migration
     public function up(): void
     {
         // MySQL cannot roll back DDL, and the backfill below runs outside any transaction.
-        // If a prior run added the columns but died before the `migrations` row was written,
-        // a re-run must not try to add them again ("Duplicate column name") — it would leave
-        // the owner hand-repairing a clinical database instead of just re-running artisan.
-        if (! Schema::hasColumn('units', 'display_order')) {
-            Schema::table('units', function (Blueprint $table) {
-                // Default HIGH, not 0: seeded units occupy 1-4, and any unit created outside
-                // the seeder — which is the entire point of this change — must sort AFTER
-                // them until an administrator gives it a real position, not ahead of PICU.
+        // Blueprint::addImpliedCommands() maps each ColumnDefinition to its own `add` command,
+        // so this closure emits NINE separate ALTER TABLE statements, not one — a run that dies
+        // partway through (lock wait timeout, deploy timeout, dropped connection) can leave any
+        // prefix of these columns present. Guarding on just the first column only protects
+        // against a re-run when the whole block already landed; a re-run after a partial
+        // failure would then skip the rest of the block and the backfill below would fail on a
+        // missing column. So every column is guarded individually — each `hasColumn` check
+        // reads pre-migration state, which is correct because each column is independent — and
+        // a re-run picks up wherever the previous attempt actually stopped, never re-adding a
+        // column that already exists ("Duplicate column name") and never skipping one that
+        // doesn't. That is what keeps the owner from hand-repairing a clinical database.
+        Schema::table('units', function (Blueprint $table) {
+            // Default HIGH, not 0: seeded units occupy 1-4, and any unit created outside
+            // the seeder — which is the entire point of this change — must sort AFTER
+            // them until an administrator gives it a real position, not ahead of PICU.
+            if (! Schema::hasColumn('units', 'display_order')) {
                 $table->unsignedSmallInteger('display_order')->default(1000)->after('name');
-                // Retirement is now explicit. The spec requires retired unit codes to 404;
-                // previously that was expressed by absence from a PHP array.
+            }
+            // Retirement is now explicit. The spec requires retired unit codes to 404;
+            // previously that was expressed by absence from a PHP array.
+            if (! Schema::hasColumn('units', 'active')) {
                 $table->boolean('active')->default(true)->after('display_order');
+            }
+            if (! Schema::hasColumn('units', 'extra_row_fields')) {
                 $table->json('extra_row_fields')->nullable()->after('active');
+            }
+            if (! Schema::hasColumn('units', 'bed_label')) {
                 $table->string('bed_label')->default('Bed')->after('extra_row_fields');
+            }
+            if (! Schema::hasColumn('units', 'consultant_pair')) {
                 $table->boolean('consultant_pair')->default(true)->after('bed_label');
+            }
+            if (! Schema::hasColumn('units', 'consultant_by_label')) {
                 $table->string('consultant_by_label')->default('Consultant covering')->after('consultant_pair');
-                // Nullable with no default is intentional: App\Support\UnitProfile derives
-                // 'channel-bar-'.strtolower($code) as a fallback when this is NULL. Adding a
-                // default here would defeat that fallback for any unit the backfill missed.
+            }
+            // Nullable with no default is intentional: App\Support\UnitProfile derives
+            // 'channel-bar-'.strtolower($code) as a fallback when this is NULL. Adding a
+            // default here would defeat that fallback for any unit the backfill missed.
+            if (! Schema::hasColumn('units', 'bar_class')) {
                 $table->string('bar_class')->nullable()->after('consultant_by_label');
+            }
+            if (! Schema::hasColumn('units', 'print_plan_label')) {
                 $table->string('print_plan_label')->default('Plan Of Care')->after('bar_class');
+            }
+            if (! Schema::hasColumn('units', 'print_narrative_label')) {
                 $table->string('print_narrative_label')->default('To be followed')->after('print_plan_label');
-            });
-        }
+            }
+        });
 
         foreach (self::PROFILES as $code => $p) {
             DB::table('units')->where('code', $code)->update($p);

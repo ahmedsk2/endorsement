@@ -349,15 +349,15 @@ apart from a stopped cron. **It has no notification channel yet** — see the ow
 After running `php artisan migrate` for `2026_08_08_120001_add_configuration_to_units`,
 confirm the backfill landed. Expect exactly four rows, none with a NULL `bar_class`:
 
-    SELECT code, display_order, active, bed_label, consultant_pair,
+    SELECT code, display_order, active, extra_row_fields, bed_label, consultant_pair,
            consultant_by_label, bar_class, print_plan_label, print_narrative_label
     FROM units ORDER BY display_order;
 
-    -- code  display_order  active  bed_label  consultant_pair  consultant_by_label  bar_class         print_plan_label  print_narrative_label
-    -- PICU  1              1       Bed        1                Consultant covering  channel-bar-picu  Plan Of Care      New events
-    -- NICU  2              1       Bed        1                Consultant covering  channel-bar-nicu  Plan Of Care      To be followed
-    -- SCBU  3              1       Bed        1                Consultant covering  channel-bar-scbu  Plan Of Care      To be followed
-    -- WARD  4              1       Room       0                Consultant Oncall    channel-bar-ward  Management        To be followed
+    -- code  display_order  active  extra_row_fields     bed_label  consultant_pair  consultant_by_label  bar_class         print_plan_label  print_narrative_label
+    -- PICU  1              1       []                   Bed        1                Consultant covering  channel-bar-picu  Plan Of Care      New events
+    -- NICU  2              1       ["dob"]              Bed        1                Consultant covering  channel-bar-nicu  Plan Of Care      To be followed
+    -- SCBU  3              1       ["dob"]              Bed        1                Consultant covering  channel-bar-scbu  Plan Of Care      To be followed
+    -- WARD  4              1       ["age","ward_unit"]  Room       0                Consultant Oncall    channel-bar-ward  Management        To be followed
 
 Read columns by POSITION against the header above, not by eye against a neighbouring row —
 `consultant_pair` and `display_order`/`active` are all small integers next to each other, and

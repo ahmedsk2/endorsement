@@ -26,7 +26,17 @@ use Illuminate\Database\Eloquent\Model;
  * So the cast, not the caller, is the enforcement point: both directions intersect the value
  * against ALLOWED, and anything outside it is silently dropped rather than trusted or thrown.
  * A misconfigured unit must degrade to "no extra columns", never fatal a clinical sheet — do
- * not "simplify" this back to a plain `array` cast.
+ * not "simplify" this back to a plain `array` cast. Non-string elements (a nested array or
+ * object) are filtered out before the intersect, not passed to it — `array_intersect()`
+ * string-casts every element it compares, and a nested array raises "Array to string
+ * conversion", which the real HTTP kernel's `HandleExceptions` turns into a thrown
+ * `ErrorException`. Both directions also de-duplicate: `Sheet.vue` keys its extra-field
+ * columns on this list, and a repeated key would produce duplicate Vue keys and a duplicated
+ * column.
+ *
+ * P0b's bounded custom fields (design §6.2) use a DIFFERENT column —
+ * `handovers.extra_fields`, encrypted, driven by a `unit_field_definitions` table — so nothing
+ * in P0b should ever write an unknown key here. Do not widen ALLOWED to accommodate P0b.
  *
  * @implements CastsAttributes<list<string>, array<int, string>|null>
  */
@@ -53,7 +63,9 @@ class ExtraRowFields implements CastsAttributes
             return [];
         }
 
-        return array_values(array_intersect($decoded, self::ALLOWED));
+        $strings = array_filter($decoded, 'is_string');
+
+        return array_values(array_unique(array_intersect($strings, self::ALLOWED)));
     }
 
     /**
@@ -63,6 +75,8 @@ class ExtraRowFields implements CastsAttributes
     {
         $list = is_array($value) ? $value : [];
 
-        return json_encode(array_values(array_intersect($list, self::ALLOWED)));
+        $strings = array_filter($list, 'is_string');
+
+        return json_encode(array_values(array_unique(array_intersect($strings, self::ALLOWED))));
     }
 }

@@ -63,4 +63,48 @@ class ExtraRowFieldsTest extends TestCase
         $this->assertSame([], $cast->get($model, 'extra_row_fields', null, []));
         $this->assertSame([], json_decode($cast->set($model, 'extra_row_fields', null, []), true));
     }
+
+    public function test_a_nested_array_element_on_get_does_not_throw(): void
+    {
+        $cast = new ExtraRowFields();
+        $model = new Unit();
+
+        $this->assertSame([], $cast->get($model, 'extra_row_fields', '[["dob"]]', []));
+    }
+
+    public function test_a_nested_array_element_mixed_with_a_valid_one_on_get_keeps_the_valid_one(): void
+    {
+        $cast = new ExtraRowFields();
+        $model = new Unit();
+
+        $this->assertSame(['dob'], $cast->get($model, 'extra_row_fields', '[["x"],"dob"]', []));
+    }
+
+    public function test_a_nested_array_element_mixed_with_a_valid_one_on_set_keeps_the_valid_one(): void
+    {
+        $cast = new ExtraRowFields();
+        $model = new Unit();
+
+        $stored = $cast->set($model, 'extra_row_fields', ['dob', ['x' => 'y']], []);
+
+        $this->assertSame(['dob'], json_decode($stored, true));
+    }
+
+    public function test_an_object_shaped_json_value_on_get_yields_an_empty_list(): void
+    {
+        $cast = new ExtraRowFields();
+        $model = new Unit();
+
+        $this->assertSame([], $cast->get($model, 'extra_row_fields', '{"a":{"b":1}}', []));
+    }
+
+    public function test_duplicates_are_removed_on_set(): void
+    {
+        $cast = new ExtraRowFields();
+        $model = new Unit();
+
+        $stored = $cast->set($model, 'extra_row_fields', ['dob', 'dob'], []);
+
+        $this->assertSame(['dob'], json_decode($stored, true));
+    }
 }

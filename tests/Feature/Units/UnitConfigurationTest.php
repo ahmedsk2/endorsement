@@ -102,11 +102,18 @@ class UnitConfigurationTest extends TestCase
         $this->assertSame(['PICU', 'NICU', 'WARD'], Unit::codes());
     }
 
+    public function test_ordered_sorts_by_display_order_not_insertion_order(): void
+    {
+        Unit::where('code', 'WARD')->update(['display_order' => 0]);
+
+        $this->assertSame(['WARD', 'PICU', 'NICU', 'SCBU'], Unit::query()->ordered()->pluck('code')->all());
+    }
+
     public function test_ordered_breaks_ties_by_id(): void
     {
-        Unit::where('code', 'NICU')->update(['display_order' => 1]);
-
-        // PICU and NICU now share display_order 1; the lower id must come first.
-        $this->assertSame(['PICU', 'NICU', 'SCBU', 'WARD'], Unit::query()->ordered()->pluck('code')->all());
+        $this->assertStringContainsString(
+            'order by "display_order" asc, "id" asc',
+            Unit::query()->ordered()->toSql()
+        );
     }
 }

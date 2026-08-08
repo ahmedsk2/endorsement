@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Database\Factories\PersonFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -92,6 +94,39 @@ class Person extends Model
     public function institution(): BelongsTo
     {
         return $this->belongsTo(Institution::class);
+    }
+
+    /**
+     * The person's training-level history (Munawib LV-04). There is deliberately no `level_id`
+     * column on this table: a denormalized "current" pointer beside a history table is two
+     * definitions of one fact, and they drift. `levelAt()` is the only resolver.
+     *
+     * @return HasMany<PersonLevel, $this>
+     */
+    public function levels(): HasMany
+    {
+        return $this->hasMany(PersonLevel::class);
+    }
+
+    /**
+     * The level in force on a given date. Both bounds are INCLUSIVE: a level that runs to 30 June
+     * is still in force on 30 June, and its successor starts on 1 July.
+     */
+    public function levelAt(Carbon|string|null $date = null): ?Level
+    {
+        $on = $date === null ? today() : Carbon::parse($date)->startOfDay();
+
+        return $this->levels()
+            ->whereDate('effective_from', '<=', $on)
+            ->where(fn ($q) => $q->whereNull('effective_to')->orWhereDate('effective_to', '>=', $on))
+            ->orderByDesc('effective_from')
+            ->with('level')
+            ->first()?->level;
+    }
+
+    public function currentLevel(): ?Level
+    {
+        return $this->levelAt();
     }
 
     /**

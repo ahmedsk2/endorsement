@@ -1154,13 +1154,15 @@ class EndorsementController extends Controller
     private function staffPickers(?HandoverSignoff $signoff): array
     {
         return [
+            // Both stored ids per field are passed, not just one (`??` used to drop whichever
+            // was null-coalesced away) — two different retired people must both reappear.
             'endorsers' => SignoffPickers::offer(
                 SignoffPickers::endorserPredicate(),
-                $signoff?->endorsed_by_person_id ?? $signoff?->endorsed_to_person_id,
+                [$signoff?->endorsed_by_person_id, $signoff?->endorsed_to_person_id],
             ),
             'consultants' => SignoffPickers::offer(
                 SignoffPickers::consultantPredicate(),
-                $signoff?->consultant_by_person_id ?? $signoff?->consultant_to_person_id,
+                [$signoff?->consultant_by_person_id, $signoff?->consultant_to_person_id],
             ),
         ];
     }

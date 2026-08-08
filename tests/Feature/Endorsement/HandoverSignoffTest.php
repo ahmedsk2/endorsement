@@ -138,6 +138,45 @@ class HandoverSignoffTest extends TestCase
             });
     }
 
+    /**
+     * Carried-forward P0c fix: `staffPickers()` used to pass `$keep` a single id per field pair
+     * (`endorsed_by_person_id ?? endorsed_to_person_id`). When endorsed-by and endorsed-to are
+     * two DIFFERENT people who have both stopped being offered, the old code only carried the
+     * first one forward — the second silently vanished from the options list, and Sheet.vue
+     * renders an unmatched stored id as a blank `<select>` whose next submit clears it: a signed
+     * medico-legal record losing a named endorser with no user action at all. `$keep` must carry
+     * every id stored on the row, not just one.
+     */
+    public function test_both_endorsed_by_and_endorsed_to_reappear_as_retired_when_both_are_retired(): void
+    {
+        $this->handover('2026-07-10');
+        $by = User::factory()->create(['position' => 4, 'full_name' => 'Dr Alpha']);
+        $to = User::factory()->create(['position' => 4, 'full_name' => 'Dr Beta']);
+
+        $this->actingAs($this->editor())->patch('/endorsement/PICU/2026-07-10/signoff', [
+            'endorsed_by_person_id' => $by->person_id,
+            'endorsed_to_person_id' => $to->person_id,
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        // Both accounts are deactivated: D9 requires a LIVE account to be offered as an
+        // endorser, so neither is offered any longer — but both are still the medico-legal
+        // record of who endorsed this (unsigned) day.
+        $by->update(['active' => false]);
+        $to->update(['active' => false]);
+
+        $this->actingAs($this->editor())
+            ->get('/endorsement/PICU/2026-07-10')
+            ->assertOk()
+            ->assertInertia(function (Assert $page) use ($by, $to) {
+                $endorsers = collect($page->toArray()['props']['staff']['endorsers']);
+                $retiredIds = $endorsers->where('retired', true)->pluck('id')->all();
+
+                $this->assertContains($by->person_id, $retiredIds, 'endorsed_by must still render as a retired option');
+                $this->assertContains($to->person_id, $retiredIds, 'endorsed_to must still render as a retired option');
+                $this->assertCount(2, $retiredIds, 'both distinct retired people must appear, not just one');
+            });
+    }
+
     /** The endorsing resident's name is frozen at write time — a rename never rewrites a signed sheet. */
     public function test_the_endorser_name_snapshot_survives_a_later_rename(): void
     {

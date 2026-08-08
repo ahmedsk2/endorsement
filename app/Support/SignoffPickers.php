@@ -86,16 +86,23 @@ final class SignoffPickers
     /**
      * The offered list, from the SAME predicate.
      *
-     * `$keep` is the id currently stored on the sheet. A stored id absent from the list renders
-     * as a `<select>` with no matching `<option>`, and Sheet.vue's next submit then sends null —
-     * silently clearing a recorded endorser on an unsigned day. It is appended flagged `retired`
-     * and rendered disabled, so the value is visible and cannot be lost by accident. It is NOT
-     * accepted by the rule: parity is per offered-and-selectable option.
+     * `$keep` is EVERY id currently stored on the sheet for this field pair — e.g. both
+     * `endorsed_by_person_id` AND `endorsed_to_person_id`, not just one. They can retire
+     * independently (one account deactivated, the other person leaving the roster), and a stored
+     * id absent from the list renders as a `<select>` with no matching `<option>`; Sheet.vue's
+     * next submit then sends null for THAT field — silently clearing a recorded endorser on an
+     * unsigned day. Passing only one of the two ids loses the other the same way, which is
+     * exactly the bug this method used to have: a signed sheet naming two different retired
+     * people would show only one of them, and the second rendered as a blank select. Every id in
+     * `$keep` still absent from the offered list is appended flagged `retired` and rendered
+     * disabled, so the value is visible and cannot be lost by accident. It is NOT accepted by the
+     * rule: parity is per offered-and-selectable option.
      *
      * @param  \Closure(QueryBuilder): void  $predicate
+     * @param  list<int|null>  $keep
      * @return list<array{id: int, name: string, retired?: bool}>
      */
-    public static function offer(\Closure $predicate, ?int $keep = null): array
+    public static function offer(\Closure $predicate, array $keep = []): array
     {
         $query = Person::query()->orderBy('people.full_name');
         $predicate($query->getQuery());
@@ -104,12 +111,21 @@ final class SignoffPickers
             ->map(fn (Person $p): array => ['id' => (int) $p->id, 'name' => (string) $p->full_name])
             ->all();
 
-        if ($keep !== null && ! in_array($keep, array_column($list, 'id'), true)) {
-            $person = Person::withTrashed()->find($keep);
+        $offeredIds = array_column($list, 'id');
 
-            if ($person !== null) {
-                $list[] = ['id' => (int) $person->id, 'name' => (string) $person->full_name, 'retired' => true];
+        foreach (array_filter($keep, static fn (?int $id): bool => $id !== null) as $id) {
+            if (in_array($id, $offeredIds, true)) {
+                continue;
             }
+
+            $person = Person::withTrashed()->find($id);
+
+            if ($person === null) {
+                continue;
+            }
+
+            $list[] = ['id' => (int) $person->id, 'name' => (string) $person->full_name, 'retired' => true];
+            $offeredIds[] = (int) $person->id;
         }
 
         return $list;

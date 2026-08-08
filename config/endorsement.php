@@ -31,4 +31,14 @@ return [
         'private_key' => env('VAPID_PRIVATE_KEY'),
     ],
 
+    /*
+     * Names this deployment in artefacts that leave it: the backup archive, its prune glob,
+     * the off-host object prefix, and the host scripts' config/log/state paths. Unset, it is
+     * derived from APP_NAME. One customer per database (D11) — this is how an operator tells
+     * two customers' ciphertext apart.
+     */
+    'instance' => [
+        'slug' => env('INSTANCE_SLUG'),
+    ],
+
 ];

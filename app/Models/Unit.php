@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Casts\ExtraRowFields;
 use App\Support\UnitProfile;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -42,6 +43,18 @@ class Unit extends Model
             'consultant_pair' => 'boolean',
             'extra_row_fields' => ExtraRowFields::class,
         ];
+    }
+
+    /**
+     * Codes are a routing identity: `Unit::codes()` plucks them VERBATIM into a `whereIn`,
+     * while lookups elsewhere compare case-sensitively (SQLite has no case-insensitive
+     * collation by default) after uppercasing the input. Normalizing on write means storage
+     * and lookup can never disagree — a unit created with a lowercase or padded code is
+     * still selected by the chooser query AND findable by it, on SQLite and MySQL alike.
+     */
+    protected function code(): Attribute
+    {
+        return Attribute::make(set: fn ($v) => strtoupper(trim((string) $v)));
     }
 
     /**

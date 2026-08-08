@@ -3,6 +3,8 @@
 namespace Tests\Feature\Units;
 
 use App\Models\Unit;
+use App\Models\User;
+use Database\Seeders\AccessControlSeeder;
 use Database\Seeders\ReferenceSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -115,5 +117,60 @@ class UnitConfigurationTest extends TestCase
             'order by "display_order" asc, "id" asc',
             Unit::query()->ordered()->toSql()
         );
+    }
+
+    /**
+     * Unit::codes() plucks stored codes VERBATIM into a whereIn, while lookups elsewhere
+     * compare case-sensitively after uppercasing the input. A unit stored lowercase would be
+     * selected by the chooser query and then not findable — normalizing on write is what
+     * keeps storage and lookup from disagreeing.
+     */
+    public function test_creating_a_unit_with_a_lowercase_code_stores_it_uppercase(): void
+    {
+        $unit = Unit::create([
+            'code' => 'nur',
+            'name' => 'Nursery',
+            'display_order' => 5,
+            'active' => true,
+        ]);
+
+        $this->assertSame('NUR', $unit->code);
+        $this->assertSame('NUR', $unit->fresh()->code);
+        $this->assertContains('NUR', Unit::codes());
+    }
+
+    public function test_creating_a_unit_with_surrounding_whitespace_stores_it_trimmed(): void
+    {
+        $unit = Unit::create([
+            'code' => '  ICU  ',
+            'name' => 'Intensive Care Unit',
+            'display_order' => 6,
+            'active' => true,
+        ]);
+
+        $this->assertSame('ICU', $unit->code);
+        $this->assertSame('ICU', $unit->fresh()->code);
+    }
+
+    /**
+     * Before the code-normalization fix, a unit row stored with a lowercase code was selected
+     * by the chooser's Unit::whereIn('code', UnitProfile::codes()) query and then blew up
+     * inside UnitProfile::for(), which matches case-sensitively on strtoupper($code) — a 500
+     * on the landing page. Confirms the chooser stays healthy once such a row exists.
+     */
+    public function test_a_lowercase_active_unit_does_not_break_the_chooser(): void
+    {
+        $this->seed(AccessControlSeeder::class);
+
+        Unit::create([
+            'code' => 'nur',
+            'name' => 'Nursery',
+            'display_order' => 5,
+            'active' => true,
+        ]);
+
+        $admin = User::factory()->create(['position' => 0]);
+
+        $this->actingAs($admin)->get('/endorsement')->assertOk();
     }
 }

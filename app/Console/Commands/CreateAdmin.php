@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\AuditLog;
+use App\Models\Institution;
 use App\Models\Person;
 use App\Models\User;
 use App\Support\PasswordPolicy;
@@ -82,8 +83,17 @@ class CreateAdmin extends Command
             return self::FAILURE;
         }
 
-        $user = DB::transaction(function () use ($username, $fullName, $email, $password): User {
+        // The root of the provenance chain. Every downstream site copies institution_id from the
+        // acting user (EndorsementController::339/601/632/658, Invitation::67,
+        // InvitationAcceptController::104/161, UserManagementController::152/177), so a bootstrap
+        // admin without one makes the column NULL forever — while LegacyImport stamps a real id
+        // on imported rows. Half-populated is worse than uniformly null. D11: this is grouping
+        // and provenance, never a filter.
+        $institutionId = Institution::current()?->id;
+
+        $user = DB::transaction(function () use ($username, $fullName, $email, $password, $institutionId): User {
             $person = Person::create([
+                'institution_id' => $institutionId,
                 'full_name' => $fullName,
                 'position' => 0,                  // Admin
                 'email' => Person::normalizeEmail($email),
@@ -92,6 +102,7 @@ class CreateAdmin extends Command
 
             return User::create([
                 'person_id' => $person->id,
+                'institution_id' => $institutionId,
                 'member_name' => $username,
                 // No 'member_email' key: it lives on the person created above (P0c/D9 owner
                 // decision 2026-08-08) — `member_email` is a read-through accessor, not a
@@ -107,6 +118,10 @@ class CreateAdmin extends Command
 
         // Identifiers and counts only — never the password, never the hash.
         AuditLog::record('admin_bootstrapped', 'user_id='.$user->id, $user->id, 'console');
+
+        $this->line($institutionId === null
+            ? 'No single active institution found — institution_id left NULL. Run `php artisan db:seed --force` first if this is a fresh instance.'
+            : 'Attached to institution: '.Institution::current()?->code);
 
         $this->info("Administrator '{$username}' created.");
         $this->line('Sign in, then set up two-step sign-in from your profile — an admin');

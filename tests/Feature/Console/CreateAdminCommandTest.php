@@ -35,6 +35,11 @@ class CreateAdminCommandTest extends TestCase
             $user->email_verified_at,
             'the bootstrap admin must not be gated behind an email they cannot yet receive: SMTP is configured in-app, after login',
         );
+
+        // No ReferenceSeeder has run in this test — no institution exists yet. Task 4:
+        // institution_id is left NULL rather than the bootstrap door failing closed. The
+        // seeded/attached case is covered in depth by InstitutionProvenanceTest.
+        $this->assertNull($user->institution_id);
     }
 
     public function test_the_password_is_hashed_never_stored_readable(): void

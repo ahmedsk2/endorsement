@@ -455,3 +455,25 @@ catch a copy-instead-of-join:
 
 Rows here are people who were renamed after signing (legitimate) OR a mis-joined backfill
 (not). Read them; do not assume.
+
+---
+
+## Verifying the 2026-08-11 institution backfill
+
+### 2026_08_11_120001_backfill_institution_on_identity_rows
+
+`institution_id` is grouping/provenance (D11), never a filter — see
+`App\Models\Institution::current()` and `InstitutionProvenanceTest::
+test_no_query_filters_on_institution_id`. This migration only fills nulls on `people` and
+`users` when exactly one active institution exists; it makes no change and is silent about
+it otherwise.
+
+```sql
+-- Both must return 0 on an instance that has been seeded.
+SELECT COUNT(*) FROM users  WHERE institution_id IS NULL;
+SELECT COUNT(*) FROM people WHERE institution_id IS NULL;
+
+-- And there must be exactly ONE institution. More than one means the backfill made no change
+-- and every count above is expected to be non-zero.
+SELECT id, code, name, active FROM institutions;
+```

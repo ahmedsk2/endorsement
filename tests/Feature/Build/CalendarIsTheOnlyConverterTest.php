@@ -47,10 +47,30 @@ class CalendarIsTheOnlyConverterTest extends TestCase
         'app/Support/Plausibility.php',
     ];
 
+    /**
+     * Client-side date-construction needles Decision A forbids under `resources/js/`. Each one
+     * is how the four now-deleted hand-rolled helpers (Index.vue's localYmd/datesBetween,
+     * Sheet.vue's nextDate, Users.vue's fmt) did their own date arithmetic in the browser's
+     * timezone — the exact `toISOString()` +03:00 midnight-rewind trap the design doc's Decision
+     * A permanently kills by having the server send formatted labels and enumerated ranges
+     * instead.
+     *
+     * @var list<string>
+     */
+    private const JS_DATE_NEEDLES = ['new Date(', 'toISOString(', 'toLocaleString('];
+
     /** @return list<\SplFileInfo> */
     private function phpFilesUnderApp(): array
     {
         return File::allFiles(app_path());
+    }
+
+    /** @return list<\SplFileInfo> */
+    private function jsFilesUnderResources(): array
+    {
+        $dir = resource_path('js');
+
+        return File::exists($dir) ? File::allFiles($dir) : [];
     }
 
     private function relativePath(\SplFileInfo $file): string
@@ -144,6 +164,39 @@ class CalendarIsTheOnlyConverterTest extends TestCase
             $stale,
             'These allow-listed files no longer call strtotime() (or no longer exist) — remove '
             .'them from STRTOTIME_ALLOW_LIST: '.implode(', ', $stale)
+        );
+    }
+
+    /**
+     * Decision A, stricter than design §7: the server sends formatted labels and enumerated
+     * date ranges; `resources/js` performs NO date arithmetic at all, ever — not even to
+     * compute "today". Allow-list deliberately EMPTY: this is Task 6's whole point, and a
+     * future PR reaching for `new Date()` needs a prop from the controller instead, not an
+     * entry added here.
+     *
+     * Assert over the whole SET (not a foreach that stops guarding once the last offender is
+     * fixed) — same discipline as the two PHP-side checks above.
+     */
+    public function test_no_client_side_date_construction_appears_under_resources_js(): void
+    {
+        $offenders = [];
+
+        foreach ($this->jsFilesUnderResources() as $file) {
+            $relative = str_replace('\\', '/', str_replace(base_path().DIRECTORY_SEPARATOR, '', $file->getPathname()));
+            $contents = (string) file_get_contents($file->getPathname());
+
+            foreach (self::JS_DATE_NEEDLES as $needle) {
+                if (str_contains($contents, $needle)) {
+                    $offenders[] = "{$relative} contains \"{$needle}\"";
+                }
+            }
+        }
+
+        $this->assertSame(
+            [],
+            $offenders,
+            "Decision A: resources/js performs no date arithmetic — the server sends formatted ".
+            "labels and enumerated ranges instead. Found:\n".implode("\n", $offenders)
         );
     }
 }

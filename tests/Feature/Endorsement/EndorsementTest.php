@@ -100,6 +100,62 @@ class EndorsementTest extends TestCase
             );
     }
 
+    /**
+     * Task 6 / Decision A — the server, not the browser, decides what a "missing day" is. Each
+     * `dates` entry is dual-dated (UX-04), and the merged day/gap listing (spec §10.4) is
+     * computed here so `resources/js` performs no date arithmetic at all — no `new Date()`, no
+     * `toISOString()` re-deriving "the day between these two" in the browser's own timezone.
+     */
+    public function test_index_dual_dates_each_day_and_precomputes_the_gap_listing(): void
+    {
+        // 2026-07-10 .. 2026-07-14: a 3-day gap (07-11, 07-12, 07-13), under the GAP_RENDER_LIMIT
+        // of 7, so each missing day is listed individually rather than collapsed to a summary.
+        $this->handover('PICU', '2026-07-10');
+        $this->handover('PICU', '2026-07-14');
+
+        $this->actingAs($this->admin())
+            ->get('/endorsement/PICU')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Endorsement/Index')
+                ->has('dates', 2)
+                // Every day entry is dual-dated — the calculation itself is pinned by
+                // CalendarTest; this only proves the controller wires it through.
+                ->where('dates.0.date', '2026-07-14')
+                ->where('dates.0.hijri', fn (mixed $v): bool => is_string($v) && $v !== '')
+                ->where('dates.0.weekend', fn (mixed $v): bool => is_bool($v))
+                // The merged listing: day(07-14), gap(07-13), gap(07-12), gap(07-11), day(07-10)
+                // — newest first, matching the removed client computation exactly.
+                ->has('listing', 5)
+                ->where('listing.0.type', 'day')
+                ->where('listing.0.date', '2026-07-14')
+                ->where('listing.1.type', 'gap')
+                ->where('listing.1.date', '2026-07-13')
+                ->where('listing.2.date', '2026-07-12')
+                ->where('listing.3.date', '2026-07-11')
+                ->where('listing.4.type', 'day')
+                ->where('listing.4.date', '2026-07-10')
+            );
+    }
+
+    /** The GAP_RENDER_LIMIT collapse (spec §10.4), now computed server-side. */
+    public function test_index_collapses_a_long_gap_into_one_summary_listing_entry(): void
+    {
+        $this->handover('PICU', '2026-07-01');
+        $this->handover('PICU', '2026-07-20'); // 18 missing days between them
+
+        $this->actingAs($this->admin())
+            ->get('/endorsement/PICU')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('listing', 3) // day(07-20), gap-summary, day(07-01)
+                ->where('listing.1.type', 'gap-summary')
+                ->where('listing.1.count', 18)
+                ->where('listing.1.from', '2026-07-01')
+                ->where('listing.1.to', '2026-07-20')
+            );
+    }
+
     public function test_index_requires_endorsement_view_capability(): void
     {
         // Nurse (1) holds no endorsement.* capability (legacy endorsement gate excludes Nurse).
@@ -139,6 +195,42 @@ class EndorsementTest extends TestCase
                 ->where('date', '2026-07-10')
                 ->has('rows', 1)
                 ->where('rows.0.id', $row->id)
+            );
+    }
+
+    /**
+     * Task 6 / Decision A — the sheet header's Hijri date and its "Start next day" /
+     * "Previous day" navigation used to be computed in the browser (Sheet.vue's deleted
+     * `nextDate`, which built a `new Date()` from the route param). Both adjacent dates now
+     * arrive as server-formatted props so the client does no date arithmetic at all.
+     */
+    public function test_show_sends_the_hijri_date_and_the_adjacent_calendar_days(): void
+    {
+        $this->handover('PICU', '2026-07-10');
+
+        $this->actingAs($this->admin())
+            ->get('/endorsement/PICU/2026-07-10')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Endorsement/Sheet')
+                ->where('date', '2026-07-10')
+                ->where('date_hijri', fn (mixed $v): bool => is_string($v) && $v !== '')
+                ->where('next_date', '2026-07-11')
+                ->where('previous_date', '2026-07-09')
+            );
+    }
+
+    /** A month boundary is exactly the case client-side `Date` arithmetic used to get wrong. */
+    public function test_the_adjacent_calendar_days_cross_a_month_boundary_correctly(): void
+    {
+        $this->handover('PICU', '2026-07-31');
+
+        $this->actingAs($this->admin())
+            ->get('/endorsement/PICU/2026-07-31')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('next_date', '2026-08-01')
+                ->where('previous_date', '2026-07-30')
             );
     }
 

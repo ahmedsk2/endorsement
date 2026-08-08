@@ -18,6 +18,11 @@ import { useCan } from '../../Composables/useCan.js';
 const props = defineProps({
     unit: { type: Object, default: () => ({ code: '', name: '' }) },
     date: { type: String, default: '' },
+    // UX-04 dual dating + Decision A's adjacent-day navigation — all three are pre-formatted
+    // server-side (App\Support\Calendar) so this component does no date arithmetic of its own.
+    date_hijri: { type: String, default: '' },
+    next_date: { type: String, default: '' },
+    previous_date: { type: String, default: '' },
     rows: { type: Array, default: () => [] },
     // H/GAP-5 — the day's shift attestation + the staff pickers behind it (see below).
     signoff: { type: Object, default: () => ({}) },
@@ -166,21 +171,13 @@ const deleteRow = (id) => {
  * "new day" means from inside a sheet: you finish today's handover and roll the census forward to
  * tomorrow. Creating a sheet for an arbitrary or past date lives on the day index, where a date
  * picker makes the target explicit.
+ *
+ * Decision A — `next_date` is server-formatted (App\Support\Calendar), replacing the deleted
+ * browser-side date construction that used to rewind local midnight to the SAME date at
+ * +03:00 and make this button a silent no-op.
  */
-const nextDate = computed(() => {
-    const d = new Date(`${props.date}T00:00:00`);
-    if (Number.isNaN(d.getTime())) {
-        return props.date;
-    }
-    d.setDate(d.getDate() + 1);
-    // LOCAL date parts, never toISOString(): that returns UTC, which in a positive-offset
-    // timezone (Riyadh is +03:00) rewinds local midnight to the SAME date — making the
-    // "Start next day" button a silent no-op. (Latent bug inherited from the reference.)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-});
-
 const newDay = () => {
-    router.post(`/endorsement/${props.unit.code}/new-day`, { date: nextDate.value });
+    router.post(`/endorsement/${props.unit.code}/new-day`, { date: props.next_date });
 };
 
 /*
@@ -264,9 +261,20 @@ const submitReopen = () => {
         <div class="mb-5 flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h2 class="text-xl font-semibold text-ink">{{ unit.name }} — Handover</h2>
-                <p class="text-sm text-muted"><span class="readout">{{ date }}</span> · <span class="readout">{{ rows.length }}</span> patient(s)</p>
+                <p class="text-sm text-muted">
+                    <span class="readout">{{ date }}</span>
+                    <!-- UX-04 dual dating — server-formatted, from Calendar::hijriLabel(). -->
+                    <span v-if="date_hijri" data-testid="date-hijri"> · {{ date_hijri }}</span>
+                    ·
+                    <span class="readout">{{ rows.length }}</span> patient(s)
+                </p>
             </div>
             <div class="flex items-center gap-2">
+                <!-- Decision A — `previous_date` is server-formatted, no client date arithmetic. -->
+                <Link :href="`/endorsement/${unit.code}/${previous_date}`" data-testid="previous-day"
+                      class="rounded-md border border-line px-3 py-1.5 text-sm text-body hover:bg-ground-deep">
+                    Previous day
+                </Link>
                 <Link :href="`/endorsement/${unit.code}`" class="rounded-md border border-line px-3 py-1.5 text-sm text-body hover:bg-ground-deep">
                     Day index
                 </Link>
@@ -281,7 +289,7 @@ const submitReopen = () => {
                     Print
                 </Link>
                 <button v-if="canEdit" type="button" data-testid="new-day" @click="newDay"
-                        :title="`Carry this census forward to ${nextDate}`"
+                        :title="`Carry this census forward to ${next_date}`"
                         class="rounded-md bg-channel px-3 py-1.5 text-sm font-semibold text-panel hover:bg-channel-ink">
                     Start next day
                 </button>

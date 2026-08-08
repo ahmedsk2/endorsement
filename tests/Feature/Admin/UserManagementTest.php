@@ -76,6 +76,24 @@ class UserManagementTest extends TestCase
             );
     }
 
+    /**
+     * Task 6 / Decision A — Users.vue's deleted `fmt()` helper called
+     * `new Date(iso).toLocaleString()` on this field, which renders in the BROWSER's own locale
+     * and timezone rather than the instance's. The server now sends an already-formatted
+     * string and the client does no date construction at all.
+     */
+    public function test_pending_requested_at_arrives_already_formatted(): void
+    {
+        $pending = $this->pending(['requested_at' => '2026-07-10 14:05:00']);
+
+        $this->actingAs($this->admin())
+            ->get('/admin/users')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('pending.0.requested_at', $pending->fresh()->requested_at->format('Y-m-d H:i'))
+            );
+    }
+
     public function test_the_pending_list_never_ships_the_password_hash(): void
     {
         $this->pending();

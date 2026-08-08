@@ -37,6 +37,14 @@ use Inertia\Response;
 class EndorsementController extends Controller
 {
     /**
+     * Spec §10.4 — a run of missing days longer than this collapses into one summary listing
+     * entry instead of one row per date. Moved server-side by Task 6 (Decision A): this used to
+     * be a client constant (`Index.vue`'s deleted `GAP_RENDER_LIMIT`) guarding a client-side
+     * `new Date()` loop.
+     */
+    private const GAP_RENDER_LIMIT = 7;
+
+    /**
      * The four-unit chooser: one card per unit with today's census count and sign-off state,
      * so a missing or unsigned day is visible the moment the app opens (the compliance
      * problem this system exists to fix is FORGETTING).
@@ -130,7 +138,10 @@ class EndorsementController extends Controller
             $s = $signoffs->get($date);
 
             return [
-                'date' => $date,
+                // UX-04 dual dating — `Calendar::label()` is the one shape every screen renders
+                // a date as, so `date`/`hijri`/`weekend` come from it rather than being
+                // recomputed here.
+                ...Calendar::label($date),
                 'count' => (int) $r->row_count,
                 'signed_off' => $s !== null,
                 // The frozen snapshot, never a live user lookup (see HandoverSignoff).
@@ -143,8 +154,65 @@ class EndorsementController extends Controller
         return Inertia::render('Endorsement/Index', [
             'unit' => $this->unitPayload($u),
             'dates' => $dates,
+            // Decision A — the merged day/gap/gap-summary listing the client used to build
+            // itself with `new Date()` arithmetic (localYmd/datesBetween, deleted in Task 6) is
+            // now computed here, so `resources/js` performs no date construction at all.
+            'listing' => $this->buildListing($dates),
             'filters' => ['from' => $from, 'to' => $to],
         ]);
+    }
+
+    /**
+     * Spec §10.4 — merge the day list (newest first) with inline "no endorsement" gap markers,
+     * replacing the client-side computation Decision A removes. A run of missing calendar days
+     * between two consecutive known dates is enumerated via `Calendar::datesBetween()` and
+     * either listed individually (each dual-dated) or, past GAP_RENDER_LIMIT, collapsed into
+     * one summary entry — exactly the split the deleted `Index.vue` computed property made,
+     * just computed here instead of in the browser.
+     *
+     * @param  Collection<int, array<string, mixed>>  $dates  newest first
+     * @return list<array<string, mixed>>
+     */
+    private function buildListing(Collection $dates): array
+    {
+        $items = $dates->values();
+        $listing = [];
+
+        foreach ($items as $i => $entry) {
+            $listing[] = ['type' => 'day', ...$entry];
+
+            $next = $items->get($i + 1);
+            if ($next === null) {
+                continue;
+            }
+
+            // Strictly between the older ($next) and newer ($entry) known dates — both ends
+            // exclusive, so trim the inclusive result Calendar::datesBetween() returns.
+            $span = Calendar::datesBetween($next['date'], $entry['date']);
+            $missing = array_slice($span, 1, -1);
+
+            if ($missing === []) {
+                continue;
+            }
+
+            if (count($missing) > self::GAP_RENDER_LIMIT) {
+                $listing[] = [
+                    'type' => 'gap-summary',
+                    'count' => count($missing),
+                    'from' => $next['date'],
+                    'to' => $entry['date'],
+                ];
+
+                continue;
+            }
+
+            // Newest first, matching the list.
+            foreach (array_reverse($missing) as $date) {
+                $listing[] = ['type' => 'gap', ...Calendar::label($date)];
+            }
+        }
+
+        return $listing;
     }
 
     /**
@@ -243,6 +311,13 @@ class EndorsementController extends Controller
         return Inertia::render('Endorsement/Sheet', [
             'unit' => $this->unitPayload($u),
             'date' => $date,
+            // UX-04 dual dating, and Decision A's adjacent-day navigation — Sheet.vue's deleted
+            // `nextDate` computed built a `new Date()` from the route param to find "tomorrow";
+            // the server now hands over both neighbours already formatted, so "Start next day"
+            // and a "Previous day" link need no client-side date arithmetic at all.
+            'date_hijri' => Calendar::hijriLabel($date),
+            'next_date' => Calendar::addDays($date, 1)->format(Calendar::YMD),
+            'previous_date' => Calendar::addDays($date, -1)->format(Calendar::YMD),
             'rows' => $rows,
             // The viewer is passed so the sheet can state up front whether THIS user may reopen a
             // signed day, and who to ask if not.

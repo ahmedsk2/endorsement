@@ -95,6 +95,37 @@ describe('Endorsement/Sheet', () => {
     });
 });
 
+// Task 6 / Decision A — the header's Hijri date and the previous/next-day navigation are all
+// server-formatted props; this component performs no date arithmetic to derive them.
+describe('Endorsement/Sheet — dual dating and adjacent-day navigation (Decision A)', () => {
+    it('shows the Hijri date beside the Gregorian when the server sends one', () => {
+        const w = mountSheet({ date_hijri: '24 Safar 1448' });
+        expect(w.get('[data-testid="date-hijri"]').text()).toContain('24 Safar 1448');
+    });
+
+    it('renders no Hijri span when the server sends none', () => {
+        const w = mountSheet({ date_hijri: '' });
+        expect(w.find('[data-testid="date-hijri"]').exists()).toBe(false);
+    });
+
+    it('links "Previous day" to the server-supplied previous_date, with no client date math', () => {
+        const w = mountSheet({ previous_date: '2026-07-09' });
+        expect(w.get('[data-testid="previous-day"]').attributes('href')).toBe('/endorsement/PICU/2026-07-09');
+    });
+
+    it('posts the server-supplied next_date when starting the next day', async () => {
+        const w = mountSheet({ next_date: '2026-08-01' }); // a month boundary — the case client Date math used to get wrong
+        await w.get('[data-testid="new-day"]').trigger('click');
+
+        expect(router.post).toHaveBeenCalledWith('/endorsement/PICU/new-day', { date: '2026-08-01' });
+    });
+
+    it('the "Start next day" tooltip names the server-supplied next_date', () => {
+        const w = mountSheet({ next_date: '2026-08-01' });
+        expect(w.get('[data-testid="new-day"]').attributes('title')).toContain('2026-08-01');
+    });
+});
+
 // G3 — legacy flashed a green underline on the saved element. We keep save-on-blur (safer under
 // concurrency) but restore a per-FIELD confirmation, plus the failure state legacy never had.
 describe('Endorsement/Sheet — per-field save feedback', () => {

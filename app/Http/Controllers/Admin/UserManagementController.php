@@ -74,7 +74,14 @@ class UserManagementController extends Controller
                     'member_name' => $p->member_name,
                     'member_email' => $p->member_email,
                     'position' => (int) $p->position,
-                    'requested_at' => $p->requested_at?->toIso8601String(),
+                    // Task 6 / Decision A — the client's deleted `fmt()` helper called
+                    // `new Date(iso).toLocaleString()` on this value, which renders in the
+                    // BROWSER's own locale and timezone rather than the instance's. Formatting
+                    // it here (an already-typed Carbon attribute, not an ambiguous string —
+                    // the same display-formatting pattern Task 5 used for
+                    // signed_off_at/reopened_at) removes that class of "the timestamp is wrong
+                    // on my laptop" bug entirely.
+                    'requested_at' => $p->requested_at?->format('Y-m-d H:i'),
                 ]),
             'users' => User::query()
                 ->join('people', 'people.id', '=', 'users.person_id')

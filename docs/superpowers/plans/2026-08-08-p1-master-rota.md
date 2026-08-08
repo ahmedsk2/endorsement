@@ -130,6 +130,24 @@ needs re-reading against these two additional entries when that task is planned.
 in prose to explain the exact leniency trap it replaces — a mention, not a call — the same
 carve-out the IntlCalendar-symbol check already needed.
 
+**2026-08-08, Task 3 — the whole-suite `Asia/Riyadh` flip is GREEN; kept.** Added
+`<env name="APP_TIMEZONE" value="Asia/Riyadh"/>` to `phpunit.xml` and ran the full suite under
+Bash (not PowerShell — its PATH lacks `openssl`, and the backup tests self-skip there rather
+than fail, which would have made a false "green" indistinguishable from a real one). Verified
+the flip was genuine, not the config-only trap CLAUDE.md warns about, with a throwaway test
+asserting `date_default_timezone_get() === 'Asia/Riyadh'` mid-run (it passed, then was
+deleted — not part of the delivered suite) and by confirming the backup tests (19 tests, 116
+assertions, ~9.8s) actually executed rather than calling `markTestSkipped()`. Full suite: 697
+tests, 697 passed, 0 skipped, both before and after the flip — identical counts, so nothing
+silently dropped out. This is a genuine finding worth stating plainly: 651 tests existed
+before this plan, they were written and have been running at UTC for the project's whole
+history, and none of them encodes a UTC-only assumption that breaks at +03:00. That is a
+property of how the existing suite was written (relative dates, `now()`-relative fixtures,
+no test asserting a literal UTC clock-time), not evidence the module built in Task 2 is
+untested at the boundary — `DayBoundaryTest` (Task 3, Steps 1-2) is what actually exercises
+the 00:00-03:00 disagreement window; the whole-suite flip is corroborating evidence on top of
+that, not a substitute for it.
+
 **2026-08-08, Task 1 — `Institution::$attributes` needed all six calendar defaults, not just
 the two JSON columns.** The plan's Institution model snippet gives casts and constants but no
 `$attributes` default array. `hijri_enabled`/`hijri_offset_days`/`period_type` DO carry a

@@ -92,9 +92,18 @@ return new class extends Migration
                 $table->unsignedSmallInteger('display_order')->default(1000)->after('name');
             }
             // Retirement is now explicit. The spec requires retired unit codes to 404;
-            // previously that was expressed by absence from a PHP array.
+            // previously that was expressed by absence from a PHP array. Opt-IN, not
+            // opt-out: under the old static registry, "not one of the four" was
+            // inexpressible except by absence from the hardcoded array — a row inserted
+            // without an explicit flag must not become silently routable the instant it
+            // exists. Defaulting to false also matches the `display_order` default above:
+            // an unconfigured unit should be inert, not merely low-priority. The backfill
+            // below sets `active = true` explicitly for the four paediatric units; a
+            // production row this backfill does NOT match (a `code` that doesn't hit the
+            // WHERE below) is therefore left inactive — failing closed is deliberate, and
+            // the runbook's `bar_class IS NULL` counter-check already surfaces such a row.
             if (! Schema::hasColumn('units', 'active')) {
-                $table->boolean('active')->default(true)->after('display_order');
+                $table->boolean('active')->default(false)->after('display_order');
             }
             if (! Schema::hasColumn('units', 'extra_row_fields')) {
                 $table->json('extra_row_fields')->nullable()->after('active');

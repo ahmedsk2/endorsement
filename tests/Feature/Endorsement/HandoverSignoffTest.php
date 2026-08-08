@@ -99,8 +99,12 @@ class HandoverSignoffTest extends TestCase
      * Ruling 6 — the endorsed-by / endorsed-to pickers are ACTIVE RESIDENTS ALONE (legacy
      * parity: `members WHERE position='4'`). Everyone else is deliberately excluded, and an
      * inactive resident is no longer offered.
+     *
+     * D9 — since P0c the list is PEOPLE, and an endorser specifically needs a live claimed
+     * account (their signature is the evidence); a roster-only Resident (no account at all)
+     * must not appear, which PickerParityTest proves as a matrix and this proves in context.
      */
-    public function test_the_endorser_pickers_list_active_residents_only(): void
+    public function test_the_endorser_pickers_list_active_residents_with_an_account(): void
     {
         $this->handover('2026-07-10');
         $charge = User::factory()->create(['position' => 2, 'full_name' => 'Aa Charge']);
@@ -109,25 +113,67 @@ class HandoverSignoffTest extends TestCase
         $nurse = User::factory()->create(['position' => 1, 'full_name' => 'Dd Nurse']);
         $admin = User::factory()->create(['position' => 0, 'full_name' => 'Ee Admin']);
         User::factory()->create(['position' => 4, 'full_name' => 'Ff Inactive', 'active' => false]);
+        $rosterOnlyResident = \App\Models\Person::factory()->create(['position' => 4, 'full_name' => 'Gg Roster Only']);
 
         $this->actingAs($this->editor())
             ->get('/endorsement/PICU/2026-07-10')
             ->assertOk()
-            ->assertInertia(function (Assert $page) use ($charge, $consultant, $resident, $nurse, $admin) {
+            ->assertInertia(function (Assert $page) use ($charge, $consultant, $resident, $nurse, $admin, $rosterOnlyResident) {
                 $endorsers = collect($page->toArray()['props']['staff']['endorsers']);
                 $ids = $endorsers->pluck('id')->all();
 
-                $this->assertContains($resident->id, $ids);
-                $this->assertNotContains($charge->id, $ids);
-                $this->assertNotContains($consultant->id, $ids);
-                $this->assertNotContains($nurse->id, $ids);
-                $this->assertNotContains($admin->id, $ids);
+                $this->assertContains($resident->person_id, $ids);
+                $this->assertNotContains($charge->person_id, $ids);
+                $this->assertNotContains($consultant->person_id, $ids);
+                $this->assertNotContains($nurse->person_id, $ids);
+                $this->assertNotContains($admin->person_id, $ids);
+                $this->assertNotContains($rosterOnlyResident->id, $ids);
                 $this->assertNotContains('Ff Inactive', $endorsers->pluck('name')->all());
+                $this->assertNotContains('Gg Roster Only', $endorsers->pluck('name')->all());
 
                 // The CONSULTANT fields answer a different question — who is COVERING — so they
                 // are position 3 only.
                 $consultants = collect($page->toArray()['props']['staff']['consultants'])->pluck('id')->all();
-                $this->assertSame([$consultant->id], $consultants);
+                $this->assertSame([$consultant->person_id], $consultants);
+            });
+    }
+
+    /**
+     * Carried-forward P0c fix: `staffPickers()` used to pass `$keep` a single id per field pair
+     * (`endorsed_by_person_id ?? endorsed_to_person_id`). When endorsed-by and endorsed-to are
+     * two DIFFERENT people who have both stopped being offered, the old code only carried the
+     * first one forward — the second silently vanished from the options list, and Sheet.vue
+     * renders an unmatched stored id as a blank `<select>` whose next submit clears it: a signed
+     * medico-legal record losing a named endorser with no user action at all. `$keep` must carry
+     * every id stored on the row, not just one.
+     */
+    public function test_both_endorsed_by_and_endorsed_to_reappear_as_retired_when_both_are_retired(): void
+    {
+        $this->handover('2026-07-10');
+        $by = User::factory()->create(['position' => 4, 'full_name' => 'Dr Alpha']);
+        $to = User::factory()->create(['position' => 4, 'full_name' => 'Dr Beta']);
+
+        $this->actingAs($this->editor())->patch('/endorsement/PICU/2026-07-10/signoff', [
+            'endorsed_by_person_id' => $by->person_id,
+            'endorsed_to_person_id' => $to->person_id,
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        // Both accounts are deactivated: D9 requires a LIVE account to be offered as an
+        // endorser, so neither is offered any longer — but both are still the medico-legal
+        // record of who endorsed this (unsigned) day.
+        $by->update(['active' => false]);
+        $to->update(['active' => false]);
+
+        $this->actingAs($this->editor())
+            ->get('/endorsement/PICU/2026-07-10')
+            ->assertOk()
+            ->assertInertia(function (Assert $page) use ($by, $to) {
+                $endorsers = collect($page->toArray()['props']['staff']['endorsers']);
+                $retiredIds = $endorsers->where('retired', true)->pluck('id')->all();
+
+                $this->assertContains($by->person_id, $retiredIds, 'endorsed_by must still render as a retired option');
+                $this->assertContains($to->person_id, $retiredIds, 'endorsed_to must still render as a retired option');
+                $this->assertCount(2, $retiredIds, 'both distinct retired people must appear, not just one');
             });
     }
 
@@ -138,13 +184,16 @@ class HandoverSignoffTest extends TestCase
         $resident = User::factory()->create(['position' => 4, 'full_name' => 'Dr Original']);
 
         $this->actingAs($this->editor())->patch('/endorsement/PICU/2026-07-10/signoff', [
-            'endorsed_by_user_id' => $resident->id,
+            'endorsed_by_person_id' => $resident->person_id,
             'sign_off' => true,
         ])->assertRedirect()->assertSessionHasNoErrors();
 
         $s = HandoverSignoff::firstOrFail();
-        $this->assertSame($resident->id, $s->endorsed_by_user_id);
+        $this->assertSame($resident->person_id, $s->endorsed_by_person_id);
         $this->assertSame('Dr Original', $s->endorsed_by_name);
+        // The wire contract renamed to *_person_id (P0c/D9, finding 3): the legacy *_user_id
+        // columns are FROZEN and a new write must leave them alone.
+        $this->assertNull($s->endorsed_by_user_id);
 
         $resident->update(['full_name' => 'Renamed Later']);
         $this->assertSame('Dr Original', $s->fresh()->endorsed_by_name);
@@ -164,7 +213,7 @@ class HandoverSignoffTest extends TestCase
         $by = User::factory()->create(['position' => 4]);
 
         $this->actingAs($this->editor())->patch('/endorsement/PICU/2026-07-10/signoff', [
-            'endorsed_by_user_id' => $by->id,
+            'endorsed_by_person_id' => $by->person_id,
             'endorsement_time' => '02:40',
             'sign_off' => true,
         ])->assertRedirect()->assertSessionHasNoErrors();
@@ -241,10 +290,10 @@ class HandoverSignoffTest extends TestCase
 
         $this->actingAs($actor)
             ->patch('/endorsement/PICU/2026-07-10/signoff', [
-                'endorsed_by_user_id' => $by->id,
-                'endorsed_to_user_id' => $to->id,
-                'consultant_by_user_id' => $cby->id,
-                'consultant_to_user_id' => $cto->id,
+                'endorsed_by_person_id' => $by->person_id,
+                'endorsed_to_person_id' => $to->person_id,
+                'consultant_by_person_id' => $cby->person_id,
+                'consultant_to_person_id' => $cto->person_id,
                 'endorsement_time' => '7:30 Am',
                 'sign_off' => true,
             ])
@@ -252,7 +301,7 @@ class HandoverSignoffTest extends TestCase
 
         $s = HandoverSignoff::where('unit_id', $this->picu()->id)->firstOrFail();
 
-        $this->assertSame($by->id, $s->endorsed_by_user_id);
+        $this->assertSame($by->person_id, $s->endorsed_by_person_id);
         $this->assertSame('Dr Alpha', $s->endorsed_by_name);
         $this->assertSame('Dr Beta', $s->endorsed_to_name);
         $this->assertSame('Dr Gamma', $s->consultant_by_name);
@@ -271,7 +320,7 @@ class HandoverSignoffTest extends TestCase
 
         $this->actingAs($this->editor())
             ->patch('/endorsement/PICU/2026-07-10/signoff', [
-                'endorsed_by_user_id' => $by->id,
+                'endorsed_by_person_id' => $by->person_id,
                 'sign_off' => true,
             ])->assertRedirect();
 
@@ -286,7 +335,7 @@ class HandoverSignoffTest extends TestCase
 
         $this->actingAs($this->editor())
             ->patch('/endorsement/PICU/2026-07-10/signoff', ['sign_off' => true])
-            ->assertSessionHasErrors('endorsed_by_user_id');
+            ->assertSessionHasErrors('endorsed_by_person_id');
 
         $this->assertDatabaseCount('handover_signoffs', 0);
     }
@@ -313,7 +362,7 @@ class HandoverSignoffTest extends TestCase
         $editor = $this->editor();
 
         $this->actingAs($editor)->patch('/endorsement/PICU/2026-07-10/signoff', [
-            'endorsed_by_user_id' => $by->id,
+            'endorsed_by_person_id' => $by->person_id,
             'sign_off' => true,
         ])->assertRedirect();
 
@@ -333,7 +382,7 @@ class HandoverSignoffTest extends TestCase
         $editor = $this->editor();
 
         $this->actingAs($editor)->patch('/endorsement/PICU/2026-07-10/signoff', [
-            'endorsed_by_user_id' => $by->id,
+            'endorsed_by_person_id' => $by->person_id,
             'sign_off' => true,
         ])->assertRedirect();
 
@@ -368,7 +417,7 @@ class HandoverSignoffTest extends TestCase
         $by = User::factory()->create(['position' => 4, 'full_name' => 'Dr Alpha']);
 
         $this->actingAs($this->editor())->patch('/endorsement/PICU/2026-07-11/signoff', [
-            'endorsed_by_user_id' => $by->id,
+            'endorsed_by_person_id' => $by->person_id,
             'sign_off' => true,
         ])->assertRedirect();
 
@@ -392,8 +441,8 @@ class HandoverSignoffTest extends TestCase
         $cby = User::factory()->create(['position' => 3, 'full_name' => 'Dr Gamma']);
 
         $this->actingAs($this->editor())->patch('/endorsement/PICU/2026-07-10/signoff', [
-            'endorsed_by_user_id' => $by->id,
-            'consultant_by_user_id' => $cby->id,
+            'endorsed_by_person_id' => $by->person_id,
+            'consultant_by_person_id' => $cby->person_id,
             'endorsement_time' => '7:30 Am',
             'sign_off' => true,
         ])->assertRedirect();
@@ -429,7 +478,7 @@ class HandoverSignoffTest extends TestCase
         $editor = $this->editor();
 
         $this->actingAs($editor)->patch('/endorsement/PICU/2026-07-10/signoff', [
-            'endorsed_by_user_id' => $by->id,
+            'endorsed_by_person_id' => $by->person_id,
             'sign_off' => true,
         ])->assertRedirect();
 
@@ -454,7 +503,7 @@ class HandoverSignoffTest extends TestCase
         $editor = $this->editor();
 
         $this->actingAs($editor)->patch('/endorsement/PICU/2026-07-10/signoff', [
-            'endorsed_by_user_id' => $by->id,
+            'endorsed_by_person_id' => $by->person_id,
             'sign_off' => true,
         ])->assertRedirect();
 
@@ -482,7 +531,7 @@ class HandoverSignoffTest extends TestCase
         $editor = $this->editor();
 
         $this->actingAs($editor)->patch('/endorsement/PICU/2026-07-10/signoff', [
-            'endorsed_by_user_id' => $by->id,
+            'endorsed_by_person_id' => $by->person_id,
             'sign_off' => true,
         ])->assertRedirect();
 
@@ -529,7 +578,7 @@ class HandoverSignoffTest extends TestCase
         foreach (['NICU', 'SCBU', 'WARD'] as $code) {
             $this->actingAs($this->editor())
                 ->patch('/endorsement/'.$code.'/2026-07-10/signoff', [
-                    'endorsed_by_user_id' => $resident->id,
+                    'endorsed_by_person_id' => $resident->person_id,
                     'sign_off' => true,
                 ])
                 ->assertRedirect()
@@ -550,16 +599,16 @@ class HandoverSignoffTest extends TestCase
 
         $this->actingAs($this->editor())
             ->patch('/endorsement/WARD/2026-07-10/signoff', [
-                'consultant_by_user_id' => $oncall->id,
-                'consultant_to_user_id' => $other->id,
+                'consultant_by_person_id' => $oncall->person_id,
+                'consultant_to_person_id' => $other->person_id,
             ])
             ->assertRedirect()
             ->assertSessionHasNoErrors();
 
         $s = HandoverSignoff::firstOrFail();
-        $this->assertSame($oncall->id, $s->consultant_by_user_id);
+        $this->assertSame($oncall->person_id, $s->consultant_by_person_id);
         $this->assertSame('Dr Oncall', $s->consultant_by_name);
-        $this->assertNull($s->consultant_to_user_id, 'WARD has no receiving consultant (ruling 5)');
+        $this->assertNull($s->consultant_to_person_id, 'WARD has no receiving consultant (ruling 5)');
         $this->assertNull($s->consultant_to_name);
     }
 
@@ -570,7 +619,7 @@ class HandoverSignoffTest extends TestCase
         $resident = User::factory()->create(['position' => 4]);
 
         $this->actingAs($this->editor())->patch('/endorsement/PICU/2026-07-10/signoff', [
-            'endorsed_by_user_id' => $resident->id,
+            'endorsed_by_person_id' => $resident->person_id,
             'sign_off' => true,
         ])->assertRedirect();
 

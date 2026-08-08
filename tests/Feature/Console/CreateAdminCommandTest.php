@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Console;
 
+use App\Models\Person;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -80,6 +81,24 @@ class CreateAdminCommandTest extends TestCase
         $this->assertDatabaseCount('users', 0);
     }
 
+    public function test_it_refuses_an_email_that_differs_only_in_case_from_an_existing_person(): void
+    {
+        // people.email is globally unique; production MySQL's collation catches a
+        // differently-cased duplicate. The raw submitted value must be normalized before this
+        // validation runs for that to hold everywhere, not just on a case-insensitive collation.
+        Person::factory()->create(['email' => 'existing@example.org']);
+
+        $this->artisan('user:create-admin')
+            ->expectsQuestion('Username (used to sign in)', 'ahmed')
+            ->expectsQuestion('Full name (shown on printed handovers)', 'Dr Ahmed Administrator')
+            ->expectsQuestion('Email address', 'EXISTING@EXAMPLE.ORG')
+            ->expectsQuestion('Password', 'Str0ng-pass!x')
+            ->expectsQuestion('Confirm password', 'Str0ng-pass!x')
+            ->assertExitCode(1);
+
+        $this->assertDatabaseCount('users', 0);
+    }
+
     public function test_it_refuses_to_overwrite_an_existing_username(): void
     {
         // Silently updating would let a re-run reset a real administrator's password.
@@ -93,7 +112,10 @@ class CreateAdminCommandTest extends TestCase
             ->expectsQuestion('Confirm password', 'Str0ng-pass!x')
             ->assertExitCode(1);
 
-        $this->assertSame(4, User::where('member_name', 'ahmed')->value('position'));
+        // Not ->value('position'): Eloquent's value() does first([$column]), a narrow SELECT
+        // that omits person_id, and the read-through accessor (P0c) needs it to resolve the
+        // person. A full row fetch loads person_id, so the accessor works as it does in the app.
+        $this->assertSame(4, User::where('member_name', 'ahmed')->firstOrFail()->position);
     }
 
     public function test_it_writes_an_audit_entry_without_the_password(): void

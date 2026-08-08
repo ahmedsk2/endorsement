@@ -23,7 +23,7 @@ settles, is the merge.
 |---|---|---|
 | D1 | How tightly joined? | **One Laravel application.** Munawib becomes a module in this codebase: one login, one schema, one audit chain, one backup. |
 | D2 | Who is it for? | **Full platform now.** Both modules become department-agnostic immediately; PICU/NICU/SCBU/WARD become seed data, not code. |
-| D3 | Person vs account? | **One `users` table holds everyone**, including people who never log in. |
+| D3 | Person vs account? | ~~One `users` table holds everyone.~~ **REVERSED 2026-08-08 after P0c reconnaissance → a separate `people` table holds the roster; `users` stays purely the auth record, linked by `person_id`.** See §5. |
 | D4 | Where does the engine run? | **One TypeScript engine, two runtimes** — browser for hints, Node sidecar for server authority. |
 | D5 | Which cross-module links? | **All four** (§8). |
 | D6 | Go-live? | **Single launch.** Reaffirmed after sizing; objection logged in §1.3. |
@@ -241,60 +241,190 @@ boundaries), `holiday_equity` (multi-year lookback reduced to a per-schedule vio
 
 ---
 
-## 5. Identity (D3)
+## 5. Identity (D3 — REVERSED 2026-08-08)
 
-`users` holds everyone who appears in a rota or on a handover sheet, whether or not they ever
-authenticate.
+> **This whole section is superseded.** It was written for one `users` table holding everyone.
+> P0c reconnaissance showed that model cannot be made safe cheaply here, and the owner reversed
+> D3. §5.1–§5.2's `person_status` machinery is **obsolete**; §5.3's per-field picker rule (D9)
+> still stands, restated at the end.
+>
+> **Why it was reversed.** There is no single authentication chokepoint to gate: the app never
+> calls `Auth::attempt()`, so `EloquentUserProvider::validateCredentials()` is never invoked.
+> Keeping roster people in `users` would have required `person_status` as an extra predicate at
+> **six defence sites** (login, `EnsureAccountActive`, both 2FA challenge resolvers,
+> `AccessControl::holdersOf()`, `pickerRule()`/`staffPickers()`) **plus a dedicated gate on six
+> credential paths** (password login, the reset broker — which is keyed by email and bypasses
+> the provider entirely — email verification, email OTP, trusted devices, remember-me). Twelve
+> places that must each be right, forever, on a system holding children's PHI.
+>
+> **The replacement shape.** A new `people` table is the roster: short name, full name, level
+> history (effective-dated, in a separate table — see §5.1), position, phone, email,
+> constraints, `external` flag. There is no status column: "claimed" is a join
+> (`Person::hasAccount()`), not a lifecycle enum — see §5.1. `users` stays exactly as it is —
+> `password` NOT NULL, `member_name` unique, `active` keeping its current meaning — and gains a
+> `person_id` link. **A roster-only person has no `users` row and therefore cannot authenticate
+> by construction; no gate is needed on any credential path, and all six existing defences keep
+> working untouched.**
+>
+> Consequences P0c must handle: `handover_signoffs`' four named-role FKs move from `user_id` to
+> `person_id` (the frozen `*_name` snapshots already protect the medico-legal record); every
+> read of `user.full_name` follows the link; and `SignatureStore` stays keyed on `users`, which
+> is what keeps **naming separate from signing** — a consultant can be named without an account,
+> but signing still requires one.
+>
+> **D9 still stands, restated:** `endorsed_by`/`endorsed_to` may name only people who have a
+> claimed `users` row; `consultant_by`/`consultant_to` may name any active person;
+> `signed_off_by` is the authenticated user by construction.
+
+### As shipped, 2026-08-08 (P0c)
 
 ### 5.1 Shape
 
+`people` — the roster, and the name/role of record:
+
 | Column | Purpose |
 |---|---|
-| `person_status` | `roster_only` → `invited` → `claimed`. **Claim lifecycle only.** |
-| `active` | **unchanged** — remains the kill switch, wired to `EnsureAccountActive` and the audit. Deactivation is `active = false` at any lifecycle stage. |
-| `short_name` | the rota handle (Munawib `shortName`); unique per institution; distinct from `member_name`, the login handle |
-| `level_id` | current training level; history in `user_levels` (LV-04, effective-dated) |
-| `phone`, `joined_at`, `notes` | PE-01 |
-| `constraints` | JSON, structured per-person constraints (PE-01) |
-| `external` | ad-hoc external rotator flag (PE-03) |
+| `institution_id` | nullable FK (D11 defers tenancy; see §3.4) |
+| `full_name` | NOT NULL — a person with no name cannot be named on a sheet |
+| `short_name` | the rota handle (Munawib `shortName`); **UNIQUE OUTRIGHT**, not per institution — see the deviation below; distinct from `users.member_name`, the login handle |
+| `position` | job role (tinyint, indexed) — the ONLY copy; `users.position` was dropped 2026_08_10_120003 |
+| `email` | nullable, **UNIQUE outright** — the roster/contact address and the sole authoritative account address (owner decision 2, below) |
+| `phone`, `joined_at` | PE-01 |
+| `notes` | PE-01 free text — **plaintext** (owner decision 3, 2026-08-08); `$hidden` on the model so it never serialises by accident, but legible in a raw DB read and in backups. Recorded, not glossed, in `docs/COMPLIANCE.md` |
+| `constraints` | JSON, structured per-person scheduling constraints (PE-01), queryable by the solver — also deliberately unencrypted |
+| `external` | ad-hoc external rotator flag (PE-03), NOT NULL |
+| `active` | governs whether this person may be **NAMED**. Orthogonal to `users.active` (may **AUTHENTICATE**) — never express one as the other |
+| soft deletes | people are deactivated, never deleted (owner ruling) — the four named roles on `handover_signoffs` depend on the row staying resolvable |
 
-**`position` (job role) and `level_id` (training level) are orthogonal and both are retained.**
-A person is a Resident *and* PGY-2. Collapsing either into the other breaks the endorsement
-capability model or Munawib's level-based coverage templates.
+Training level is a **separate history table**, `person_levels` (Munawib LV-04): `person_id`,
+`level_id` (FK, `restrictOnDelete` — a level with history cannot simply vanish), `effective_from`,
+`effective_to` (nullable = still current), unique on `(person_id, effective_from)`.
+`Person::levelAt($date)` is the **only** resolver; there is deliberately no `people.level_id`
+"current level" pointer beside it. **`position` (job role) and level (training stage) are
+orthogonal and both are retained** — a person is a Resident *and* PGY-2.
 
-### 5.2 Mitigations — requirements, not suggestions
+`users` keeps exactly its pre-P0c shape (`password` NOT NULL, `member_name` unique, `active`
+keeping its meaning, the 2FA columns, the signature) and gains one column: `person_id`
+(nullable, **UNIQUE** — at most one account per person).
 
-D3 weakens invariants the 2026-07-26 audit hardened. These close the gaps:
+**Three deviations from this section's original draft, all owner-approved 2026-08-08:**
 
-1. `password` and `member_name` are nullable **only** for non-claimed rows, enforced by a
-   MySQL `CHECK` constraint — engine-level, not convention. The unique index on `member_name`
-   tolerates multiple NULLs.
-2. **Authentication is gated in exactly one place.** A custom user provider refuses any row
-   whose `person_status <> 'claimed'` or `active = false`. A roster-only row can never
-   authenticate, hold a session, or be issued a token.
-3. **The password-reset broker needs its own gate.** `password_reset_tokens` is keyed by email
-   and does **not** pass through the user provider, so a `roster_only` row carrying a
-   `member_email` — which imported rosters will — could request a reset link and mint itself an
-   account outside the invitation flow. This is a privilege-escalation path created by D3. It
-   requires an explicit gate and a dedicated test. Email verification needs the same treatment.
-4. **Roster import must match onto existing people by email**, never create duplicates:
-   `member_email` is unique, so an imported person who later self-registers otherwise causes a
-   hard failure or a duplicate human.
-5. **Three overlapping state machines** — `invitations`, `pending_registrations`, and
-   `person_status` — must be reconciled into one lifecycle. This is **P0 work**, not something
-   to discover in P1.
-6. Capability resolution returns nothing for non-claimed rows.
+1. **`short_name` is UNIQUE outright, not `UNIQUE(institution_id, short_name)`.**
+   `institution_id` is nullable and a UNIQUE index treats NULLs as distinct on both
+   MySQL/InnoDB and SQLite, so the composite index would be toothless for exactly the bootstrap
+   and fixture rows. D11 makes one database one customer, so plain UNIQUE is both honest and
+   enforceable. `levels.code` uses the same reasoning.
+2. **No `people.level_id`.** History only, in `person_levels`, resolved through
+   `Person::levelAt()`. A denormalized "current" pointer beside a history table is two
+   definitions of one fact, and they drift.
+3. **No `status`/`person_status` column at all.** The claim lifecycle is *structural*: a person
+   is claimed iff a `users` row links to them (`Person::hasAccount()` — a join, not a column). A
+   status enum would recreate the twelve-defence-sites problem the table split exists to avoid.
+   `people.active` is the only state flag on the roster, and it governs naming, not claiming.
+
+**The claim lifecycle (as shipped, Task 8):**
+
+```
+                     no `people` row exists
+                              │
+        ┌─────────────────────┼──────────────────────────┐
+        │                     │                            │
+  roster import /       admin invites an           CreateAdmin / LegacyImport
+  invite matches an     unmatched address           create person + account
+  existing address      (Person::create(),          TOGETHER, in one step —
+  (Person::matchByEmail)  blank full_name)           never via an invitation
+        │                     │                            │
+        ▼                     ▼                            │
+  ┌───────────────────────────────────────────────┐        │
+  │ ROSTER-ONLY — a `people` row, NO `users` row.  │        │
+  │ May be NAMED (consultant_by/to, D9); cannot    │        │
+  │ authenticate — nothing for any credential path │        │
+  │ to find (RosterOnlyCannotAuthenticateTest).    │        │
+  └───────────────────┬─────────────────────────────┘        │
+                       │ InvitationController::store()        │
+                       │ issues an `invitations` row with      │
+                       │ person_id already set to this person  │
+                       ▼                                       │
+  ┌───────────────────────────────────────────────┐           │
+  │ INVITED — roster-only PLUS one open, single-   │           │
+  │ use, expiring `invitations` row naming this    │           │
+  │ person_id. Still no `users` row.                │           │
+  └───────────────────┬─────────────────────────────┘           │
+                       │ InvitationAcceptController::store()     │
+                       │ CLAIMS person_id — never inserts a       │
+                       │ second person; a placeholder's blank     │
+                       │ name is filled from the invitee's input, │
+                       │ a rostered person KEEPS their name;      │
+                       │ creates `users` row, person_id set,      │
+                       │ stamps invitations.accepted_at            │
+                       ▼                                          │
+  ┌────────────────────────────────────────────────────────────┐ │
+  │ CLAIMED — `people` row + linked `users` row (person_id       │◀┘
+  │ UNIQUE). Can authenticate AND be named. hasAccount() is TRUE.│
+  └────────────────────────────────────────────────────────────┘
+```
+
+Deactivation moves along a different axis entirely and is not shown above: `people.active`
+(naming) and `users.active`/soft-delete (authenticating) are independent flags that can be set
+in any combination on a claimed person.
+
+**`users.member_email` — the one deliberate denormalization, and why it is now dead weight.**
+The original recon (finding 6) assumed `people.email` and `users.member_email` would be
+**dual-written**, because Laravel's password broker resolves accounts with
+`User::where('member_email', …)` inside `EloquentUserProvider::retrieveByCredentials()`.
+**Owner decision 2 (2026-08-08) overrode that**: there is exactly ONE email column,
+`people.email`. `PasswordResetLinkController`/`NewPasswordController` pass `retrieveByCredentials()`
+a **Closure** instead of a plain value — a natively-supported feature that hands the query
+builder straight to the closure — so the broker resolves through `whereHas('person', …)`,
+never the raw column, while still needing no custom user provider (finding 1 stands). `User`
+gained a read-through `memberEmail()` accessor (`$this->person?->email`) so
+`getEmailForPasswordReset()`/`routeNotificationForMail()` needed no code change at all.
+**Consequence:** `users.member_email` still physically exists — dropping it is a separate,
+deferred migration (design §14 open items) — and still carries its original UNIQUE index, but
+nothing on any live write path writes it any more (`InvitationAcceptController::store()` and
+`UserManagementController::approve()` both had this raw write removed after it produced a real,
+reachable bug — a stale column colliding with itself; see the P0c plan's Task 8 amendments).
+The one write path left untouched is `LegacyImport`'s one-time historical upsert, which cannot
+self-collide the way a live, ongoing write can.
+
+### 5.2 The six original mitigations — withdrawn as unnecessary, one exception
+
+D3's reversal did not just avoid new work — it retired five of the six mitigations this section
+originally required, by removing the risk they existed to close. The sixth was never a
+mitigation *against* the one-table risk; it survives as ordinary roster-integrity logic.
+
+| # | Original mitigation | Risk it addressed | Structural property that now covers it |
+|---|---|---|---|
+| 1 | Nullable `password`/`member_name` + a `CHECK` constraint | A roster-only row sitting inside `users` with no credential, needing an engine-level guarantee it stayed that way | There is no such row. A roster-only person has no row in `users` at all — nothing to constrain (recon finding 2; §5's `person_status` CHECK work is cancelled outright) |
+| 2 | A "single chokepoint" custom user provider | Authentication drifting out of sync across paths | Moot twice over: this app never calls `Auth::attempt()` (so a provider would gate nothing — recon finding 1), and now there is nothing in `users` for a roster row to be gated *against* |
+| 2a | `person_status` as an extra predicate at six `active`-checking defence sites | D9 forcing roster rows `active = true` (to satisfy the consultant picker) would silently defeat all six `active`-based defences | `people.active` (naming) and `users.active` (authenticating) are columns on **different tables**. There is nothing to defeat — the six defences query `users`, and a roster-only person isn't in it |
+| 2b | A dedicated gate on each of six credential-granting paths | Privilege escalation: a roster row minting itself an account via reset/verify/OTP/etc. | Structural absence, proven per-path by `RosterOnlyCannotAuthenticateTest` (B1–B10) — zero gate code, because none of those queries can find a row that was never written |
+| 3 | An explicit password-reset-broker gate | The reset broker (keyed by email, bypasses the provider) minting an account for an uninvited roster row | The broker's credential closure joins through `users.person_id`; a roster-only person has none, so the join returns nothing (§5.1 above) |
+| 4 | Roster import matches onto existing people by email, never duplicates | Importing/inviting the same human twice | **Not withdrawn — this one shipped.** `Person::matchByEmail()` is the one definition, used by both `LegacyImport` and `InvitationController::store()`; it was never a consequence of the two-table risk, it is what any email-keyed roster needs regardless |
+| 5 | Reconcile three overlapping state machines (`invitations`, `pending_registrations`, `person_status`) | Three different answers to "has this person claimed an account yet?" | `person_status` was never built (§5.1). `pending_registrations` turned out to have **no writer at all** (recon report 1 §2.3) — a frozen legacy queue, not a live machine — and is left in place pending a production count of zero (design §14). `invitations` is the one live lifecycle, and "claimed" is a join, not a third state to keep in sync |
+| 6 | Capability resolution returns nothing for non-claimed rows | A roster-only person being granted a capability meant for account holders | `AccessControl::resolve()` keys off a `users` row (`app/Support/AccessControl.php:141-148`); a roster-only person has none, so there is nothing to grant to |
 
 ### 5.3 Naming versus signing (D9)
 
-The schema already supports this: all four named roles on `handover_signoffs` are user FKs
-**paired with a frozen name snapshot** (`endorsed_by_user_id` + `endorsed_by_name`, and the
-same for endorsed-to, consultant-by, consultant-to), plus `signed_off_by_name` added
-2026-07-27. The FK is `nullOnDelete`; the name survives it. The 2026-07-27 signature ruling
-already treats name-without-signature as a valid attestation state: *"wherever a signature is
-withheld, this line is the whole attestation of who documented the handover."*
+As shipped (P0c Task 5/6), the four named roles on `handover_signoffs` are **person** FKs
+(`endorsed_by_person_id`, and the same for endorsed-to, consultant-by, consultant-to; wire
+contract renamed from `*_user_id` to `*_person_id` for the same reason — `people.id` and
+`users.id` are independent sequences, and leaving a field named `*_user_id` while it holds a
+person id is exactly how the id-space-confusion bug ships) — **paired with a frozen name
+snapshot** (`endorsed_by_name` etc.), plus `signed_off_by_name` added 2026-07-27. The legacy
+`*_user_id` columns survive, `nullOnDelete`, populated only on historical rows (backfilled by
+joining through `users.person_id`, never copied) — new writes leave them NULL. The FK is
+`nullOnDelete`; the name survives it either way. `signed_off_by_user_id` and
+`reopened_by_user_id` stay on `users`, because those are *actors*, not names of record. The
+2026-07-27 signature ruling already treats name-without-signature as a valid attestation state:
+*"wherever a signature is withheld, this line is the whole attestation of who documented the
+handover."* — and a roster-only consultant, named but with no account, is exactly that case:
+`SignatureStore` stays keyed on `users`, so there is no signature-path column for a person who
+was never claimed to occupy.
 
-`pickerRule()` therefore enforces **different scopes per field**:
+`App\Support\SignoffPickers` (the single predicate-per-field definition that replaced
+`pickerRule()`/`staffPickers()`'s shared closure — see §5.1) therefore enforces **different
+scopes per field**:
 
 | Field | Who may be named |
 |---|---|
@@ -513,11 +643,15 @@ and `npm run build` green before any commit.
 - **Solver:** property tests (hard constraints never violated; coverage minima met when
   feasible; infeasibility reported per AU-07) plus the AU-06 regeneration test against §11.2's
   pseudonymised block.
-- **PHPUnit:** database-per-customer provisioning, capability enforcement, `pickerRule()`
-  offer/validation parity **per field** (D9), the `person_status` CHECK constraints, the
-  roster-only-cannot-authenticate gate, **the password-reset gate (§5.2.3)**, the
-  roster-import email-collision path, the no-PHI guard test, share-token expiry/revocation,
-  audit-chain integrity.
+- **PHPUnit:** database-per-customer provisioning, capability enforcement,
+  `App\Support\SignoffPickers` offer/validation parity **per field** (D9,
+  `PickerParityTest` — every fixture × all four fields), **`people` carries no credential
+  column (asserted by name)**, **the roster-only-cannot-authenticate matrix across all six
+  credential paths** (`RosterOnlyCannotAuthenticateTest`, B1–B10), the password-reset broker's
+  join-not-raw-column resolution proven end to end through the real HTTP kernel
+  (`PasswordResetTest`), the roster-import/invitation email-match-not-duplicate path
+  (`Person::matchByEmail()`, `ClaimLifecycleTest`), the no-PHI guard test, share-token
+  expiry/revocation, audit-chain integrity.
 - **Playwright:** invite → claim → request → approve → draft → auto-fill → manual fix →
   publish → share link → handover with rota-filled pickers → sign-off → swap → sick
   replacement.
@@ -576,6 +710,22 @@ None block starting P0.
    impossible while the unit registry was hardcoded; it becomes reachable the moment P0d/P0b
    ships unit creation. A reserved-code guard (reject those three codes, case-insensitively, at
    creation) is needed before any admin UI can create units.
+7. **`invitations` has no retention rule.** `member_email` accumulates on that table indefinitely
+   — nothing ever prunes an old, accepted or revoked invitation (recon report 1 §R8). Needs a
+   disposal policy, most likely folded into `data:retention` alongside the other operational rows
+   it already prunes (abandoned registrations, expired one-time codes).
+8. **Removing `pending_registrations` awaits a production count of zero.** The queue has **no
+   writer at all** in this codebase (recon report 1 §2.3; `GET /register` binds to
+   `RegisteredUserController::closed()`), but it is not dropped — only the owner can confirm the
+   live production count is zero, and CLAUDE.md's migration rules put that confirmation before the
+   drop, not this plan.
+9. **`users.member_email` awaiting removal (P0c).** Dead since owner decision 2 (2026-08-08):
+   `people.email` is the single authoritative address, and no live write path touches the raw
+   `users.member_email` column any more (the one exception, `LegacyImport`'s one-time historical
+   upsert, is deliberately left alone — see §5.1). The column still physically exists and still
+   carries its original UNIQUE index. Dropping it is a future, separate, additive migration
+   (CLAUDE.md: never retype/drop a column holding real data without its own reviewed migration),
+   not done as part of P0c.
 
 ---
 
@@ -585,7 +735,7 @@ None block starting P0.
 |---|---|
 | Engine and solver semantics drift | The CI cross-validation job (§4.3) with the §4.2 evaluation mode; divergence fails the build. This is the failure that killed the prototype and is designed against explicitly. |
 | D13 makes P2 long and undemoable | Accepted by the owner (§1.3). Mitigate by ordering the 21 types so the prototype's proven nine land first and are demoable, even though all 21 ship before P3. |
-| One `users` table weakens auth invariants | The six §5.2 mitigations, especially the password-reset gate — a genuine escalation path, not a theoretical one. |
+| D3 (one `users` table for roster + accounts) weakens auth invariants | **REVERSED, 2026-08-08 (P0c).** `people` and `users` are now two tables; a roster-only person has no `users` row and cannot authenticate by construction (§5.1) — five of the original six §5.2 mitigations became unnecessary and the sixth (roster-import email matching) shipped as ordinary correctness logic rather than a risk mitigation. Residual risk from the split itself, not from D3: `$user->full_name`/`position`/`member_email` are read-through accessors that silently resolve to null if a narrowed `select()`/`with()` omits `person_id` — broke four live sites before test coverage existed (CLAUDE.md carries this as a standing rule now); and `users.member_email` survives as dead weight awaiting removal (§14 item 9). |
 | PHI leaks into Rota | Named query services as the only crossing, plus the §9.2 guard test. |
 | Share tokens forwarded outside the department | Expiry, revocation, audit, no contact data, `noindex`; policy documented in the PDPL pack. |
 | N deployments once there is a second customer | Provisioning, backup and restore are scripted from the start; drills are runbook items. |

@@ -73,14 +73,21 @@ class ClinicalSchemaTest extends TestCase
         );
     }
 
+    /**
+     * The four `*_user_id` columns are FROZEN legacy columns (P0c Task 5): the named roles moved
+     * to the `*_person_id` columns alongside them, backfilled by a join through `users.person_id`
+     * — never a copy of the id — and new writes (Task 6) leave the `*_user_id` four NULL from
+     * here on. Both sets stay in the schema: the old ones are the only independent cross-check
+     * that the backfill joined rather than copied.
+     */
     public function test_handover_signoffs_carries_the_full_spec_column_set(): void
     {
         foreach ([
             'id', 'institution_id', 'unit_id', 'handover_date',
-            'endorsed_by_user_id', 'endorsed_by_name',
-            'endorsed_to_user_id', 'endorsed_to_name',
-            'consultant_by_user_id', 'consultant_by_name',
-            'consultant_to_user_id', 'consultant_to_name',
+            'endorsed_by_user_id', 'endorsed_by_person_id', 'endorsed_by_name',
+            'endorsed_to_user_id', 'endorsed_to_person_id', 'endorsed_to_name',
+            'consultant_by_user_id', 'consultant_by_person_id', 'consultant_by_name',
+            'consultant_to_user_id', 'consultant_to_person_id', 'consultant_to_name',
             'endorsement_time', 'endorsement_time_minutes',
             'signed_off_at', 'signed_off_by_user_id',
             'reopened_at', 'reopened_by_user_id', 'reopen_reason',

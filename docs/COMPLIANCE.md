@@ -76,6 +76,38 @@ documented, satisfy them.
 > **Cross-border warning:** storing backups outside Saudi Arabia is a PDPL Art. 29 transfer,
 > and health data attracts the strictest treatment. Keep backups in-Kingdom.
 
+## Staff roster data — a new category, P0c (2026-08-08)
+
+Identity is now two tables. `people` holds personal data about staff — full name, `short_name`,
+job position, level history, email, phone, `notes`, scheduling `constraints` — about individuals
+who **may never have created an account**: an external rotator in particular is a name of record
+(named as a covering consultant, D9) who is frequently never invited to log in at all. Lawful
+basis for holding this is the employment/rota relationship, not consent to a login — the same
+basis as for the account data `users` already held, just no longer contingent on an account
+existing.
+
+**`people.notes` and `people.constraints` are stored in the clear — a deliberate choice, not an
+oversight (owner decision 3, 2026-08-08).** Both were drafted as encrypted-at-rest during
+implementation planning; the owner overrode that before it shipped. `constraints` is
+structured JSON the scheduling solver must query directly, so encrypting it would forfeit
+SQL-side querying for a column with no PHI in it (Rota holds no PHI — design §9.2). `notes` is
+free text about a named staff member and **is legible in a raw database read and therefore in
+every backup** — stated here explicitly so that fact is visible to an auditor rather than
+discovered. The compensating control is narrower: `notes` (and `phone`) are `$hidden` on the
+`Person` model, so neither reaches an Inertia prop, an API response, or any other serialised
+output; and both remain covered by the same rule as PHI — never in `audit_log.detail`,
+exception messages, URLs or push payloads.
+
+Accounts are deactivated, never deleted; **people are deactivated, never deleted** either — the
+four named roles on `handover_signoffs` (`endorsed_by`, `endorsed_to`, `consultant_by`,
+`consultant_to`) depend on the row staying resolvable for as long as the sheet they signed
+exists.
+
+Subject-access and erasure requests now have to answer for two tables, not one — the person
+holding the personal data may or may not be the account making the request. The DPIA in
+`docs/PDPL-PACK.md` §3 was signed (`bb7e1d7`) against a one-table identity model and needs
+re-signing by the system owner to cover this addition — see `docs/PDPL-PACK.md`'s own note.
+
 ## As deployed (2026-07-25)
 
 Verified on the live system, not inferred from config:
@@ -191,6 +223,11 @@ is the checklist; the pack is the working document.
   your processing volume.
 - **Records of processing (ROPA)**, a **privacy notice** for staff and patients, and a
   **DPIA** for this system (health data + children = high risk).
+- **DPIA re-signing (P0c, 2026-08-08).** The DPIA in `docs/PDPL-PACK.md` §3 was signed
+  (`bb7e1d7`) against a one-table identity model. Identity is now two tables — see "Staff
+  roster data" above — which is a new category of personal data (staff who may have no
+  account at all), not a new risk to the existing conclusions, but it should be re-signed to
+  say so explicitly rather than be silently out of date.
 - **Retention schedule** per table (handovers per the MOH medical-records schedule; audit
   log ≥ 12 months hot; pending registrations 30 days) and a disposal mechanism.
 - **Breach procedure**: SDAIA notification within 72 hours; who decides, who writes it.

@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -23,11 +24,9 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'institution_id',
-        'position',
+        'person_id',
         'preferred_unit_id',
-        'full_name',
         'member_name',
-        'member_email',
         'password',
         'active',
         'pass_exp_date',
@@ -63,7 +62,6 @@ class User extends Authenticatable
         return [
             'password' => 'hashed',
             'active' => 'boolean',
-            'position' => 'integer',
             'pass_exp_date' => 'date',
             // MFA (B4): the TOTP secret and recovery codes are encrypted at rest so a DB
             // read alone never yields a usable second factor.
@@ -74,6 +72,47 @@ class User extends Authenticatable
             'signature_updated_at' => 'datetime',
             'last_login_at' => 'datetime',
         ];
+    }
+
+    /**
+     * The name of record, read through the person (P0c).
+     *
+     * `users.full_name` is dropped by 2026_08_10_120003; this accessor exists so that the ~40
+     * PHP reads of `$user->full_name` — the signed-off-by snapshot, the print header, the Inertia
+     * props, the OTP mail — need no change at all. Only the handful of SQL-level reads
+     * (`orderBy('full_name')`) had to move, and they are listed in the P0c plan.
+     */
+    protected function fullName(): Attribute
+    {
+        return Attribute::make(get: fn (): ?string => $this->person?->full_name);
+    }
+
+    /**
+     * The job role, read through the person (P0c). Capability resolution
+     * (App\Support\AccessControl::resolve) keys off this, and so does the two-factor privilege
+     * classifier — so there must be exactly one copy of it, and it is the roster's.
+     */
+    protected function position(): Attribute
+    {
+        return Attribute::make(
+            get: fn (): ?int => $this->person === null ? null : (int) $this->person->position,
+        );
+    }
+
+    /**
+     * The account's address, read through the person (P0c/D9, owner decision 2026-08-08).
+     *
+     * There is ONE email column now: `people.email`. `users.member_email` is a legacy artifact —
+     * it still physically exists (dropping it is its own migration, not done here) but is no
+     * longer independently written by any write path this task touches, so nothing may trust its
+     * raw value. Every normal read (`$user->member_email`) goes through this accessor instead,
+     * which is exactly what makes `getEmailForPasswordReset()` and `routeNotificationForMail()`
+     * below correct without any change to their bodies: they already read `$this->member_email`,
+     * and that now always resolves through the `person_id` link.
+     */
+    protected function memberEmail(): Attribute
+    {
+        return Attribute::make(get: fn (): ?string => $this->person?->email);
     }
 
     /** The account's e-mail address is confirmed (a link sent to it was opened). */
@@ -116,9 +155,13 @@ class User extends Authenticatable
     }
 
     /**
-     * The login field for the password-reset broker and mail routing is `member_email`
-     * (this app has no `email` column). Overriding these keeps Laravel's password broker
-     * and notification routing pointed at the right attribute.
+     * The address the password-reset broker builds the reset link for. `$this->member_email` is
+     * the read-through accessor above — this method needed no code change to "follow the link"
+     * (owner decision 2026-08-08, requirement c): it already reads that attribute, and the
+     * attribute now always resolves via `person_id` -> `people.email` rather than the frozen raw
+     * column. The LOOKUP side of the broker is a separate concern, handled in
+     * `PasswordResetLinkController`/`NewPasswordController` (the raw column can no longer be
+     * trusted as a query filter either).
      */
     public function getEmailForPasswordReset(): ?string
     {
@@ -126,7 +169,8 @@ class User extends Authenticatable
     }
 
     /**
-     * Route mail notifications (e.g. the password-reset link) to `member_email`.
+     * Route mail notifications (e.g. the password-reset link, the login email code) to the
+     * account's address. Same reasoning as `getEmailForPasswordReset()` above.
      */
     public function routeNotificationForMail(): ?string
     {
@@ -171,13 +215,16 @@ class User extends Authenticatable
     }
 
     /**
-     * The role catalog row matching this user's `position`.
+     * The person this account belongs to — the name of record.
      *
-     * @return BelongsTo<Position, $this>
+     * Since P0c (D3 reversed) `users` is the AUTHENTICATION record and nothing else. Who this
+     * account belongs to, what their job role is and what they are called all live on `people`.
+     *
+     * @return BelongsTo<Person, $this>
      */
-    public function role(): BelongsTo
+    public function person(): BelongsTo
     {
-        return $this->belongsTo(Position::class, 'position');
+        return $this->belongsTo(Person::class);
     }
 
     /**

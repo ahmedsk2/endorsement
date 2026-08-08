@@ -53,9 +53,27 @@ class AccessControlController extends Controller
             'positions' => Position::orderBy('id')->get(['id', 'name']),
             'roleMatrix' => $roleMatrix,
             // The whole (small) roster is shipped so the picker searches instantly client-side.
+            // Only ACCOUNTS appear here: a per-user capability override is meaningless for
+            // someone who has no account, and since P0c the roster lives in `people`, so this
+            // list is small again by construction rather than by hope.
+            //
+            // `select('users.*')` (not a narrow people.full_name/position select): `full_name`
+            // and `position` are read-through accessors now, and they resolve via the `person`
+            // relation, which needs `person_id` loaded. A narrow select that omits it makes the
+            // accessor silently return null even though the join fetched the right value —
+            // proven by a throwaway test before this fix landed.
             'users' => User::query()
-                ->orderBy('full_name')
-                ->get(['id', 'member_name', 'full_name', 'position']),
+                ->join('people', 'people.id', '=', 'users.person_id')
+                ->orderBy('people.full_name')
+                ->select('users.*')
+                ->get()
+                ->map(fn (User $u): array => [
+                    'id' => $u->id,
+                    'member_name' => $u->member_name,
+                    'full_name' => $u->full_name,
+                    'position' => (int) $u->position,
+                ])
+                ->all(),
             'selectedUser' => $this->selectedUser($request),
         ]);
     }

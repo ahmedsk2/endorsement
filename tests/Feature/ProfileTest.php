@@ -135,6 +135,25 @@ class ProfileTest extends TestCase
             ->assertJsonValidationErrors('member_email');
     }
 
+    public function test_member_email_uniqueness_is_case_insensitive(): void
+    {
+        // Production MySQL's collation catches a differently-cased duplicate; a case-sensitive
+        // collation (or this test's sqlite) would not unless the value is normalized before the
+        // uniqueness check runs — leaving a real collision to surface as a raw 500 on
+        // `people.email`'s own unique index instead of a clean 422.
+        $user = User::factory()->create(['position' => 4]);
+        User::factory()->create(['member_email' => 'taken@example.com']);
+
+        $this->actingAs($user)
+            ->patchJson('/profile', [
+                'full_name' => 'Whatever',
+                'member_name' => 'free.name',
+                'member_email' => 'TAKEN@EXAMPLE.COM',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('member_email');
+    }
+
     public function test_member_name_must_not_collide_with_the_pending_queue(): void
     {
         $user = User::factory()->create(['position' => 4]);

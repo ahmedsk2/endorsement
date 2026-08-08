@@ -33,6 +33,14 @@ use Inertia\Response;
  *    (exactly like LegacyImport) so the `hashed` model cast can never re-derive it.
  *  - The LAST remaining active Administrator (position 0) can be neither deactivated nor
  *    demoted (self-lockout guard) — including by themselves.
+ *
+ * `pending_registrations` has had NO WRITER since 2026-07-27 — `/register` is closed
+ * (`RegisteredUserController::closed()`) and nothing in `app/` calls
+ * `EmailVerificationController::sendRegistrationLink()`. It is a frozen legacy queue, not a live
+ * state machine, and its only remaining exits are `approve()`, `reject()`, and the 30-day
+ * `data:retention` sweep. Removing the queue entirely is DEFERRED until
+ * `InvitationController::pendingCount()` reads zero on production — the owner observes that and
+ * decides; this class does not.
  */
 class UserManagementController extends Controller
 {
@@ -69,8 +77,10 @@ class UserManagementController extends Controller
                     'requested_at' => $p->requested_at?->toIso8601String(),
                 ]),
             'users' => User::query()
-                ->when(! $all, fn ($q) => $q->where('position', self::RESIDENT))
-                ->orderBy('full_name')
+                ->join('people', 'people.id', '=', 'users.person_id')
+                ->when(! $all, fn ($q) => $q->where('people.position', self::RESIDENT))
+                ->orderBy('people.full_name')
+                ->select('users.*')
                 ->get()
                 ->map(fn (User $u): array => [
                     'id' => $u->id,
@@ -132,15 +142,44 @@ class UserManagementController extends Controller
         $userId = DB::transaction(function () use ($pending): int {
             $now = now();
 
+            // Match onto the roster before creating a new person (Task 8 / design §5.2.4): a
+            // pending self-registration and an imported/invited roster row can name the same
+            // human, and `people.email` is unique, so a blind insert would either 23000-crash
+            // when they collide or duplicate the person.
+            $person = \App\Models\Person::matchByEmail($pending->member_email);
+
+            $personAttributes = [
+                'institution_id' => $pending->institution_id,
+                'full_name' => $pending->full_name,
+                'position' => (int) $pending->position,
+                'email' => \App\Models\Person::normalizeEmail($pending->member_email),
+                'active' => true,
+                'updated_at' => $now,
+            ];
+
+            if ($person === null) {
+                $personId = DB::table('people')->insertGetId(
+                    $personAttributes + ['external' => false, 'created_at' => $now]
+                );
+            } else {
+                $personId = $person->getKey();
+                // Un-trash on the way back in: matchByEmail() finds a soft-deleted person too
+                // (re-approving someone who left is a reactivation, never a second human), and a
+                // raw query-builder update does not clear deleted_at on its own.
+                DB::table('people')->where('id', $personId)->update($personAttributes + ['deleted_at' => null]);
+            }
+
             // Query-builder insert (NOT the Eloquent model): the pending hash must land in
             // `users.password` byte-for-byte — the `hashed` cast would treat a model write as
             // a value to (re)derive, so it is bypassed the way LegacyImport copies members.
             $userId = DB::table('users')->insertGetId([
+                'person_id' => $personId,
                 'institution_id' => $pending->institution_id,
-                'position' => (int) $pending->position,
-                'full_name' => $pending->full_name,
                 'member_name' => $pending->member_name,
-                'member_email' => $pending->member_email,
+                // No 'member_email' key — see InvitationAcceptController::store() for why: the
+                // raw column still carries a UNIQUE index that nothing keeps in step with
+                // `people.email` once a profile edit moves the address on, and approving into a
+                // freed, later-reassigned address must not 500 on that stale index.
                 'password' => $pending->getRawOriginal('password'),
                 'active' => true,
                 // Carry the proof across, so the account records that its address WAS
@@ -211,6 +250,11 @@ class UserManagementController extends Controller
 
         $user->update(['active' => $active]);
 
+        // Deactivating a leaver must stop them being NAMED as well as stop them logging in. The
+        // two flags answer different questions (P0c) and the admin screen offers one control, so
+        // this is where they are kept in step.
+        $user->person?->update(['active' => $active]);
+
         AuditLog::record(
             $active ? 'user_activate' : 'user_deactivate',
             'user='.$user->id,
@@ -239,7 +283,7 @@ class UserManagementController extends Controller
             ]);
         }
 
-        $user->update(['position' => $position]);
+        $user->person?->update(['position' => $position]);
 
         // The role drives the capability set — bust this user's cached resolution at once.
         AccessControl::flush((int) $user->getKey());
@@ -266,6 +310,16 @@ class UserManagementController extends Controller
      */
     public function updateProfile(Request $request, User $user): RedirectResponse
     {
+        // Normalize BEFORE validating: `Rule::unique('people', 'email')` below runs a raw `WHERE
+        // email = ?` against the submitted value, but every stored address is normalized
+        // (Person::normalizeEmail — lowercased, trimmed) on write. Production MySQL's
+        // utf8mb4_unicode_ci collation happens to catch a differently-cased duplicate anyway, but
+        // that is a collation accident, not something this check should depend on — a
+        // case-sensitive collation would let a duplicate through validation and then hit
+        // `people.email`'s unique index as a raw 500. Normalizing the input first makes the
+        // comparison correct regardless of collation.
+        $request->merge(['member_email' => \App\Models\Person::normalizeEmail($request->input('member_email'))]);
+
         $data = $request->validate([
             'full_name' => ['required', 'string', 'max:255'],
             'member_name' => [
@@ -276,16 +330,24 @@ class UserManagementController extends Controller
             ],
             'member_email' => [
                 'required', 'email', 'max:255',
-                Rule::unique('users', 'member_email')->ignore($user->getKey())->withoutTrashed(),
                 Rule::unique('pending_registrations', 'member_email'),
+                Rule::unique('people', 'email')->ignore($user->person_id),
             ],
         ]);
 
-        $user->update([
-            'full_name' => $data['full_name'],
-            'member_name' => $data['member_name'],
-            'member_email' => $data['member_email'],
-        ]);
+        // One email column now, on `people` (owner decision 2026-08-08, overriding the plan's
+        // original dual-column draft). `member_email` is a read-through accessor on User, not a
+        // column — writing it here would silently do nothing.
+        DB::transaction(function () use ($user, $data): void {
+            $user->update([
+                'member_name' => $data['member_name'],
+            ]);
+
+            $user->person?->update([
+                'full_name' => $data['full_name'],
+                'email' => \App\Models\Person::normalizeEmail($data['member_email']),
+            ]);
+        });
 
         // Ids only — a name/email IS the identifying data this edit touches, so it must not be
         // echoed into the audit detail.
@@ -338,7 +400,12 @@ class UserManagementController extends Controller
     /**
      * Re-validate a pending registration's identifiers against the live `users` table at
      * approval time (422 on collision, not a unique-index crash). Soft-deleted users still
-     * occupy the DB unique indexes, so they are included.
+     * occupy the `member_name` unique index, so they are included.
+     *
+     * The email check goes through `people` (P0c/D9, owner decision 2026-08-08): an account
+     * having been created for this address SINCE the registration was submitted is the real
+     * collision; a ROSTER-ONLY match is not one — that is exactly the merge `approve()` performs
+     * above, the same match-or-create discipline as invitations (design §5.2.4).
      */
     private function assertStillUnique(PendingRegistration $pending): void
     {
@@ -348,8 +415,9 @@ class UserManagementController extends Controller
             $errors['member_name'] = 'A user with this username was created after the registration was submitted.';
         }
 
-        if ($pending->member_email !== null
-            && User::withTrashed()->where('member_email', $pending->member_email)->exists()) {
+        $matched = \App\Models\Person::matchByEmail($pending->member_email);
+
+        if ($matched !== null && $matched->hasAccount()) {
             $errors['member_email'] = 'A user with this email was created after the registration was submitted.';
         }
 
@@ -368,10 +436,13 @@ class UserManagementController extends Controller
             return false;
         }
 
+        // `whereKeyNot` is avoided here: it filters on the unqualified `id` column, which is
+        // ambiguous once `people` is joined (both tables have one). `users.id` explicitly.
         return ! User::query()
-            ->whereKeyNot($user->getKey())
-            ->where('position', 0)
-            ->where('active', true)
+            ->join('people', 'people.id', '=', 'users.person_id')
+            ->where('users.id', '!=', $user->getKey())
+            ->where('people.position', 0)
+            ->where('users.active', true)
             ->exists();
     }
 }

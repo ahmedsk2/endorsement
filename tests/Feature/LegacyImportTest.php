@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Handover;
 use App\Models\HandoverSignoff;
+use App\Models\Person;
 use App\Models\Unit;
 use App\Models\User;
 use Database\Seeders\ReferenceSeeder;
@@ -251,14 +252,24 @@ class LegacyImportTest extends TestCase
         $picu = HandoverSignoff::where('unit_id', $this->unitId('PICU'))
             ->whereDate('handover_date', '2020-01-01')->firstOrFail();
 
-        // Resolvable member id -> user FK + name snapshot; junk id -> null FK, no name.
+        // Task 7 item 4 — resolvable member id -> PERSON id, via member_name -> users ->
+        // users.person_id (never member_name -> people directly: the legacy identity IS the
+        // login handle and only `users` carries it). Junk id -> null, no name.
         $user = User::where('member_name', 'dr_resident')->firstOrFail();
-        $this->assertSame($user->id, $picu->endorsed_by_user_id);
+        $this->assertNotNull($user->person_id);
+        $this->assertSame($user->person_id, $picu->endorsed_by_person_id);
         $this->assertSame('Dr Resident', $picu->endorsed_by_name);
+        $this->assertNull($picu->endorsed_to_person_id);
+
+        // The wire-rename froze *_user_id (D9/finding 3): the import must leave it null and
+        // never write a person id into it.
+        $this->assertNull($picu->endorsed_by_user_id);
         $this->assertNull($picu->endorsed_to_user_id);
 
-        // Free-text consultant crosses as a snapshot; verbatim legacy time label kept.
+        // Task 7 item 5 — the consultant fields stay NAME-ONLY: legacy stored free text and
+        // there is no person to resolve it against, so consultant_by_person_id stays null.
         $this->assertSame('Dr Free Text', $picu->consultant_by_name);
+        $this->assertNull($picu->consultant_by_person_id);
         $this->assertSame('7:30 Am', $picu->endorsement_time);
         $this->assertSame(450, $picu->endorsement_time_minutes);
 
@@ -266,10 +277,11 @@ class LegacyImportTest extends TestCase
         $this->assertNotNull($picu->signed_off_at);
         $this->assertNull($picu->signed_off_by_user_id);
 
-        // Ruling 5 — WARD's consultantoncall lands in consultant_by_name.
+        // Ruling 5 — WARD's consultantoncall lands in consultant_by_name, also name-only.
         $ward = HandoverSignoff::where('unit_id', $this->unitId('WARD'))
             ->whereDate('handover_date', '2020-04-01')->firstOrFail();
         $this->assertSame('Dr Oncall Ward', $ward->consultant_by_name);
+        $this->assertNull($ward->consultant_by_person_id);
         $this->assertNull($ward->consultant_to_name);
 
         // The zero-date header was skipped: exactly one PICU sign-off exists.
@@ -286,6 +298,64 @@ class LegacyImportTest extends TestCase
         $this->assertSame(4, $user->position);
     }
 
+    /** Task 7 item 1 — one `people` row per member, linked, carrying the roster fields. */
+    public function test_users_import_creates_one_linked_people_row_per_member(): void
+    {
+        $this->legacy()->table('members')->insert([
+            ['member_id' => '9', 'member_name' => 'dr_consultant', 'full_name' => 'Dr Consultant', 'member_email' => 'DR.Consultant@Example.ORG', 'member_password' => '$2y$10$legacyhashlegacyhashlegacyhashle', 'position' => 3, 'active' => 1, 'pass_exp_date' => null],
+        ]);
+
+        $this->artisan('legacy:import --only=users')->assertExitCode(0);
+
+        $this->assertSame(1, Person::count());
+
+        $user = User::where('member_name', 'dr_consultant')->firstOrFail();
+        $person = $user->person;
+
+        $this->assertNotNull($person);
+        $this->assertSame($person->id, $user->person_id);
+        $this->assertSame('Dr Consultant', $person->full_name);
+        $this->assertSame(3, $person->position);
+        // The one normalization (Person::normalizeEmail): lowercased, trimmed.
+        $this->assertSame('dr.consultant@example.org', $person->email);
+    }
+
+    /** Task 7 item 3 — a legacy member matches onto an existing roster-only person by email. */
+    public function test_a_legacy_member_matches_onto_an_existing_roster_only_person(): void
+    {
+        $rosterPerson = Person::factory()->create([
+            'full_name' => 'Roster Placeholder',
+            'position' => 4,
+            'email' => 'dr.roster@example.org',
+        ]);
+
+        $this->legacy()->table('members')->insert([
+            ['member_id' => '11', 'member_name' => 'dr_roster', 'full_name' => 'Dr Roster', 'member_email' => 'Dr.Roster@Example.ORG', 'member_password' => '$2y$10$legacyhashlegacyhashlegacyhashle', 'position' => 4, 'active' => 1, 'pass_exp_date' => null],
+        ]);
+
+        $this->artisan('legacy:import --only=users')->assertExitCode(0);
+
+        // No second person — the import matched onto the roster row instead of duplicating it.
+        $this->assertSame(1, Person::count());
+
+        $user = User::where('member_name', 'dr_roster')->firstOrFail();
+        $this->assertSame($rosterPerson->id, $user->person_id);
+        $this->assertSame('Dr Roster', $rosterPerson->fresh()->full_name);
+    }
+
+    /** Task 7 item 6 — legacy position 1 (Nurse) is skipped entirely: no person, no account. */
+    public function test_legacy_nurse_rows_are_skipped_entirely(): void
+    {
+        $this->legacy()->table('members')->insert([
+            ['member_id' => '13', 'member_name' => 'nurse_jane', 'full_name' => 'Nurse Jane', 'member_email' => 'nurse.jane@example.org', 'member_password' => '$2y$10$legacyhashlegacyhashlegacyhashle', 'position' => 1, 'active' => 1, 'pass_exp_date' => null],
+        ]);
+
+        $this->artisan('legacy:import --only=users')->assertExitCode(0);
+
+        $this->assertSame(0, User::where('member_name', 'nurse_jane')->count());
+        $this->assertSame(0, Person::count());
+    }
+
     public function test_the_import_is_idempotent(): void
     {
         $this->seedTypicalFixture();
@@ -297,6 +367,8 @@ class LegacyImportTest extends TestCase
         // One valid PICU header (the zero-date one is skipped) + one WARD header.
         $this->assertSame(2, HandoverSignoff::count());
         $this->assertSame(1, User::where('member_name', 'dr_resident')->count());
+        // Task 7 item 2 — idempotence extends to people: no duplicate person on re-run.
+        $this->assertSame(1, Person::count());
     }
 
     public function test_rows_born_in_this_app_are_never_touched(): void

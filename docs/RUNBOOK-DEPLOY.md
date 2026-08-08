@@ -380,3 +380,78 @@ SELECT COUNT(*) FROM units WHERE bar_class IS NULL OR display_order = 1000;
 A NULL `bar_class` or a `display_order` of 1000 (the column's unconfigured-department default)
 means the row's `code` did not match the migration's constant — fix the data, do not edit the
 migration after it has run.
+
+---
+
+## Verifying the 2026-08-10 identity migrations
+
+### 2026_08_10_120001_create_people_and_link_users
+
+Every account must have gained exactly one person. Run all three; all three must return 0.
+
+    SELECT COUNT(*) FROM users WHERE person_id IS NULL;                    -- unlinked accounts
+    SELECT COUNT(*) FROM people p LEFT JOIN users u ON u.person_id = p.id
+      WHERE u.id IS NULL;                                                  -- orphan people
+    SELECT COUNT(*) FROM (SELECT person_id FROM users WHERE person_id IS NOT NULL
+      GROUP BY person_id HAVING COUNT(*) > 1) d;                           -- shared people
+
+And the counts must match, including soft-deleted accounts:
+
+    SELECT (SELECT COUNT(*) FROM users) AS accounts, (SELECT COUNT(*) FROM people) AS people;
+
+A non-zero first query means the backfill did not run — do NOT edit the migration after it has
+run. Re-link by hand, or roll back with `php artisan migrate:rollback --step=1` and re-run.
+
+**The "orphan people" query and the accounts-vs-people equality query are time-bounded** — run
+them immediately after this migration, before any roster entry (a legacy import, an invitation to
+a not-yet-existing address, an admin adding someone to the roster) creates a `people` row with no
+`users` row of its own. That is the normal steady state from then on: a department roster always
+holds people who have never claimed a login, so a later re-run of either query will report a
+false failure once real roster-only rows exist. The "unlinked accounts" query (every account has
+a person) and the 120003/120004 checks below stay valid at any time — they are not about counts
+matching, they are about a specific `users` row resolving correctly.
+
+### 2026_08_10_120003_move_name_and_position_off_users — TAKE A DUMP FIRST
+
+This migration DROPS `users.full_name` and `users.position`. `down()` restores them by copying
+back from `people`, so it is reversible — but only while `people` exists.
+
+Before `php artisan migrate`:
+
+    mysqldump --single-transaction --routines <db> > pre-p0c-$(date +%F).sql
+
+To roll back, roll back in THIS order and no other:
+
+    php artisan migrate:rollback --step=1   # 120005 invitations.person_id
+    php artisan migrate:rollback --step=1   # 120004 handover_signoffs person ids
+    php artisan migrate:rollback --step=1   # 120003 restores users.full_name / users.position
+    php artisan migrate:rollback --step=1   # 120002 levels
+    php artisan migrate:rollback --step=1   # 120001 drops `people` — nothing to copy from after this
+
+Rolling 120001 back before 120003 loses every name and role. Restore from the dump instead.
+
+After migrating, confirm the copy is complete:
+
+    SELECT COUNT(*) FROM people WHERE full_name IS NULL OR full_name = '';   -- must be 0
+
+### 2026_08_10_120004_add_person_ids_to_handover_signoffs
+
+Every historical named role must have resolved. Expect 0 from each:
+
+    SELECT COUNT(*) FROM handover_signoffs WHERE endorsed_by_user_id IS NOT NULL AND endorsed_by_person_id IS NULL;
+    SELECT COUNT(*) FROM handover_signoffs WHERE endorsed_to_user_id IS NOT NULL AND endorsed_to_person_id IS NULL;
+    SELECT COUNT(*) FROM handover_signoffs WHERE consultant_by_user_id IS NOT NULL AND consultant_by_person_id IS NULL;
+    SELECT COUNT(*) FROM handover_signoffs WHERE consultant_to_user_id IS NOT NULL AND consultant_to_person_id IS NULL;
+
+A non-zero count means a signoff pointed at a `users` row that has no person — check
+`SELECT id FROM users WHERE person_id IS NULL` first (that is the 120001 verification).
+
+Spot-check that the names still agree with the frozen snapshots — this is the check that would
+catch a copy-instead-of-join:
+
+    SELECT s.id, s.endorsed_by_name, p.full_name
+    FROM handover_signoffs s JOIN people p ON p.id = s.endorsed_by_person_id
+    WHERE s.endorsed_by_name IS NOT NULL AND s.endorsed_by_name <> p.full_name;
+
+Rows here are people who were renamed after signing (legitimate) OR a mis-joined backfill
+(not). Read them; do not assume.

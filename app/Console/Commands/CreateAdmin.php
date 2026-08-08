@@ -3,10 +3,13 @@
 namespace App\Console\Commands;
 
 use App\Models\AuditLog;
+use App\Models\Person;
 use App\Models\User;
 use App\Support\PasswordPolicy;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 
 /**
  * Creates the FIRST administrator on a clean database.
@@ -36,7 +39,14 @@ class CreateAdmin extends Command
     {
         $username = trim((string) $this->ask('Username (used to sign in)'));
         $fullName = trim((string) $this->ask('Full name (shown on printed handovers)'));
-        $email = trim((string) $this->ask('Email address'));
+        // Normalized BEFORE validating: `Rule::unique('people', 'email')` below runs a raw
+        // `WHERE email = ?` against this value, but every stored address is normalized
+        // (Person::normalizeEmail — lowercased, trimmed) on write. Production MySQL's
+        // utf8mb4_unicode_ci collation happens to catch a differently-cased duplicate anyway, but
+        // a case-sensitive collation would let one through validation and then hit
+        // `people.email`'s unique index directly, in `Person::create()` below, as a raw crash
+        // instead of the clean validation error this command is supposed to give.
+        $email = (string) Person::normalizeEmail($this->ask('Email address'));
 
         // secret() so the password is never echoed to the terminal or captured by a
         // scrollback buffer someone else can read.
@@ -54,7 +64,12 @@ class CreateAdmin extends Command
             [
                 'member_name' => ['required', 'string', 'max:50', 'unique:users,member_name'],
                 'full_name' => ['required', 'string', 'max:100'],
-                'member_email' => ['required', 'email', 'max:150', 'unique:users,member_email'],
+                // `people.email` is P0c/D9's single authoritative address (owner decision
+                // 2026-08-08) — `users.member_email` is no longer independently written, so a
+                // `unique:users,member_email` check here would stop meaning anything the moment
+                // the FIRST admin was bootstrapped through this Eloquent path. `people.email`
+                // already carries the real, DB-enforced unique constraint.
+                'member_email' => ['required', 'email', 'max:150', Rule::unique('people', 'email')],
                 'password' => PasswordPolicy::rules(),
             ],
         );
@@ -67,18 +82,28 @@ class CreateAdmin extends Command
             return self::FAILURE;
         }
 
-        $user = User::create([
-            'member_name' => $username,
-            'full_name' => $fullName,
-            'member_email' => $email,
-            'password' => $password,          // hashed by the model's `hashed` cast
-            'position' => 0,                  // Admin
-            'active' => true,
-            // Verified on creation: SMTP is configured in-app, AFTER login, so gating the
-            // bootstrap admin behind an email would deadlock the system it exists to open.
-            'email_verified_at' => now(),
-            'pass_exp_date' => now()->addYear()->format('Y-m-d'),
-        ]);
+        $user = DB::transaction(function () use ($username, $fullName, $email, $password): User {
+            $person = Person::create([
+                'full_name' => $fullName,
+                'position' => 0,                  // Admin
+                'email' => Person::normalizeEmail($email),
+                'active' => true,
+            ]);
+
+            return User::create([
+                'person_id' => $person->id,
+                'member_name' => $username,
+                // No 'member_email' key: it lives on the person created above (P0c/D9 owner
+                // decision 2026-08-08) — `member_email` is a read-through accessor, not a
+                // fillable column, so mass-assigning it here would silently do nothing.
+                'password' => $password,          // hashed by the model's `hashed` cast
+                'active' => true,
+                // Verified on creation: SMTP is configured in-app, AFTER login, so gating the
+                // bootstrap admin behind an email would deadlock the system it exists to open.
+                'email_verified_at' => now(),
+                'pass_exp_date' => now()->addYear()->format('Y-m-d'),
+            ]);
+        });
 
         // Identifiers and counts only — never the password, never the hash.
         AuditLog::record('admin_bootstrapped', 'user_id='.$user->id, $user->id, 'console');

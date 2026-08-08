@@ -159,6 +159,21 @@ auditable, and they do **not** appear in the open findings below.
 | `SPC-DATABASE-009` | `shred()` now overwrites the whole file, and the `.gz` intermediate is shredded too. *(Residual: file mode and the catch-before-finally ordering — `SPC-RPT-062`, Low.)* |
 | `SPC-CONTAINER-007` | Test-fixture signature PNGs no longer ship in the image. |
 
+> **Addendum, 2026-08-08 (P0c).** The `SPC-API-001`/`SPC-CODE-003`/`SPC-TM-001` fix above
+> validated against "the same population the picker offers" using **one shared closure** for
+> both the endorser fields and the consultant fields (`pickerRule()`/`staffPickers()`) — the
+> populations happened to differ by position list, but a predicate added inside that closure
+> would have applied to both, which is exactly finding 7 of the P0c reconnaissance. On
+> 2026-08-08, D9 split naming from signing: `endorsed_by`/`endorsed_to` now additionally require
+> a claimed, live account (their signature is the evidence), while `consultant_by`/
+> `consultant_to` still accept any active roster person. The offer/validate discipline this
+> finding established is **unchanged and still load-bearing** — it is now **per field**, one
+> predicate per field in `App\Support\SignoffPickers`, and machine-checked by
+> `tests/Feature/Endorsement/PickerParityTest.php` (every fixture × all four fields). Identity
+> itself also changed shape in the same work: `people` (roster) and `users` (account) are now
+> two tables, linked by `users.person_id`; see `CLAUDE.md` and
+> `docs/superpowers/specs/2026-08-08-munawib-endorsement-integration-design.md` §5.
+
 ---
 
 ## 4. De-duplication — where independent domains agreed

@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
+use App\Models\Person;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -13,9 +15,11 @@ use Inertia\Response;
  * F1 — own-profile editing (re-platform of legacy profile.php). `auth` + `cap:profile.manage`
  * (every seeded role). The update binds to the SESSION identity only — any client-supplied id
  * is ignored (IDOR-safe, mirroring the legacy page; admin editing of OTHER users lives in
- * Admin\UserManagementController). member_name / member_email are uniqueness-checked against
- * `users` (excluding self — soft-deleted rows still occupy the unique indexes, so they count)
- * AND the `pending_registrations` queue, exactly like public registration.
+ * Admin\UserManagementController). `member_name` is uniqueness-checked against `users`
+ * (excluding self — soft-deleted rows still occupy the unique indexes, so they count) AND the
+ * `pending_registrations` queue. `member_email` is checked against `people.email` instead — the
+ * single authoritative address since P0c/D9 (owner decision 2026-08-08) — plus the pending
+ * queue.
  */
 class ProfileController extends Controller
 {
@@ -57,6 +61,16 @@ class ProfileController extends Controller
         // SESSION identity only — never a submitted id (IDOR-safe).
         $user = $request->user();
 
+        // Normalize BEFORE validating: `Rule::unique('people', 'email')` below runs a raw `WHERE
+        // email = ?` against the submitted value, but every stored address is normalized
+        // (Person::normalizeEmail — lowercased, trimmed) on write. Production MySQL's
+        // utf8mb4_unicode_ci collation happens to catch a differently-cased duplicate anyway, but
+        // that is a collation accident, not something this check should depend on — a
+        // case-sensitive collation would let a duplicate through validation and then hit
+        // `people.email`'s unique index as a raw 500. Normalizing the input first makes the
+        // comparison correct regardless of collation.
+        $request->merge(['member_email' => Person::normalizeEmail($request->input('member_email'))]);
+
         $data = $request->validate([
             'full_name' => ['required', 'string', 'max:255'],
             'member_name' => [
@@ -66,17 +80,24 @@ class ProfileController extends Controller
             ],
             'member_email' => [
                 'required', 'email', 'max:255',
-                Rule::unique('users', 'member_email')->ignore($user->getKey()),
                 Rule::unique('pending_registrations', 'member_email'),
+                Rule::unique('people', 'email')->ignore($user->person_id),
             ],
         ]);
 
-        // Explicit field list — nothing else from the request can reach the model.
-        $user->update([
-            'full_name' => $data['full_name'],
-            'member_name' => $data['member_name'],
-            'member_email' => $data['member_email'],
-        ]);
+        // One email column now, on `people` (owner decision 2026-08-08, overriding the plan's
+        // original dual-column draft). `member_email` is a read-through accessor on User, not a
+        // column — writing it here would silently do nothing.
+        DB::transaction(function () use ($user, $data): void {
+            $user->update([
+                'member_name' => $data['member_name'],
+            ]);
+
+            $user->person?->update([
+                'full_name' => $data['full_name'],
+                'email' => Person::normalizeEmail($data['member_email']),
+            ]);
+        });
 
         AuditLog::record(
             'profile_update',

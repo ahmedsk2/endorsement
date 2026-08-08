@@ -22,6 +22,7 @@ class Invitation extends Model
      */
     protected $fillable = [
         'institution_id',
+        'person_id',
         'member_email',
         'position',
         'token_hash',
@@ -49,9 +50,14 @@ class Invitation extends Model
     /**
      * Mint one. Returns the model and the plaintext token — the ONLY time it exists.
      *
+     * `$person` is the roster row this invitation is issued TO (P0c/Task 8) — matched-or-created
+     * by the caller before this runs. Nullable so direct callers that predate the person link
+     * (and the redemption path's own "create at redemption time" fallback for those rows) keep
+     * working unchanged.
+     *
      * @return array{0: self, 1: string}
      */
-    public static function issue(string $email, int $position, ?User $invitedBy): array
+    public static function issue(string $email, int $position, ?User $invitedBy, ?Person $person = null): array
     {
         // 64 hex characters of CSPRNG. Guessing is not a threat model anyone needs to think
         // about again at this size, which is the point.
@@ -59,6 +65,7 @@ class Invitation extends Model
 
         $invitation = static::create([
             'institution_id' => $invitedBy?->institution_id,
+            'person_id' => $person?->getKey(),
             'member_email' => Str::lower(trim($email)),
             'position' => $position,
             'token_hash' => hash('sha256', $token),
@@ -100,5 +107,11 @@ class Invitation extends Model
     public function invitedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'invited_by_user_id');
+    }
+
+    /** The roster row this invitation is issued to (P0c/Task 8). Null for pre-P0c rows. */
+    public function person(): BelongsTo
+    {
+        return $this->belongsTo(Person::class);
     }
 }

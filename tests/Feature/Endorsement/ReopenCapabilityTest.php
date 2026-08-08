@@ -63,7 +63,7 @@ class ReopenCapabilityTest extends TestCase
         $by = User::factory()->create(['position' => 4]);
 
         $this->actingAs($editor)->patch("/endorsement/PICU/{$date}/signoff", [
-            'endorsed_by_user_id' => $by->id,
+            'endorsed_by_person_id' => $by->person_id,
             'sign_off' => true,
         ])->assertRedirect();
 

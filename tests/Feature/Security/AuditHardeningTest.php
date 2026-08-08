@@ -5,6 +5,7 @@ namespace Tests\Feature\Security;
 use App\Models\Handover;
 use App\Models\HandoverSignoff;
 use App\Models\PendingRegistration;
+use App\Models\Person;
 use App\Models\Unit;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -37,6 +38,11 @@ class AuditHardeningTest extends TestCase
      * Chief Residents, but the write path validated `exists:users,id` — any id in the table.
      * The handler then freezes that person's name AND their handwritten signature onto a
      * medico-legal record, so this was a forgery path, not a tidiness issue.
+     *
+     * D9 (P0c) narrows this further: an endorser needs a claimed, LIVE ACCOUNT, not merely the
+     * right role — a roster-only Resident (no account at all) is refused for exactly the same
+     * reason a deactivated one is: their signature cannot be the evidence if there is nothing
+     * to sign with.
      */
     public function test_signoff_refuses_an_endorser_who_is_not_an_active_resident_or_chief(): void
     {
@@ -46,14 +52,15 @@ class AuditHardeningTest extends TestCase
         $actor = User::factory()->create(['position' => 4, 'active' => true]);
         $consultant = User::factory()->create(['position' => 3, 'active' => true]);
         $deactivated = User::factory()->create(['position' => 4, 'active' => false]);
+        $rosterOnly = Person::factory()->create(['position' => 4, 'full_name' => 'Roster Only Resident']);
 
-        foreach ([$consultant, $deactivated] as $target) {
+        foreach ([$consultant->person_id, $deactivated->person_id, $rosterOnly->id] as $targetPersonId) {
             $this->actingAs($actor)
                 ->patch(
                     "/endorsement/{$unit->code}/2026-07-26/signoff",
-                    ['endorsed_by_user_id' => $target->id],
+                    ['endorsed_by_person_id' => $targetPersonId],
                 )
-                ->assertSessionHasErrors('endorsed_by_user_id');
+                ->assertSessionHasErrors('endorsed_by_person_id');
         }
 
         $this->assertDatabaseCount('handover_signoffs', 0);
@@ -68,10 +75,33 @@ class AuditHardeningTest extends TestCase
         $chief = User::factory()->create(['position' => 5, 'active' => true]);
 
         $this->actingAs($actor)
-            ->patch("/endorsement/{$unit->code}/2026-07-26/signoff", ['endorsed_by_user_id' => $chief->id])
+            ->patch("/endorsement/{$unit->code}/2026-07-26/signoff", ['endorsed_by_person_id' => $chief->person_id])
             ->assertSessionHasNoErrors();
 
-        $this->assertSame($chief->id, HandoverSignoff::first()->endorsed_by_user_id);
+        $this->assertSame($chief->person_id, HandoverSignoff::first()->endorsed_by_person_id);
+    }
+
+    /**
+     * D9's other half: the CONSULTANT fields need only an active PERSON — a roster-only
+     * consultant, with no account at all, is a valid and expected attestation (the on-call
+     * consultant frequently never logs in). This is the mirror image of the test above, and
+     * both must hold simultaneously or the picker has drifted off the D9 split.
+     */
+    public function test_signoff_accepts_a_roster_only_consultant_who_has_no_account(): void
+    {
+        $this->seedAccess();
+        $unit = $this->unit();
+
+        $actor = User::factory()->create(['position' => 4, 'active' => true]);
+        $rosterOnlyConsultant = Person::factory()->create(['position' => 3, 'full_name' => 'Roster Only Consultant']);
+
+        $this->actingAs($actor)
+            ->patch("/endorsement/{$unit->code}/2026-07-26/signoff", ['consultant_by_person_id' => $rosterOnlyConsultant->id])
+            ->assertSessionHasNoErrors();
+
+        $s = HandoverSignoff::firstOrFail();
+        $this->assertSame($rosterOnlyConsultant->id, $s->consultant_by_person_id);
+        $this->assertSame('Roster Only Consultant', $s->consultant_by_name);
     }
 
     /**

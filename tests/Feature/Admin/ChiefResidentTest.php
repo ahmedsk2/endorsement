@@ -151,7 +151,8 @@ class ChiefResidentTest extends TestCase
         ]);
 
         $this->actingAs($chief)->post('/admin/users/pending/'.$resPending->id.'/approve')->assertRedirect();
-        $this->assertDatabaseHas('users', ['member_name' => 'new_res', 'position' => 4]);
+        $this->assertDatabaseHas('users', ['member_name' => 'new_res']);
+        $this->assertSame(4, User::where('member_name', 'new_res')->firstOrFail()->position);
 
         $this->actingAs($chief)->post('/admin/users/pending/'.$consPending->id.'/approve')->assertForbidden();
         $this->assertDatabaseMissing('users', ['member_name' => 'new_cons']);

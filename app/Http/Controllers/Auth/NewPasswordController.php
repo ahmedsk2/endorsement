@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\Person;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,8 +17,9 @@ use Inertia\Response;
 
 /**
  * Complete a password reset from a tokened link (Laravel's password broker). The account is
- * resolved by `member_email`; a successful reset re-stamps `pass_exp_date`, rotates the
- * remember token, and kills any live sessions for the account.
+ * resolved by JOINING through `person_id` to `people.email` (owner decision 2026-08-08 — see
+ * `PasswordResetLinkController` for the full reasoning); a successful reset re-stamps
+ * `pass_exp_date`, rotates the remember token, and kills any live sessions for the account.
  */
 class NewPasswordController extends Controller
 {
@@ -37,9 +39,20 @@ class NewPasswordController extends Controller
             'password' => \App\Support\PasswordPolicy::rules(),
         ]);
 
+        $email = Person::normalizeEmail($request->input('email'));
+
         $status = Password::reset(
             [
-                'member_email' => $request->input('email'),
+                'member_email' => function ($query) use ($email): void {
+                    // See PasswordResetLinkController: a null address must match nothing.
+                    if ($email === null) {
+                        $query->whereRaw('0 = 1');
+
+                        return;
+                    }
+
+                    $query->whereHas('person', fn ($q) => $q->where('people.email', $email));
+                },
                 'password' => $request->input('password'),
                 'password_confirmation' => $request->input('password_confirmation'),
                 'token' => $request->input('token'),

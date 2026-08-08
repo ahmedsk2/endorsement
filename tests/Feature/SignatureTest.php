@@ -140,7 +140,7 @@ class SignatureTest extends TestCase
         Handover::create(['unit_id' => $unit->id, 'handover_date' => '2026-07-20', 'mrn' => 'S-1']);
 
         $this->actingAs($editor)->patch('/endorsement/PICU/2026-07-20/signoff', [
-            'endorsed_by_user_id' => $resident->id,
+            'endorsed_by_person_id' => $resident->person_id,
             'sign_off' => true,
         ])->assertRedirect()->assertSessionHasNoErrors();
 
@@ -173,7 +173,7 @@ class SignatureTest extends TestCase
         $unit = Unit::where('code', 'NICU')->firstOrFail();
         Handover::create(['unit_id' => $unit->id, 'handover_date' => '2026-07-20', 'mrn' => 'S-2']);
         $this->actingAs($editor)->patch('/endorsement/NICU/2026-07-20/signoff', [
-            'endorsed_by_user_id' => $resident->id,
+            'endorsed_by_person_id' => $resident->person_id,
             'sign_off' => true,
         ]);
 

@@ -24,7 +24,10 @@ final class ShiftClock
     /** @return array{greeting: string, phase: string, next: string, label: string} */
     public static function now(?Carbon $at = null): array
     {
-        $at = $at ?? Carbon::now(config('app.timezone'));
+        // Calendar::timezone() is the single source of truth for "what timezone is the
+        // instance in" (owner decision 3); Carbon::now() still supplies the actual clock time,
+        // which Calendar's own now()/today() intentionally do not expose as a Carbon (mutable).
+        $at = $at ?? Carbon::now(Calendar::timezone());
 
         $times = config('endorsement.handover_times', ['07:30', '15:30']);
         [$morning, $afternoon] = [$times[0] ?? '07:30', $times[1] ?? '15:30'];

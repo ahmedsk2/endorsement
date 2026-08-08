@@ -17,21 +17,22 @@ class CalendarIsTheOnlyConverterTest extends TestCase
     private const CALENDAR_FILE = 'app/Support/Calendar.php';
 
     /**
-     * Every file under app/ currently allowed to call strtotime(), and why. Task 2 does not
-     * remove any of these — it only proves the module and guards against new ones appearing.
-     * Task 5 shrinks this list to LegacyImport.php alone; removing an entry here is meant to
-     * be a deliberate edit against that task, never a silent widening.
+     * Every file under app/ currently allowed to call strtotime(), and why.
      *
      * Reconnaissance finding 2 (plan doc) named EndorsementController and LegacyImport as the
      * live date-conversion paths outside a module. Writing this guard against the actual tree
      * turned up two more calls it did not enumerate — LegacyReconcile and Plausibility — both
      * bloc-adjacent to the one-way legacy import, not general application date handling.
      * Recorded in the plan's Amendments section.
+     *
+     * Task 5 (2026-08-08) absorbed EndorsementController::normalizeDate()/parseDateOrToday()
+     * into Calendar and removed it from this list, per the plan's own text ("Task 5 shrinks
+     * this list to LegacyImport.php alone"). The three entries below all remain: each reads a
+     * FOREIGN system's date strings (a frozen legacy MySQL dump), not application dates — the
+     * exact case Calendar::parse()'s Y-m-d-only strictness is not meant to police, since it
+     * would throw on legacy row shapes that are not guaranteed Y-m-d.
      */
     private const STRTOTIME_ALLOW_LIST = [
-        // EndorsementController::normalizeDate()/parseDateOrToday() — pre-existing implicit
-        // converter AR-08 forbids in principle; absorbed into Calendar in a later P1a task.
-        'app/Http/Controllers/EndorsementController.php',
         // The one-way legacy import itself. Reads a foreign system's date strings, which are
         // NOT guaranteed Y-m-d — Calendar::parse() would throw on legacy row shapes. Stays
         // outside the module deliberately (Task 5 is the last entry standing here).

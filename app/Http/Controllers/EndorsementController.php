@@ -10,11 +10,11 @@ use App\Models\Unit;
 use App\Models\UnitFieldDefinition;
 use App\Models\User;
 use App\Support\AccessControl;
+use App\Support\Calendar;
 use App\Support\MissedDays;
 use App\Support\SignoffPickers;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -43,7 +43,7 @@ class EndorsementController extends Controller
      */
     public function root(Request $request): Response
     {
-        $today = now()->format('Y-m-d');
+        $today = Calendar::todayYmd();
 
         $units = Unit::query()->active()->ordered()
             ->get()
@@ -123,10 +123,10 @@ class EndorsementController extends Controller
             ->where('unit_id', $u->id)
             ->whereNotNull('signed_off_at')
             ->get()
-            ->keyBy(fn (HandoverSignoff $s): string => Carbon::parse($s->handover_date)->format('Y-m-d'));
+            ->keyBy(fn (HandoverSignoff $s): string => Calendar::ymd($s->handover_date));
 
         $dates = $dates->map(function ($r) use ($signoffs): array {
-            $date = Carbon::parse($r->handover_date)->format('Y-m-d');
+            $date = Calendar::ymd($r->handover_date);
             $s = $signoffs->get($date);
 
             return [
@@ -159,8 +159,8 @@ class EndorsementController extends Controller
             'to' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
         ]);
 
-        $from = $filters['from'] ?? now()->subDays(29)->format('Y-m-d');
-        $to = $filters['to'] ?? now()->format('Y-m-d');
+        $from = $filters['from'] ?? Calendar::addDays(Calendar::todayYmd(), -29)->format(Calendar::YMD);
+        $to = $filters['to'] ?? Calendar::todayYmd();
 
         $units = Unit::query()->active()->ordered()
             ->get()
@@ -196,7 +196,7 @@ class EndorsementController extends Controller
 
         return redirect()->route('endorsement.show', [
             'unit' => $unit->code,
-            'date' => now()->format('Y-m-d'),
+            'date' => Calendar::todayYmd(),
         ]);
     }
 
@@ -278,7 +278,7 @@ class EndorsementController extends Controller
             // produced it, so a census found on a desk or in a bin was anonymous. This
             // makes it attributable — which is also the cheapest deterrent there is.
             'printed_by' => (string) ($request->user()?->full_name ?? ''),
-            'printed_at' => now()->format('Y-m-d H:i'),
+            'printed_at' => Calendar::now()->format('Y-m-d H:i'),
         ]);
     }
 
@@ -543,11 +543,12 @@ class EndorsementController extends Controller
     {
         $u = $this->resolveUnit($unit);
 
-        // date_format, not a bare string: this went to strtotime(), so "+5 years" or
-        // "last monday" created real handover rows at arbitrary dates — and a backdated day
-        // makes the missed-days page report a handover that never happened, corrupting the
-        // one metric this system exists to improve. Every other date route is regex-pinned
-        // in routes/web.php; this one was not.
+        // date_format, not a bare string: this went through the old strtotime-based parser
+        // (Task 5 absorbed it into Calendar::parse()), so "+5 years" or "last monday" created
+        // real handover rows at arbitrary dates — and a backdated day makes the missed-days
+        // page report a handover that never happened, corrupting the one metric this system
+        // exists to improve. Every other date route is regex-pinned in routes/web.php; this
+        // one was not.
         $data = $request->validate([
             'date' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'carry_choice' => ['sometimes', 'nullable', 'in:carry,blank'],
@@ -569,14 +570,20 @@ class EndorsementController extends Controller
             return redirect()->route('endorsement.show', ['unit' => $u->code, 'date' => $target]);
         }
 
-        // The most recent PRIOR day for this unit is the census source.
+        // The most recent PRIOR day for this unit is the census source. A real model, not
+        // ->max('handover_date') — an aggregate query's scalar result skips the 'date' cast
+        // entirely and returns the raw column value (e.g. "2026-07-10 00:00:00" on this
+        // schema), which Calendar::ymd() then rejects: it is deliberately Y-m-d-only, the same
+        // strictness that makes it reject "+5 years". Fetching the model keeps the cast in the
+        // loop and matches every other handover_date read in this file.
         $source = Handover::where('unit_id', $u->id)
             ->whereDate('handover_date', '<', $target)
-            ->max('handover_date');
-        $sourceDate = $source !== null ? Carbon::parse($source)->format('Y-m-d') : null;
+            ->orderByDesc('handover_date')
+            ->first();
+        $sourceDate = $source !== null ? Calendar::ymd($source->handover_date) : null;
 
         $isConsecutive = $sourceDate !== null
-            && $sourceDate === Carbon::parse($target)->subDay()->format('Y-m-d');
+            && $sourceDate === Calendar::addDays($target, -1)->format(Calendar::YMD);
 
         // A gap needs an explicit human choice — surface the dialog instead of guessing.
         if ($sourceDate !== null && ! $isConsecutive && $choice === null) {
@@ -888,6 +895,11 @@ class EndorsementController extends Controller
                 // "not an object" — a foreign-ciphertext marker string reaching ->format()
                 // fatals. Passing the marker through as-is lets it reach the clinician as
                 // visible text instead of a 500.
+                //
+                // Deliberately NOT routed through Calendar (Task 5): dob is PHI held by
+                // App\Casts\EncryptedDateTime, whose getter can return that string marker —
+                // Calendar::parse()/ymd() are not built for a value that might not be a real
+                // date at all, and Calendar's own docblock names dob as out of scope.
                 'dob' => is_string($h->dob) ? $h->dob : $h->dob?->format('Y-m-d H:i'),
                 'age' => $h->age,
                 'ward_unit' => $h->ward_unit,
@@ -1269,22 +1281,19 @@ class EndorsementController extends Controller
     /** Normalize a `{date}` route param to `Y-m-d`, rejecting anything unparseable with a 404. */
     private function normalizeDate(string $date): string
     {
-        $ts = strtotime($date);
+        $parsed = Calendar::tryParse($date);
 
-        if ($ts === false) {
+        if ($parsed === null) {
             abort(404);
         }
 
-        return date('Y-m-d', $ts);
+        return $parsed->format(Calendar::YMD);
     }
 
     /** Parse a submitted date to `Y-m-d`, defaulting to today's date when absent/empty. */
     private function parseDateOrToday(mixed $value): string
     {
-        if (is_string($value) && trim($value) !== '' && ($ts = strtotime($value)) !== false) {
-            return date('Y-m-d', $ts);
-        }
-
-        return now()->format('Y-m-d');
+        return (is_string($value) ? Calendar::tryParse($value)?->format(Calendar::YMD) : null)
+            ?? Calendar::todayYmd();
     }
 }

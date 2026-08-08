@@ -4,7 +4,6 @@ namespace App\Support;
 
 use App\Models\Handover;
 use App\Models\HandoverSignoff;
-use Illuminate\Support\Carbon;
 
 /**
  * Spec §10.3 — the missed-days computation, the system's ONLY aggregate.
@@ -15,6 +14,13 @@ use Illuminate\Support\Carbon;
  *   - `unsigned`  — a sheet exists but was never signed (incl. days reopened and left open).
  *
  * Output is counts and dates ONLY — nothing here touches patient fields.
+ *
+ * Owner decision 6 (2026-08-08): the denominator is UNCHANGED by the calendar module. EVERY
+ * calendar day counts, including weekends — Calendar::isWeekend()/dayType() are never consulted
+ * here. Making this weekend/holiday-aware would silently alter every historical compliance
+ * figure the system has ever produced; that is a data-meaning change requiring its own owner
+ * ruling, deliberately not made here.
+ * See tests/Feature/Calendar/ConverterAbsorptionTest.php's denominator test.
  */
 final class MissedDays
 {
@@ -23,9 +29,9 @@ final class MissedDays
      */
     public static function forRange(int $unitId, string $from, string $to): array
     {
-        $start = Carbon::parse($from)->startOfDay();
+        $start = Calendar::parse($from);
         // Future days have not happened, so they cannot be missed.
-        $end = Carbon::parse($to)->startOfDay()->min(Carbon::today());
+        $end = Calendar::parse($to)->min(Calendar::today());
 
         if ($end->lessThan($start)) {
             return ['total_days' => 0, 'missed' => []];
@@ -34,26 +40,26 @@ final class MissedDays
         $signedDates = HandoverSignoff::query()
             ->where('unit_id', $unitId)
             ->whereNotNull('signed_off_at')
-            ->whereDate('handover_date', '>=', $start->format('Y-m-d'))
-            ->whereDate('handover_date', '<=', $end->format('Y-m-d'))
+            ->whereDate('handover_date', '>=', $start->format(Calendar::YMD))
+            ->whereDate('handover_date', '<=', $end->format(Calendar::YMD))
             ->pluck('handover_date')
-            ->map(fn ($d): string => Carbon::parse($d)->format('Y-m-d'))
+            ->map(fn ($d): string => Calendar::ymd($d))
             ->flip();
 
         $sheetDates = Handover::query()
             ->where('unit_id', $unitId)
-            ->whereDate('handover_date', '>=', $start->format('Y-m-d'))
-            ->whereDate('handover_date', '<=', $end->format('Y-m-d'))
+            ->whereDate('handover_date', '>=', $start->format(Calendar::YMD))
+            ->whereDate('handover_date', '<=', $end->format(Calendar::YMD))
             ->distinct()
             ->pluck('handover_date')
-            ->map(fn ($d): string => Carbon::parse($d)->format('Y-m-d'))
+            ->map(fn ($d): string => Calendar::ymd($d))
             ->flip();
 
         $missed = [];
         $total = 0;
 
-        for ($day = $start->copy(); $day->lessThanOrEqualTo($end); $day->addDay()) {
-            $date = $day->format('Y-m-d');
+        // Every calendar day in range, unconditionally — no weekend/holiday filtering.
+        foreach (Calendar::datesBetween($start, $end) as $date) {
             $total++;
 
             if (isset($signedDates[$date])) {

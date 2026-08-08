@@ -115,6 +115,24 @@ predict, a behaviour that differs between SQLite and MySQL or between UTC and As
 record it here, dated, with what was found and how it was resolved. Findings caught
 empirically rather than by inspection are the ones worth writing down.)*
 
+**2026-08-08, Task 5 — `newDay()`'s `->max('handover_date')` returns a raw, uncast DB scalar,
+which `Calendar::parse()`'s Y-m-d-only strictness correctly rejects; caught by the full suite,
+not by inspection.** After rewriting `EndorsementController::newDay()`'s
+`$sourceDate`/`$isConsecutive` computation to route through `Calendar::ymd()`, seven
+`EndorsementTest` cases started 500ing with `InvalidArgumentException: Calendar::parse()
+accepts Y-m-d only; got "2026-07-10 00:00:00"`. Eloquent's attribute casts (`'handover_date' =>
+'date'`) apply to hydrated MODEL instances, not to the scalar returned by an aggregate query —
+`Handover::where(...)->max('handover_date')` returns the column's raw stored value
+(`'Y-m-d H:i:s'` on this schema) unconverted. The old `Carbon::parse()` accepted that shape
+silently; `Calendar::parse()` is deliberately stricter (the same strictness that rejects "+5
+years"), so it is correct to reject it — the bug was in the CALLER supplying an uncast value,
+not in Calendar. Fixed by replacing `->max('handover_date')` with
+`->orderByDesc('handover_date')->first()`, so the value passes through the model's cast layer
+before reaching `Calendar::ymd()`, matching every other `handover_date` read in the file. No
+behavioural change (same date is selected; only a scalar aggregate became a full model fetch).
+Recorded because it is a general hazard for anything migrating a raw-aggregate query onto
+`Calendar`, not specific to this one call site.
+
 **2026-08-08, Task 4 — the plan's own week-block fixtures were written before round-2 owner
 decision 4 and are wrong; recomputed.** Task 4's Step 1 test list (and the Step 6 commit
 message) describe a run of 13 blocks — twelve of four weeks plus a fixed five-week block 13 —
@@ -1327,7 +1345,7 @@ git commit -m "feat: months and week-blocks, and a year whose last block varies"
 The enumeration below is from the reconnaissance, verified line by line. It is a checklist:
 work it, do not re-derive it.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/Feature/Calendar/ConverterAbsorptionTest.php`:
 
@@ -1344,7 +1362,7 @@ work it, do not re-derive it.
 Then tighten the guard: remove `EndorsementController.php` from
 `CalendarIsTheOnlyConverterTest`'s `strtotime` allow-list and watch it go red.
 
-- [ ] **Step 2: `EndorsementController`**
+- [x] **Step 2: `EndorsementController`**
 
 Replace the two private helpers:
 
@@ -1384,7 +1402,7 @@ getter can return a string marker for foreign ciphertext (`:26-44`). Read the si
 changing it; if it is the dob path, add a comment saying it is deliberately outside the module
 and why.
 
-- [ ] **Step 3: `MissedDays`, `ShiftClock`, `SendHandoverReminders`, `Person`**
+- [x] **Step 3: `MissedDays`, `ShiftClock`, `SendHandoverReminders`, `Person`**
 
 - `MissedDays.php:26-56` — `Carbon::parse` → `Calendar::parse`, `Carbon::today()` →
   `Calendar::today()`, the `addDay()` loop → `Calendar::datesBetween()`. **The denominator does
@@ -1401,7 +1419,7 @@ and why.
   cheapest and most symbolic conversion: the effective-dated idiom P1d reuses now shares the
   module with everything else.
 
-- [ ] **Step 4: Write the carve-outs down**
+- [x] **Step 4: Write the carve-outs down**
 
 Three converters stay outside the module **deliberately**, and the guard test's allow-list
 must carry the reason inline:
@@ -1415,7 +1433,7 @@ must carry the reason inline:
 - `app/Casts/EncryptedDateTime.php` — PHI, unqueryable by construction, and its getter can
   return a string marker.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```bash
 npm run build 2>&1 | tail -5
@@ -1426,6 +1444,21 @@ php artisan test | tail -5
 git add app/ tests/
 git commit -m "refactor: five date converters become one, and three stay out on purpose"
 ```
+
+> **Step 2's site list needed judgment, not literal application.** The recon line numbers
+> (`:46, :162-163, :198-201, :199, :203, :281, :576-579, :891, :956, :976, :1074-1075`) were
+> taken from an earlier commit and had drifted; sites were matched by pattern instead. Three
+> categories emerged that the plan's blanket "route the display formatting through
+> `Calendar::ymd()`" instruction does not fit cleanly, resolved as follows (see the Amendments
+> entry below for the full reasoning): the `:281` `printed_at` site needed a timestamp WITH
+> time-of-day, so `Calendar::now(): CarbonImmutable` was added (today() truncates to midnight);
+> the `signed_off_at`/`reopened_at` display sites (`HandoverSignoff` timestamps, formerly
+> `:956`/`:976`) format an ALREADY-Carbon attribute with `H:i` — `Calendar::ymd()` would
+> silently drop the time, so they were left as native `->format()` calls, which is display
+> formatting of a typed value, not parsing an ambiguous string; and `recordRevisions()`'s
+> generic before/after diff formatter (formerly `:1074-1075`) was left alone because it runs
+> over EVERY tracked field including `dob`, and routing a possibly-PHI, possibly-string-marker
+> value through Calendar is exactly what Calendar's own docblock excludes.
 
 ---
 

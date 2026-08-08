@@ -59,6 +59,12 @@ final class Calendar
         return CarbonImmutable::now(self::timezone())->startOfDay();
     }
 
+    /** The current instant in the instance timezone — unlike today(), NOT truncated to midnight. */
+    public static function now(): CarbonImmutable
+    {
+        return CarbonImmutable::now(self::timezone());
+    }
+
     public static function todayYmd(): string
     {
         return self::today()->format(self::YMD);

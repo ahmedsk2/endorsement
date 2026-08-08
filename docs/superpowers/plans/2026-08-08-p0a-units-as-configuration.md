@@ -16,6 +16,57 @@
 
 ---
 
+## Amendments made during execution
+
+The task text below is preserved as originally written. These are the deviations that
+actually shipped, and why. Read them before treating any task text as current.
+
+1. **Tasks 1 and 2 must land together.** Task 1 Step 5 predicted that `fill()` would
+   "silently drop the new keys". It does not: Laravel runs seeders inside
+   `Model::unguarded()`, so the raw array reaches the query builder and throws
+   `Array to string conversion`, erroring **250 of 463 tests**. Task 1's commit is therefore
+   not independently deployable, which violates a project non-negotiable. Task 2 is the fix
+   and must follow immediately; review the two together.
+
+2. **`active` defaults to `false`, not `true`** (opt-in activation). With units in the
+   database, a row created without an explicit flag would be immediately routable — and
+   `tests/Feature/Endorsement/UnitScopeTest.php` creates an ad-hoc unit precisely to assert
+   that a unit outside the surface is unreachable. Under the old static registry "outside the
+   surface" was inexpressible except by absence from the hardcoded array. Defaulting to
+   `false` restores that guarantee, makes a half-configured department inert rather than live,
+   and lets `UnitScopeTest` pass unmodified. It also fixes the same latent flaw in Task 4's
+   line-723 guard.
+
+3. **`display_order` defaults to `1000`, not `0`**, so an unconfigured unit sorts last
+   instead of ahead of PICU.
+
+4. **`extra_row_fields` is cast through `App\Casts\ExtraRowFields`, not `'array'`.** That
+   column feeds `EndorsementController::validateRow()`'s rule set, whose output reaches
+   `$handover->update($data)` unfiltered — so an unexpected key (`unit_id`,
+   `institution_id`, `author_user_id`, all in `Handover::$fillable`) would let an editor move
+   a clinical row between units or rewrite the recorded author on signed evidence. The cast
+   intersects against `['dob','age','ward_unit']` on both read and write, filters
+   non-strings, de-duplicates, and degrades to `[]` rather than throwing. **Do not widen
+   `ALLOWED` for P0b** — Ceiling-2 custom fields use a different column
+   (`handovers.extra_fields`, encrypted, driven by `unit_field_definitions`).
+
+5. **Task 3 keeps `UnitProfile::codes()` and `::for()` as deprecated DB-backed shims.**
+   Deleting them in Task 3 as originally written would leave eleven call sites broken until
+   Task 4, red across a commit boundary. **Task 5 deletes the shims** and deletes
+   `tests/Feature/Units/UnitProfileShimTest.php` with them.
+
+6. **The UnitProfile tests are split.** `tests/Unit/UnitProfileTest.php` keeps only the
+   database-free `fromUnit()` and `toArray()` tests; the shim tests live in
+   `tests/Feature/Units/UnitProfileShimTest.php`, because `tests/Unit/` must not require a
+   database.
+
+7. **Migration hardening not in the original text:** per-column `Schema::hasColumn` guards
+   (the Blueprint emits one `ALTER TABLE` per column, so guarding only the first leaves a
+   partial failure unrecoverable), string-keyed profile arrays rather than positional ones,
+   and a completed runbook verification table with a `COUNT(*)` counter-check.
+
+---
+
 ### Task 1: Units carry their own configuration
 
 **Files:**
@@ -860,6 +911,13 @@ with:
   object that shape travels in (`$unit->profile()`); it holds no per-unit values. Never
   reintroduce a hardcoded unit list — `Unit::codes()` is the only source.
 ```
+
+- [ ] **Step 2b: Correct this plan's own stale references**
+
+The amendments section at the top of this file records what actually shipped, but the task
+text below it still describes the superseded approach in three places. Add a one-line pointer
+to the amendments beside each: Task 1 Step 5's `fill()` prediction, Task 2's
+`'extra_row_fields' => 'array'` cast, and Task 3's deletion of `codes()`/`for()`.
 
 - [ ] **Step 3: Update docs/spec/03-unit-model.md**
 

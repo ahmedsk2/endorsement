@@ -69,6 +69,36 @@ predict, a migration that behaves differently on SQLite than on MySQL — record
 with what was found and how it was resolved. Findings caught empirically rather than by
 inspection are the ones worth writing down.)*
 
+**2026-08-08, Task 1 (`InstanceSlugTest`), empirically found:** PHPUnit 12 (this project's
+version) removed the `@dataProvider` docblock annotation entirely — it must be
+`#[\PHPUnit\Framework\Attributes\DataProvider('methodName')]`. The docblock form silently
+produced "Too few arguments" errors instead of running the six malformed-slug cases. Fixed by
+importing `PHPUnit\Framework\Attributes\DataProvider` and using the attribute.
+
+**2026-08-08, Task 1 (`BackupInstanceIdentityTest`), empirically found:** the
+`test_unslugged_legacy_archives_are_left_alone_and_warned_about` case initially called
+`$result->assertExitCode(0)` before `$result->expectsOutputToContain(...)`. Laravel's
+`PendingCommand::expectsOutputToContain()` registers a Mockery expectation on the console
+output mock and only works if called **before** the command actually runs; `assertExitCode()`
+triggers `run()` internally, so calling it first means the expectation is registered against
+output that already happened and is never satisfied — the assertion fails even though the
+command printed the correct warning. Confirmed by reproducing the warning manually outside
+PHPUnit. Fixed by switching that one assertion to `Artisan::call()` + `Artisan::output()`,
+which captures real output without the call-order requirement, rather than reordering the
+fragile mock-based API.
+
+**2026-08-08, environment note (not a plan defect):** `openssl` is not on PATH in the
+PowerShell shell this machine's toolchain otherwise uses (only `php84`/`composer-bin` are
+prepended there), but it is on PATH in Git Bash. Every openssl-dependent backup test —
+`BackupRunTest`'s two real-archive tests plus all five of this plan's new
+`BackupInstanceIdentityTest` tests — self-skips via `hasOpenssl()`/`markTestSkipped()` when run
+under PowerShell, so `php artisan test` still reports "passed" there (614 tests, 607 passed, 7
+skipped) without exercising the slug-collision or legacy-archive behaviour at all. This project
+predates this plan; noted here because it means **verifying Task 1's backup behaviour requires
+running the suite via Bash** (`export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"`
+first), not the PowerShell invocation the top-level instructions default to. Confirmed green
+there: 614/614 passed, 0 skipped.
+
 ---
 
 ## Nine findings from reconnaissance that shape this plan

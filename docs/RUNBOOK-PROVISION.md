@@ -226,3 +226,213 @@ tracking unless someone writes down when each last happened.
   detail, written before a second instance existed.
 - `docs/superpowers/plans/2026-08-08-p0d-tenancy-provisioning.md` — why each of these traps
   exists and what P0d changed to close it.
+
+---
+
+## Appendix: the 2026-08-08 dress rehearsal (P0d Task 9)
+
+**A provisioning script that has never been run against a throwaway instance is not done.**
+This is that run — and it caught a real defect, which is the point of running it. Everything
+below is what was genuinely executed and its actual output, not a description of what should
+happen.
+
+### Environment, stated plainly
+
+This machine is a Windows 11 workstation, not the OCI production host. It has Docker Desktop
+(client 29.6.2, engine 4.83.0, Linux/aarch64 via WSL2) and real Git Bash, but **no** real
+`/etc/endorsement`, `/var/lib`, or `/var/log` — Windows has no such paths — and no Coolify
+instance, no production DNS, and no Oracle Object Storage credentials. There is also no "live"
+stack on this machine to stand the drill up beside; the real live instance runs on the owner's
+OCI host. So this rehearsal stood up **two throwaway stacks side by side** (slugs `drilla` and
+`drillb`, institutions `TSA`/`TSB`) rather than one drill beside a live one — sufficient to
+prove genuine two-customer discrimination, which is what finding 1 is actually about, but not
+identical to the production topology. What follows says exactly which parts are a faithful
+rehearsal and which are a stand-in.
+
+### What was genuinely rehearsed, on real Docker, and its output
+
+1. **Two throwaway stacks, brought up for real** via `scripts/new-instance.sh --slug drilla
+   ... --institution-code TSA ...` and the same for `drillb`/`TSB` (the actual, unmodified
+   script — confirmed it writes nothing to disk and printed 48-character alphanumeric
+   passwords and a `base64:` `APP_KEY`, exactly as documented), then
+   `docker compose -p endorse-drilla -f docker-compose.production.yml --env-file ... up -d
+   --build` for each. A local, throwaway override (not committed) set `container_name:
+   app-<slug>` / `db-<slug>` on each stack, to reproduce Coolify's own container naming
+   (`docs/OWNER-CHECKLIST.md`'s existing `name=app-<uuid>` selector shows Coolify assigns this
+   at deploy time; a vanilla `docker compose -p <name>` project without that override names
+   containers `<name>-app-1`, which `docker/instance-env.sh`'s filter does not match — worth
+   knowing if a future rehearsal skips the override and wrongly concludes the script is
+   broken).
+
+2. **Two real `mysql:8.4` containers existed simultaneously.** `docker ps` showed `db-drilla`
+   and `db-drillb`, both healthy, both using `MYSQL_DATABASE=endorsement` /
+   `MYSQL_USER=endorse` (deliberately identical — D11 isolates by container, not by name).
+
+3. **`docker/instance-env.sh` selected correctly, every time:**
+   - `instance-env.sh drilla` → resolved `app-drilla`/`db-drilla` only, printed the stderr
+     identity line, `DBNAME=endorsement`.
+   - `instance-env.sh drillb` → resolved `app-drillb`/`db-drillb` only, same database name,
+     proving selection is by container identity, not by content.
+   - `instance-env.sh` (no argument) → refused, `APP`/`DB` unset, exit 1.
+   - `instance-env.sh definitely-not-a-stack` → refused (no matching container), exit 1.
+   - `instance-env.sh drill` (a prefix matching **both** `app-drilla` and `app-drillb`) →
+     refused ("expected exactly one running app container"), `DB` unset, exit 1. This is the
+     ambiguous-match refusal the plan calls out specifically, and it worked.
+
+4. **The full bring-up sequence from §5 ran verbatim, on both stacks, from a fresh database
+   each time:** `migrate --force` (via the GRANT ALTER / REVOKE ALTER dance, using
+   `instance-env.sh`-resolved credentials) → `db:seed --force` → `docs/sql/least-privilege.sql`
+   substituted and applied (verified: the runtime user's grants afterwards were exactly
+   `SELECT, INSERT, UPDATE, DELETE`, and both append-only triggers were present) →
+   `user:create-admin` (piped, non-interactively, since it is deliberately interactive).
+   `drilla`'s admin bootstrapped attached to institution `TSA`; `drillb`'s to `TSB` — two
+   different institutions, two different databases, proving cross-stack isolation rather than
+   asserting it.
+
+5. **`php artisan instance:show` on `drilla`:** `slug: drilla`, `institution: TSA — Test Stack
+   A`, `APP_KEY fingerprint: 68f409ec9cf22ad6`, `BACKUP_PASSPHRASE: set`, `mail_host`/
+   `alert_email` correctly `NOT SET` with the documented consequence lines, **exit code 1**
+   (correctly refusing to call an unfinished instance ready). On `drillb`: `slug: drillb`,
+   `institution: TSB — Test Stack B`, a *different* key fingerprint. Two instances, visibly
+   distinguishable from one command each.
+
+6. **The reserved-code and `institution_id` guards, on a genuinely fresh instance** (not the
+   PHPUnit suite — this repository's actual code, run inside the actual container):
+   `Unit::create(['code' => 'TODAY', ...])` threw `InvalidArgumentException` with the
+   documented message. The bootstrap admin's `people.institution_id` and `users.institution_id`
+   both resolved to the `TSA` institution's id — the provenance chain, proven end to end
+   instead of unit-tested in isolation.
+
+7. **Archive identity and retention scoping, with a real destructive test.** `backup:run` on
+   `drilla` wrote `endorsement-drilla-<stamp>.sql.gz.enc` plus a `.meta.json` sidecar whose
+   `app_key_fingerprint` (`68f409ec9cf22ad6`) matched `instance:show`'s own output exactly —
+   the pairing Task 1 Step 5 exists for. Then: seeded 20 `endorsement-drilla-2026-01-*`
+   archives plus **one empty file named for a different slug**
+   (`endorsement-qch-2026-01-01_010000.sql.gz.enc`, standing in for a co-located customer's
+   archive), ran `backup:run --keep=14`. Result: the eight oldest `drilla` archives were
+   pruned, the `qch`-named file was **untouched**, confirmed by listing the directory
+   afterwards. Under the pre-P0d glob this file would have been deleted; here it could not be.
+
+8. **A real restore drill**, following `docs/RUNBOOK-BACKUP.md`'s recipe: `openssl enc -d
+   -aes-256-cbc -pbkdf2 | gunzip` on the newest `drilla` archive using the real
+   `BACKUP_PASSPHRASE`, loaded into a scratch database (`restore_drill`) inside the `drilla`
+   MySQL container, then `php artisan audit:verify` against **the restored copy** (not the
+   live database — see the correction below) reported `Audit chain intact: 2 rows verified`,
+   exit 0.
+
+9. **Both host scripts, run for real against real data**, inside a plain `debian:bookworm-slim`
+   container standing in for the host (real `/etc`, `/var/log`, `/var/lib` — see the stand-in
+   note below): with the actual `endorse-drilla_endorsement-backups` Docker volume bind-mounted
+   at the literal path the script expects, and `rclone` installed for real:
+   - `endorsement-backup-sync` with no argument → usage error, exit 2.
+   - `endorsement-backup-sync drilla` → real `rclone copy` to a local destination, logged "ok:
+     off-host copy complete, 17 objects", correctly reported no heartbeat configured.
+   - `endorsement-uptime-check` with no argument → usage error, exit 2.
+   - `endorsement-uptime-check nosuchinstance` → "no URL for instance nosuchinstance", exit 2.
+   - `endorsement-uptime-check drilla` and `endorsement-uptime-check drillb`, run against each
+     stack's own app container, wrote to **separate** log and state files
+     (`endorsement-drilla-uptime.log`/`.state` vs the `drillb` equivalents) with **no
+     crosstalk** — the exact N=2 correctness bug (finding 2) disproved rather than reasoned
+     about. A second real run against `drilla` after fixing the check URL logged a genuine
+     `down` → `recovered (HTTP 200)` transition.
+
+10. **Torn down completely.** `docker compose down -v --remove-orphans` on both stacks, the
+    stand-in host container removed, both throwaway images removed, the generated `.env` files
+    and `rclone` config shredded. `docker ps -a` / `docker volume ls` confirmed nothing named
+    `drill*` remained.
+
+### What this rehearsal found and corrected — the deliverable
+
+**A real defect, not a documentation gap: `INSTANCE_SLUG`, `INSTITUTION_CODE` and
+`INSTITUTION_NAME` never reached the container.** `docker-compose.production.yml`'s `app`
+service `environment:` block never referenced `${INSTANCE_SLUG}`, `${INSTITUTION_CODE}` or
+`${INSTITUTION_NAME}` — Tasks 1 and 3 added the config plumbing and `.env.example` entries, but
+nobody wired the compose passthrough. A value pasted into Coolify's Environment Variables
+screen — exactly what this document's §2–3 and `scripts/new-instance.sh`'s own printed block
+tell the owner to do — would have had **zero effect**: `printenv INSTANCE_SLUG` inside the
+first `drilla` container exited 1 (truly absent), and the seeded institution came back `QCH`
+regardless of the configured `TSA`. This means **the OWNER ACTION recorded in Task 1 Step 8 of
+the plan — setting `INSTANCE_SLUG=qch` in Coolify before the next deploy — would not have taken
+effect even if already done**, and must be reconfirmed once the deploy carrying this fix ships.
+
+Fixed in this commit, with a regression test first (red, then green):
+`tests/Feature/Build/DeploymentInvariantsTest.php::test_instance_and_institution_variables_reach_the_container`
+asserts the three lines are present in the compose file's `environment:` block, in the
+`${VAR:-default}` form — the default matters as much as the passthrough, because Laravel's
+`env('X', 'default')` returns `''`, not `'default'`, when a variable is *present but empty*,
+which is exactly what a bare `${INSTITUTION_CODE}` (no compose-level default) would have put in
+the container the moment this variable started being passed through at all, silently reverting
+the live QCH institution's code to empty on the next re-seed. Re-ran the full bring-up on a
+fresh `drilla` after the fix: `INSTANCE_SLUG=drilla`, `INSTITUTION_CODE=TSA` both now present
+inside the container, `instance:show` and the seeded institution both correct.
+
+**A documentation gap, corrected in Task 10:** `docs/RUNBOOK-BACKUP.md`'s restore recipe says
+to run `php artisan audit:verify` after loading the archive into a scratch database, but
+running it *inside the already-booted app container* with `docker exec -e DB_DATABASE=...`
+silently verifies the **live** database instead — `config:cache` bakes the database name at
+container boot, so the environment override has no effect and the command still reports
+success, just against the wrong data. The genuine drill needed two things the runbook does not
+mention: `GRANT SELECT` for the app's least-privilege user on the scratch database, and forcing
+a live reconnect inside the same PHP process (`config(['database.connections.mysql.database' =>
+'...']); DB::purge('mysql');`) before calling the command. Recorded as a correction to
+`docs/RUNBOOK-BACKUP.md`.
+
+**An engine-version-dependent nuance, informational, no code change:** on this Docker Desktop
+version, the bare-tag filter this plan's finding 1 quotes (`docker ps -qf` selecting by image
+ancestry) matched **zero** containers rather than two, because the compose file pins the MySQL
+image by digest and this engine does not resolve a bare tag against a digest-referenced
+container for that filter. The digest-qualified equivalent matched both. Either outcome is
+worse than `instance-env.sh`'s name-based selection — zero matches fails an operator's command
+outright with no explanation, two matches is the coin flip finding 1 describes — so this does
+not change what was built; it is recorded because the exact failure mode an operator sees may
+differ from the production host's Docker Engine version, and `instance-env.sh` is correct
+regardless of which one it is.
+
+**Nothing else needed correcting.** The bring-up order, the least-privilege substitution
+recipe, the `instance:show` output shape, the archive naming and retention scoping, and both
+host scripts' slug-argument and refusal behaviour all matched the runbook exactly.
+
+### What could NOT be rehearsed here, and what the owner must run instead
+
+This machine cannot exercise the parts of provisioning that are genuinely host-, Coolify- or
+DNS-shaped. The host-script proof above (item 9) ran inside a plain Linux container standing in
+for the host — a real execution of the real script against real data, but not the literal
+production host, its cron, or its root-owned files. Everything below still needs a first real
+run, by the owner, on the actual host:
+
+- [ ] **Install the two binaries at their real paths** (`/usr/local/bin/endorsement-backup-sync`,
+      `/usr/local/bin/endorsement-uptime-check`) and the real per-instance config at
+      `/etc/endorsement/<slug>.conf`, `0600 root:root`, per §9 above — this rehearsal proved the
+      scripts' *logic*, not the host installation recipe in `docs/RUNBOOK-DEPLOY.md:141-149`.
+- [ ] **Install the two cron lines** (`5 2 * * *` / `*/5 * * * *`) and confirm both binaries run
+      correctly under cron's minimal environment (not an interactive shell's), for the *existing*
+      `qch` instance specifically — see the note below.
+- [ ] **Run `docker/backup-offhost-sync.sh` against the real off-host destination** (the
+      per-customer in-Kingdom Oracle Object Storage bucket with its own `rclone` remote and real
+      credentials) — this rehearsal used a local `rclone` "local" remote as a throwaway
+      destination and never touched real object storage.
+- [ ] **The Coolify UI steps in §3** (project, Docker Compose build pack, deploy key, domain
+      field, deleting preview-environment variable copies) — there is no Coolify instance on this
+      machine; these are a human in a UI regardless of what P0d automates.
+- [ ] **The DNS/TLS sequence in §4** (grey → deploy → Let's Encrypt → orange, confirming Full
+      (strict) by hand) — no real domain or Cloudflare zone was available here.
+- [ ] **First login, TOTP enrolment and recovery codes (§6), SMTP/alert-email/VAPID
+      configuration (§7), and the second-administrator step (§8)** — all UI flows requiring a
+      real browser session against a real domain; not exercised by this console-only rehearsal.
+- [ ] **`curl -sI https://<host>/up` and `bash scripts/verify-live.sh https://<host>` (§10)**
+      against the real public hostname — this rehearsal checked `/up` over a container-internal
+      hostname instead (and had to add a `/etc/hosts` alias to satisfy `TrustHosts`, since the
+      app correctly refuses an unrecognised `Host:` header — `bootstrap/app.php:73-90` — which is
+      itself a small, live demonstration of why a co-tenant container reaching the app directly
+      is a real, if currently accepted, exposure; see owner decision 3).
+- [ ] **The most important item: on the existing `qch` deployment specifically**, once the
+      compose fix above ships — confirm `INSTANCE_SLUG=qch` is actually set in Coolify's
+      Environment Variables screen (it may have been set already, per Task 1 Step 8, but had no
+      effect until this fix), redeploy, and run
+      `eval "$(sudo bash docker/instance-env.sh <live-uuid>)" && sudo docker exec "$APP" printenv
+      INSTANCE_SLUG` to confirm it now reads `qch` — **before** the next `01:30` backup, or the
+      archive name silently reverts to the un-derived fallback the moment this deploys.
+
+This rehearsal forced one code correction (the compose passthrough, above) and one runbook
+correction (the restore recipe's `audit:verify` step, folded into Task 10). Everything else
+matched what was documented.

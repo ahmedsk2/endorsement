@@ -68,6 +68,23 @@ services:
       # cannot re-render history. See app/Support/AuditChain.php:36-52.)
       APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Riyadh}
 
+      # The token that tells two customer deployments apart (P0d Task 1): names the backup
+      # archive, scopes its own prune glob, and names the host scripts' config/log/state
+      # files. Empty is a valid default — App\Support\Instance::slug() treats an unset OR
+      # empty value as "derive from APP_NAME", which is the existing deployment's behaviour
+      # today and must stay that way until INSTANCE_SLUG is set explicitly in Coolify.
+      INSTANCE_SLUG: ${INSTANCE_SLUG:-}
+
+      # The customer this deployment belongs to (P0d Task 3). Defaulted HERE, not only in
+      # config/endorsement.php: Laravel's env('X', 'default') returns '' — not the default —
+      # for a variable that is PRESENT but empty, and an unset Coolify variable interpolates
+      # to an empty string in this file, not to "absent". Without this default, the existing
+      # live deployment (which has never set INSTITUTION_CODE/NAME in Coolify) would seed an
+      # institution with an empty code on the next `db:seed --force`, silently, the moment
+      # this variable started being passed through at all.
+      INSTITUTION_CODE: ${INSTITUTION_CODE:-QCH}
+      INSTITUTION_NAME: ${INSTITUTION_NAME:-Qatif Central Hospital}
+
       DB_CONNECTION: mysql
       DB_HOST: db
       DB_PORT: "3306"

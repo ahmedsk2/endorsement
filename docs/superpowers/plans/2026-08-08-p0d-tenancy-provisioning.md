@@ -142,6 +142,41 @@ running the test and reading why it failed rather than by inspection. Fixed to a
 derived form `SRC="/var/lib/docker/volumes/${PROJECT_UUID}_endorsement-backups/_data"` is
 present instead.
 
+**2026-08-08, Task 9 (dress rehearsal), a real defect found only by actually deploying two
+throwaway stacks — not by inspection or by `php artisan test`:** `docker-compose.production.yml`'s
+`app` service `environment:` block never referenced `${INSTANCE_SLUG}`, `${INSTITUTION_CODE}` or
+`${INSTITUTION_NAME}`. Task 1 taught `App\Support\Instance::slug()` to read `INSTANCE_SLUG` and
+Task 3 taught `ReferenceSeeder` to read `INSTITUTION_CODE`/`INSTITUTION_NAME`, and both added the
+variables to `.env.example`, but neither task wired the compose passthrough — so a value pasted
+into Coolify's Environment Variables screen (exactly what `docs/RUNBOOK-PROVISION.md` and
+`scripts/new-instance.sh`'s own printed block tell the owner to do) had **zero effect**. Confirmed
+empirically: a throwaway instance configured with `INSTITUTION_CODE=TSA` seeded as `QCH` anyway,
+and `printenv INSTANCE_SLUG` inside the container exited 1 (the variable was not merely empty, it
+was entirely absent). This means the OWNER ACTION recorded in Task 1 Step 8 — set
+`INSTANCE_SLUG=qch` in Coolify before the next deploy — would not have taken effect even if
+already done, and must be reconfirmed once a deploy carrying this fix ships (recorded again in
+`docs/RUNBOOK-PROVISION.md`'s rehearsal appendix). Fixed with a red-then-green regression test,
+`DeploymentInvariantsTest::test_instance_and_institution_variables_reach_the_container`, then the
+three lines added to the compose file in `${VAR:-default}` form — the default belongs in the
+compose file, not only in `config/endorsement.php`, because Laravel's `env('X', 'default')`
+returns `''`, not `'default'`, for a variable that is **present but empty**, which is exactly what
+a bare `${INSTITUTION_CODE}` (no compose-level default) would have put in the container for the
+existing live deployment, which has never set it in Coolify — silently reverting the live QCH
+institution's code to empty the moment this variable started being passed through at all. Full
+detail, including the container-naming and Docker-engine-version nuances the rehearsal also
+surfaced, is in `docs/RUNBOOK-PROVISION.md`'s appendix.
+
+**2026-08-08, Task 9 (dress rehearsal), test-design finding, not a code defect:**
+`docs/RUNBOOK-BACKUP.md`'s restore recipe does not work as literally written when run *inside the
+already-booted app container* against a restored scratch database: `config:cache` bakes
+`DB_DATABASE` at container boot, so `docker exec -e DB_DATABASE=restore_drill ... php artisan
+audit:verify` silently verifies the **live** database instead — the command still reports success,
+just against the wrong data, which is worse than an obvious failure. The genuine drill needed a
+`GRANT SELECT` for the app's least-privilege user on the scratch database, plus forcing a live
+config change and connection purge inside the same PHP process before calling the command. Folded
+into Task 10's `docs/RUNBOOK-BACKUP.md` correction rather than treated as a separate task, since
+Task 10 already touches that file's restore section for other reasons.
+
 **2026-08-08, Task 8 (`scripts/new-instance.sh`), empirically found by actually running the
 script rather than only `bash -n`-checking it:** `rnd() { LC_ALL=C tr -dc 'A-Za-z0-9'
 </dev/urandom | head -c 48; }` (the same generator `docker/smoke.sh` already used) aborts the

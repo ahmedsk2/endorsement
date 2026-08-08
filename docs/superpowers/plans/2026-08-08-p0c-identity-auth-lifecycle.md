@@ -111,6 +111,25 @@ read through an accessor, so it wasn't broken by Task 2. It has to change before
 the column; that happens as part of Task 3, immediately before the drop, using the same
 `people`-join shape and preserving current behaviour (not D9's split).
 
+**Task 3, 2026-08-08 — two more findings, both caught by actually running the migration rather
+than by reading it:**
+
+1. **`pickerRule()` fixed as flagged above** — rewritten to a correlated `whereIn('person_id', …)`
+   subquery against `people`, with `whereNull('deleted_at')` on both tables per finding 8,
+   immediately before the drop landed, so the tree never had a commit where it referenced a
+   dropped column.
+2. **SQLite refuses to drop `users.position` while its index still exists.** The plan's `up()`
+   was `$table->dropColumn(['full_name', 'position'])` verbatim; running it threw `error in
+   index users_position_index after drop column: no such column: "position"`. SQLite rebuilds
+   the whole table for a column drop and does not discover on its own that an index on that
+   column must go first. Fixed by adding `$table->dropIndex(['position'])` before
+   `dropColumn()`. Harmless on MySQL/Postgres, required on SQLite (the test suite's engine).
+3. **`NameAndRoleOfRecordTest::test_the_accessor_wins_over_a_stale_column`** (Task 2) simulated a
+   stale raw column via `DB::table('users')->update(['full_name' => 'STALE', ...])` — a query
+   that is now itself invalid, since the column doesn't exist. Rewritten to
+   `test_full_name_and_position_are_not_columns_on_users()`, asserting the stronger fact
+   directly (mirroring `RosterOnlyCannotAuthenticateTest`'s structural check on `people`).
+
 ---
 
 ## Ten findings from reconnaissance that shape this plan

@@ -1141,14 +1141,26 @@ class EndorsementController extends Controller
      * rule. Keep the two in step — if they drift, the server accepts endorsers the UI never
      * offered, which is exactly the defect this closes.
      *
+     * `position` moved to `people` (P0c) — `Rule::exists` runs on the raw query builder, which
+     * never sees the `SoftDeletes` global scope, so the correlated subquery needs
+     * `whereNull('deleted_at')` on BOTH tables explicitly (plan finding 8): a soft-deleted
+     * person's account, or a soft-deleted account, must not validate as an endorser. This keeps
+     * CURRENT behaviour exactly (both endorsers and consultants still need an account) — the D9
+     * split is Task 6's.
+     *
      * @param  list<int>  $positions
      */
     private function pickerRule(array $positions): \Illuminate\Validation\Rules\Exists
     {
         return Rule::exists('users', 'id')->where(function ($query) use ($positions) {
-            $query->whereIn('position', $positions)
-                ->where('active', true)
-                ->whereNull('deleted_at');
+            $query->where('active', true)
+                ->whereNull('deleted_at')
+                ->whereIn('person_id', function ($sub) use ($positions) {
+                    $sub->select('id')
+                        ->from('people')
+                        ->whereIn('position', $positions)
+                        ->whereNull('deleted_at');
+                });
         });
     }
 

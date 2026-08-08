@@ -401,3 +401,26 @@ And the counts must match, including soft-deleted accounts:
 
 A non-zero first query means the backfill did not run — do NOT edit the migration after it has
 run. Re-link by hand, or roll back with `php artisan migrate:rollback --step=1` and re-run.
+
+### 2026_08_10_120003_move_name_and_position_off_users — TAKE A DUMP FIRST
+
+This migration DROPS `users.full_name` and `users.position`. `down()` restores them by copying
+back from `people`, so it is reversible — but only while `people` exists.
+
+Before `php artisan migrate`:
+
+    mysqldump --single-transaction --routines <db> > pre-p0c-$(date +%F).sql
+
+To roll back, roll back in THIS order and no other:
+
+    php artisan migrate:rollback --step=1   # 120005 invitations.person_id
+    php artisan migrate:rollback --step=1   # 120004 handover_signoffs person ids
+    php artisan migrate:rollback --step=1   # 120003 restores users.full_name / users.position
+    php artisan migrate:rollback --step=1   # 120002 levels
+    php artisan migrate:rollback --step=1   # 120001 drops `people` — nothing to copy from after this
+
+Rolling 120001 back before 120003 loses every name and role. Restore from the dump instead.
+
+After migrating, confirm the copy is complete:
+
+    SELECT COUNT(*) FROM people WHERE full_name IS NULL OR full_name = '';   -- must be 0

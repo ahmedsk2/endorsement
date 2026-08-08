@@ -8,14 +8,16 @@ use Database\Seeders\AccessControlSeeder;
 use Database\Seeders\ReferenceSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 /**
- * P0c Task 2 — `people` becomes the name and role of record. `users.full_name` and
- * `users.position` still physically exist on the table (Task 3 drops them), but nothing reads
- * or writes them any more: the read-through accessors on `User` win over a stale column, every
- * SQL-level consumer joins `people`, and every writer updates the person, not the account.
+ * P0c Task 2 — `people` is the name and role of record: the read-through accessors on `User`
+ * resolve through the person, every SQL-level consumer joins `people`, and every writer updates
+ * the person, not the account. Written when `users.full_name`/`users.position` still physically
+ * existed (nothing read or wrote them even then); Task 3 has since dropped both columns, which
+ * this file's structural test now asserts directly.
  */
 class NameAndRoleOfRecordTest extends TestCase
 {
@@ -28,13 +30,25 @@ class NameAndRoleOfRecordTest extends TestCase
         $this->seed(AccessControlSeeder::class);
     }
 
-    /** The accessor reads through the person; a stale raw column on `users` is never seen again. */
-    public function test_the_accessor_wins_over_a_stale_column(): void
+    /**
+     * The accessor reads through the person. Originally written (Task 2) against a still-live
+     * `users.full_name`/`position` to prove the accessor wins over a stale raw column; Task 3
+     * dropped both columns, which is the stronger version of the same guarantee — there is no
+     * column left to go stale. Kept as a structural assertion, mirroring
+     * `RosterOnlyCannotAuthenticateTest::test_the_people_table_carries_no_credential_column()`:
+     * a migration that reintroduces either column on `users` turns this red on the spot.
+     */
+    public function test_full_name_and_position_are_not_columns_on_users(): void
     {
+        foreach (['full_name', 'position'] as $column) {
+            $this->assertFalse(
+                Schema::hasColumn('users', $column),
+                "users.{$column} exists — the name/role of record has drifted back onto the ".
+                'account table, and $user->'.$column.' would silently start reading it again.'
+            );
+        }
+
         $user = User::factory()->create(['full_name' => 'Dr Real Name', 'position' => 4]);
-
-        DB::table('users')->where('id', $user->id)->update(['full_name' => 'STALE', 'position' => 9]);
-
         $fresh = $user->fresh();
 
         $this->assertSame('Dr Real Name', $fresh->full_name);

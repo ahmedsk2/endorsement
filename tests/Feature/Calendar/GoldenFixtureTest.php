@@ -78,6 +78,16 @@ class GoldenFixtureTest extends TestCase
         $this->assertSame('Asia/Riyadh', $this->fixture['timezone']);
     }
 
+    /**
+     * A marker so a future shape change to golden.json is visible to BOTH independent
+     * consumers (this file and P2's TypeScript mirror), rather than one silently drifting
+     * onto a JSON shape the other has never seen.
+     */
+    public function test_fixture_declares_a_version(): void
+    {
+        $this->assertSame(1, $this->fixture['version']);
+    }
+
     public function test_date_cases(): void
     {
         foreach ($this->fixture['cases'] as $case) {
@@ -156,13 +166,17 @@ class GoldenFixtureTest extends TestCase
         foreach ($this->fixture['holiday_cases'] as $case) {
             $rule = $case['rule'];
 
+            // No `??` fallback here: golden.json supplies `year` and `duration_days` on every
+            // rule explicitly (M3) precisely so a missing key fails loudly (undefined array
+            // key) instead of silently reverting to a default a second implementation cannot
+            // see.
             $holiday = Holiday::create([
                 'name' => 'Golden fixture holiday',
                 'calendar' => $rule['calendar'],
                 'month' => $rule['month'],
                 'day' => $rule['day'],
-                'year' => $rule['year'] ?? null,
-                'duration_days' => $rule['duration_days'] ?? 1,
+                'year' => $rule['year'],
+                'duration_days' => $rule['duration_days'],
                 'equity_tracked' => true,
                 'active' => true,
             ]);
@@ -170,7 +184,7 @@ class GoldenFixtureTest extends TestCase
             foreach ($case['expect'] as $expected) {
                 $this->institution([
                     'hijri_offset_days' => $expected['settings']['hijri_offset_days'],
-                    'weekend_days' => $expected['settings']['weekend_days'] ?? [5, 6],
+                    'weekend_days' => $expected['settings']['weekend_days'],
                 ]);
 
                 $this->assertSame(
@@ -246,5 +260,39 @@ class GoldenFixtureTest extends TestCase
                 $this->assertSame($expect['at_position_8']['ends_on'], $entry['ends_on']);
             }
         }
+    }
+
+    /**
+     * M3: strict parsing is the most safety-critical behaviour in the module (Calendar.php's
+     * own docblock — strtotime() leniency accepted "+5 years" and created real backdated
+     * clinical rows). A lenient mirror would otherwise pass the whole rest of this corpus, so
+     * both the throwing and the non-throwing entry point must reject each of these.
+     */
+    public function test_parse_rejects(): void
+    {
+        foreach ($this->fixture['parse_rejects']['inputs'] as $input) {
+            $this->assertNull(Calendar::tryParse($input), "tryParse({$input}) should return null");
+
+            try {
+                Calendar::parse($input);
+                $this->fail("parse({$input}) should have thrown InvalidArgumentException");
+            } catch (\InvalidArgumentException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
+    /**
+     * M3: the Umm al-Qura month-name vocabulary is part of the contract — a mirror's own
+     * month-name table needs the same 12 strings, not a hand-transcribed guess.
+     */
+    public function test_hijri_labels_vocabulary(): void
+    {
+        $expected = [];
+        foreach ($this->fixture['hijri_labels']['months'] as $month => $name) {
+            $expected[(int) $month] = $name;
+        }
+
+        $this->assertSame($expected, __('calendar.hijri_months'));
     }
 }

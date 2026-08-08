@@ -115,6 +115,77 @@ predict, a behaviour that differs between SQLite and MySQL or between UTC and As
 record it here, dated, with what was found and how it was resolved. Findings caught
 empirically rather than by inspection are the ones worth writing down.)*
 
+**2026-08-09, guard-hardening follow-up (reviewer findings I1/I2/M2/M3 on Task 4/7/8's own
+guards and fixture) — widening a source-level guard's file-scope to a directory it had never
+scanned before turns up prose false positives in that directory's own docblocks, not just real
+violations.** `InstitutionProvenanceTest::test_no_query_filters_on_institution_id` scanned
+`app_path()` only, and its regex missed `orWhere(`/`firstWhere(` (case), the array form
+`where([...])`, and every migration `index()`/`unique()` — Task 4 and Task 7's own D11-safe
+migrations record that both were caught avoiding the mistake by luck, not by this test. Fixed
+by walking `[app_path(), base_path('database'), base_path('routes')]`, making the query-token
+match case-insensitive, adding the array form, and adding a second pattern for a composite
+`index([...])`/`unique([...])` naming `institution_id`. The one legitimate
+`whereNull('institution_id')` site (the backfill migration, 2026-08-11) is named on an
+allow-list with a staleness test mirroring `CalendarIsTheOnlyConverterTest`'s existing pattern,
+not silently skipped. Running the widened scan for the first time immediately tripped on
+`database/migrations/2026_08_12_120002_create_periods_table.php`'s own docblock (Task 7's
+amendment above already explains the schema decision using the literal example text
+`` `where('institution_id', ...)` `` as prose, in backticks, illustrating exactly the call NOT
+to write) — not a real violation, the code itself is clean, but the comment's example syntax
+matched the same regex the code would. Reworded the docblock to describe the forbidden call
+without reproducing its literal syntax (`a future query filtered on institution_id`), the same
+fix shape `CalendarIsTheOnlyConverterTest`'s own strtotime allow-list already uses for
+Calendar.php's self-referential docblock — confirmed via `git diff` that the migration's
+behaviour (nothing outside `up()`/`down()` changed) is untouched.
+
+For `CalendarIsTheOnlyConverterTest`, added a fourth PHP-side check (`Carbon::parse`,
+`CarbonImmutable::parse`, `new DateTime`, `DateTime::createFromFormat` over `app/` and
+`routes/`) with its own three-entry allow-list (`EncryptedDateTime.php`, `AuditChain.php`,
+`routes/console.php` — the same three Calendar.php's own docblock already names) and staleness
+test, and widened `JS_DATE_NEEDLES` with `toLocaleDateString(`/`toLocaleTimeString(` (which
+`toLocaleString(` does not substring-match — confirmed by inspecting the two strings
+character-by-character), `Date.now(`, `Date.parse(`, `Date.UTC(`, `Intl.DateTimeFormat`,
+`getTimezoneOffset(`. Also widened the two PRE-EXISTING PHP checks (ICU symbols, `strtotime()`)
+from `app/` alone to `[app_path(), base_path('database'), base_path('routes')]` — not asked for
+directly, but the same scope-narrowness I1 proved was live in the sibling guard, and a
+`grep -rln` before touching the test files confirmed zero hits for either needle set in
+`database/`/`routes/` today, so widening carried no risk of an unrelated red build. Every new
+and widened check was proven empirically, not just written: a throwaway probe file for each of
+`orWhere`/`firstWhere`/`where([...])`, a migration-style `unique(['institution_id', ...])`, a
+`Carbon::parse()` call outside the allow-list, and a `toLocaleDateString(` call was dropped into
+the scanned tree, the corresponding test observed to fail listing that exact file, then removed
+— confirmed `git status` clean afterwards.
+
+`tests/fixtures/calendar/golden.json`'s `hijri_month_boundary._description` (M2) had the offset
+0/-1 reading backwards — 2026-07-15 is the FIRST day of Hijri month 2 (Safar) at offset 0, not
+"the last day of Hijri month 1 ... at offset 0" as written, and an unedited authoring aside
+("(Muharram... actually Safar)") had shipped in the prose; the `offset_0`/`offset_-1` VALUES two
+lines below were already correct, only the sentence explaining them was inverted. Corrected the
+prose; no value changed.
+
+M3's fixture gaps: added an explicit `version` field (1) plus a `test_fixture_declares_a_version`
+assertion; made `duration_days`, `year`, and each holiday `expect[].settings.weekend_days` entry
+in `golden.json` explicit rather than relying on `GoldenFixtureTest.php`'s `?? 1`/`?? null`/
+`?? [5, 6]` fallbacks, and removed those fallbacks from the PHP consumer so a future edit that
+drops a key now fails loudly (undefined array key) instead of silently reverting to a default a
+TypeScript mirror could never see; added a `parse_rejects` section (`"+5 years"`, `"2026-02-30"`)
+asserted against both `Calendar::parse()` (throws) and `::tryParse()` (returns null); added a
+`hijri_labels` section (the `lang/en/calendar.php` month-name vocabulary) asserted equal to
+`__('calendar.hijri_months')`; and added a second `week_block` `period_runs` entry crossing a
+leap-year boundary (`starts_on 2027-07-01`, `next_year_starts_on 2028-07-01`) — the case a
+mirror hardcoding the 365-day run's 29-day final block could pass without ever exercising
+decision 4's actually-varying length. Verified by RUNNING `PeriodGenerator::weekBlocks()` via
+`php artisan tinker` rather than computed by hand, matching Task 8's own established discipline
+above: block 13 = `2028-06-01..2028-06-30` (30 days, not 29 or 35), total 366 days (2028 is a
+leap year; blocks 1-12 stay fixed 28-day spans regardless of where the leap day falls inside
+them, so the whole 366-vs-365 day difference against the primary case lands on block 13, which
+absorbs whatever remains before the next year's fixed start per decision 4).
+
+`php artisan test`: 740 → 746 (6 new tests: 1 on `InstitutionProvenanceTest`, 2 on
+`CalendarIsTheOnlyConverterTest`, 3 on `GoldenFixtureTest`), all green. `npm run test`: 109,
+unchanged (no JS test files touched — only PHP-side needle lists that scan `resources/js/`
+content). `npm run build` green.
+
 **2026-08-09, Task 9 — the plan's own Step 3 instruction (add the AC-02 lifetime and
 missed-days-denominator items to design doc §14 and to `docs/OPEN-DECISIONS.md` as questions)
 was written before round-2 owner decisions 5 and 6 resolved both of them, so both landed as

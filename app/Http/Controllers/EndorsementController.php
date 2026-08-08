@@ -711,8 +711,8 @@ class EndorsementController extends Controller
 
     /**
      * The row-write verbs bind `{handover}` by BARE ID, so they need the same unit scoping
-     * every read path gets from resolveUnit(). A row belonging to a unit outside the
-     * four-profile surface 404s, matching what a read of the same row would do.
+     * every read path gets from resolveUnit(). A row belonging to a unit that is not active
+     * (unknown, or deactivated) 404s, matching what a read of the same row would do.
      */
     private function assertEnabledUnitRow(Handover $handover): void
     {
@@ -722,14 +722,21 @@ class EndorsementController extends Controller
     }
 
     /**
-     * Resolve + validate the `{unit}` route param against the four first-class units.
-     * Lowercase URLs keep resolving (legacy links and the nav both use them).
+     * Resolve + validate the `{unit}` route param against the active units on the `units`
+     * table — an unknown code and a deactivated one both 404, exactly like `firstOrFail()`
+     * did. Lowercase URLs keep resolving (legacy links and the nav both use them):
+     * `Unit::findByCode()` normalizes the lookup the same way the `code` mutator normalizes
+     * storage.
      */
     private function resolveUnit(string $unit): Unit
     {
-        $code = strtoupper($unit);
+        $u = Unit::findByCode($unit);
 
-        return Unit::query()->active()->where('code', $code)->firstOrFail();
+        if ($u === null || ! $u->active) {
+            abort(404);
+        }
+
+        return $u;
     }
 
     /**

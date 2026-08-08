@@ -153,10 +153,11 @@ class UnitConfigurationTest extends TestCase
     }
 
     /**
-     * Before the code-normalization fix, a unit row stored with a lowercase code was selected
-     * by the chooser's Unit::whereIn('code', UnitProfile::codes()) query and then blew up
-     * inside UnitProfile::for(), which matches case-sensitively on strtoupper($code) — a 500
-     * on the landing page. Confirms the chooser stays healthy once such a row exists.
+     * Without normalization the row stores `nur`; `resolveUnit()` uppercases the URL segment
+     * to `NUR`; SQLite compares case-sensitively; the sheet 404s. The chooser assertion is
+     * kept alongside it since it still exercises the chooser's own listing query, but the
+     * route assertion below is the one that must carry the weight — it is the assertion that
+     * actually fails (404 instead of 200) when the `code` mutator is neutered.
      */
     public function test_a_lowercase_active_unit_does_not_break_the_chooser(): void
     {
@@ -172,5 +173,50 @@ class UnitConfigurationTest extends TestCase
         $admin = User::factory()->create(['position' => 0]);
 
         $this->actingAs($admin)->get('/endorsement')->assertOk();
+        $this->actingAs($admin)->get('/endorsement/nur/2026-07-10')->assertOk();
+    }
+
+    /**
+     * `Unit::findByCode()` is the required lookup path because the `code` mutator only
+     * normalizes what gets STORED on write, not a query's WHERE value: a bare
+     * `where('code', 'nur')` would miss a row stored as `NUR`. Confirms lowercase, padded,
+     * and canonical input all resolve to the same row, and an unknown code resolves to null.
+     */
+    public function test_find_by_code_normalizes_the_lookup_key(): void
+    {
+        $picu = Unit::where('code', 'PICU')->firstOrFail();
+
+        $this->assertSame($picu->id, Unit::findByCode('picu')?->id);
+        $this->assertSame($picu->id, Unit::findByCode('  PICU  ')?->id);
+        $this->assertSame($picu->id, Unit::findByCode('PICU')?->id);
+        $this->assertNull(Unit::findByCode('nope'));
+    }
+
+    /**
+     * `resolveUnit()` no longer aborts explicitly — it relies on `firstOrFail()` against an
+     * active-scoped query, so a RETIRED unit reaches the framework as a ModelNotFoundException
+     * rather than an abort(404). That only reads as "gone" to a clinician if the real handler
+     * converts it; if it ever surfaced as a 500 the retired unit would look like an outage
+     * instead of a decommissioning. Asserted through the full HTTP stack, on every verb that
+     * takes a {unit} code — reads and writes alike — and on the chooser that must stop
+     * offering it.
+     */
+    public function test_a_deactivated_unit_code_is_404_on_every_route_that_takes_one(): void
+    {
+        $this->seed(AccessControlSeeder::class);
+
+        Unit::where('code', 'SCBU')->firstOrFail()->update(['active' => false]);
+
+        $editor = User::factory()->create(['position' => 2]);
+
+        foreach (['SCBU', 'scbu'] as $code) {
+            $this->actingAs($editor)->get('/endorsement/'.$code)->assertNotFound();
+            $this->actingAs($editor)->get('/endorsement/'.$code.'/2026-07-10')->assertNotFound();
+            $this->actingAs($editor)->post('/endorsement/'.$code.'/new-day', [])->assertNotFound();
+            $this->actingAs($editor)->post('/endorsement/'.$code.'/2026-07-10/rows', [])->assertNotFound();
+        }
+
+        $this->actingAs($editor)->get('/endorsement')->assertOk();
+        $this->assertNotContains('SCBU', Unit::codes());
     }
 }

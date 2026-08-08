@@ -173,6 +173,8 @@ class UnitScopeTest extends TestCase
                 ->where('units.0.today.signed_off', false)
                 ->where('units.1.code', 'NICU')
                 ->where('units.1.today.has_sheet', false)
+                ->where('units.2.code', 'SCBU')
+                ->where('units.3.code', 'WARD')
             );
     }
 }

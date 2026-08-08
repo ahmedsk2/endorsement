@@ -71,9 +71,9 @@ final class UnitProfile
      */
     public static function for(string $code): self
     {
-        $unit = Unit::query()->active()->where('code', strtoupper($code))->first();
+        $unit = Unit::findByCode($code);
 
-        if ($unit === null) {
+        if ($unit === null || ! $unit->active) {
             throw new InvalidArgumentException("Unknown unit code [{$code}].");
         }
 

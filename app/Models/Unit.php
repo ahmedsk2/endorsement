@@ -46,15 +46,31 @@ class Unit extends Model
     }
 
     /**
-     * Codes are a routing identity: `Unit::codes()` plucks them VERBATIM into a `whereIn`,
-     * while lookups elsewhere compare case-sensitively (SQLite has no case-insensitive
-     * collation by default) after uppercasing the input. Normalizing on write means storage
-     * and lookup can never disagree — a unit created with a lowercase or padded code is
-     * still selected by the chooser query AND findable by it, on SQLite and MySQL alike.
+     * Normalizes what gets STORED on write — it has no effect on a query's WHERE value. A
+     * unit created lowercase or padded is stored `NUR`/`ICU`, so `Unit::codes()` (which
+     * plucks stored codes VERBATIM into a `whereIn`) always yields the normalized form.
+     *
+     * It does NOT retroactively fix existing rows, and it does NOT cover writes that bypass
+     * Eloquent (e.g. the migration's own `DB::table('units')->update()`). And because it only
+     * touches the attribute being SET, a lookup built from raw user input — e.g.
+     * `where('code', $input)` — is not normalized by this and must go through
+     * `Unit::findByCode()` instead, which normalizes the lookup key the same way.
      */
     protected function code(): Attribute
     {
-        return Attribute::make(set: fn ($v) => strtoupper(trim((string) $v)));
+        return Attribute::make(set: fn ($v) => $v === null ? null : strtoupper(trim($v)));
+    }
+
+    /**
+     * Resolve a unit by code, normalizing the way the `code` mutator does on write.
+     *
+     * The mutator normalizes what is STORED; it does not touch a query's WHERE
+     * value, so `where('code', $userInput)` would miss a row that differs only in
+     * case or whitespace. Every code lookup must go through here.
+     */
+    public static function findByCode(string $code): ?self
+    {
+        return static::query()->where('code', strtoupper(trim($code)))->first();
     }
 
     /**

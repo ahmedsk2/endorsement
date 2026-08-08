@@ -27,7 +27,6 @@ class User extends Authenticatable
         'person_id',
         'preferred_unit_id',
         'member_name',
-        'member_email',
         'password',
         'active',
         'pass_exp_date',
@@ -100,6 +99,22 @@ class User extends Authenticatable
         );
     }
 
+    /**
+     * The account's address, read through the person (P0c/D9, owner decision 2026-08-08).
+     *
+     * There is ONE email column now: `people.email`. `users.member_email` is a legacy artifact —
+     * it still physically exists (dropping it is its own migration, not done here) but is no
+     * longer independently written by any write path this task touches, so nothing may trust its
+     * raw value. Every normal read (`$user->member_email`) goes through this accessor instead,
+     * which is exactly what makes `getEmailForPasswordReset()` and `routeNotificationForMail()`
+     * below correct without any change to their bodies: they already read `$this->member_email`,
+     * and that now always resolves through the `person_id` link.
+     */
+    protected function memberEmail(): Attribute
+    {
+        return Attribute::make(get: fn (): ?string => $this->person?->email);
+    }
+
     /** The account's e-mail address is confirmed (a link sent to it was opened). */
     public function hasVerifiedEmail(): bool
     {
@@ -140,9 +155,13 @@ class User extends Authenticatable
     }
 
     /**
-     * The login field for the password-reset broker and mail routing is `member_email`
-     * (this app has no `email` column). Overriding these keeps Laravel's password broker
-     * and notification routing pointed at the right attribute.
+     * The address the password-reset broker builds the reset link for. `$this->member_email` is
+     * the read-through accessor above — this method needed no code change to "follow the link"
+     * (owner decision 2026-08-08, requirement c): it already reads that attribute, and the
+     * attribute now always resolves via `person_id` -> `people.email` rather than the frozen raw
+     * column. The LOOKUP side of the broker is a separate concern, handled in
+     * `PasswordResetLinkController`/`NewPasswordController` (the raw column can no longer be
+     * trusted as a query filter either).
      */
     public function getEmailForPasswordReset(): ?string
     {
@@ -150,7 +169,8 @@ class User extends Authenticatable
     }
 
     /**
-     * Route mail notifications (e.g. the password-reset link) to `member_email`.
+     * Route mail notifications (e.g. the password-reset link, the login email code) to the
+     * account's address. Same reasoning as `getEmailForPasswordReset()` above.
      */
     public function routeNotificationForMail(): ?string
     {

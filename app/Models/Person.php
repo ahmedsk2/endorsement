@@ -165,4 +165,37 @@ class Person extends Model
 
         return static::withTrashed()->where('email', $normalized)->first();
     }
+
+    /**
+     * Validation rule: this address must not already belong to a CLAIMED person — one who
+     * already has an account. One definition (the 2026-07-26 audit's "offer/validate from one
+     * predicate" discipline, applied here too), used everywhere an email is checked before an
+     * account gets created: `CreateAdmin`, invitations, admin approval of a pending
+     * registration. A match onto a ROSTER-ONLY person (no account) is deliberately NOT a
+     * failure — that is the normal, desired case (design §5.2.4): the person already exists,
+     * the invite/approval claims them rather than duplicating them.
+     *
+     * `people.email` is P0c/D9's single authoritative address (owner decision, 2026-08-08) — the
+     * `users.member_email` column is a legacy artifact no longer independently written, so a
+     * raw `Rule::unique('users', 'member_email')` check would silently stop catching real
+     * collisions. This closure is the replacement: it always resolves through the current link,
+     * never the raw column.
+     *
+     * @param  int|null  $ignorePersonId  exclude this person (editing your OWN current address)
+     * @return \Closure(string, mixed, \Closure): void
+     */
+    public static function accountEmailRule(?int $ignorePersonId = null): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($ignorePersonId): void {
+            $person = self::matchByEmail(is_string($value) ? $value : null);
+
+            if ($person === null || $person->getKey() === $ignorePersonId) {
+                return;
+            }
+
+            if ($person->hasAccount()) {
+                $fail('An account with this email already exists.');
+            }
+        };
+    }
 }

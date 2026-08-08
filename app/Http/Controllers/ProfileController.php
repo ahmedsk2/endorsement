@@ -15,9 +15,11 @@ use Inertia\Response;
  * F1 — own-profile editing (re-platform of legacy profile.php). `auth` + `cap:profile.manage`
  * (every seeded role). The update binds to the SESSION identity only — any client-supplied id
  * is ignored (IDOR-safe, mirroring the legacy page; admin editing of OTHER users lives in
- * Admin\UserManagementController). member_name / member_email are uniqueness-checked against
- * `users` (excluding self — soft-deleted rows still occupy the unique indexes, so they count)
- * AND the `pending_registrations` queue, exactly like public registration.
+ * Admin\UserManagementController). `member_name` is uniqueness-checked against `users`
+ * (excluding self — soft-deleted rows still occupy the unique indexes, so they count) AND the
+ * `pending_registrations` queue. `member_email` is checked against `people.email` instead — the
+ * single authoritative address since P0c/D9 (owner decision 2026-08-08) — plus the pending
+ * queue.
  */
 class ProfileController extends Controller
 {
@@ -68,20 +70,17 @@ class ProfileController extends Controller
             ],
             'member_email' => [
                 'required', 'email', 'max:255',
-                Rule::unique('users', 'member_email')->ignore($user->getKey()),
                 Rule::unique('pending_registrations', 'member_email'),
                 Rule::unique('people', 'email')->ignore($user->person_id),
             ],
         ]);
 
-        // The address lives twice on purpose (P0c finding 6): `users.member_email` because
-        // Laravel's password broker resolves accounts by that column, `people.email` because it
-        // is the roster's contact address and the import matching key. They are written together,
-        // here and at exactly two other sites, and never anywhere else.
+        // One email column now, on `people` (owner decision 2026-08-08, overriding the plan's
+        // original dual-column draft). `member_email` is a read-through accessor on User, not a
+        // column — writing it here would silently do nothing.
         DB::transaction(function () use ($user, $data): void {
             $user->update([
                 'member_name' => $data['member_name'],
-                'member_email' => $data['member_email'],
             ]);
 
             $user->person?->update([

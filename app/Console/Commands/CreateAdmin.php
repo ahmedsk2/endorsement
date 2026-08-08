@@ -57,10 +57,12 @@ class CreateAdmin extends Command
             [
                 'member_name' => ['required', 'string', 'max:50', 'unique:users,member_name'],
                 'full_name' => ['required', 'string', 'max:100'],
-                'member_email' => [
-                    'required', 'email', 'max:150', 'unique:users,member_email',
-                    Rule::unique('people', 'email'),
-                ],
+                // `people.email` is P0c/D9's single authoritative address (owner decision
+                // 2026-08-08) — `users.member_email` is no longer independently written, so a
+                // `unique:users,member_email` check here would stop meaning anything the moment
+                // the FIRST admin was bootstrapped through this Eloquent path. `people.email`
+                // already carries the real, DB-enforced unique constraint.
+                'member_email' => ['required', 'email', 'max:150', Rule::unique('people', 'email')],
                 'password' => PasswordPolicy::rules(),
             ],
         );
@@ -84,7 +86,9 @@ class CreateAdmin extends Command
             return User::create([
                 'person_id' => $person->id,
                 'member_name' => $username,
-                'member_email' => $email,
+                // No 'member_email' key: it lives on the person created above (P0c/D9 owner
+                // decision 2026-08-08) — `member_email` is a read-through accessor, not a
+                // fillable column, so mass-assigning it here would silently do nothing.
                 'password' => $password,          // hashed by the model's `hashed` cast
                 'active' => true,
                 // Verified on creation: SMTP is configured in-app, AFTER login, so gating the

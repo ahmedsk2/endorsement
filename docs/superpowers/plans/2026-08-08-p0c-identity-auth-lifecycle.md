@@ -227,6 +227,106 @@ consultant accepted) — the `EndorsementSignoff` Vitest file's own new retired-
 JS-side and does not count against the PHPUnit total. JS suite 102 (up from 101, +1 retired-option
 render case); `npm run build` green.
 
+**Carried-forward fix, 2026-08-08 (landed as its own commit before Task 7) — `staffPickers()`'s
+`$keep` argument only surfaced ONE retired endorser per field pair.** `$keep` was
+`endorsed_by_person_id ?? endorsed_to_person_id` — when endorsed-by and endorsed-to were two
+DIFFERENT people who had both stopped being offered, only the first reappeared as a disabled
+option; the second rendered as a `<select>` with no matching `<option>`, and `Sheet.vue`'s next
+save turns an unmatched stored id into `null` — silently clearing a named endorser on a signed
+medico-legal record. Fixed by widening `SignoffPickers::offer()`'s `$keep` parameter from
+`?int` to `list<int|null>` and passing every stored id per field pair
+(`[$signoff?->endorsed_by_person_id, $signoff?->endorsed_to_person_id]`), each carried forward
+independently. New regression test constructs exactly the two-distinct-retired-people case and
+asserts both ids — not just one — appear flagged `retired` in the offered list.
+
+**Task 7, 2026-08-08 — implemented as specified; no deviations found on review.** `importUsers()`
+already had its match-or-create-a-person rewrite (pulled forward into Task 2, per that task's own
+amendment). This task's remaining piece — `importSignoffsFor()`'s resolver — was rewritten exactly
+as specified: `member_name → users → users.person_id` (never `member_name → people` directly,
+since the legacy identity is the login handle, not the roster address), writing
+`endorsed_by_person_id`/`endorsed_to_person_id` and leaving the frozen `*_user_id` columns unset.
+Consultant fields stay name-only (documented as deliberate, not an omission). New coverage: one
+linked `people` row per member, idempotence extended to `people` counts, matching onto an existing
+roster-only person by email, and nurse rows (position 1) still importing nothing. Full suite 573
+(up from 572, +1 carried-forward-fix case) then 576 after Task 7's own additions.
+
+**Task 8, 2026-08-08 — five deviations, one of them a real bug found and fixed, not merely a plan
+error:**
+
+1. **The plan's own Task 8 prose still assumed finding 6's dual-column design** (`users.member_email`
+   written independently of `people.email`) — written before the OWNER DECISIONS block overrode it.
+   Implementing OWNER DECISION 2 instead of the stale prose meant: a read-through `memberEmail()`
+   accessor on `User` (`$this->person?->email`) so `getEmailForPasswordReset()` and
+   `routeNotificationForMail()` needed no code change to "follow the link" — they already read
+   `$this->member_email`; `Person::accountEmailRule()`, a closure-based validation rule (one
+   definition, used at `CreateAdmin`, `InvitationController::store()`, and
+   `UserManagementController::assertStillUnique()`) replacing every live
+   `Rule::unique('users','member_email')`, since that raw column stopped being trustworthy as a
+   collision check the moment it stopped being independently written; and closure-credential
+   resolution in `PasswordResetLinkController`/`NewPasswordController`
+   (`'member_email' => function ($query) { $query->whereHas('person', ...) }`), which
+   `EloquentUserProvider::retrieveByCredentials()` supports natively — preserving finding 1's "no
+   custom user provider" property while still joining through `person_id`.
+2. **A real, reachable bug found by this session's own QA pass, not by the plan:**
+   `users.member_email` still physically carries its original UNIQUE index, but after OWNER
+   DECISION 2 nothing keeps it in step with `people.email` once a profile edit moves the address on
+   — the raw column freezes at whatever it held at account creation. `InvitationAcceptController::store()`
+   and `UserManagementController::approve()` both still wrote it into every new account. Constructed
+   the exploit: create an account, change its `people.email` via `PATCH /profile` (which correctly
+   never touches the raw column), then invite the now-FREED address to a different person and redeem
+   — the redemption 500'd on the stale column's own unique index despite `people.email` having no
+   live collision at all. Proven with a dedicated regression test
+   (`ClaimLifecycleTest::test_an_address_freed_by_a_profile_email_change_can_be_reinvited_without_a_raw_column_collision`,
+   confirmed red — `500` instead of a redirect — before the fix), fixed by dropping the
+   `'member_email'` key from both raw inserts, mirroring the precedent `CreateAdmin` already set.
+   `LegacyImport`'s own raw upsert (Task 7, a one-time run against a fixed historical dataset keyed
+   on `member_name`) was deliberately left untouched — it is not a live, ongoing write path and
+   cannot self-collide the way two independently-timed live writes can.
+3. **Session continuity:** this task's controller/model rewiring for OWNER DECISION 2 (the
+   accessor, `Person::accountEmailRule()`, the broker closures, and `InvitationController::store()`'s
+   match-or-create) was already implemented and sitting uncommitted when this session began, but
+   `tests/Feature/Identity/ClaimLifecycleTest.php` (the plan's own Step 1 deliverable) did not yet
+   exist, and `InvitationAcceptController::store()`'s redemption — Step 5, "claim, not insert" — was
+   still the OLD unconditional-insert-a-new-person code pulled forward from Task 2. Writing
+   `ClaimLifecycleTest` first (per the plan's 9 cases) surfaced this directly: with the old
+   redemption code, `Person::count()` after redeeming an invitation issued through the real
+   `POST /admin/invitations` → `POST /invitation/{token}` path was one higher than expected,
+   because a second `people` row forked off the one `InvitationController::store()` had already
+   matched-or-created at issue time. Fixed with the Step 5 rewrite (claim the invitation's
+   `person_id`, restore-if-trashed, keep a rostered person's existing name, take the name only for a
+   blank placeholder, guard against an issue-to-redeem collision, then `AccessControl::flush()`).
+   Two of `ClaimLifecycleTest`'s own assertions initially failed too, but on inspection those were
+   test bugs, not application bugs: `$before = Person::count()` was captured before the inline
+   `$this->admin()` call that itself creates a linked person, off by exactly one. Fixed by hoisting
+   the admin fixture out.
+4. **The owner's hard requirement — end-to-end kernel tests for the email unification — is met by
+   four new cases in `tests/Feature/Auth/PasswordResetTest.php`** (none of which existed before this
+   session): the request leg and the completion leg each proven to resolve through the `person_id`
+   join rather than the frozen raw column, by deliberately making the two disagree (hand-drifting
+   `users.member_email` away from `people.email` and proving the CURRENT address resolves while the
+   STALE one does not); `getEmailForPasswordReset()` proven via the `password_reset_tokens.email`
+   value the broker actually persists; `routeNotificationForMail()` proven via
+   `Notification::assertSentTo()`'s notifiable callback, triggered through the real
+   `POST /forgot-password` route rather than called directly. The "person with no account" side (b)
+   needed no new coverage beyond one added case, since `RosterOnlyCannotAuthenticateTest` (Task 1)
+   already proved it structurally (route-model-binding 403 for verification links, session-key
+   resolution for OTP/2FA) in a way the email-unification refactor could not have quietly broken
+   without also breaking that file.
+5. **Two items found but explicitly OUT OF SCOPE for Task 7/8, flagged rather than fixed:**
+   `users.member_email` itself is not dropped — CLAUDE.md's additive-migration and
+   owner-runs-production-migrations rules put that in a future, separate migration, not this task —
+   so it survives as an unused, increasingly stale column still carrying its original UNIQUE index.
+   Separately, and unrelated to email: `Person::casts()` (written in Task 1, before this session)
+   still casts `notes` through `\App\Casts\EncryptedString::class`, and `docs/COMPLIANCE.md` has no
+   mention of `notes` or `constraints` at all — both appear to directly contradict OWNER DECISION 3
+   ("Encrypt neither `people.notes` nor `people.constraints`... Both stay plaintext. Note in
+   `docs/COMPLIANCE.md`..."). This predates Task 7/8, is unrelated to identity/auth lifecycle, and
+   was left untouched rather than silently changed under a different task's mandate — flagging for
+   the owner.
+
+Full suite: 576 (Task 7 baseline) → 593 after `ClaimLifecycleTest` (13 cases) and
+`PasswordResetTest`'s 4 new cases → 594 after the raw-column-collision regression test and fix.
+
 ---
 
 ## Ten findings from reconnaissance that shape this plan

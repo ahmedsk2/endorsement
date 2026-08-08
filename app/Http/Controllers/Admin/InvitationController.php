@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Invitation;
 use App\Models\PendingRegistration;
+use App\Models\Person;
 use App\Models\User;
 use App\Support\ManagerScope;
 use Illuminate\Http\RedirectResponse;
@@ -36,10 +37,14 @@ class InvitationController extends Controller
         $data = $request->validate([
             'member_email' => [
                 'required', 'email', 'max:255',
-                // Not already an account, not already queued. Soft-deleted users still
-                // occupy the unique index, so an invitation that could never be redeemed is
-                // refused at the point of sending rather than at the point of trying.
-                Rule::unique('users', 'member_email')->withoutTrashed(),
+                // NOT ALREADY AN ACCOUNT. This used to read `unique:users,member_email`, which
+                // after a roster import/invite refuses to invite exactly the people it exists to
+                // invite — an address already on the roster (no account yet) is the NORMAL case,
+                // not a collision. `Person::accountEmailRule()` is the one definition of "already
+                // an account" (P0c/D9 owner decision 2026-08-08: `people.email` is the single
+                // authoritative address, so the check must resolve through the person, not the
+                // no-longer-independently-written `users.member_email` column).
+                Person::accountEmailRule(),
                 Rule::unique('pending_registrations', 'member_email'),
             ],
             'position' => ['required', 'integer', Rule::in(array_keys(self::OFFERABLE))],
@@ -50,6 +55,23 @@ class InvitationController extends Controller
         ManagerScope::assertMayTarget($request, (int) $data['position']);
 
         $email = Str::lower(trim($data['member_email']));
+
+        // Match onto the roster before creating anything (design §5.2.4). An imported/invited
+        // person who is invited again must be the SAME person, not a second row with the same
+        // name — and the validation above already proved nobody with this email has an account.
+        $person = Person::matchByEmail($email) ?? Person::create([
+            'institution_id' => $request->user()?->institution_id,
+            // Blank until the invitee tells us; a person created here is a placeholder for
+            // someone the roster does not yet know.
+            'full_name' => '',
+            'position' => (int) $data['position'],
+            'email' => $email,
+            'active' => true,
+        ]);
+
+        if ($person->trashed()) {
+            $person->restore();
+        }
 
         // One open invitation per address. Without this, "resend" quietly multiplies live
         // credentials for the same person and revoking one leaves the others working.
@@ -82,11 +104,12 @@ class InvitationController extends Controller
             );
         }
 
-        [$invitation, $token] = Invitation::issue($email, (int) $data['position'], $request->user());
+        [$invitation, $token] = Invitation::issue($email, (int) $data['position'], $request->user(), $person);
 
         AuditLog::record(
             'invitation_issued',
-            'invitation='.$invitation->id.' position='.$invitation->position,
+            // An id, never an address — the person this invitation names.
+            'invitation='.$invitation->id.' position='.$invitation->position.' person='.$person->id,
             $request->user()?->getKey(),
             $request->ip(),
         );

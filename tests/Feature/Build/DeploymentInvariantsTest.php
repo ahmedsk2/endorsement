@@ -240,12 +240,23 @@ class DeploymentInvariantsTest extends TestCase
         );
     }
 
-    public function test_the_deployment_sets_the_wards_timezone(): void
+    /**
+     * Hardcoded to 'UTC', config/app.php once ignored APP_TIMEZONE entirely and the container
+     * ran three hours behind the ward: reminders at 10:30 and 18:30 instead of 07:30 and 15:30,
+     * and a day boundary at 03:00 filing night-shift entries under the wrong date.
+     *
+     * Since D11 there is one deployment per customer and a customer may not be in the Kingdom,
+     * so the value is a variable — but it keeps Asia/Riyadh as its default, because an
+     * unset variable must not silently mean UTC and reintroduce the original fault.
+     */
+    public function test_the_deployment_timezone_is_settable_and_defaults_to_the_ward(): void
     {
-        $this->assertStringContainsString(
-            'APP_TIMEZONE: Asia/Riyadh',
+        $this->assertMatchesRegularExpression(
+            '/APP_TIMEZONE:\s*\$\{APP_TIMEZONE:-Asia\/Riyadh\}/',
             $this->compose(),
-            'the container must be told which timezone the ward is in',
+            'APP_TIMEZONE must be per-customer AND default to Asia/Riyadh: a customer outside '
+            .'Saudi Arabia cannot edit the shared compose file, and an unset variable must not '
+            .'mean UTC.',
         );
     }
 }

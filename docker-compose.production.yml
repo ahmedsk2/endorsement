@@ -59,7 +59,14 @@ services:
       APP_DEBUG: "false"
       APP_KEY: ${APP_KEY}
       APP_URL: ${APP_URL}
-      APP_TIMEZONE: Asia/Riyadh
+      # Per customer since D11. It must be correct BEFORE the first clinical write, and it is
+      # not a routine config change afterwards: `now()` moves with it, so the handover day
+      # boundary moves under existing rows — a 01:00 entry files under a different calendar
+      # date, and handover_signoffs' UNIQUE(unit_id, handover_date) day identity shifts with
+      # it. The reminder and backup schedules move too. (It is NOT an audit-chain hazard any
+      # more: AuditChain v3 hashes stored datetimes verbatim, precisely so a timezone change
+      # cannot re-render history. See app/Support/AuditChain.php:36-52.)
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Riyadh}
 
       DB_CONNECTION: mysql
       DB_HOST: db

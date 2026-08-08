@@ -119,6 +119,46 @@ against ciphertext, which cannot match. `EndorsementTest` already works around t
 cast decrypts); `InstitutionProvenanceTest`'s clinical-row case had to switch to the same
 pattern after `firstOrFail()` failed against a row provably already in the table.
 
+**2026-08-08, Task 6, test design flaw caught by actually running the guard test:**
+`HostScriptsAreInstanceScopedTest`'s own explanatory comments — added to `docs/RUNBOOK-DEPLOY.md`
+and `docs/OWNER-CHECKLIST.md` to say *why* an operator must not select a container by image
+ancestry — quoted the literal string `ancestor=mysql:8.4` while explaining its removal, which
+tripped the guard's own `assertStringNotContainsString('ancestor=mysql', ...)` assertion. The
+guard's `docs/superpowers/` exclusion covers plans and specs quoting the bad selector
+deliberately, but not the live operator runbooks, which must never contain it even in prose
+explaining why not — a copy-pasted sentence is still a copy-pasted selector. Fixed by rewording
+both docs to describe the hazard ("select the database container by matching the shared MySQL
+image") without reproducing the exact flag syntax. The same guard also caught
+`docs/sql/least-privilege.sql`'s own new header comment reproducing `` `endorsement` `` in
+backticks while explaining the substitution requirement — reworded for the same reason.
+
+**2026-08-08, Task 6, test design flaw found before it could mask a real regression:** the
+first draft of `test_backup_offhost_sync_requires_an_instance_slug` asserted
+`assertStringNotContainsString('endorsement-backups/_data', $script, ...)`. That substring is
+the docker volume's actual name and correctly stays literal in the rewritten script — only the
+Coolify-app-UUID *prefix* on that path needed to become a variable (finding 1's sibling issue).
+The assertion as written would have failed forever regardless of correctness, and was caught by
+running the test and reading why it failed rather than by inspection. Fixed to assert the
+derived form `SRC="/var/lib/docker/volumes/${PROJECT_UUID}_endorsement-backups/_data"` is
+present instead.
+
+**2026-08-08, Task 8 (`scripts/new-instance.sh`), empirically found by actually running the
+script rather than only `bash -n`-checking it:** `rnd() { LC_ALL=C tr -dc 'A-Za-z0-9'
+</dev/urandom | head -c 48; }` (the same generator `docker/smoke.sh` already used) aborts the
+whole script under `set -euo pipefail` when its result is captured by a plain assignment
+(`mysql_password="$(rnd)"`). `head -c 48` closes its end of the pipe once it has enough bytes;
+`tr`, still reading an effectively infinite stream from `/dev/urandom`, receives SIGPIPE and
+exits 141; under `pipefail` that becomes the pipeline's exit status, and because the call site
+is a genuine assignment *statement* — not, as in `docker/smoke.sh`, text substituted inside a
+`cat <<EOF` heredoc, whose own exit status is `cat`'s and does not inherit an embedded
+substitution's — `errexit` treated it as a real failure and killed the script before it printed
+anything, discarding 48 already-good random bytes. Confirmed by reproducing the failure in
+isolation (`bash -c 'set -euo pipefail; x=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 48); echo
+"${#x}"'` exits 141) before fixing it. Fixed by appending `true` as the generator's last
+statement, which fixes the *function's* exit status to 0 regardless of the pipeline's — this is
+scoped to `scripts/new-instance.sh` only; `docker/smoke.sh`'s heredoc usage was never actually
+affected and was left unchanged.
+
 ---
 
 ## Nine findings from reconnaissance that shape this plan

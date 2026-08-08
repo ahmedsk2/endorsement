@@ -20,5 +20,11 @@ abstract class TestCase extends BaseTestCase
         // environment-fragile (passes on Windows, fails under the CI checkout). The component
         // NAME assertion still runs, which is what these tests actually care about.
         config(['inertia.testing.ensure_pages_exist' => false]);
+
+        // Calendar::settings() is memoized per process. Without a flush here, a test that
+        // seeds or edits an institution would silently inherit the PREVIOUS test's cached
+        // defaults — RefreshDatabase resets the database between tests but nothing resets
+        // this static cache on its own.
+        \App\Support\Calendar::flush();
     }
 }

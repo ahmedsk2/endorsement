@@ -115,6 +115,35 @@ predict, a behaviour that differs between SQLite and MySQL or between UTC and As
 record it here, dated, with what was found and how it was resolved. Findings caught
 empirically rather than by inspection are the ones worth writing down.)*
 
+**2026-08-08, Task 2 — the strtotime() allow-list needed two more entries than finding 2
+enumerated.** Writing `CalendarIsTheOnlyConverterTest`'s guard against the actual tree (not
+against finding 2's list) turned up `strtotime(` in two files reconnaissance did not name:
+`app/Console/Commands/LegacyReconcile.php:97` (diagnostic count of unparseable legacy date
+headers, read-only, never runs against live data) and `app/Support/Plausibility.php:95`
+(`plausibleDates()`, a boolean ordering comparison over two legacy admission/discharge
+strings during import validation, not a conversion feeding a screen). Both are import-adjacent
+to the same one-way legacy pipeline `LegacyImport.php` was already exempted for, so both were
+added to `STRTOTIME_ALLOW_LIST` alongside it, each with a comment naming why. Task 5 (not in
+this scope) still shrinks the list — its own text says "to `LegacyImport` alone," which now
+needs re-reading against these two additional entries when that task is planned. Also added:
+`Calendar.php` itself is excluded from its own guard, because its docblock names `strtotime()`
+in prose to explain the exact leniency trap it replaces — a mention, not a call — the same
+carve-out the IntlCalendar-symbol check already needed.
+
+**2026-08-08, Task 1 — `Institution::$attributes` needed all six calendar defaults, not just
+the two JSON columns.** The plan's Institution model snippet gives casts and constants but no
+`$attributes` default array. `hijri_enabled`/`hijri_offset_days`/`period_type` DO carry a
+column-level DB default (unlike the JSON columns), but Eloquent never reads a DB-applied
+default back into an in-memory model after INSERT — a freshly `create()`d, not-yet-reloaded
+Institution instance reports `null` for those columns until re-fetched. Added all six
+(`hijri_enabled`, `hijri_offset_days`, `weekend_days`, `period_type`, `block_weeks`) as
+`protected $attributes` on the model — JSON columns pre-encoded as their raw string form,
+matching what the migration's own backfill writes — so a freshly created row matches the
+documented defaults without requiring a caller to know to call `->fresh()` first. This mirrors
+finding 4's rationale for the JSON-only pair, just extended to keep every calendar default
+defined in one place rather than splitting it across the DB layer and the model layer by
+column type.
+
 ---
 
 ## Fifteen findings from reconnaissance that shape P1

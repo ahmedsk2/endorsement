@@ -324,6 +324,12 @@ error:**
    was left untouched rather than silently changed under a different task's mandate — flagging for
    the owner.
 
+   **RESOLVED**, both, after this session: `Person::casts()` no longer encrypts `notes` (commit
+   `f9832d5`, "people.notes stays plaintext -- owner decision 3, not the draft's encrypted cast"),
+   and `docs/COMPLIANCE.md` now documents `notes`/`constraints` (commit `6a61708`, "identity is two
+   tables; correct the rules and the pack that said otherwise"). Left here as a record rather than
+   deleted, so a reader does not go hunting a bug that no longer exists.
+
 Full suite: 576 (Task 7 baseline) → 593 after `ClaimLifecycleTest` (13 cases) and
 `PasswordResetTest`'s 4 new cases → 594 after the raw-column-collision regression test and fix.
 

@@ -402,6 +402,15 @@ And the counts must match, including soft-deleted accounts:
 A non-zero first query means the backfill did not run — do NOT edit the migration after it has
 run. Re-link by hand, or roll back with `php artisan migrate:rollback --step=1` and re-run.
 
+**The "orphan people" query and the accounts-vs-people equality query are time-bounded** — run
+them immediately after this migration, before any roster entry (a legacy import, an invitation to
+a not-yet-existing address, an admin adding someone to the roster) creates a `people` row with no
+`users` row of its own. That is the normal steady state from then on: a department roster always
+holds people who have never claimed a login, so a later re-run of either query will report a
+false failure once real roster-only rows exist. The "unlinked accounts" query (every account has
+a person) and the 120003/120004 checks below stay valid at any time — they are not about counts
+matching, they are about a specific `users` row resolving correctly.
+
 ### 2026_08_10_120003_move_name_and_position_off_users — TAKE A DUMP FIRST
 
 This migration DROPS `users.full_name` and `users.position`. `down()` restores them by copying

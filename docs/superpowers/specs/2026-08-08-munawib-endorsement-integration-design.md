@@ -178,9 +178,8 @@ endpoint. SSE is excluded — each connection would pin a php-fpm worker.
 ### 3.4 Customer isolation (D11)
 
 **The isolation boundary is the database, not the row.** One codebase, one image, one CI
-pipeline; a provisioning script stands up a separate Compose stack with its own MySQL per
-customer — Munawib FL-02 translated from Firebase to Coolify. FL-03's "no per-instance code
-changes, ever" holds.
+pipeline, one Compose file (`docker-compose.production.yml`) shared by every customer — Munawib
+FL-02 translated from Firebase to Coolify.
 
 Rationale: `institution_id` is nullable on every existing table and the anchor has never been
 exercised. Row-level tenancy **fails open** — one missing global scope, one bare `find()`, and
@@ -188,10 +187,65 @@ one customer reads another's children's PHI. With a database per customer, PDPL'
 non-commingling and right-to-erasure claims are true by construction and provable by pointing
 at a dropped volume, and the blast radius of any single flaw is one customer.
 
-`institution_id` is **retained** as in-instance grouping and defence in depth, not as the
-security boundary. Today this is exactly one deployment, so the choice costs nothing now.
+**No end-to-end provisioning script exists, and by design none can.**
+`.github/workflows/ci.yml` has two jobs (`test`, `audit`), `permissions: contents: read`, no
+image push, no registry, no deploy job — the token that could drive Coolify onto the machine
+holding patient data is owner-held by policy, deliberately. What P0d (2026-08-08) ships instead
+is what is honestly automatable: `scripts/new-instance.sh` (generates conforming secrets, prints
+the exact Coolify environment block, refuses a colliding slug and writes nothing to disk),
+`docker/instance-env.sh` (resolves one stack's containers by **identity**, or refuses — never
+by image ancestry, which cannot tell two customers' identical `mysql:8.4` containers apart:
+P0d Task 9's rehearsal confirmed this directly, standing up two throwaway stacks with identical
+database/user names), `php artisan instance:show` (proves an instance is fully provisioned,
+printing no secret value), and `docs/RUNBOOK-PROVISION.md` for the steps that stay irreducibly a
+human in the Coolify UI — the project, the domain field, the deploy key, and the DNS/TLS cutover
+order. Task 9's dress rehearsal ran the whole sequence against two throwaway stacks and found
+one gap in P0d's own delivery — the new per-instance variables were not actually reaching the
+container until the compose file's `environment:` block was corrected — recorded in
+`docs/RUNBOOK-PROVISION.md`'s appendix and fixed in the same commit that found it.
 
-Accepted cost: N backups, monitors, upgrade runs and restore drills once N exceeds one.
+`institution_id` **is now** in-instance grouping and provenance, not the security boundary — but
+this was not true until P0d Task 4, and describing it as already "retained… as defence in
+depth" was false when first written. Before Task 4 the column had **no writer anywhere in the
+application**: `user:create-admin` never set it, so it was NULL on the bootstrap admin and on
+every row copied from that admin down the provenance chain, while the legacy import stamped a
+real id on every imported row — non-null history, null present, which is worse than uniformly
+null. Task 4 gives `user:create-admin` the one write that starts the chain (every other site
+already copies `institution_id` from the acting user), a guarded, additive backfill migration
+for existing NULL rows, and a source-level test
+(`InstitutionProvenanceTest::test_no_query_filters_on_institution_id`) that fails the build if
+any clinical query ever filters on the column — the "provenance, never a filter" boundary is
+enforced, not only documented.
+
+**FL-03's "no per-instance code changes, ever" now holds — it did not until P0d.** Six files
+hardcoded the first customer: `docker-compose.production.yml`'s `APP_TIMEZONE`,
+`ReferenceSeeder.php`'s `QCH`/`Qatif Central Hospital` institution (with `name` in the *update*
+payload, so a customer's rename was silently reverted on every `db:seed --force`),
+`docs/sql/least-privilege.sql`'s schema/user literals, `docker/backup-offhost-sync.sh`'s and
+`docker/uptime-check.sh`'s hardcoded volume UUID and log/state paths, and `docker/smoke.sh`'s
+fixed compose project name. P0d parameterised all six (Tasks 1–3, 6–7), each keeping the
+existing deployment's current value as its default, so the live system's behaviour is unchanged
+by any of it.
+
+**What "N backups, monitors, upgrade runs and restore drills" understated: three of those were
+not linear operating cost, they were defects that only exist once N ≥ 2.** The documented
+migration procedure could target the **wrong** customer's database and report success — the
+runbook resolved the app container by Coolify UUID but the database container by image ancestry,
+and `head -1` on two identical-looking `mysql:8.4` containers is a coin flip (closed by
+`docker/instance-env.sh`, Task 6, and proven live in Task 9's rehearsal). The uptime monitor was
+**incorrect**, not merely duplicated — two crons sharing one state file each read the other's
+last value and emitted a permanent stream of false `CRITICAL`/`recovered` pairs (closed by
+Task 7, disproved live in Task 9). Backup retention **deleted across customers** sharing a pull
+directory, because the archive filename carried no instance token (closed by Task 1's
+slug-scoped, timestamp-anchored prune glob, proven destructively in Task 9 — seeding a
+differently-named archive alongside 20 of the instance's own and confirming it survived a
+`--keep=14` prune).
+
+What still costs real, unautomated work per customer, and always will, because it is a human
+holding owner-held credentials rather than a gap P0d left open: the Coolify project/app/domain/
+deploy-key steps, the DNS/TLS cutover sequence (grey → deploy → Let's Encrypt → orange), first
+login and TOTP enrolment, and the quarterly restore drill — which still has no last-run record
+or ageing alert (§14).
 
 ---
 
@@ -702,14 +756,13 @@ None block starting P0.
    inputs rather than imply otherwise.
 5. Whether the existing `docs/spec/` slices are rewritten in place or superseded by a platform
    spec — a documentation decision, taken during P0.
-6. **Reserved unit codes.** `routes/web.php` declares `/endorsement/today`,
-   `/endorsement/compliance` and `/endorsement/rows/{handover}` before `/endorsement/{unit}`
-   specifically so those literal segments never bind as a unit code. That ordering trick stops
-   working once units are created through an admin UI: a unit with code `TODAY`, `COMPLIANCE`
-   or `ROWS` would be permanently route-shadowed by the earlier route and unreachable. This was
-   impossible while the unit registry was hardcoded; it becomes reachable the moment P0d/P0b
-   ships unit creation. A reserved-code guard (reject those three codes, case-insensitively, at
-   creation) is needed before any admin UI can create units.
+6. ~~**Reserved unit codes.**~~ **SHIPPED, P0d Task 5, 2026-08-08.** `Unit::RESERVED_CODES`
+   (`TODAY`, `COMPLIANCE`, `ROWS`) is enforced on every write via a `saving` guard, and
+   `ReservedUnitCodesTest::test_the_reserved_list_covers_every_literal_route_segment` derives the
+   list from the registered routes rather than trusting the constant, so a new literal route
+   under `/endorsement` that forgets to extend it fails the build instead of shipping a silent
+   trap. The guard predates the admin UI it was written for, which is still item 1 of P1's scope
+   (§13).
 7. **`invitations` has no retention rule.** `member_email` accumulates on that table indefinitely
    — nothing ever prunes an old, accepted or revoked invitation (recon report 1 §R8). Needs a
    disposal policy, most likely folded into `data:retention` alongside the other operational rows
@@ -726,6 +779,23 @@ None block starting P0.
    carries its original UNIQUE index. Dropping it is a future, separate, additive migration
    (CLAUDE.md: never retype/drop a column holding real data without its own reviewed migration),
    not done as part of P0c.
+10. **Co-tenancy on the shared `coolify` network is an ACCEPTED risk with a named trigger
+    (owner decision, P0d, 2026-08-08).** Every customer's `app` container is mutually reachable
+    with every other on that network, and `TRUSTED_PROXIES` covers `172.16.0.0/12`, so a compromised neighbour
+    could forge `X-Forwarded-For` — reviving the forgeable-audit-IP and bypassable-lockout risk
+    the 2026-07-26 audit closed. Mitigating it means a separate host per customer, which the
+    owner has declined for now rather than accepted as safe. Recorded in full, with the trigger
+    that must be honoured verbatim, in `docs/OPEN-DECISIONS.md`, `docs/COMPLIANCE.md` and
+    `docs/PDPL-PACK.md`: **revisit before a second customer carries real patient data.**
+11. **The restore drill has no last-run record and no ageing alert.** `docs/RUNBOOK-BACKUP.md`
+    records the first drill's date in prose; nothing machine-checks that a quarter has not
+    passed since, per instance. At N=1 this is a discipline gap; at N customers it is N
+    untracked obligations. Not addressed by P0d — the runbook carries a per-instance register
+    (a place to write the date down), not an alert.
+12. **`institutions` still has no admin surface.** `INSTITUTION_CODE`/`INSTITUTION_NAME` are
+    env-only (P0d Task 3), read once by `ReferenceSeeder` on `db:seed --force`. There is no
+    screen to view or change them after go-live — doing so today means a direct database edit,
+    outside the audit trail that covers every other administrative change in this system.
 
 ---
 
@@ -738,6 +808,7 @@ None block starting P0.
 | D3 (one `users` table for roster + accounts) weakens auth invariants | **REVERSED, 2026-08-08 (P0c).** `people` and `users` are now two tables; a roster-only person has no `users` row and cannot authenticate by construction (§5.1) — five of the original six §5.2 mitigations became unnecessary and the sixth (roster-import email matching) shipped as ordinary correctness logic rather than a risk mitigation. Residual risk from the split itself, not from D3: `$user->full_name`/`position`/`member_email` are read-through accessors that silently resolve to null if a narrowed `select()`/`with()` omits `person_id` — broke four live sites before test coverage existed (CLAUDE.md carries this as a standing rule now); and `users.member_email` survives as dead weight awaiting removal (§14 item 9). |
 | PHI leaks into Rota | Named query services as the only crossing, plus the §9.2 guard test. |
 | Share tokens forwarded outside the department | Expiry, revocation, audit, no contact data, `noindex`; policy documented in the PDPL pack. |
-| N deployments once there is a second customer | Provisioning, backup and restore are scripted from the start; drills are runbook items. |
+| N deployments once there is a second customer | **Backup is scripted and tested** (`BackupRunTest`, 11 tests; `docker/smoke.sh` exercises it against real MySQL). **Provisioning and restore are prose, not scripts** — `docs/RUNBOOK-PROVISION.md`, dress-rehearsed against two throwaway stacks rather than merely written (P0d Task 9). Two of the "linear cost" items were in fact defects that only exist once N ≥ 2 — the uptime monitor was incorrect (not just duplicated) and backup retention deleted across customers — both closed by P0d (Tasks 1 and 7) and disproved live in the rehearsal, not merely reasoned about. Drills remain a runbook obligation with no automated last-run record or ageing alert (§14 item 11). |
+| The documented migration procedure can be aimed at the wrong customer's clinical database, and with default names succeeds silently | `docker/instance-env.sh` resolves one stack's containers by Coolify-assigned container identity and refuses on no match or an ambiguous match — replacing the image-ancestry selector that cannot distinguish two customers' identical `mysql:8.4` containers (P0d Task 6). Proven against two live throwaway stacks with identical database/user names in Task 9's rehearsal, including the ambiguous-match refusal path. |
 | Solver too slow on the host | Queued generation; capacity is a P4 prerequisite (D12); measured against a real fixture rather than assumed. |
 | D6 delays clinical value for months | Accepted and reaffirmed by the owner (§1.3). |

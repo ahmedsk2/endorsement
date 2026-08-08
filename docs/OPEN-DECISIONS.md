@@ -133,6 +133,44 @@ were corrected.
 
 ---
 
+## DECIDED — 2026-08-08 (P0d, owner decision 3)
+
+### Co-tenancy on the shared `coolify` Docker network — ACCEPTED, with a named trigger
+
+Standing up a second customer (P0d) put a second `app` container on the same external
+`coolify` network the first one already sits on — the network Coolify's own reverse proxy uses
+to reach every application it hosts. `bootstrap/app.php:73-75` already documents that a
+co-tenant container can reach this application directly, bypassing Traefik's host-based
+routing, and `docker-compose.production.yml`'s `TRUSTED_PROXIES` covers `172.16.0.0/12`, the
+private range those containers sit in. **A compromised neighbour on that shared network could
+therefore forge `X-Forwarded-For`** — reviving the forgeable-audit-IP and bypassable-lockout
+failure the 2026-07-26 security audit closed, and which CLAUDE.md lists as a standing
+invariant that must never regress.
+
+**The database network is not affected.** `internal` is per-stack, bridge-only, publishes no
+host port, and customer A's app cannot reach customer B's MySQL under any circumstance — this
+decision is scoped strictly to `app`-to-`app` reachability on `coolify`.
+
+**Options considered:** a separate host per customer (closes it completely; real recurring
+infrastructure cost, not a code change) or accept the shared-network exposure and document it.
+**The owner chose to accept it** rather than provision a second host, given that today there is
+exactly one customer holding real patient data.
+
+**TRIGGER, verbatim — revisit before a second customer carries real patient data.** Not a
+"revisit periodically": a specific, checkable condition. Recorded identically in
+`docs/COMPLIANCE.md` ("Accepted deviations" §3) and `docs/PDPL-PACK.md` (§3.2, §3.3 item 3) so
+the same trigger is findable wherever an auditor looks, and the PDPL pack's DPIA is marked as
+needing re-signing to reflect it.
+
+**Two items already open at N=1, now explicitly inherited by every additional customer:** the
+missing **object-lock/retention rule on the backup bucket** (write credentials are delete
+credentials — see "Still yours, unchanged" below) and the **external HTTP monitor being unbuilt
+with its account tied to a personal email** (§ "STILL OPEN" above) are not P0d defects, but
+P0d's per-customer bucket and per-customer monitor (owner decision 2, `docs/RUNBOOK-PROVISION.md`
+§9) mean each is now an obligation *per instance*, not a single item to close once.
+
+---
+
 ## Still yours, unchanged
 
 **Rotate the two Coolify tokens** — the deploy token was still working on 2026-07-27, so

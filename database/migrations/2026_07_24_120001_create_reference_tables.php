@@ -11,7 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Multi-institution tenant anchor.
+        // The customer this deployment belongs to (D11: one database per customer). Provenance
+        // and in-instance grouping — NOT a security boundary. There is exactly one active row
+        // per deployment; never filter a clinical query on institution_id, and never build
+        // row-level tenancy on top of this table. See
+        // docs/superpowers/plans/2026-08-08-p0d-tenancy-provisioning.md.
         Schema::create('institutions', function (Blueprint $table) {
             $table->id();
             $table->string('name');
@@ -20,7 +24,8 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // Now that `institutions` exists, wire up the tenant FK on `users`.
+        // Now that `institutions` exists, wire up the provenance FK on `users` — grouping, not
+        // a scope. See the comment above.
         Schema::table('users', function (Blueprint $table) {
             $table->foreign('institution_id')->references('id')->on('institutions')->nullOnDelete();
         });

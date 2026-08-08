@@ -15,8 +15,12 @@ use Illuminate\Support\Facades\Schema;
  * This table is strictly additive on top. The four paediatric units get zero rows here, so
  * nothing about them changes.
  *
- * No `institution_id` — the unit already carries it via `foreignId('unit_id')`, and a field
- * definition is meaningless outside the unit that owns it.
+ * No `institution_id`. NOT because `units` carries one — it does not, and never has; a unit
+ * row has no institution column at all. Under D11 the isolation boundary is the database, not
+ * the row: there is exactly one institution per deployment, so no table needs an
+ * `institution_id` to disambiguate "whose row is this" and adding one here would just be
+ * another column to keep uniformly null or uniformly one value. See
+ * docs/superpowers/plans/2026-08-08-p0d-tenancy-provisioning.md.
  */
 return new class extends Migration
 {

@@ -17,6 +17,12 @@
 Everything the system needs from you, in the order it has to happen. The site is live and
 healthy; nothing below is a bug fix, it is the handover of the things only you can hold.
 
+**This checklist describes the first deployment (`qch`) and predates a second customer
+existing.** Provisioning a new customer instance from scratch is `docs/RUNBOOK-PROVISION.md`,
+not this file — several steps below (the Coolify project, the terminal-access command, the
+database operations) are specific to `qch`'s own Coolify app UUID and would need their own
+per-instance values for another customer.
+
 Terminal access, used by several steps — either **Coolify → clinical → endorsement →
 Terminal**, or:
 

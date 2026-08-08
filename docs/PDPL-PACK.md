@@ -14,6 +14,12 @@ account at all, e.g. an external rotator named as a covering consultant) rather 
 to the conclusions already reached — but the signature in §3.4 predates the change and should
 be refreshed to say so explicitly.
 
+**Also needs re-signing: multi-customer tenancy support shipped 2026-08-08 (P0d), also after
+this DPIA was signed.** §3.2 and §3.3 now carry a new accepted risk — co-tenancy on the shared
+`coolify` Docker network — that did not exist in the 2026-07-28 signed version, because this
+system served exactly one customer then. The signature in §3.4 predates it and should be
+refreshed alongside the P0c refresh above rather than as a separate cycle.
+
 Not legal advice.
 
 Every technical claim here is drawn from the code and cross-referenced, so the parts that
@@ -156,17 +162,27 @@ teaching set of real handovers, or a report of who signs off late.
 | **A backup silently stops running** | **ACCEPTED, 2026-07-28.** The monitoring service in use offers HTTP monitors only, not heartbeats, so nothing alarms if the nightly backup simply stops. The site being up says nothing about whether a backup ran. Compensated by the quarterly restore drill and by `backup:run` escalating a FAILURE to an operational alert — what is not covered is the backup that never starts at all | **Medium — accepted, revisit if a heartbeat becomes available** |
 | An account left active after someone leaves | **Periodic review of active accounts** (§6), supported by a *Last signed in* column on Admin → Users that flags anything dormant 90 days or more | **Medium — depends on the review actually happening** |
 | Paper leaving the ward | Out of the system's control. Sheets carry an attribution footer; printing is audited | **The hospital's existing paper-handling policy applies** — this system does not create a separate regime for printed clinical records |
+| **A compromised co-tenant on the same Docker network forges the audit trail's actor IP or bypasses the login lockout (P0d, 2026-08-08)** | **ACCEPTED — see §3.3 item 3.** Every customer's `app` container shares the external `coolify` network with every other application Coolify hosts; a co-tenant can reach this application directly and, being inside the trusted-proxy range, forge `X-Forwarded-For` | **Medium — accepted, with a named trigger: revisit before a second customer carries real patient data** |
 
 ### 3.3 Accepted deviations
 
-Two, both recorded with reasoning in `docs/COMPLIANCE.md`:
+Three, all recorded with reasoning in `docs/COMPLIANCE.md`:
 
 1. **No unit scoping.** Every clinical account can read, write and sign off all four units,
    because the residents cover all four concurrently. Compensated by approval-gated account
    creation and audited reads.
 2. **Signature by proxy for two roles.** As above.
+3. **Co-tenancy on the shared `coolify` Docker network (P0d, 2026-08-08).** Every customer's
+   `app` container is mutually reachable with every other application on the host, and
+   `TRUSTED_PROXIES` covers the private range those containers sit in — so a compromised
+   neighbour could forge `X-Forwarded-For`, reviving the forgeable-audit-IP and
+   bypassable-lockout failure the 2026-07-26 security audit closed. Mitigating it means a
+   separate host per customer, which the owner has not provisioned. **Accepted with a named
+   trigger, verbatim: revisit before a second customer carries real patient data.** Full
+   reasoning in `docs/COMPLIANCE.md`'s "Accepted deviations" §3, and the same trigger is
+   recorded in `docs/OPEN-DECISIONS.md`.
 
-Both are owned by the system owner, who signs this assessment (§3.4), and are reviewed at the annual review in §8.
+All three are owned by the system owner, who signs this assessment (§3.4), and are reviewed at the annual review in §8.
 
 ### 3.4 Conclusion and sign-off
 

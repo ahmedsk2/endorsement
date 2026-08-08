@@ -534,3 +534,48 @@ SELECT COUNT(*) FROM people WHERE institution_id IS NULL;
 -- and every count above is expected to be non-zero.
 SELECT id, code, name, active FROM institutions;
 ```
+
+---
+
+## OWNER ACTION — confirm `INSTANCE_SLUG=qch` is actually set, before the next deploy
+
+The identifiers table above says "not yet confirmed set in Coolify" because of two things,
+layered:
+
+1. **P0d Task 1** added `INSTANCE_SLUG` to `config/endorsement.php` and asked the owner to set
+   `INSTANCE_SLUG=qch` in Coolify's Environment Variables screen for the `endorsement` app,
+   before the deploy that carries that commit — so the first slug-named archive is already
+   named `qch`, not a fallback derived from `APP_NAME`.
+2. **P0d Task 9's dress rehearsal found that step alone would not have worked.**
+   `docker-compose.production.yml`'s `app` service never passed `INSTANCE_SLUG` (or
+   `INSTITUTION_CODE`/`INSTITUTION_NAME`) through to the container — Coolify's Environment
+   Variables screen makes a value available for `${...}` interpolation *within* the compose
+   file, not automatically present in the container's process environment, and this file's
+   `environment:` block never referenced any of the three. Setting the variable in Coolify,
+   by itself, had no effect. Fixed in the same commit that found it (compose file +
+   `DeploymentInvariantsTest::test_instance_and_institution_variables_reach_the_container`);
+   full account in `docs/RUNBOOK-PROVISION.md`'s rehearsal appendix.
+
+So, once a deploy carrying that fix ships:
+
+1. Confirm `INSTANCE_SLUG=qch` is set in Coolify's Environment Variables screen for the
+   `endorsement` app (set it now if it was never done, per Task 1 Step 8).
+2. Deploy.
+3. Confirm it actually reached the container:
+
+   ```bash
+   eval "$(sudo bash docker/instance-env.sh oo7d7si62yhyi7fx10hrck6q)" && \
+   sudo docker exec "$APP" printenv INSTANCE_SLUG
+   ```
+
+   Expect `qch`. An empty result (the variable prints nothing, exit 1) means the deploy does
+   not yet carry the compose fix, or the Coolify variable was never set — do not proceed to
+   the next backup window believing this is done until this command prints `qch`.
+4. Or, once `php artisan instance:show` exists on the deployed image, prefer it — it reports
+   the slug alongside the institution, timezone and every owner-managed secret's configured
+   state in one command, with no secret value printed.
+5. Do this **before** the next `01:30` backup — the archive name is derived at the moment
+   `backup:run` executes, not retroactively, so a backup taken before this is confirmed still
+   gets the un-derived fallback name.
+6. Update the identifiers table row above once confirmed: replace "not yet confirmed set in
+   Coolify" with the confirmation date.

@@ -193,13 +193,12 @@ class UnitConfigurationTest extends TestCase
     }
 
     /**
-     * `resolveUnit()` no longer aborts explicitly — it relies on `firstOrFail()` against an
-     * active-scoped query, so a RETIRED unit reaches the framework as a ModelNotFoundException
-     * rather than an abort(404). That only reads as "gone" to a clinician if the real handler
-     * converts it; if it ever surfaced as a 500 the retired unit would look like an outage
-     * instead of a decommissioning. Asserted through the full HTTP stack, on every verb that
-     * takes a {unit} code — reads and writes alike — and on the chooser that must stop
-     * offering it.
+     * `resolveUnit()` explicitly `abort(404)`s a RETIRED unit — it does not rely on
+     * `firstOrFail()` to raise a ModelNotFoundException that some later handler would have to
+     * convert. That matters because if it ever surfaced as a 500 instead, the retired unit
+     * would look like an outage rather than a deliberate decommissioning. Asserted through the
+     * full HTTP stack, on every verb that takes a {unit} code — reads and writes alike — and
+     * on the chooser that must stop offering it.
      */
     public function test_a_deactivated_unit_code_is_404_on_every_route_that_takes_one(): void
     {

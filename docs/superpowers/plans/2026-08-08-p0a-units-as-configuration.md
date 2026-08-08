@@ -305,6 +305,8 @@ php artisan test --filter UnitConfigurationTest | Select-Object -Last 15
 
 Expected: FAIL — `extra_row_fields` comes back as the string `'[]'` rather than an array, and `fill()` silently drops the new keys, because the model has neither casts nor `$fillable` entries yet. That is Task 2.
 
+> **Superseded — see "Amendments made during execution" #1 above.** `fill()` does not silently drop the new keys: seeders run inside `Model::unguarded()`, so the raw array reaches the query builder instead and throws `Array to string conversion`, erroring 250 of 463 tests. Tasks 1 and 2 shipped as one commit, not independently.
+
 - [ ] **Step 6: Commit**
 
 ```bash
@@ -390,7 +392,7 @@ class Unit extends Model
             'display_order' => 'integer',
             'active' => 'boolean',
             'consultant_pair' => 'boolean',
-            'extra_row_fields' => 'array',
+            'extra_row_fields' => 'array', // Superseded — see "Amendments made during execution" #4 above: cast through App\Casts\ExtraRowFields instead.
         ];
     }
 
@@ -554,6 +556,8 @@ php artisan test --filter UnitProfileTest | Select-Object -Last 15
 Expected: FAIL — `Call to undefined method App\Support\UnitProfile::fromUnit()`.
 
 - [ ] **Step 3: Rewrite UnitProfile**
+
+> **Superseded — see "Amendments made during execution" #5 above.** This rewrite (and the call-site migration in Task 4) does not delete `UnitProfile::codes()`/`::for()` here — they stayed as deprecated DB-backed shims until Task 5, so the eleven call sites were never broken across a commit boundary.
 
 Replace `app/Support/UnitProfile.php` entirely:
 
@@ -780,6 +784,15 @@ git commit -m "refactor: last two unit-code callers read the database"
 ---
 
 ### Task 6: Retired units 404
+
+> **Satisfied without a new file — no `RetiredUnitTest.php` was created.** A 2026-08-08 audit
+> found the three requirements below already proven: `UnitConfigurationTest::test_a_deactivated_unit_code_is_404_on_every_route_that_takes_one`
+> covers the deactivated-unit 404 (every verb that takes a `{unit}` code, upper and lower
+> case) and its disappearance from `Unit::codes()`; `UnitScopeTest::test_every_unit_serves_its_own_index_sheet_and_print`
+> covers an active unit still resolving; `EndorsementTest::test_an_unknown_unit_code_is_rejected`
+> and `UnitScopeTest::test_unknown_unit_codes_still_404` cover an unknown code 404ing. A
+> duplicate test file would have been worse than none, so this task's remaining work was
+> fixing two stale docblocks in those existing tests instead — see the P0a Task 6/7 commit.
 
 **Files:**
 - Create: `tests/Feature/Units/RetiredUnitTest.php`

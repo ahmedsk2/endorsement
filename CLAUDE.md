@@ -1,8 +1,12 @@
 # Paediatric Endorsement System
 
-A standalone shift-handover (endorsement) system for four paediatric units — PICU, NICU,
-SCBU, WARD. Endorsement ONLY: no registry, no scoring, no KPI dashboards (beyond the
-missed-days counter), no nursing sheets.
+A departmental clinical platform. Two modules: **Endorsement** (shift handover, holds PHI)
+and **Rota** (duty scheduling, holds none) — see
+`docs/superpowers/specs/2026-08-08-munawib-endorsement-integration-design.md`.
+
+Endorsement covers handover ONLY: no registry, no scoring, no KPI dashboards (beyond the
+missed-days counter), no nursing sheets. Units are CONFIGURATION, not code — PICU, NICU,
+SCBU and WARD are seed data for the QCH institution.
 
 ## Canonical documents
 
@@ -66,7 +70,11 @@ missed-days counter), no nursing sheets.
   WARD has a single "Consultant Oncall" stored in `consultant_by_*`.
 - Roles: 0 Admin, 2 Charge Nurse, 3 Consultant, 4 Resident, 5 Chief Resident. Position 1
   (Nurse) is RETIRED — never revive it or reuse the number.
-- Unit variation lives in ONE place: `App\Support\UnitProfile`.
+- Unit variation lives in ONE place: the `units` row. `App\Support\UnitProfile` is the value
+  object that shape travels in (`$unit->profile()`); it holds no per-unit values. Never
+  reintroduce a hardcoded unit list — `Unit::codes()` is the only source, and every code
+  lookup goes through `Unit::findByCode()` (the `code` mutator normalizes writes, not a
+  query's WHERE value). Units are opt-in `active`.
 
 ## Invariants the 2026-07-26 audit had to restore (don't regress these)
 

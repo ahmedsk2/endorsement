@@ -99,6 +99,26 @@ running the suite via Bash** (`export PATH="/c/Users/ahmed/AppData/Local/php84:/
 first), not the PowerShell invocation the top-level instructions default to. Confirmed green
 there: 614/614 passed, 0 skipped.
 
+**2026-08-08, Task 4 (`InstitutionProvenanceTest`), empirically found:** the bootstrap admin
+created by `user:create-admin` has `setup_completed_at` NULL — the command never sets it, unlike
+`UserFactory`, which defaults it to `now()`. `App\Http\Middleware\RequireSetup` redirects any
+account with a null `setup_completed_at` to `/setup` on its first authenticated request to
+anything outside its allow-list, so the "clinical row created by the admin" and "invitation
+issued by the admin" test cases silently redirected there instead of exercising `storeRow`/
+`InvitationController::store` — the request still returned a redirect (so `assertRedirect()`
+alone did not catch it), it just redirected to the wrong place and created nothing. Unrelated to
+this task's scope (a pre-existing onboarding flow, not a provenance defect), so the test bypasses
+it directly with `$admin->forceFill(['setup_completed_at' => now()])->save();` rather than
+touching `CreateAdmin` or `RequireSetup`.
+
+**2026-08-08, Task 4 (`InstitutionProvenanceTest`), empirically found:** `Handover::where('mrn',
+$plaintext)` never matches a row, even one just created with that exact `mrn`, because `mrn` is
+encrypted at rest (`App\Casts\EncryptedString`) — the `WHERE` clause compares the literal value
+against ciphertext, which cannot match. `EndorsementTest` already works around this
+(`Handover::latest('id')->get()->firstWhere('mrn', ...)` — fetch, then filter in PHP after the
+cast decrypts); `InstitutionProvenanceTest`'s clinical-row case had to switch to the same
+pattern after `firstOrFail()` failed against a row provably already in the table.
+
 ---
 
 ## Nine findings from reconnaissance that shape this plan

@@ -424,3 +424,25 @@ Rolling 120001 back before 120003 loses every name and role. Restore from the du
 After migrating, confirm the copy is complete:
 
     SELECT COUNT(*) FROM people WHERE full_name IS NULL OR full_name = '';   -- must be 0
+
+### 2026_08_10_120004_add_person_ids_to_handover_signoffs
+
+Every historical named role must have resolved. Expect 0 from each:
+
+    SELECT COUNT(*) FROM handover_signoffs WHERE endorsed_by_user_id IS NOT NULL AND endorsed_by_person_id IS NULL;
+    SELECT COUNT(*) FROM handover_signoffs WHERE endorsed_to_user_id IS NOT NULL AND endorsed_to_person_id IS NULL;
+    SELECT COUNT(*) FROM handover_signoffs WHERE consultant_by_user_id IS NOT NULL AND consultant_by_person_id IS NULL;
+    SELECT COUNT(*) FROM handover_signoffs WHERE consultant_to_user_id IS NOT NULL AND consultant_to_person_id IS NULL;
+
+A non-zero count means a signoff pointed at a `users` row that has no person — check
+`SELECT id FROM users WHERE person_id IS NULL` first (that is the 120001 verification).
+
+Spot-check that the names still agree with the frozen snapshots — this is the check that would
+catch a copy-instead-of-join:
+
+    SELECT s.id, s.endorsed_by_name, p.full_name
+    FROM handover_signoffs s JOIN people p ON p.id = s.endorsed_by_person_id
+    WHERE s.endorsed_by_name IS NOT NULL AND s.endorsed_by_name <> p.full_name;
+
+Rows here are people who were renamed after signing (legitimate) OR a mis-joined backfill
+(not). Read them; do not assume.

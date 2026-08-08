@@ -130,6 +130,51 @@ than by reading it:**
    `test_full_name_and_position_are_not_columns_on_users()`, asserting the stronger fact
    directly (mirroring `RosterOnlyCannotAuthenticateTest`'s structural check on `people`).
 
+**Task 4, 2026-08-08 — no deviations.** Implemented as specified: `levels` + `person_levels`,
+`Person::levelAt()`/`currentLevel()`, no seeded rows, no `people.level_id`. `LevelHistoryTest`
+(9 cases, covering both inclusive boundary dates, the unique `(person_id, effective_from)` pair,
+`restrictOnDelete` on a level with history, and `Level::code` uniqueness) went red on
+`Class "App\Models\Level" not found`, then green after the migration/models landed. Full suite
+564 (up from 555).
+
+**Task 5, 2026-08-08 — implemented as specified; the backfill's correctness was verified by hand,
+per the plan's own admission that `RefreshDatabase` starts empty and so the automated suite can
+only prove the *rule*, not that the migration resolves real divergent ids correctly end to end:**
+
+`SignoffPersonBackfillTest` re-runs the migration's literal SQL against rows inserted through the
+query builder and asserts the resolved `*_person_id` is the linked person, not the raw
+`*_user_id` integer (4 cases, including a null-safety case and a same-account-in-two-role-columns
+case). That is a real, valuable regression guard, but it exercises the *statements*, not the
+*migration file* — so it would not have caught a bug in how `Schema::table()`'s column placement
+or `nullOnDelete()` interacts with a live SQLite rebuild.
+
+To close that gap, the migration was run for real, end to end, against a throwaway SQLite file
+built to look like a database that had been live for a while:
+
+1. Ran every migration through `2026_08_10_120003` against a scratch `.sqlite` file (the Task 5
+   migration was temporarily moved out of `database/migrations/` so it stayed pending).
+2. Seeded 5 roster-only `people` rows first (ids 1-5, no account — ordinary in production: a
+   department roster entered before every consultant has logged in), then 3 accounts each
+   explicitly linked to a person created *after* those five. Result: `users` ids 1, 2, 3 map to
+   `people` ids 6, 7, 8 — a constant +5 offset, chosen so a copy-instead-of-join bug would be
+   immediately visible (every `*_person_id` would read 1/2/3 instead of 6/7/8).
+3. Inserted 3 `handover_signoffs` rows the *old* way (`*_user_id` only, exactly what every row in
+   production looks like today) covering: all four roles filled by three different accounts; only
+   one role filled (the other three must resolve to `NULL`, not to person 1); and the same account
+   named in two different role columns on one row (each column must resolve independently).
+4. Moved the migration back into `database/migrations/` and ran `php artisan migrate` again — this
+   time it actually executed, for real, against the seeded data.
+5. Queried the resulting `handover_signoffs` rows directly and compared each `*_person_id` against
+   the correct answer (looked up fresh via `users.person_id`) and against what a copy bug would
+   have produced.
+
+**Observed:** every non-null role resolved to the correct divergent person id (6, 7, or 8 — never
+1, 2, or 3), every null `*_user_id` backfilled to a null `*_person_id`, and the row naming the same
+account twice resolved both columns to the same person id independently. No mismatches. The
+scratch database and seeding/inspection scripts were throwaway (deleted after the run, per the
+scratchpad convention) and are not part of the commit — the reasoning and result are recorded here
+instead. Full suite 568 (up from 564).
+
 ---
 
 ## Ten findings from reconnaissance that shape this plan
@@ -1486,7 +1531,7 @@ inventing one would be a clinical guess.
 *and* a history table. That is two definitions of "current level" and they will drift. There is no
 `people.level_id`; `Person::levelAt($date)` resolves from `person_levels` and is the only answer.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/Feature/Identity/LevelHistoryTest.php`, `RefreshDatabase`. Assert:
 
@@ -1504,9 +1549,9 @@ inventing one would be a clinical guess.
    still resolves.
 8. `Level::code` is unique.
 
-- [ ] **Step 2: Run it, watch it fail** — `php artisan test --filter LevelHistoryTest | Select-Object -Last 15`
+- [x] **Step 2: Run it, watch it fail** — `php artisan test --filter LevelHistoryTest | Select-Object -Last 15`
 
-- [ ] **Step 3: The migration**
+- [x] **Step 3: The migration**
 
 ```php
 Schema::create('levels', function (Blueprint $table) {
@@ -1539,7 +1584,7 @@ Schema::create('person_levels', function (Blueprint $table) {
 
 No level rows are seeded. `ReferenceSeeder` is untouched.
 
-- [ ] **Step 4: Models and the resolver**
+- [x] **Step 4: Models and the resolver**
 
 `app/Models/Level.php` — `$fillable = ['institution_id','code','name','display_order','active']`,
 casts `display_order:integer`, `active:boolean`, `scopeActive`, `scopeOrdered` mirroring
@@ -1585,7 +1630,7 @@ In `app/Models/Person.php` add:
     }
 ```
 
-- [ ] **Step 5: Green, then commit**
+- [x] **Step 5: Green, then commit**
 
 ```powershell
 php artisan test --filter LevelHistoryTest | Select-Object -Last 5
@@ -1609,7 +1654,7 @@ git commit -m "feat: training levels with effective-dated history"
 
 Inert: the columns are populated but nothing reads or writes them until Task 6. Deployable.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/Feature/Identity/SignoffPersonBackfillTest.php`. The backfill runs inside the migration, so
 the test proves the *rule*, not the historical run: create three users (so `users.id` and
@@ -1637,9 +1682,9 @@ the integer that was in the user column. Add the negative case explicitly:
     }
 ```
 
-- [ ] **Step 2: Run it, watch it fail** — `no such column: endorsed_by_person_id`.
+- [x] **Step 2: Run it, watch it fail** — `no such column: endorsed_by_person_id`.
 
-- [ ] **Step 3: The migration**
+- [x] **Step 3: The migration**
 
 ```php
 <?php
@@ -1701,7 +1746,7 @@ return new class extends Migration
 };
 ```
 
-- [ ] **Step 4: Model and schema test**
+- [x] **Step 4: Model and schema test**
 
 Add the four `*_person_id` keys to `HandoverSignoff::$fillable` (after each matching `*_user_id`,
 `app/Models/HandoverSignoff.php:102-126`).
@@ -1710,7 +1755,7 @@ In `tests/Feature/ClinicalSchemaTest.php:78-90`, add the four new columns to the
 add a sentence to the method docblock recording that the `*_user_id` four are frozen legacy
 columns that new writes must leave NULL.
 
-- [ ] **Step 5: Green, commit, runbook**
+- [x] **Step 5: Green, commit, runbook**
 
 ```powershell
 php artisan test | Select-Object -Last 5

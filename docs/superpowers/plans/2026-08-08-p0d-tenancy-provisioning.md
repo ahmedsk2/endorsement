@@ -1,3 +1,27 @@
+> ## OWNER DECISIONS, 2026-08-08 — READ BEFORE ANY TASK
+>
+> **1. Instance slug for the live deployment: `qch`.** Fixed now, because changing it after
+> the first slugged archive is written leaves an un-prunable generation behind. Archives
+> become `endorsement-qch-{timestamp}`.
+>
+> **2. Backups: one bucket per customer**, with its own credentials. A leaked or
+> misconfigured sync for one customer cannot reach another's archives; offboarding is
+> dropping a bucket; "which archive belongs to whom" is answered by location, not filename.
+> Task 7 provisions per-slug credentials accordingly — do NOT collapse to a shared bucket
+> with slug-prefixed paths.
+>
+> **3. Co-tenancy on the shared `coolify` network: ACCEPTED, with a documented trigger.**
+>
+> Both customers' `app` containers are mutually reachable and `TRUSTED_PROXIES` covers
+> `172.16.0.0/12`, so a compromised neighbour could forge `X-Forwarded-For` — reviving the
+> forgeable-audit-IP and bypassable-lockout risk the 2026-07-26 audit closed. The owner has
+> accepted this rather than provisioning a host per customer.
+>
+> **This is not a note to bury.** Task 10 must record it as a named, accepted risk in
+> `docs/COMPLIANCE.md`, the PDPL pack and `docs/OPEN-DECISIONS.md`, each stating the trigger
+> verbatim: **revisit before a second customer carries real patient data.** An accepted risk
+> that is not written where an auditor will find it is an undocumented one.
+
 # P0d — Tenancy & Provisioning Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

@@ -175,6 +175,58 @@ scratch database and seeding/inspection scripts were throwaway (deleted after th
 scratchpad convention) and are not part of the commit — the reasoning and result are recorded here
 instead. Full suite 568 (up from 564).
 
+**Task 6, 2026-08-08 — implemented as specified; four gaps found in the plan's own file list and
+one construction in its test guidance that does not reach the branch it names:**
+
+1. **`tests/Feature/SignatureTest.php` was missing from the plan's Step 7 file list.** It submits
+   `endorsed_by_user_id` in two request payloads (`test_signing_freezes_the_signature_and_the_print_sheet_shows_it`,
+   `test_removing_a_signature_leaves_already_signed_sheets_intact`) and would have 422'd the moment
+   the wire rename landed. Found by grep before editing, not by a failing run. Both updated to
+   `endorsed_by_person_id => $resident->person_id`.
+2. **`show()` needed a real refactor, not the one-line swap the plan's Step 4 implies.** The plan
+   says `'staff' => $this->staffPickers($signoffRow)` "where `$signoffRow` is the `HandoverSignoff`
+   the method already resolves for `signoffPayload()`" — but `show()` never held that row;
+   `signoffPayload()` queried it internally and privately. Fixed by having `show()` query it once
+   and threading it through: `signoffPayload()` gained a fourth, optional `?HandoverSignoff $signoff`
+   parameter (defaulting to its own query, so `print()`'s existing call site needed no change), and
+   `staffPickers()` takes the same row so a stored-but-no-longer-offered id still renders (finding 9).
+3. **The two new `SignatureAttributionTest` cases the plan asks for (Step 7 bullet) needed real
+   construction, not the sketch in the plan.** Case (a) — a roster-only consultant is accepted,
+   named, and leaves no signature path — is tested by asserting the signature-path keys are absent
+   from `$s->getAttributes()` altogether (the schema has never had `consultant_*_signature_path`
+   columns; asserting a plain `null` would pass even if the column had been added by mistake and
+   left unset). Case (b) — the `unclaimed` provenance token — the plan suggests constructing it "by
+   deleting the account between draft and sign" over two HTTP requests. Traced through
+   `updateSignoff()`: the freeze loop only calls `resolveSignature()` for a field present in *that*
+   request's payload, and D9's validation re-checks the predicate on every request that names the
+   field — so a second request that re-submits the now-unclaimed id is refused before
+   `resolveSignature()` ever runs, and a second request that omits the field never calls it at all.
+   There is no two-request HTTP path that reaches this branch — which is exactly what the method's
+   own docblock already says ("D9's rule already refuses an unclaimed endorser at validation").
+   Tested instead via `ReflectionMethod` on the private method directly, which is the first use of
+   reflection in this suite; noted in the test's own docblock so a future reader does not go looking
+   for an HTTP construction that does not exist.
+4. **`AuditHardeningTest`'s two D9 cases needed roster-only fixtures the plan's prose names but
+   doesn't spell out.** Added `Person::factory()->create(['position' => 4, ...])` (no account) as a
+   third refused case alongside the existing consultant/deactivated ones in
+   `test_signoff_refuses_an_endorser_who_is_not_an_active_resident_or_chief`, and a new
+   `test_signoff_accepts_a_roster_only_consultant_who_has_no_account` mirroring it for the
+   consultant side — both fields of the D9 split now have a dedicated audit-hardening regression,
+   not just the parity matrix.
+5. **`docs/spec/` has no page documenting the signature-provenance tokens** (`self`/`proxy`/
+   `withheld`/`none`/`draft`, now plus `unclaimed`) — the plan's Step 5 says to add `unclaimed` to
+   "whatever `docs/spec/` slice lists" them; `grep -rn "withheld" docs/spec` returns nothing. There
+   is nothing to update; the token set lives only in `resolveSignature()`'s own docblock, which
+   already carries the addition.
+
+`PickerParityTest` passed as specified on the first real run (167 assertions across 13 fixtures ×
+4 fields), needing no changes from the plan's own test body. Full suite 572 (up from 568): +1
+`PickerParityTest`, +1 `SignatureAttributionTest` (roster-only consultant), +1
+`SignatureAttributionTest` (unclaimed via reflection), +1 `AuditHardeningTest` (roster-only
+consultant accepted) — the `EndorsementSignoff` Vitest file's own new retired-option case is
+JS-side and does not count against the PHPUnit total. JS suite 102 (up from 101, +1 retired-option
+render case); `npm run build` green.
+
 ---
 
 ## Ten findings from reconnaissance that shape this plan

@@ -5,11 +5,13 @@ namespace App\Http\Controllers;
 use App\Models\AuditLog;
 use App\Models\Handover;
 use App\Models\HandoverSignoff;
+use App\Models\Person;
 use App\Models\Unit;
 use App\Models\UnitFieldDefinition;
 use App\Models\User;
 use App\Support\AccessControl;
 use App\Support\MissedDays;
+use App\Support\SignoffPickers;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -220,6 +222,13 @@ class EndorsementController extends Controller
 
         $rows = $this->rowsFor($u, $date);
 
+        // Fetched once and handed to both signoffPayload() and staffPickers(): the latter needs
+        // the STORED person ids so a value the current picker no longer offers is still shown,
+        // flagged retired, rather than silently dropped from the select (finding 9).
+        $signoffRow = HandoverSignoff::where('unit_id', $u->id)
+            ->whereDate('handover_date', $date)
+            ->first();
+
         // PDPL Art. 19 / HIPAA §164.312(b): READS of patient data are auditable events,
         // not just writes — "who looked at this child's handover, and when" is the
         // question an investigation actually asks. Unit id, date and a row COUNT only;
@@ -237,8 +246,8 @@ class EndorsementController extends Controller
             'rows' => $rows,
             // The viewer is passed so the sheet can state up front whether THIS user may reopen a
             // signed day, and who to ask if not.
-            'signoff' => $this->signoffPayload($u, $date, $request->user()),
-            'staff' => $this->staffPickers(),
+            'signoff' => $this->signoffPayload($u, $date, $request->user(), $signoffRow),
+            'staff' => $this->staffPickers($signoffRow),
             'timeOptions' => HandoverSignoff::TIME_OPTIONS,
         ]);
     }
@@ -295,19 +304,19 @@ class EndorsementController extends Controller
         $u = $this->resolveUnit($unit);
         $date = $this->normalizeDate($date);
 
-        // The id must be someone the picker would actually have OFFERED. A bare
-        // `exists:users,id` accepted any row in the table — including deactivated and
-        // soft-deleted accounts, consultants, and administrators — and the handler below
-        // then freezes that person's name AND their handwritten signature onto a
-        // medico-legal record. That made this a forgery path, not a tidiness issue.
-        $endorser = $this->pickerRule(self::ENDORSER_POSITIONS);
-        $consultant = $this->pickerRule(self::CONSULTANT_POSITIONS);
+        // The id must be someone the picker would actually have OFFERED, per field. A bare
+        // `exists:users,id` accepted any row in the table and the handler below then froze that
+        // person's name AND their handwritten signature onto a medico-legal record; D9 narrows
+        // it further — endorsers need a claimed, live account, consultants need only be an
+        // active person — and offer and rule come from one predicate so they cannot drift.
+        $endorser = SignoffPickers::rule(SignoffPickers::endorserPredicate());
+        $consultant = SignoffPickers::rule(SignoffPickers::consultantPredicate());
 
         $data = $request->validate([
-            'endorsed_by_user_id' => ['sometimes', 'nullable', 'integer', $endorser],
-            'endorsed_to_user_id' => ['sometimes', 'nullable', 'integer', $endorser],
-            'consultant_by_user_id' => ['sometimes', 'nullable', 'integer', $consultant],
-            'consultant_to_user_id' => ['sometimes', 'nullable', 'integer', $consultant],
+            'endorsed_by_person_id' => ['sometimes', 'nullable', 'integer', $endorser],
+            'endorsed_to_person_id' => ['sometimes', 'nullable', 'integer', $endorser],
+            'consultant_by_person_id' => ['sometimes', 'nullable', 'integer', $consultant],
+            'consultant_to_person_id' => ['sometimes', 'nullable', 'integer', $consultant],
             'endorsement_time' => ['sometimes', 'nullable', 'string', 'max:50'],
             'sign_off' => ['sometimes', 'boolean'],
         ]);
@@ -332,7 +341,7 @@ class EndorsementController extends Controller
         // Ruling 5 — WARD has ONE consultant field ("Consultant Oncall"), stored in
         // consultant_by_*. A submitted receiving consultant is dropped, not persisted.
         if (! $u->profile()->consultantPair) {
-            unset($data['consultant_to_user_id']);
+            unset($data['consultant_to_person_id']);
         }
 
         // Needed inside the picker loop below: whose handwriting may be applied depends on
@@ -341,14 +350,14 @@ class EndorsementController extends Controller
         $provenance = [];
 
         foreach (['endorsed_by', 'endorsed_to', 'consultant_by', 'consultant_to'] as $field) {
-            if (! array_key_exists($field.'_user_id', $data)) {
+            if (! array_key_exists($field.'_person_id', $data)) {
                 continue;
             }
 
-            $userId = $data[$field.'_user_id'];
-            $signoff->{$field.'_user_id'} = $userId;
+            $personId = $data[$field.'_person_id'];
+            $signoff->{$field.'_person_id'} = $personId;
             // Freeze the name at write time; a later rename must not rewrite a signed sheet.
-            $chosen = $userId === null ? null : User::find($userId);
+            $chosen = $personId === null ? null : Person::find($personId);
             $signoff->{$field.'_name'} = $chosen?->full_name;
 
             // The endorsers' SIGNATURES are frozen the same way and for the same reason:
@@ -389,9 +398,9 @@ class EndorsementController extends Controller
             }
         }
 
-        if ($signing && $signoff->endorsed_by_user_id === null) {
+        if ($signing && $signoff->endorsed_by_person_id === null) {
             throw ValidationException::withMessages([
-                'endorsed_by_user_id' => 'Select the endorsing clinician before signing off.',
+                'endorsed_by_person_id' => 'Select the endorsing clinician before signing off.',
             ]);
         }
 
@@ -924,9 +933,9 @@ class EndorsementController extends Controller
      *
      * @return array<string, mixed>
      */
-    private function signoffPayload(Unit $unit, string $date, ?User $viewer = null): array
+    private function signoffPayload(Unit $unit, string $date, ?User $viewer = null, ?HandoverSignoff $signoff = null): array
     {
-        $s = HandoverSignoff::where('unit_id', $unit->id)
+        $s = $signoff ?? HandoverSignoff::where('unit_id', $unit->id)
             ->whereDate('handover_date', $date)
             ->first();
 
@@ -949,43 +958,25 @@ class EndorsementController extends Controller
             // column existed. Resolving it live let a rename rewrite every historical sheet
             // and a deactivated account erase the attribution altogether.
             'signed_off_by_name' => $s?->signed_off_by_name ?? $s?->signedOffBy?->full_name,
-            'endorsed_by_user_id' => $s?->endorsed_by_user_id,
+            // The four named roles are PEOPLE since P0c/D9 (finding 3: `people.id` and `users.id`
+            // are independent sequences, so a field still named `*_user_id` here would silently
+            // carry a person id under a user-shaped name — exactly how the id-space confusion
+            // ships).
+            'endorsed_by_person_id' => $s?->endorsed_by_person_id,
             'endorsed_by_name' => $s?->endorsed_by_name,
             'endorsed_by_signature' => $isSignedOff ? self::signatureUrl($s?->endorsed_by_signature_path) : null,
-            'endorsed_to_user_id' => $s?->endorsed_to_user_id,
+            'endorsed_to_person_id' => $s?->endorsed_to_person_id,
             'endorsed_to_name' => $s?->endorsed_to_name,
             'endorsed_to_signature' => $isSignedOff ? self::signatureUrl($s?->endorsed_to_signature_path) : null,
-            'consultant_by_user_id' => $s?->consultant_by_user_id,
+            'consultant_by_person_id' => $s?->consultant_by_person_id,
             'consultant_by_name' => $s?->consultant_by_name,
-            'consultant_to_user_id' => $s?->consultant_to_user_id,
+            'consultant_to_person_id' => $s?->consultant_to_person_id,
             'consultant_to_name' => $s?->consultant_to_name,
             'endorsement_time' => $s?->endorsement_time,
             'reopened_at' => $s?->reopened_at?->format('Y-m-d H:i'),
             'reopen_reason' => $s?->reopen_reason,
         ];
     }
-
-    /**
-     * The roles that may be named as ENDORSED BY / ENDORSED TO — the clinician who personally
-     * handed over, and the one who personally received.
-     *
-     * RULING 6 — RESIDENTS ALONE, exactly as legacy sourced both pickers
-     * (`members WHERE position='4'`, `picu-endorsement-patients.php:397`). The reference app
-     * had widened this to [2,3,4]; the owner ruled to keep legacy parity. A CHIEF RESIDENT
-     * (5) is a resident clinically — promotion must not remove them from the handover.
-     *
-     * @var list<int>
-     */
-    private const ENDORSER_POSITIONS = [4, 5];
-
-    /**
-     * The roles offered for the two CONSULTANT fields. These name the COVERING / RECEIVING
-     * consultant — a different question from who personally handed over — so this list stays
-     * position 3 alone.
-     *
-     * @var list<int>
-     */
-    private const CONSULTANT_POSITIONS = [3];
 
     /**
      * The roles that may apply ANOTHER clinician's handwritten signature — owner ruling,
@@ -1000,19 +991,25 @@ class EndorsementController extends Controller
     private const SIGNATURE_PROXY_POSITIONS = [0, 5];
 
     /**
-     * Whose signature image this write may freeze, and why — the medico-legal heart of the
-     * sheet, so it answers in one place and records its reasoning.
+     * Whose signature image this write may freeze, and why — the medico-legal heart of the sheet,
+     * so it answers in one place and records its reasoning.
+     *
+     * The named party is a PERSON; the signature is on their ACCOUNT (`SignatureStore` is keyed
+     * on `users`, and `ProfileController::updateSignature()` binds to the session identity). That
+     * is precisely what keeps NAMING separate from SIGNING (P0c/D9): a consultant can be named
+     * without an account, but signing requires one.
      *
      * Returns [path|null, reason], where reason is one of:
-     *   self     — applied; the actor is the person named
-     *   proxy    — applied; the actor holds SIGNATURE_PROXY_POSITIONS
-     *   withheld — the named clinician HAS a signature, but this actor may not apply it
-     *   none     — nobody named, or the named clinician has no signature on file
-     *   draft    — this request does not attest the day, so nothing is frozen at all
+     *   self      — applied; the actor is the person named
+     *   proxy     — applied; the actor holds SIGNATURE_PROXY_POSITIONS
+     *   withheld  — the named clinician HAS a signature, but this actor may not apply it
+     *   unclaimed — the named person has no account, so there is no signature to apply
+     *   none      — nobody named, or the named clinician has no signature on file
+     *   draft     — this request does not attest the day, so nothing is frozen at all
      *
      * @return array{0: ?string, 1: string}
      */
-    private function resolveSignature(?User $actor, ?User $named, bool $signing): array
+    private function resolveSignature(?User $actor, ?Person $named, bool $signing): array
     {
         // An unsigned day carries no attestation, so it may carry no handwriting — not even
         // the drafter's own. Freezing on every save meant a draft could be printed with a
@@ -1021,30 +1018,35 @@ class EndorsementController extends Controller
             return [null, 'draft'];
         }
 
-        if ($named === null || $named->signature_path === null) {
+        if ($named === null) {
             return [null, 'none'];
         }
 
-        if ($actor !== null && $named->getKey() === $actor->getKey()) {
-            return [$named->signature_path, 'self'];
+        // Defence in depth: D9's rule already refuses an unclaimed endorser at validation, and
+        // consultants never reach this branch (no consultant signature columns exist). A distinct
+        // token means the audit trail can still say WHY, rather than reporting it as "no
+        // signature on file".
+        $account = $named->user;
+
+        if ($account === null) {
+            return [null, 'unclaimed'];
         }
 
-        if (in_array((int) $actor?->position, self::SIGNATURE_PROXY_POSITIONS, true)) {
-            return [$named->signature_path, 'proxy'];
+        if ($account->signature_path === null) {
+            return [null, 'none'];
+        }
+
+        if ($actor !== null && $account->getKey() === $actor->getKey()) {
+            return [$account->signature_path, 'self'];
+        }
+
+        if ($actor !== null && in_array((int) $actor->position, self::SIGNATURE_PROXY_POSITIONS, true)) {
+            return [$account->signature_path, 'proxy'];
         }
 
         return [null, 'withheld'];
     }
 
-    /**
-     * The staff pickers behind the four sign-off selects. Legacy left the two consultant fields as
-     * FREE TEXT — which is how a handover sheet ends up attesting to a misspelled name. Every list
-     * here is real, ACTIVE user accounts. The chosen NAME is frozen into a `*_name` snapshot at
-     * write time (updateSignoff), so a later rename or deactivation cannot rewrite a signed sheet;
-     * an inactive account is merely no longer OFFERED.
-     *
-     * @return array{endorsers: list<array{id: int, name: string}>, consultants: list<array{id: int, name: string}>}
-     */
     /**
      * Append the previous value of every tracked field that is actually changing.
      *
@@ -1137,62 +1139,29 @@ class EndorsementController extends Controller
     }
 
     /**
-     * The write-side twin of staffPickers(): the same population, expressed as a validation
-     * rule. Keep the two in step — if they drift, the server accepts endorsers the UI never
-     * offered, which is exactly the defect this closes.
+     * The staff pickers behind the four sign-off selects.
      *
-     * `position` moved to `people` (P0c) — `Rule::exists` runs on the raw query builder, which
-     * never sees the `SoftDeletes` global scope, so the correlated subquery needs
-     * `whereNull('deleted_at')` on BOTH tables explicitly (plan finding 8): a soft-deleted
-     * person's account, or a soft-deleted account, must not validate as an endorser. This keeps
-     * CURRENT behaviour exactly (both endorsers and consultants still need an account) — the D9
-     * split is Task 6's.
+     * Legacy left the two consultant fields as FREE TEXT — which is how a handover sheet ends up
+     * attesting to a misspelled name. Both lists are real rostered PEOPLE, and since D9 they are
+     * scoped differently: the endorser lists hold only people with a live account, because their
+     * signature is the evidence; the consultant list holds any active person, because the
+     * covering consultant is a name of record and frequently never logs in. The chosen NAME is
+     * frozen into a `*_name` snapshot at write time (updateSignoff), so a later rename cannot
+     * rewrite a signed sheet.
      *
-     * @param  list<int>  $positions
+     * @return array{endorsers: list<array{id: int, name: string, retired?: bool}>, consultants: list<array{id: int, name: string, retired?: bool}>}
      */
-    private function pickerRule(array $positions): \Illuminate\Validation\Rules\Exists
+    private function staffPickers(?HandoverSignoff $signoff): array
     {
-        return Rule::exists('users', 'id')->where(function ($query) use ($positions) {
-            $query->where('active', true)
-                ->whereNull('deleted_at')
-                ->whereIn('person_id', function ($sub) use ($positions) {
-                    $sub->select('id')
-                        ->from('people')
-                        ->whereIn('position', $positions)
-                        ->whereNull('deleted_at');
-                });
-        });
-    }
-
-    private function staffPickers(): array
-    {
-        /**
-         * P0c: `full_name`/`position` are read-through accessors resolved via the `person`
-         * relation, which needs `person_id` loaded — a narrow `get(['id', 'full_name'])` omits
-         * it and the accessor silently returns null (proven by a throwaway test; nothing in the
-         * existing suite asserts on picker NAMES, so this shipped broken with no red test until
-         * caught here). `select('users.*')` includes `person_id`, so the lazy `person` load
-         * resolves correctly. The join is for `people.position`/`people.full_name`, which are
-         * the only copies of those facts since P0c; this keeps CURRENT behaviour (both lists
-         * still require an account) — the D9 split (consultants need only the roster) is Task 6.
-         *
-         * @param  list<int>  $positions
-         */
-        $byPositions = function (array $positions): array {
-            return User::query()
-                ->join('people', 'people.id', '=', 'users.person_id')
-                ->whereIn('people.position', $positions)
-                ->where('users.active', true)
-                ->orderBy('people.full_name')
-                ->select('users.*')
-                ->get()
-                ->map(fn (User $u): array => ['id' => $u->id, 'name' => (string) $u->full_name])
-                ->all();
-        };
-
         return [
-            'endorsers' => $byPositions(self::ENDORSER_POSITIONS),
-            'consultants' => $byPositions(self::CONSULTANT_POSITIONS),
+            'endorsers' => SignoffPickers::offer(
+                SignoffPickers::endorserPredicate(),
+                $signoff?->endorsed_by_person_id ?? $signoff?->endorsed_to_person_id,
+            ),
+            'consultants' => SignoffPickers::offer(
+                SignoffPickers::consultantPredicate(),
+                $signoff?->consultant_by_person_id ?? $signoff?->consultant_to_person_id,
+            ),
         ];
     }
 

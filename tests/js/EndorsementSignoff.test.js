@@ -78,6 +78,30 @@ describe('Endorsement/Sheet — shift sign-off', () => {
         expect(names('endorsement-time')).toEqual(['Select', '7:30 Am', '15:30', 'Other time…']);
     });
 
+    /**
+     * P0c finding 9 — a stored id whose person is no longer OFFERED (deactivated, or a
+     * roster-only consultant demoted) must still render, flagged retired and disabled, rather
+     * than silently vanish. Sheet.vue resubmits all four ids on every save, and a `<select>` with
+     * no matching `<option>` renders blank and sends null on the next submit — silently clearing
+     * a recorded endorser on an unsigned day.
+     */
+    it('renders a retired staff option as disabled and labelled, without dropping it', () => {
+        const w = mountSheet({
+            staff: {
+                endorsers: [{ id: 7, name: 'Dr Alpha' }, { id: 99, name: 'Dr Gone', retired: true }],
+                consultants: staff.consultants,
+            },
+        });
+
+        const retiredOption = w.get('[data-testid="endorsed-by"] option[value="99"]');
+        expect(retiredOption.text()).toBe('Dr Gone (no longer offered)');
+        expect(retiredOption.attributes('disabled')).toBeDefined();
+
+        const liveOption = w.get('[data-testid="endorsed-by"] option[value="7"]');
+        expect(liveOption.text()).toBe('Dr Alpha');
+        expect(liveOption.attributes('disabled')).toBeUndefined();
+    });
+
     it('signs off with the selected staff and time', async () => {
         const w = mountSheet();
 
@@ -91,9 +115,9 @@ describe('Endorsement/Sheet — shift sign-off', () => {
         const [url, payload] = router.patch.mock.calls[0];
         expect(url).toBe('/endorsement/PICU/2026-07-10/signoff');
         expect(payload).toMatchObject({
-            endorsed_by_user_id: 7,
-            endorsed_to_user_id: 8,
-            consultant_by_user_id: 9,
+            endorsed_by_person_id: 7,
+            endorsed_to_person_id: 8,
+            consultant_by_person_id: 9,
             endorsement_time: '7:30 Am',
             sign_off: true,
         });

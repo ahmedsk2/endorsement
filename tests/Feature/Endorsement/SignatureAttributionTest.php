@@ -2,14 +2,17 @@
 
 namespace Tests\Feature\Endorsement;
 
+use App\Http\Controllers\EndorsementController;
 use App\Models\Handover;
 use App\Models\HandoverSignoff;
+use App\Models\Person;
 use App\Models\Unit;
 use App\Models\User;
 use Database\Seeders\AccessControlSeeder;
 use Database\Seeders\ReferenceSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
+use ReflectionMethod;
 use Tests\TestCase;
 
 /**
@@ -83,8 +86,8 @@ class SignatureAttributionTest extends TestCase
         $beta = $this->signer(4, 'Dr Beta');
 
         $this->actingAs($alpha)->patch('/endorsement/PICU/2026-07-10/signoff', [
-            'endorsed_by_user_id' => $alpha->id,
-            'endorsed_to_user_id' => $beta->id,
+            'endorsed_by_person_id' => $alpha->person_id,
+            'endorsed_to_person_id' => $beta->person_id,
             'sign_off' => true,
         ])->assertRedirect();
 
@@ -105,8 +108,8 @@ class SignatureAttributionTest extends TestCase
         $beta = $this->signer(4, 'Dr Beta');
 
         $this->actingAs($admin)->patch('/endorsement/PICU/2026-07-10/signoff', [
-            'endorsed_by_user_id' => $alpha->id,
-            'endorsed_to_user_id' => $beta->id,
+            'endorsed_by_person_id' => $alpha->person_id,
+            'endorsed_to_person_id' => $beta->person_id,
             'sign_off' => true,
         ])->assertRedirect();
 
@@ -123,8 +126,8 @@ class SignatureAttributionTest extends TestCase
         $beta = $this->signer(4, 'Dr Beta');
 
         $this->actingAs($chief)->patch('/endorsement/PICU/2026-07-10/signoff', [
-            'endorsed_by_user_id' => $alpha->id,
-            'endorsed_to_user_id' => $beta->id,
+            'endorsed_by_person_id' => $alpha->person_id,
+            'endorsed_to_person_id' => $beta->person_id,
             'sign_off' => true,
         ])->assertRedirect();
 
@@ -142,7 +145,7 @@ class SignatureAttributionTest extends TestCase
         $alpha = $this->signer(4, 'Dr Alpha');
 
         $this->actingAs($consultant)->patch('/endorsement/PICU/2026-07-10/signoff', [
-            'endorsed_by_user_id' => $alpha->id,
+            'endorsed_by_person_id' => $alpha->person_id,
             'sign_off' => true,
         ])->assertRedirect();
 
@@ -157,7 +160,7 @@ class SignatureAttributionTest extends TestCase
         $alpha = $this->signer(4, 'Dr Alpha');
 
         $this->actingAs($alpha)->patch('/endorsement/PICU/2026-07-10/signoff', [
-            'endorsed_by_user_id' => $alpha->id,
+            'endorsed_by_person_id' => $alpha->person_id,
         ])->assertRedirect();
 
         $s = $this->signoff();
@@ -176,7 +179,7 @@ class SignatureAttributionTest extends TestCase
         HandoverSignoff::create([
             'unit_id' => Unit::where('code', 'PICU')->firstOrFail()->id,
             'handover_date' => '2026-07-10',
-            'endorsed_by_user_id' => $alpha->id,
+            'endorsed_by_person_id' => $alpha->person_id,
             'endorsed_by_name' => 'Dr Alpha',
             'endorsed_by_signature_path' => $alpha->signature_path,
         ]);
@@ -199,7 +202,7 @@ class SignatureAttributionTest extends TestCase
         $alpha = $this->signer(4, 'Dr Alpha');
 
         $this->actingAs($alpha)->patch('/endorsement/PICU/2026-07-10/signoff', [
-            'endorsed_by_user_id' => $alpha->id,
+            'endorsed_by_person_id' => $alpha->person_id,
             'sign_off' => true,
         ])->assertRedirect();
 
@@ -221,8 +224,8 @@ class SignatureAttributionTest extends TestCase
         $beta = $this->signer(4, 'Dr Beta');
 
         $this->actingAs($alpha)->patch('/endorsement/PICU/2026-07-10/signoff', [
-            'endorsed_by_user_id' => $alpha->id,
-            'endorsed_to_user_id' => $beta->id,
+            'endorsed_by_person_id' => $alpha->person_id,
+            'endorsed_to_person_id' => $beta->person_id,
             'sign_off' => true,
         ])->assertRedirect();
 
@@ -233,5 +236,61 @@ class SignatureAttributionTest extends TestCase
         $this->assertStringContainsString('sig_to=withheld', $detail);
         $this->assertStringNotContainsString('Alpha', $detail);
         $this->assertStringNotContainsString('Beta', $detail);
+    }
+
+    /**
+     * D9 — a consultant may be a ROSTER-ONLY person, with no account at all. The name is still
+     * frozen exactly as for a claimed consultant; there is nothing to sign because the consultant
+     * fields carry no signature columns to begin with.
+     */
+    public function test_a_roster_only_consultant_is_accepted_and_named_with_no_signature_anywhere(): void
+    {
+        $alpha = $this->signer(4, 'Dr Alpha');
+        $oncall = Person::factory()->create(['position' => 3, 'full_name' => 'Dr Roster Oncall']);
+
+        $this->actingAs($alpha)->patch('/endorsement/PICU/2026-07-10/signoff', [
+            'endorsed_by_person_id' => $alpha->person_id,
+            'consultant_by_person_id' => $oncall->id,
+            'sign_off' => true,
+        ])->assertRedirect()->assertSessionHasNoErrors();
+
+        $s = $this->signoff();
+
+        $this->assertSame($oncall->id, $s->consultant_by_person_id);
+        $this->assertSame('Dr Roster Oncall', $s->consultant_by_name);
+        // The consultant fields carry no signature columns at all — proven directly on the
+        // schema, not merely by asserting a value is null, which a renamed column could still pass.
+        $this->assertArrayNotHasKey('consultant_by_signature_path', $s->getAttributes());
+        $this->assertArrayNotHasKey('consultant_to_signature_path', $s->getAttributes());
+    }
+
+    /**
+     * `resolveSignature()`'s `unclaimed` branch (P0c hazard 3): the named party is a PERSON, and
+     * `SignatureStore` stays keyed on `users` — a person can be named without an account, but
+     * signing requires one. D9's write-side rule already refuses an unclaimed endorser at
+     * validation, so this branch is UNREACHABLE through the HTTP endpoint and is exercised
+     * directly, as the defence-in-depth it is documented to be.
+     *
+     * Plan note: the plan describes constructing this "by deleting the account between draft and
+     * sign" over two HTTP requests. Traced through updateSignoff(): the freeze loop only calls
+     * resolveSignature() for a field present in THAT request's payload
+     * (`array_key_exists($field.'_person_id', $data)`), and D9's rule re-validates on every
+     * request that names the field — so a request that re-submits the now-unclaimed id is refused
+     * before resolveSignature() runs, and a request that omits the field never calls it at all.
+     * There is no two-request HTTP path that reaches this branch; reflection is the faithful way
+     * to prove the line is correct, exactly as its own docblock admits.
+     */
+    public function test_resolve_signature_reports_unclaimed_for_a_person_with_no_account(): void
+    {
+        $actor = User::factory()->create(['position' => 0]);
+        $rosterOnly = Person::factory()->create(['position' => 4, 'full_name' => 'Dr No Account']);
+
+        $method = new ReflectionMethod(EndorsementController::class, 'resolveSignature');
+        $method->setAccessible(true);
+
+        [$path, $why] = $method->invoke(new EndorsementController, $actor, $rosterOnly, true);
+
+        $this->assertNull($path);
+        $this->assertSame('unclaimed', $why);
     }
 }

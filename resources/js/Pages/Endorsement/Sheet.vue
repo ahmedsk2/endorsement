@@ -193,10 +193,10 @@ const newDay = () => {
  * freezes the chosen NAME at sign-off, so this record does not change if someone is later renamed.
  */
 const signForm = ref({
-    endorsed_by_user_id: props.signoff?.endorsed_by_user_id ?? '',
-    endorsed_to_user_id: props.signoff?.endorsed_to_user_id ?? '',
-    consultant_by_user_id: props.signoff?.consultant_by_user_id ?? '',
-    consultant_to_user_id: props.signoff?.consultant_to_user_id ?? '',
+    endorsed_by_person_id: props.signoff?.endorsed_by_person_id ?? '',
+    endorsed_to_person_id: props.signoff?.endorsed_to_person_id ?? '',
+    consultant_by_person_id: props.signoff?.consultant_by_person_id ?? '',
+    consultant_to_person_id: props.signoff?.consultant_to_person_id ?? '',
 });
 
 /*
@@ -221,10 +221,10 @@ const isSigned = computed(() => Boolean(props.signoff?.signed_off));
 
 const signPayload = (extra = {}) => ({
     // '' is the "nobody selected" option; send it as null so the server clears the field.
-    endorsed_by_user_id: signForm.value.endorsed_by_user_id || null,
-    endorsed_to_user_id: signForm.value.endorsed_to_user_id || null,
-    consultant_by_user_id: signForm.value.consultant_by_user_id || null,
-    consultant_to_user_id: signForm.value.consultant_to_user_id || null,
+    endorsed_by_person_id: signForm.value.endorsed_by_person_id || null,
+    endorsed_to_person_id: signForm.value.endorsed_to_person_id || null,
+    consultant_by_person_id: signForm.value.consultant_by_person_id || null,
+    consultant_to_person_id: signForm.value.consultant_to_person_id || null,
     endorsement_time: effectiveTime.value,
     ...extra,
 });
@@ -344,18 +344,22 @@ const submitReopen = () => {
                   @submit.prevent="submitSignoff(true)">
                 <div>
                     <label for="endorsed-by" class="channel-tag mb-1 block">Endorsed by</label>
-                    <select id="endorsed-by" v-model="signForm.endorsed_by_user_id" data-testid="endorsed-by"
+                    <select id="endorsed-by" v-model="signForm.endorsed_by_person_id" data-testid="endorsed-by"
                             class="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm text-ink focus:border-channel focus:outline-none">
                         <option value="">Select</option>
-                        <option v-for="s in staff.endorsers" :key="s.id" :value="s.id">{{ s.name }}</option>
+                        <option v-for="s in staff.endorsers" :key="s.id" :value="s.id" :disabled="s.retired">
+                            {{ s.retired ? `${s.name} (no longer offered)` : s.name }}
+                        </option>
                     </select>
                 </div>
                 <div>
                     <label for="endorsed-to" class="channel-tag mb-1 block">Endorsed to</label>
-                    <select id="endorsed-to" v-model="signForm.endorsed_to_user_id" data-testid="endorsed-to"
+                    <select id="endorsed-to" v-model="signForm.endorsed_to_person_id" data-testid="endorsed-to"
                             class="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm text-ink focus:border-channel focus:outline-none">
                         <option value="">Select</option>
-                        <option v-for="s in staff.endorsers" :key="s.id" :value="s.id">{{ s.name }}</option>
+                        <option v-for="s in staff.endorsers" :key="s.id" :value="s.id" :disabled="s.retired">
+                            {{ s.retired ? `${s.name} (no longer offered)` : s.name }}
+                        </option>
                     </select>
                 </div>
                 <!--
@@ -377,18 +381,22 @@ const submitReopen = () => {
                 <div>
                     <!-- Ruling 5 — WARD's single field is labelled "Consultant Oncall" (profile-driven). -->
                     <label for="consultant-by" class="channel-tag mb-1 block">{{ profile.consultant_by_label || 'Consultant covering' }}</label>
-                    <select id="consultant-by" v-model="signForm.consultant_by_user_id" data-testid="consultant-by"
+                    <select id="consultant-by" v-model="signForm.consultant_by_person_id" data-testid="consultant-by"
                             class="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm text-ink focus:border-channel focus:outline-none">
                         <option value="">Select</option>
-                        <option v-for="s in staff.consultants" :key="s.id" :value="s.id">{{ s.name }}</option>
+                        <option v-for="s in staff.consultants" :key="s.id" :value="s.id" :disabled="s.retired">
+                            {{ s.retired ? `${s.name} (no longer offered)` : s.name }}
+                        </option>
                     </select>
                 </div>
                 <div v-if="profile.consultant_pair !== false">
                     <label for="consultant-to" class="channel-tag mb-1 block">Consultant receiving</label>
-                    <select id="consultant-to" v-model="signForm.consultant_to_user_id" data-testid="consultant-to"
+                    <select id="consultant-to" v-model="signForm.consultant_to_person_id" data-testid="consultant-to"
                             class="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm text-ink focus:border-channel focus:outline-none">
                         <option value="">Select</option>
-                        <option v-for="s in staff.consultants" :key="s.id" :value="s.id">{{ s.name }}</option>
+                        <option v-for="s in staff.consultants" :key="s.id" :value="s.id" :disabled="s.retired">
+                            {{ s.retired ? `${s.name} (no longer offered)` : s.name }}
+                        </option>
                     </select>
                 </div>
                 <div class="flex items-end gap-2">

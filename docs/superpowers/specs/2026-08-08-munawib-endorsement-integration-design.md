@@ -269,9 +269,30 @@ D3 weakens invariants the 2026-07-26 audit hardened. These close the gaps:
 1. `password` and `member_name` are nullable **only** for non-claimed rows, enforced by a
    MySQL `CHECK` constraint — engine-level, not convention. The unique index on `member_name`
    tolerates multiple NULLs.
-2. **Authentication is gated in exactly one place.** A custom user provider refuses any row
-   whose `person_status <> 'claimed'` or `active = false`. A roster-only row can never
-   authenticate, hold a session, or be issued a token.
+2. **~~Authentication is gated in exactly one place — a custom user provider.~~ WRONG; corrected
+   2026-08-08 by P0c reconnaissance.** This application **never calls `Auth::attempt()`.**
+   `AuthenticatedSessionController` does `User::where('member_name', …)->first()` then
+   `Hash::check()` directly, so `EloquentUserProvider::validateCredentials()` is never invoked
+   and a custom provider would gate nothing. `Auth::login()` is called in exactly one place
+   (`app/Support/Login.php`), which is the real chokepoint for *session creation* — but not for
+   the other credential paths.
+
+   **Two consequences the plan must carry:**
+
+   a. **`active` cannot be the roster gate.** Six defences currently test `active` alone —
+      login (`AuthenticatedSessionController`), per-request revocation (`EnsureAccountActive`),
+      both 2FA challenge resolvers, `AccessControl::holdersOf()`, and `pickerRule()` /
+      `staffPickers()`. D9 requires consultant fields to name roster-only people, and the picker
+      offers `where('active', true)` — so satisfying D9 forces roster rows active and turns all
+      six into no-ops for precisely the rows that must never authenticate. `person_status =
+      'claimed'` must be added as a **separate, additional** predicate at every one of those
+      sites. Do not express the roster gate through `active`, and do not "solve" the picker by
+      deactivating roster rows.
+
+   b. **Every credential-granting path needs its own gate**, since there is no single provider to
+      put one in: password login, the password-reset broker (keyed by email, bypasses the
+      provider), email verification, the email-OTP challenge, trusted devices, and remember-me.
+      Each needs a test proving a `roster_only` row is refused.
 3. **The password-reset broker needs its own gate.** `password_reset_tokens` is keyed by email
    and does **not** pass through the user provider, so a `roster_only` row carrying a
    `member_email` — which imported rosters will — could request a reset link and mint itself an

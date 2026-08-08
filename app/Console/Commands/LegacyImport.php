@@ -36,6 +36,12 @@ use Throwable;
  * sanitized by the model cast exactly as a screen write would be. Day headers with no
  * parseable date are SKIPPED (nothing to attach them to) and counted as an expected
  * divergence. Output is counts only — never PHI, never hashes.
+ *
+ * This command deliberately BYPASSES `App\Support\SignoffPickers` (D9). A historical sign-off
+ * legitimately names a person who no longer qualifies as an endorser today — retired, no longer
+ * an account holder, moved off the roster — and "fixing" that on import would rewrite the
+ * medico-legal record of who actually endorsed the day. D9's offer/validation parity governs
+ * NEW writes only.
  */
 class LegacyImport extends Command
 {
@@ -199,13 +205,23 @@ class LegacyImport extends Command
         });
 
         // Nurses are excluded on both sides of the comparison (retired role, not imported).
+        $legacyNonNurseCount = (int) $legacy->table('members')->where('position', '!=', 1)->count();
+        $memberNames = $legacy->table('members')->where('position', '!=', 1)->pluck('member_name');
+
         $this->recordCount(
             'users',
-            (int) $legacy->table('members')->where('position', '!=', 1)->count(),
-            (int) DB::table('users')->whereIn(
-                'member_name',
-                $legacy->table('members')->where('position', '!=', 1)->pluck('member_name'),
-            )->count(),
+            $legacyNonNurseCount,
+            (int) DB::table('users')->whereIn('member_name', $memberNames)->count(),
+        );
+
+        // A member can match onto an ALREADY-EXISTING person (Person::matchByEmail) instead of
+        // creating one, so the distinct linked-people count can legitimately be lower than the
+        // legacy member count — that is a real merge, not a bug, and shows as an expected
+        // divergence in the reconciliation table rather than silently disappearing.
+        $this->recordCount(
+            'people',
+            $legacyNonNurseCount,
+            DB::table('users')->whereIn('member_name', $memberNames)->pluck('person_id')->unique()->count(),
         );
     }
 
@@ -328,21 +344,23 @@ class LegacyImport extends Command
         string $shape,
         int $institutionId,
     ): void {
-        // legacy member_id → [users.id, full_name]. Small table (~80 rows); resolved once.
+        // legacy member_id → [people.id, full_name]. Small table (~80 rows); resolved once.
+        // Resolution goes member_name → users → users.person_id, NOT member_name → people,
+        // because the legacy identity IS the login handle and only `users` carries it.
         $members = [];
 
         if (Schema::connection($legacy->getName())->hasTable('members')) {
-            $userIdByMemberName = DB::table('users')->pluck('id', 'member_name');
+            $personIdByMemberName = DB::table('users')->pluck('person_id', 'member_name');
 
             foreach ($legacy->table('members')->get(['member_id', 'member_name', 'full_name']) as $m) {
                 $members[(string) $m->member_id] = [
-                    'user_id' => $userIdByMemberName[(string) $m->member_name] ?? null,
+                    'person_id' => $personIdByMemberName[(string) $m->member_name] ?? null,
                     'name' => $m->full_name === null ? null : (string) $m->full_name,
                 ];
             }
         }
 
-        $resolve = fn (mixed $memberId): array => $members[(string) $memberId] ?? ['user_id' => null, 'name' => null];
+        $resolve = fn (mixed $memberId): array => $members[(string) $memberId] ?? ['person_id' => null, 'name' => null];
 
         $skipped = 0;
 
@@ -367,9 +385,11 @@ class LegacyImport extends Command
                         'institution_id' => $institutionId,
                         'unit_id' => $unitId,
                         'handover_date' => $date,
-                        'endorsed_by_user_id' => $by['user_id'],
+                        // *_user_id is the FROZEN legacy column (D9 wire rename, finding 3) —
+                        // deliberately left unset here, never written by this import.
+                        'endorsed_by_person_id' => $by['person_id'],
                         'endorsed_by_name' => $by['name'],
-                        'endorsed_to_user_id' => $to['user_id'],
+                        'endorsed_to_person_id' => $to['person_id'],
                         'endorsed_to_name' => $to['name'],
                         // Verbatim display label + derived minutes (one parser everywhere).
                         'endorsement_time' => $time,
@@ -385,7 +405,10 @@ class LegacyImport extends Command
                         $values['consultant_by_name'] = Plausibility::cleanMissing($r->consultantoncall ?? null);
                         $values['consultant_to_name'] = null;
                     } else {
-                        // Legacy free text — no account to resolve against.
+                        // Legacy free text — no account to resolve against, and no person
+                        // either. Historical consultant fields are a typed name and stay one;
+                        // D9's wider consultant scope applies to NEW writes, not to what legacy
+                        // recorded.
                         $values['consultant_by_name'] = Plausibility::cleanMissing($r->consultantby ?? null);
                         $values['consultant_to_name'] = Plausibility::cleanMissing($r->consultantto ?? null);
                     }

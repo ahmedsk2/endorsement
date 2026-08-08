@@ -1,7 +1,7 @@
 # Paediatric Endorsement System
 
-A departmental clinical platform. Two modules: **Endorsement** (shift handover, holds PHI)
-and **Rota** (duty scheduling, holds none) — see
+A departmental clinical platform. **Endorsement** (shift handover, holds PHI) is what exists
+today. **Rota** (duty scheduling, holds none) is planned, P1 onward — see the design doc,
 `docs/superpowers/specs/2026-08-08-munawib-endorsement-integration-design.md`.
 
 Endorsement covers handover ONLY: no registry, no scoring, no KPI dashboards (beyond the
@@ -72,9 +72,12 @@ SCBU and WARD are seed data for the QCH institution.
   (Nurse) is RETIRED — never revive it or reuse the number.
 - Unit variation lives in ONE place: the `units` row. `App\Support\UnitProfile` is the value
   object that shape travels in (`$unit->profile()`); it holds no per-unit values. Never
-  reintroduce a hardcoded unit list — `Unit::codes()` is the only source, and every code
-  lookup goes through `Unit::findByCode()` (the `code` mutator normalizes writes, not a
-  query's WHERE value). Units are opt-in `active`.
+  reintroduce a hardcoded unit list — `Unit::codes()` is the only source, and every lookup
+  built from user input goes through `Unit::findByCode()` (the `code` mutator normalizes
+  writes, not a query's WHERE value). Units are opt-in `active`. Two known exceptions, pending:
+  `resources/js/Layouts/AppLayout.vue` (sidebar nav) and `resources/css/app.css` (hue classes)
+  still hardcode the four units — a fifth department gets no nav entry or hue until those move
+  to configuration.
 
 ## Invariants the 2026-07-26 audit had to restore (don't regress these)
 

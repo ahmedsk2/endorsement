@@ -26,10 +26,14 @@ description of the code.
 | Print column 5 label | New events | To be followed | To be followed | To be followed |
 | Hue token | `--color-unit-picu` (existing value) | `--color-unit-nicu` (minted) | `--color-unit-scbu` (minted) | `--color-unit-ward` (minted) |
 
-Adding a department means inserting a `units` row and configuring these columns. No code changes.
+Adding a department means inserting a `units` row and configuring these columns; the chooser,
+day index, sheet, print and validation follow immediately. Two surfaces are **not** yet
+data-driven: the sidebar nav (`resources/js/Layouts/AppLayout.vue`) and the hue classes
+(`resources/css/app.css`) are still hardcoded for the four paediatric units, so a fifth
+department is reachable from the chooser but has no nav entry or hue until those move to
+configuration.
 
 - `/endorsement` renders a **four-unit chooser**: one card per unit with its hue bar, today's census count, and today's status (signed / in progress / no sheet), plus a banner when any unit is unfilled past handover time. No unit is privileged. **[RULING]**
-- Navigation has four unit entries plus the chooser.
 - All handover reads and writes are unit-partitioned: every query scopes by `unit_id`, and bare-row-ID endpoints verify the row's unit is an enabled unit (generalising the reference's `assertPicuRow`).
 
 ---

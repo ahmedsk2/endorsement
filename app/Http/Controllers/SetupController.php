@@ -37,7 +37,7 @@ class SetupController extends Controller
                 'active_method' => $user->activeTwoFactorMethod(),
             ],
             'reminders' => [
-                'units' => Unit::orderBy('id')->get(['id', 'code', 'name']),
+                'units' => Unit::query()->active()->ordered()->get(['id', 'code', 'name']),
                 'selected' => $user->reminderUnits()->pluck('units.id'),
                 'vapid_public_key' => (string) config('endorsement.vapid.public_key'),
             ],

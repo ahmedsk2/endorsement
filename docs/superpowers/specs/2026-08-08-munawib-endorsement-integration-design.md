@@ -535,6 +535,14 @@ None block starting P0.
 4. **The pseudonymised QHN block export** from Hassan (§11.2) — needed by P4, not before.
 5. Whether the existing `docs/spec/` slices are rewritten in place or superseded by a platform
    spec — a documentation decision, taken during P0.
+6. **Reserved unit codes.** `routes/web.php` declares `/endorsement/today`,
+   `/endorsement/compliance` and `/endorsement/rows/{handover}` before `/endorsement/{unit}`
+   specifically so those literal segments never bind as a unit code. That ordering trick stops
+   working once units are created through an admin UI: a unit with code `TODAY`, `COMPLIANCE`
+   or `ROWS` would be permanently route-shadowed by the earlier route and unreachable. This was
+   impossible while the unit registry was hardcoded; it becomes reachable the moment P0d/P0b
+   ships unit creation. A reserved-code guard (reject those three codes, case-insensitively, at
+   creation) is needed before any admin UI can create units.
 
 ---
 

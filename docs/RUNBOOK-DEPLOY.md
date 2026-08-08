@@ -353,11 +353,15 @@ confirm the backfill landed. Expect exactly four rows, none with a NULL `bar_cla
            consultant_by_label, bar_class, print_plan_label, print_narrative_label
     FROM units ORDER BY display_order;
 
-    -- code  display_order  active  extra_row_fields     bed_label  consultant_pair  consultant_by_label  bar_class         print_plan_label  print_narrative_label
-    -- PICU  1              1       []                   Bed        1                Consultant covering  channel-bar-picu  Plan Of Care      New events
-    -- NICU  2              1       ["dob"]              Bed        1                Consultant covering  channel-bar-nicu  Plan Of Care      To be followed
-    -- SCBU  3              1       ["dob"]              Bed        1                Consultant covering  channel-bar-scbu  Plan Of Care      To be followed
-    -- WARD  4              1       ["age","ward_unit"]  Room       0                Consultant Oncall    channel-bar-ward  Management        To be followed
+    -- code  display_order  active  extra_row_fields       bed_label  consultant_pair  consultant_by_label  bar_class         print_plan_label  print_narrative_label
+    -- PICU  1              1       []                     Bed        1                Consultant covering  channel-bar-picu  Plan Of Care      New events
+    -- NICU  2              1       ["dob"]                Bed        1                Consultant covering  channel-bar-nicu  Plan Of Care      To be followed
+    -- SCBU  3              1       ["dob"]                Bed        1                Consultant covering  channel-bar-scbu  Plan Of Care      To be followed
+    -- WARD  4              1       ["age", "ward_unit"]   Room       0                Consultant Oncall    channel-bar-ward  Management        To be followed
+
+MySQL 8.4 re-serializes a `JSON` column on `SELECT`, inserting a space after each comma — a
+multi-element `extra_row_fields` like WARD's above will read back as `["age", "ward_unit"]`
+even though it was written as `["age","ward_unit"]`. That is expected, not a corrupted row.
 
 Read columns by POSITION against the header above, not by eye against a neighbouring row —
 `consultant_pair` and `display_order`/`active` are all small integers next to each other, and

@@ -12,9 +12,6 @@ use Tests\TestCase;
  * mapping from row to value object, plus the `toArray()` client contract Vue depends on, all
  * against UNSAVED `new Unit([...])` models. This file stays database-free (extends
  * `Tests\TestCase` only for the Eloquent casts machinery — no `RefreshDatabase`, no seeding).
- *
- * The deprecated `codes()`/`for()` DB-backed shims need a real database and live in
- * `tests/Feature/Units/UnitProfileShimTest.php` instead.
  */
 class UnitProfileTest extends TestCase
 {

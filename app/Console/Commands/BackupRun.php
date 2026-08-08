@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\Instance;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
@@ -34,6 +35,9 @@ class BackupRun extends Command
 
     protected $description = 'Write an encrypted, verified database backup';
 
+    /** `Y-m-d_His`, as a glob. This is the anchor that stops slug `qch` matching slug `qch-2`. */
+    private const STAMP_GLOB = '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9]';
+
     public function handle(): int
     {
         $passphrase = (string) env('BACKUP_PASSPHRASE', '');
@@ -53,8 +57,9 @@ class BackupRun extends Command
         $dir = rtrim((string) ($this->option('path') ?: storage_path('backups')), '/\\');
         File::ensureDirectoryExists($dir);
 
+        $slug = Instance::slug();
         $stamp = now()->format('Y-m-d_His');
-        $plain = $dir.DIRECTORY_SEPARATOR."endorsement-{$stamp}.sql";
+        $plain = $dir.DIRECTORY_SEPARATOR."endorsement-{$slug}-{$stamp}.sql";
         $archive = $plain.'.gz.enc';
 
         $started = microtime(true);
@@ -79,14 +84,20 @@ class BackupRun extends Command
             }
         }
 
-        $signatures = $this->backupSignatures($dir, $stamp, $passphrase);
+        $signatures = $this->backupSignatures($dir, $slug, $stamp, $passphrase);
 
         $bytes = (int) filesize($archive);
         $seconds = round(microtime(true) - $started, 1);
 
-        $this->prune($dir, (int) $this->option('keep'));
+        $this->writeMeta($archive, $slug, $stamp, $bytes);
 
-        \App\Models\AuditLog::record('backup_created', 'bytes='.$bytes.' seconds='.$seconds, null, null);
+        $this->warnAboutLegacyArchives($dir);
+
+        $keep = (int) $this->option('keep');
+        $this->prune($dir, $keep, 'endorsement-'.$slug.'-'.self::STAMP_GLOB.'.sql.gz.enc');
+        $this->prune($dir, $keep, 'endorsement-'.$slug.'-'.self::STAMP_GLOB.'.sql.gz.enc.meta.json');
+
+        \App\Models\AuditLog::record('backup_created', 'instance='.$slug.' bytes='.$bytes.' seconds='.$seconds, null, null);
 
         if ($signatures !== null) {
             $this->info("Signature archive written: {$signatures}");
@@ -114,7 +125,7 @@ class BackupRun extends Command
      *
      * @return string|null the archive path, or null when there are no signatures yet
      */
-    private function backupSignatures(string $dir, string $stamp, string $passphrase): ?string
+    private function backupSignatures(string $dir, string $slug, string $stamp, string $passphrase): ?string
     {
         $source = storage_path('app/private/signatures');
 
@@ -122,7 +133,7 @@ class BackupRun extends Command
             return null;
         }
 
-        $tar = $dir.DIRECTORY_SEPARATOR."endorsement-signatures-{$stamp}.tar";
+        $tar = $dir.DIRECTORY_SEPARATOR."endorsement-signatures-{$slug}-{$stamp}.tar";
         $gz = $tar.'.gz';
         $archive = $gz.'.enc';
 
@@ -160,7 +171,8 @@ class BackupRun extends Command
             $this->shred($gz);
         }
 
-        $this->prune($dir, (int) $this->option('keep'), 'endorsement-signatures-*.tar.gz.enc');
+        $this->prune($dir, (int) $this->option('keep'),
+            'endorsement-signatures-'.$slug.'-'.self::STAMP_GLOB.'.tar.gz.enc');
 
         return $archive;
     }
@@ -390,8 +402,10 @@ class BackupRun extends Command
         @unlink($path);
     }
 
-    private function prune(string $dir, int $keep, string $pattern = 'endorsement-*.sql.gz.enc'): void
+    private function prune(string $dir, int $keep, ?string $pattern = null): void
     {
+        $pattern ??= 'endorsement-'.Instance::slug().'-'.self::STAMP_GLOB.'.sql.gz.enc';
+
         if ($keep < 1) {
             return;
         }
@@ -403,6 +417,88 @@ class BackupRun extends Command
             @unlink($old);
             $this->line('Pruned old archive: '.basename($old));
         }
+    }
+
+    /**
+     * The direct answer to "which APP_KEY opens this archive" — the question an operator
+     * standing in front of a bucket cannot answer today, because the only in-band identity is
+     * the ciphertext and reading it requires already knowing whose it is. Plaintext BY DESIGN:
+     * it must be readable without the passphrase. No secret, no path outside $dir, no PHI.
+     */
+    private function writeMeta(string $archive, string $slug, string $stamp, int $bytes): void
+    {
+        $meta = [
+            'slug' => $slug,
+            'stamp' => $stamp,
+            'bytes' => $bytes,
+            'app_key_fingerprint' => Instance::keyFingerprint(),
+            'hostname' => gethostname() ?: 'unknown',
+        ];
+
+        file_put_contents(
+            $archive.'.meta.json',
+            json_encode($meta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL,
+        );
+    }
+
+    /**
+     * Finding 4, widened per review Minor 3: slugging the filename means archives written
+     * before this change no longer match any glob, so they are never pruned automatically —
+     * and never eaten by another customer's retention either. That is not only the
+     * fully-unslugged pre-P0d shape: an archive written after this code shipped but before
+     * `INSTANCE_SLUG` was actually set in Coolify carries `Instance::slug()`'s fallback
+     * (`Str::slug(APP_NAME)`, e.g. `endorsement-paediatric-endorsement-<stamp>.sql.gz.enc`) —
+     * already slug-SHAPED, just under the wrong slug, so a glob for the unslugged shape alone
+     * misses it. Catch any archive, database or signature, whose slug segment is not the
+     * CURRENT slug. Warn, by count; never widen the prune pattern to reach them — the stamp
+     * anchoring there is what stops one slug's retention sweep eating another slug's archives.
+     */
+    private function warnAboutLegacyArchives(string $dir): void
+    {
+        $slug = Instance::slug();
+
+        $legacy = [
+            ...self::archivesWithForeignSlug($dir, 'endorsement-', '.sql.gz.enc', $slug),
+            ...self::archivesWithForeignSlug($dir, 'endorsement-signatures-', '.tar.gz.enc', $slug),
+        ];
+
+        if ($legacy === []) {
+            return;
+        }
+
+        $count = count($legacy);
+        $this->warn(
+            "{$count} archive(s) in this directory do not carry the current instance slug "
+            ."({$slug}) — including any written before INSTANCE_SLUG was set, which used a "
+            .'derived name rather than no slug at all — and are no longer pruned automatically. '
+            .'Confirm they belong to this instance, then remove or rename them once a '
+            .'current-slug archive has restored successfully: docs/RUNBOOK-BACKUP.md.'
+        );
+    }
+
+    /**
+     * Every archive this command writes is `{$prefix}{slug}-{stamp}{$suffix}`, or, from before
+     * a slug existed at all, `{$prefix}{stamp}{$suffix}` with no slug segment. Glob broadly on
+     * prefix/suffix, then parse the slug segment out of each match and keep only the ones that
+     * are not the current slug — that "not the unslugged shape" was finding 4's original,
+     * narrower check.
+     *
+     * @return array<int, string>
+     */
+    private static function archivesWithForeignSlug(string $dir, string $prefix, string $suffix, string $currentSlug): array
+    {
+        $pattern = '/^'.preg_quote($prefix, '/').'(?:(?<slug>.+)-)?'
+            .'\d{4}-\d{2}-\d{2}_\d{6}'.preg_quote($suffix, '/').'$/';
+
+        $found = [];
+
+        foreach (glob($dir.DIRECTORY_SEPARATOR.$prefix.'*'.$suffix) ?: [] as $path) {
+            if (preg_match($pattern, basename($path), $m) === 1 && ($m['slug'] ?? '') !== $currentSlug) {
+                $found[] = $path;
+            }
+        }
+
+        return $found;
     }
 
     private function hasBinary(string $name): bool

@@ -33,4 +33,18 @@ class Institution extends Model
     {
         return $this->hasMany(User::class);
     }
+
+    /**
+     * The single institution this deployment belongs to (D11: one database, one customer).
+     *
+     * Returns null when there is none — a deployment that has not been seeded — or when there
+     * is more than one, because in that case there is no right answer and guessing would stamp
+     * clinical provenance with a coin flip. Callers treat null as "leave it NULL".
+     */
+    public static function current(): ?self
+    {
+        $rows = static::query()->where('active', true)->limit(2)->get();
+
+        return $rows->count() === 1 ? $rows->first() : null;
+    }
 }

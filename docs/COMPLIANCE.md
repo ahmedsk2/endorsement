@@ -76,6 +76,30 @@ documented, satisfy them.
 > **Cross-border warning:** storing backups outside Saudi Arabia is a PDPL Art. 29 transfer,
 > and health data attracts the strictest treatment. Keep backups in-Kingdom.
 
+## Multi-customer isolation (P0d, 2026-08-08)
+
+The system is built to serve more than one hospital, each on its own deployment. **Isolation is
+by database, not by row (D11).** Each customer gets its own Compose stack, its own MySQL
+container, its own Docker volumes — nothing within one deployment's database is scoped by
+customer, because there is only ever one customer's data in it. Non-commingling and
+right-to-erasure are therefore true by construction and demonstrable by pointing at a dropped
+Docker volume, not by trusting a `WHERE` clause: no query anywhere in the application filters
+by customer, and a source-level test
+(`InstitutionProvenanceTest::test_no_query_filters_on_institution_id`) fails the build if one
+ever is added. `institution_id` **is provenance and in-instance grouping, not a control** — no
+claim in this document rests on it, and none should.
+
+Backups follow the same boundary. Each customer's nightly archive is named with that instance's
+slug (`endorsement-<slug>-<stamp>.sql.gz.enc`), pruned only against archives sharing that slug,
+and synced off-host to its **own dedicated bucket with its own credentials** — not a shared
+bucket with slug-prefixed paths (owner decision, 2026-08-08): a leaked or misconfigured sync for
+one customer cannot reach another's archives, offboarding is dropping a bucket, and "whose
+archive is this" is answered by location, not filename. Every customer's bucket stays
+in-Kingdom; PDPL Art. 29 applies per customer and is pinned at provisioning time
+(`docs/RUNBOOK-PROVISION.md`), not left to an operator's later judgement. An archive's name and
+its `.meta.json` sidecar carry only the instance slug, a byte count and a non-invertible
+`APP_KEY` fingerprint — never PHI, never a secret.
+
 ## Staff roster data — a new category, P0c (2026-08-08)
 
 Identity is now two tables. `people` holds personal data about staff — full name, `short_name`,
@@ -196,6 +220,33 @@ resolved live.
 **Attributable either way.** The audit trail records `sig_by` / `sig_to` as
 `self | proxy | withheld | none`, so a withheld signature can be distinguished from a
 clinician who has none on file — something the paper cannot show. No names, no PHI.
+
+### 3. Co-tenancy on the shared `coolify` Docker network (accepted, P0d, 2026-08-08)
+
+**The deviation.** Every customer's `app` container sits on the same external `coolify` Docker
+network — the network Coolify's own reverse proxy (Traefik) uses to reach every app it routes,
+shared with every other application on the host. `bootstrap/app.php:73-75` already documents
+that a co-tenant container can reach this application directly, bypassing Traefik's host-based
+routing entirely; and `docker-compose.production.yml`'s `TRUSTED_PROXIES` covers
+`172.16.0.0/12` (the private range Docker's default networks use), so a request arriving that
+way is inside the trusted-proxy range. A compromised neighbour on that shared network could
+therefore forge `X-Forwarded-For` — **reviving the forgeable-audit-IP and bypassable-lockout
+failure the 2026-07-26 security audit closed**, which CLAUDE.md lists as a standing invariant
+that must never regress.
+
+**What is NOT shared.** The database network (`internal`) is per-stack, bridge-only, and
+publishes no host port — customer A's app cannot reach customer B's MySQL under any
+circumstance. This deviation is scoped strictly to `app`-to-`app` reachability on `coolify`.
+
+**Why it is accepted rather than fixed.** Closing it means a separate host per customer — an
+infrastructure decision with real recurring cost, not something P0d's code changes could
+provide. The owner accepted the shared-network exposure rather than provision a second host,
+on the explicit condition below.
+
+**TRIGGER, verbatim: revisit before a second customer carries real patient data.** This is a
+specific, checkable gate — a second deployment going live with genuine PHI in it — not a
+general "revisit periodically." Recorded identically, so the same trigger is findable from
+every place an auditor might look: `docs/OPEN-DECISIONS.md` and `docs/PDPL-PACK.md`.
 
 ## Open items before go-live
 

@@ -17,6 +17,12 @@
 Everything the system needs from you, in the order it has to happen. The site is live and
 healthy; nothing below is a bug fix, it is the handover of the things only you can hold.
 
+**This checklist describes the first deployment (`qch`) and predates a second customer
+existing.** Provisioning a new customer instance from scratch is `docs/RUNBOOK-PROVISION.md`,
+not this file — several steps below (the Coolify project, the terminal-access command, the
+database operations) are specific to `qch`'s own Coolify app UUID and would need their own
+per-instance values for another customer.
+
 Terminal access, used by several steps — either **Coolify → clinical → endorsement →
 Terminal**, or:
 
@@ -176,9 +182,14 @@ Repeat it quarterly — `docs/RUNBOOK-BACKUP.md` has the recipe.
 ## 6b. Run the least-privilege grants
 
 ```bash
-docker exec -i $(docker ps -qf name=db-oo7d7si62yhyi7fx10hrck6q) \
-    sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot endorsement' < docs/sql/least-privilege.sql
+eval "$(sudo bash docker/instance-env.sh oo7d7si62yhyi7fx10hrck6q)" && \
+sed -e "s/{{DATABASE}}/$DBNAME/g" -e "s/{{USER}}/$DBUSER/g" docs/sql/least-privilege.sql | \
+sudo docker exec -i "$DB" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot '"$DBNAME"
 ```
+
+**Read the stderr line `instance-env.sh` prints and confirm the database name before piping
+anything into it** — never select the database container by matching the shared MySQL image
+name; with two customer stacks on one host that picks an arbitrary one.
 
 The mysql image auto-granted the application's user `ALL PRIVILEGES` — including `DROP`,
 and including `UPDATE`/`DELETE` on `audit_log`. So two things this system states as facts
@@ -195,7 +206,8 @@ tier could do.
 Verify it took by confirming both of these FAIL:
 
 ```bash
-docker exec -i $(docker ps -qf name=db-oo7d7si62yhyi7fx10hrck6q) sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot endorsement -e "UPDATE audit_log SET action=\"x\" WHERE id=1"'
+eval "$(sudo bash docker/instance-env.sh oo7d7si62yhyi7fx10hrck6q)" && \
+sudo docker exec -i "$DB" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot '"$DBNAME"' -e "UPDATE audit_log SET action=\"x\" WHERE id=1"'
 ```
 
 ## 7. Restrict `/register`

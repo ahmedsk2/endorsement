@@ -110,10 +110,17 @@ class ReferenceSeeder extends Seeder
             $unit->save();
         }
 
-        // Tenant anchor.
-        Institution::updateOrCreate(
-            ['code' => 'QCH'],
-            ['name' => 'Qatif Central Hospital', 'active' => true]
-        );
+        // The tenant anchor (D11) — one row, this deployment's customer. `name` is written on
+        // CREATE ONLY, for the same reason as the unit profile columns above: `updateOrCreate`
+        // with `name` in the payload silently reverted a customer's rename on every re-seed,
+        // and `db:seed --force` is a mandatory step of every deploy.
+        $institution = Institution::firstOrNew(['code' => (string) config('endorsement.institution.code')]);
+
+        if (! $institution->exists) {
+            $institution->name = (string) config('endorsement.institution.name');
+        }
+
+        $institution->active = true;
+        $institution->save();
     }
 }

@@ -1,5 +1,5 @@
 -- Least privilege + engine-enforced append-only audit log.
--- OWNER-RUN, once, against production. Not run by the app, not run by CI.
+-- OWNER-RUN, once per customer instance, against production. Not run by the app, not run by CI.
 --
 -- WHY: the mysql image auto-grants the application user ALL PRIVILEGES on its schema —
 -- including DROP, and including UPDATE/DELETE on audit_log. So two of this system's
@@ -9,11 +9,20 @@
 -- Anything that can reach the database with the app's own credential can violate both,
 -- and the audit trail is the compensating control named against most other risks.
 --
--- HOW TO RUN (from the db container, as root):
---   docker exec -i $(docker ps -qf name=db-oo7d7si62yhyi7fx10hrck6q) \
---       sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot endorsement' < docs/sql/least-privilege.sql
+-- SUBSTITUTE BEFORE RUNNING. On a customer whose database is not named after the first
+-- customer, the old hardcoded form failed HALFWAY: the REVOKE/GRANT errored (no such grant,
+-- no such user) while
+-- the audit_log triggers still applied to whatever schema the connection had selected. The
+-- operator saw the triggers listed by section 3 and concluded it had worked, leaving the
+-- runtime credential holding ALL PRIVILEGES — including DROP, and including UPDATE/DELETE on
+-- audit_log. The placeholders below make an unsubstituted run a syntax error instead.
 --
--- Substitute your real database and user names below if they differ from the defaults.
+-- HOW TO RUN (resolves the ONE running stack for <uuid>, or refuses — see
+-- docker/instance-env.sh; never select the database container by image ancestry):
+--
+--   eval "$(sudo bash docker/instance-env.sh <uuid>)" && \
+--   sed -e "s/{{DATABASE}}/$DBNAME/g" -e "s/{{USER}}/$DBUSER/g" docs/sql/least-privilege.sql | \
+--   sudo docker exec -i "$DB" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot '"$DBNAME"
 
 -- ---------------------------------------------------------------------------
 -- 1. Drop DDL from the runtime user.
@@ -29,9 +38,9 @@
 --   docker exec -e DB_USERNAME=root -e DB_PASSWORD="$MYSQL_ROOT_PASSWORD" \
 --       <app-container> php artisan migrate --force
 --
-REVOKE ALL PRIVILEGES ON `endorsement`.* FROM 'endorse'@'%';
+REVOKE ALL PRIVILEGES ON `{{DATABASE}}`.* FROM '{{USER}}'@'%';
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON `endorsement`.* TO 'endorse'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE ON `{{DATABASE}}`.* TO '{{USER}}'@'%';
 
 -- Deliberately NOT granted: CREATE, ALTER, DROP, INDEX, REFERENCES, CREATE TEMPORARY
 -- TABLES, LOCK TABLES, TRIGGER, CREATE ROUTINE, ALTER ROUTINE, EXECUTE, FILE, PROCESS,
@@ -82,7 +91,7 @@ FLUSH PRIVILEGES;
 -- ---------------------------------------------------------------------------
 -- 3. Verify (expect: no DDL in the grant line, and both triggers listed)
 -- ---------------------------------------------------------------------------
-SHOW GRANTS FOR 'endorse'@'%';
+SHOW GRANTS FOR '{{USER}}'@'%';
 SELECT TRIGGER_NAME, EVENT_MANIPULATION
   FROM information_schema.TRIGGERS
  WHERE EVENT_OBJECT_TABLE = 'audit_log';

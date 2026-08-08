@@ -240,12 +240,74 @@ class DeploymentInvariantsTest extends TestCase
         );
     }
 
-    public function test_the_deployment_sets_the_wards_timezone(): void
+    /**
+     * Hardcoded to 'UTC', config/app.php once ignored APP_TIMEZONE entirely and the container
+     * ran three hours behind the ward: reminders at 10:30 and 18:30 instead of 07:30 and 15:30,
+     * and a day boundary at 03:00 filing night-shift entries under the wrong date.
+     *
+     * Since D11 there is one deployment per customer and a customer may not be in the Kingdom,
+     * so the value is a variable — but it keeps Asia/Riyadh as its default, because an
+     * unset variable must not silently mean UTC and reintroduce the original fault.
+     */
+    public function test_the_deployment_timezone_is_settable_and_defaults_to_the_ward(): void
     {
-        $this->assertStringContainsString(
-            'APP_TIMEZONE: Asia/Riyadh',
+        $this->assertMatchesRegularExpression(
+            '/APP_TIMEZONE:\s*\$\{APP_TIMEZONE:-Asia\/Riyadh\}/',
             $this->compose(),
-            'the container must be told which timezone the ward is in',
+            'APP_TIMEZONE must be per-customer AND default to Asia/Riyadh: a customer outside '
+            .'Saudi Arabia cannot edit the shared compose file, and an unset variable must not '
+            .'mean UTC.',
+        );
+    }
+
+    /**
+     * P0d Task 1 taught `App\Support\Instance::slug()` to read `INSTANCE_SLUG`, and Task 3
+     * taught `ReferenceSeeder` to read `INSTITUTION_CODE`/`INSTITUTION_NAME` — but neither task
+     * added the variable to THIS file's `environment:` block, so a value set in Coolify's
+     * Environment Variables screen (exactly what `docs/RUNBOOK-PROVISION.md` and
+     * `scripts/new-instance.sh`'s printed block tell the owner to do) never reached the
+     * container's process environment at all: `--env-file`/Coolify variables are available for
+     * `${...}` interpolation WITHIN this compose file, not injected into the container unless a
+     * service's `environment:` block references them. Found empirically in Task 9's dress
+     * rehearsal — a throwaway instance configured with `INSTITUTION_CODE=TSA` seeded as `QCH`
+     * anyway, and `instance:show` reported the derived fallback slug instead of the configured
+     * one.
+     *
+     * The defaults matter as much as the passthrough: Laravel's `env('X', 'default')` returns
+     * `''`, NOT `'default'`, when the variable is PRESENT but empty — which is exactly what a
+     * bare `${INSTITUTION_CODE}` (no `:-` fallback) would put in the container's environment on
+     * the EXISTING live deployment, which has never set it in Coolify. That would have silently
+     * turned the live QCH institution's every re-seed into an empty institution code — a
+     * regression this plan's own premise ("today's value as its default") forbids. So the
+     * default must live in the compose interpolation, in the same `${VAR:-default}` shape as
+     * `APP_TIMEZONE`/`TRUSTED_PROXIES` above, not only in `config/endorsement.php`.
+     */
+    public function test_instance_and_institution_variables_reach_the_container(): void
+    {
+        $compose = $this->compose();
+
+        $this->assertMatchesRegularExpression(
+            '/INSTANCE_SLUG:\s*\$\{INSTANCE_SLUG:-\}/',
+            $compose,
+            'INSTANCE_SLUG must be passed through to the container (App\Support\Instance::slug() '
+            .'reads it via env()); an unset default of empty string is correct — Instance::slug() '
+            .'already treats an empty value as unconfigured and derives from APP_NAME.',
+        );
+
+        $this->assertMatchesRegularExpression(
+            '/INSTITUTION_CODE:\s*\$\{INSTITUTION_CODE:-QCH\}/',
+            $compose,
+            'INSTITUTION_CODE must be passed through AND default to QCH in the compose file '
+            .'itself — the existing live deployment has never set it in Coolify, and env() '
+            .'returns an empty string (not the PHP-side default) for a variable that is present '
+            .'but empty.',
+        );
+
+        $this->assertMatchesRegularExpression(
+            '/INSTITUTION_NAME:\s*\$\{INSTITUTION_NAME:-Qatif Central Hospital\}/',
+            $compose,
+            'INSTITUTION_NAME must be passed through AND default to "Qatif Central Hospital" in '
+            .'the compose file itself, for the same reason as INSTITUTION_CODE above.',
         );
     }
 }

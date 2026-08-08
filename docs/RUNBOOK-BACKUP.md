@@ -21,8 +21,14 @@ never rotate `APP_KEY` without re-encrypting first.
 ## 1. On the Oracle server
 
 ```bash
-# Long random passphrase, generated on the server, stored per section 0.
-openssl rand -base64 48
+# Long random passphrase, generated on the server, stored per section 0. ALPHANUMERIC ONLY —
+# not `openssl rand -base64`, which emits `+` and `/`. Coolify feeds this value through
+# `docker compose`, which performs `$`-interpolation on env values, so `+`/`/` are harmless but
+# a password containing `$` would be silently truncated into something weaker if this generator
+# were ever copied elsewhere. Consistent with every other generated secret in this system
+# (`scripts/new-instance.sh`'s `rnd()`, `docker/smoke.sh`'s throwaway credentials) — do not
+# "tidy" this back to `openssl rand -base64`.
+LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 48; echo
 ```
 
 Put it in the app's `.env` as `BACKUP_PASSPHRASE=...` (and nowhere else), then:
@@ -33,11 +39,20 @@ php artisan backup:run
 
 It dumps the database, gzips it, encrypts with `openssl enc -aes-256-cbc -pbkdf2`,
 **verifies the archive decrypts and decompresses**, shreds the plaintext dump, and prunes
-to the last 14 archives. It is already scheduled nightly at 01:30 — confirm the scheduler
-cron exists:
+to the last 14 archives sharing this instance's slug (`App\Support\Instance::slug()` —
+`docker-compose.production.yml`'s `INSTANCE_SLUG`). It is already scheduled nightly at 01:30 —
+confirm the scheduler is actually running, **not** by looking for a `schedule:run` cron entry:
+this container runs `schedule:work` continuously under `supervisord`
+(`docker/supervisord.conf`), which is what actually fires the nightly job. A `* * * * *
+php artisan schedule:run` cron **must not exist** on this host — installing one (the classic
+Laravel recipe, and tempting when provisioning a second instance from this page) runs the
+schedule a second time from outside the container, which cannot reach `php artisan` inside it
+without its own duplicate setup, and either drifts silently from the supervised copy or does
+nothing while looking configured. Confirm the real scheduler instead:
 
 ```bash
-* * * * * cd /path/to/app && php artisan schedule:run >> /dev/null 2>&1
+eval "$(sudo bash docker/instance-env.sh <uuid>)" && \
+sudo docker exec "$APP" ps aux | grep '[s]chedule:work'
 ```
 
 **Keep backups in Saudi Arabia.** Copying them to a region outside the Kingdom is a PDPL
@@ -59,11 +74,35 @@ still in-Kingdom.
 ## 3. Restore — practise this before you need it
 
 The archive is deliberately openssl-standard, so recovery needs **only openssl and the
-passphrase**, not this application:
+passphrase**, not this application. Archives are named
+`endorsement-<instance-slug>-YYYY-MM-DD_HHMMSS.sql.gz.enc` (P0d) — the slug is
+`App\Support\Instance::slug()` / `INSTANCE_SLUG`, e.g. `endorsement-qch-2026-08-11_013000.sql.gz.enc`
+for the live deployment. Each `.meta.json` sidecar beside an archive names its slug and the
+`APP_KEY` fingerprint that opens it, if you are holding a bucket full of these and need to
+confirm which is which before choosing a key:
 
 ```bash
-openssl enc -d -aes-256-cbc -pbkdf2 -in endorsement-YYYY-MM-DD_HHMMSS.sql.gz.enc | gunzip > restore.sql
+openssl enc -d -aes-256-cbc -pbkdf2 -in endorsement-<slug>-YYYY-MM-DD_HHMMSS.sql.gz.enc | gunzip > restore.sql
 ```
+
+**One-time cleanup, only on the deployment that predates P0d's slug rename.** Archives written
+before `INSTANCE_SLUG` was set are named without a slug
+(`endorsement-YYYY-MM-DD_HHMMSS.sql.gz.enc`, no instance token) and `backup:run` warns about
+their count on every run rather than pruning them — a slug-scoped glob cannot match them, and
+widening the glob to catch them would reopen the cross-customer deletion this rename exists to
+close. Once a slugged archive has been restored successfully at least once (proving the rename
+did not break anything), remove or rename the pre-slug archives by hand; do not leave
+`backup:run` warning forever.
+
+There is a **second, easy-to-miss generation** in between: archives written after this code
+landed but *before* `INSTANCE_SLUG=qch` was actually set in Coolify used
+`App\Support\Instance::slug()`'s fallback — `Str::slug(APP_NAME)` — so they are already
+slug-**shaped** (`endorsement-paediatric-endorsement-YYYY-MM-DD_HHMMSS.sql.gz.enc`), just under
+the wrong slug. Those do not match the unslugged warning above either, so `backup:run` now
+widens the warning to catch any archive — database **and** signature — whose slug segment is
+not the current one, not only the fully-unslugged shape. Same rule applies: fold them into the
+same by-hand cleanup once a current-slug archive has restored successfully; never widen the
+*prune* glob to reach them.
 
 ```bash
 mysql --ssl-verify-server-cert=0 -h db -u <user> -p <database> < restore.sql
@@ -79,7 +118,8 @@ nightly dump once; `backup:run` now selects the right flag by detecting the clie
 ### The signature archive
 
 `backup:run` writes a **second** file whenever any signatures exist:
-`endorsement-signatures-<stamp>.tar.gz.enc`. Copy it off-host with the database archive.
+`endorsement-signatures-<instance-slug>-<stamp>.tar.gz.enc`. Copy it off-host with the
+database archive.
 
 `handover_signoffs` stores the PATH of the signature frozen onto a sheet, not the bytes, so
 a database-only restore produces sheets that still say they are signed while every
@@ -87,7 +127,7 @@ signature renders as nothing — the attestation is the point of the document, a
 image silently weakens every historical one. Restore it into the app's private disk:
 
 ```bash
-openssl enc -d -aes-256-cbc -pbkdf2 -in endorsement-signatures-YYYY-MM-DD_HHMMSS.tar.gz.enc | tar xzf - -C storage/app/private/signatures
+openssl enc -d -aes-256-cbc -pbkdf2 -in endorsement-signatures-<slug>-YYYY-MM-DD_HHMMSS.tar.gz.enc | tar xzf - -C storage/app/private/signatures
 ```
 
 Files are content-addressed, so re-extracting an older archive over a newer one is safe:
@@ -106,6 +146,39 @@ the backup, or every encrypted column reads back as ciphertext.
 handover sheet opens, and `php artisan audit:verify` exits 0. A backup nobody has restored
 is a hypothesis, not a backup.
 
+**Running `audit:verify` against the scratch database, not the live one — this is not
+obvious and P0d Task 9's rehearsal got it wrong on the first attempt.** Running the command
+inside the already-booted app container with `docker exec -e DB_DATABASE=<scratch-db> ...
+php artisan audit:verify` does **not** work: `config:cache` bakes `DB_DATABASE` in at
+container boot, so the environment override on `docker exec` is silently ignored and the
+command verifies the **live** database instead — it still reports success, which looks like a
+completed drill but proves nothing about the restored copy. Two things are needed:
+
+`$MYSQL_ROOT_PASSWORD` exists only *inside* the db container's environment. Read it into a
+host-side variable first — the same `PW=` pattern `docs/RUNBOOK-DEPLOY.md` uses — and `$DB`/
+`$APP` come from `docker/instance-env.sh`, same as everywhere else in this document:
+`-e MYSQL_PWD="$MYSQL_ROOT_PASSWORD"` expands on the **host**, where that variable is unset, so
+it passes `-e MYSQL_PWD=` and dies with "Access denied for user 'root'".
+
+```bash
+eval "$(sudo bash docker/instance-env.sh <uuid>)" && \
+PW=$(sudo docker exec "$DB" printenv MYSQL_ROOT_PASSWORD)
+
+# 1. The app's least-privilege database user can only SELECT its own schema (docs/sql/least-privilege.sql)
+#    — grant it SELECT on the scratch database too, or the next step gets "Access denied".
+sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot \
+    -e "GRANT SELECT ON <scratch-db>.* TO '<app-db-user>'@'%'; FLUSH PRIVILEGES;"
+
+# 2. Force the ALREADY-RUNNING process to reconnect to the scratch database at runtime,
+#    since the cached config cannot be overridden by environment alone:
+sudo docker exec -u app "$APP" php artisan tinker --execute="
+config(['database.connections.mysql.database' => '<scratch-db>']);
+Illuminate\Support\Facades\DB::purge('mysql');
+echo Illuminate\Support\Facades\Artisan::call('audit:verify');
+echo Illuminate\Support\Facades\Artisan::output();
+"
+```
+
 **First drill done 2026-07-25**, on the live server before any patient data existed: the
 nightly archive decrypted, decompressed to 207 KB of SQL, and restored into a scratch MySQL
 8.4 database with all 24 tables and matching row counts. That also settled the open question
@@ -115,6 +188,15 @@ into MySQL 8.4.
 One expected discrepancy: `audit_log` will always have one row *more* in the live database
 than in the archive, because `backup:run` records its own `backup_created` entry after the
 dump is taken. That is ordering, not loss.
+
+**The per-instance drill register.** At N customers, "quarterly" is N obligations nobody is
+tracking unless the date is written down somewhere. Record, per instance: slug, date of last
+successful restore drill, who ran it, and the `APP_KEY` fingerprint confirmed against the
+archive's `.meta.json` sidecar.
+
+| Instance slug | Last drill | Run by | `APP_KEY` fingerprint confirmed |
+|---|---|---|---|
+| `qch` | 2026-07-25 | (record here) | (record here) |
 
 ## 4. What is deliberately NOT automated
 

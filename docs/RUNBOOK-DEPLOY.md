@@ -13,9 +13,17 @@ the PDPL data-residency position simple). Coolify 4.1.2, Traefik owns :80/:443 o
 | Coolify app | `endorsement` (Docker Compose build pack) |
 | Repo | `github.com/ahmedsk2/endorsement`, branch `main` |
 | Compose file | `/docker-compose.production.yml` |
+| Coolify app UUID | `oo7d7si62yhyi7fx10hrck6q` — pass this to `docker/instance-env.sh` |
+| Instance slug (`INSTANCE_SLUG`) | see Task 1/Task 10 owner-action note below; not yet confirmed set in Coolify |
 
 Identifiers (project/app/DNS-record/deploy-key UUIDs) are recorded in
 `ORACLE MCP/infra/state.env` as `ENDORSE_*`, alongside the other apps on this host.
+
+**A second customer gets its own row in this table and its own entry in
+`docs/RUNBOOK-PROVISION.md`.** Never reuse this deployment's UUID or slug for another
+customer, and never select the database container by matching the shared MySQL image name —
+with two stacks on one host that picks an arbitrary one. Every command below resolves a
+stack with `docker/instance-env.sh <uuid>`, which refuses rather than guessing.
 
 ---
 
@@ -127,7 +135,8 @@ It exists because three bugs reached a deployment while all 299 unit tests passe
 
 ## The host scripts are NOT deployed by a deploy
 
-Two scripts run on the HOST, outside the container, and are installed by hand:
+Two scripts run on the HOST, outside any container, and are installed by hand — **ONE
+binary each, shared by every customer instance**, taking the instance slug as `$1`:
 
     /usr/local/bin/endorsement-backup-sync     <- docker/backup-offhost-sync.sh
     /usr/local/bin/endorsement-uptime-check    <- docker/uptime-check.sh
@@ -138,27 +147,70 @@ heartbeat entirely, so a heartbeat URL placed on that server would have been pin
 nothing, while the repository said the feature existed. The repo was right about the code
 and wrong about reality, which is the worse way round.
 
-After changing either script, install it:
+### Per-instance config, `/etc/endorsement/<slug>.conf`, `0600 root:root`
+
+Both scripts refuse to run without a slug, and read everything instance-specific out of this
+file. Root-only: `HEARTBEAT_FILE` names a secret and `DEST` names the off-host copy of the
+clinical record.
+
+```sh
+# /etc/endorsement/qch.conf — one per customer instance.
+PROJECT_UUID=oo7d7si62yhyi7fx10hrck6q
+RCLONE_CONF=/etc/endorsement/rclone.conf
+DEST=oci-qch:endorsement-backups-qch
+PUBLIC_URL=https://endorse.towardpcc.com/up
+HEARTBEAT_FILE=/etc/endorsement/qch-heartbeat.url
+```
+
+**A separate bucket per customer, not a shared bucket with prefixes** (owner decision
+2026-08-08). Three reasons, all already true of this system: a dedicated bucket keeps one
+customer's health data from sitting alongside another's; the outstanding object-lock/retention
+rule applies per bucket, so a shared bucket makes one customer's retention policy another's;
+and the freshness check that treats an empty destination as a failure is only meaningful when
+the destination belongs to one customer — otherwise customer B's fresh upload would satisfy
+customer A's assertion, and A's backups could stop permanently while the heartbeat keeps
+firing.
+
+Cron, per instance:
+
+```cron
+5 2 * * *  /usr/local/bin/endorsement-backup-sync qch
+*/5 * * * * /usr/local/bin/endorsement-uptime-check qch
+```
+
+### Installing a change to either script
 
 ```bash
 scp -i ~/.ssh/oci_server docker/backup-offhost-sync.sh ubuntu@145.241.105.239:/tmp/s.sh
 ssh -i ~/.ssh/oci_server ubuntu@145.241.105.239 '
   sudo cp /usr/local/bin/endorsement-backup-sync /root/endorsement-backup-sync.$(date +%F).bak
   bash -n /tmp/s.sh && sudo install -m 0755 -o root -g root /tmp/s.sh /usr/local/bin/endorsement-backup-sync
-  sudo /usr/local/bin/endorsement-backup-sync; echo "exit=$?"'
+  sudo /usr/local/bin/endorsement-backup-sync qch; echo "exit=$?"'
 ```
 
-Back up first, syntax-check before installing, run it once, and roll back on a non-zero
-exit. These are the scripts that protect the only off-site copy of the clinical record, so
-"it looked fine" is not a verification.
+Back up first, syntax-check before installing, run it once **with the slug**, and roll back
+on a non-zero exit. These are the scripts that protect the only off-site copy of the clinical
+record, so "it looked fine" is not a verification.
+
+**Installing the new (slugged) binary breaks any old crontab entry that passes no slug** —
+the script now exits 2 immediately instead of running. Update the crontab in the SAME
+session you install the binary, and confirm both scripts run by hand (with the slug) before
+leaving the host. A script that exits 2 every night is safer than one that guesses which
+customer it is protecting, but only if someone notices — and the first night after an install
+is exactly when nobody is watching for it.
 
 ## Database operations (yours to run)
 
 Open a shell from **Coolify → the app → Terminal**, or over SSH:
 
 ```bash
-docker exec -it $(docker ps -qf name=app-oo7d7si62yhyi7fx10hrck6q) sh
+eval "$(sudo bash docker/instance-env.sh oo7d7si62yhyi7fx10hrck6q)" && sudo docker exec -it "$APP" sh
 ```
+
+**Read the stderr line `instance-env.sh` prints and confirm the database name is the
+customer you meant** before typing anything else — `instance-env.sh` refuses to guess when
+zero or more than one stack matches, but a UUID typo that happens to match a *different*
+real stack will not refuse, and this line is the only thing that catches it.
 
 ### Migrations need a privilege the app does not have
 
@@ -177,19 +229,32 @@ Setting `-e DB_USERNAME=root` on the exec does **not** work either: the config i
 boot, so `env()` is not consulted at runtime.
 
 So: grant, migrate, revoke. Run from the HOST (not inside the app container), so the root
-credential is read from the database container's own environment and never typed or logged:
+credential is read from the database container's own environment and never typed or logged.
+
+**Never select the database container by matching the shared MySQL image name** — with two
+customer stacks on one host that picks an arbitrary one, and the `GRANT ALTER` / `migrate` /
+`REVOKE` sequence below then lands coherently on the **wrong customer's clinical database**.
+`docker/instance-env.sh` resolves the one stack matching a Coolify app UUID, or refuses:
 
 ```bash
-APP=$(sudo docker ps -qf name=app-oo7d7si62yhyi7fx10hrck6q | head -1)
-DB=$(sudo docker ps -qf ancestor=mysql:8.4 | head -1)
-PW=$(sudo docker exec "$DB" printenv MYSQL_ROOT_PASSWORD)
-DBNAME=$(sudo docker exec "$DB" printenv MYSQL_DATABASE)
-DBUSER=$(sudo docker exec "$DB" printenv MYSQL_USER)
-
-sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "GRANT ALTER ON \`$DBNAME\`.* TO '$DBUSER'@'%'; FLUSH PRIVILEGES;"
-sudo docker exec -u app "$APP" php artisan migrate --force
-sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "REVOKE ALTER ON \`$DBNAME\`.* FROM '$DBUSER'@'%'; FLUSH PRIVILEGES;"
+eval "$(sudo bash docker/instance-env.sh oo7d7si62yhyi7fx10hrck6q)" && \
+PW=$(sudo docker exec "$DB" printenv MYSQL_ROOT_PASSWORD) && \
+sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "GRANT ALTER ON \`$DBNAME\`.* TO '$DBUSER'@'%'; FLUSH PRIVILEGES;" && {
+  sudo docker exec -u app "$APP" php artisan migrate --force; rc=$?
+  sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "REVOKE ALTER ON \`$DBNAME\`.* FROM '$DBUSER'@'%'; FLUSH PRIVILEGES;"
+  echo "migrate exit=$rc"
+}
 ```
+
+Two different jobs are chained here, and they are meant to fail differently. Up to and
+including the `GRANT`, `&&` is load-bearing: `instance-env.sh` prints `false` on refusal, so
+nothing downstream runs at all — that refusal must abort everything. Past the `GRANT`, the
+brace group runs the `REVOKE` **unconditionally**, whatever `migrate` did: a failed migration
+is exactly the moment `ALTER` must not linger on the runtime credential while you stop to
+debug it. `rc` captures the migration's real exit code and `migrate exit=$rc` prints it back —
+anything but `0` means stop and investigate the migration before doing anything else, but the
+schema privilege is already gone either way. **Read the stderr line `instance-env.sh` prints
+and confirm the database name is the customer you meant** before typing anything else.
 
 `MYSQL_PWD` rather than `-p"$PW"` keeps the credential out of the container's process list.
 `-u app` keeps the artisan process unprivileged inside the container. **Verify the revoke
@@ -455,3 +520,76 @@ catch a copy-instead-of-join:
 
 Rows here are people who were renamed after signing (legitimate) OR a mis-joined backfill
 (not). Read them; do not assume.
+
+---
+
+## Verifying the 2026-08-11 institution backfill
+
+### 2026_08_11_120001_backfill_institution_on_identity_rows
+
+`institution_id` is grouping/provenance (D11), never a filter — see
+`App\Models\Institution::current()` and `InstitutionProvenanceTest::
+test_no_query_filters_on_institution_id`. This migration only fills nulls on `people` and
+`users` when exactly one active institution exists; it makes no change and is silent about
+it otherwise.
+
+```sql
+-- Both must return 0 on an instance that has been seeded.
+SELECT COUNT(*) FROM users  WHERE institution_id IS NULL;
+SELECT COUNT(*) FROM people WHERE institution_id IS NULL;
+
+-- And there must be exactly ONE institution. More than one means the backfill made no change
+-- and every count above is expected to be non-zero.
+SELECT id, code, name, active FROM institutions;
+```
+
+A non-zero `users` count is not automatically a failed backfill: an invitation issued
+*before* this migration ran can carry a NULL `institution_id`, and the accept path
+(`InvitationAcceptController`) copies it forward verbatim — so a registration completed
+*after* the upgrade, from an invite issued *before* it, still yields a NULL user. Check
+`invitations.institution_id` on the offending row before treating this as a bug.
+
+---
+
+## OWNER ACTION — confirm `INSTANCE_SLUG=qch` is actually set, before the next deploy
+
+The identifiers table above says "not yet confirmed set in Coolify" because of two things,
+layered:
+
+1. **P0d Task 1** added `INSTANCE_SLUG` to `config/endorsement.php` and asked the owner to set
+   `INSTANCE_SLUG=qch` in Coolify's Environment Variables screen for the `endorsement` app,
+   before the deploy that carries that commit — so the first slug-named archive is already
+   named `qch`, not a fallback derived from `APP_NAME`.
+2. **P0d Task 9's dress rehearsal found that step alone would not have worked.**
+   `docker-compose.production.yml`'s `app` service never passed `INSTANCE_SLUG` (or
+   `INSTITUTION_CODE`/`INSTITUTION_NAME`) through to the container — Coolify's Environment
+   Variables screen makes a value available for `${...}` interpolation *within* the compose
+   file, not automatically present in the container's process environment, and this file's
+   `environment:` block never referenced any of the three. Setting the variable in Coolify,
+   by itself, had no effect. Fixed in the same commit that found it (compose file +
+   `DeploymentInvariantsTest::test_instance_and_institution_variables_reach_the_container`);
+   full account in `docs/RUNBOOK-PROVISION.md`'s rehearsal appendix.
+
+So, once a deploy carrying that fix ships:
+
+1. Confirm `INSTANCE_SLUG=qch` is set in Coolify's Environment Variables screen for the
+   `endorsement` app (set it now if it was never done, per Task 1 Step 8).
+2. Deploy.
+3. Confirm it actually reached the container:
+
+   ```bash
+   eval "$(sudo bash docker/instance-env.sh oo7d7si62yhyi7fx10hrck6q)" && \
+   sudo docker exec "$APP" printenv INSTANCE_SLUG
+   ```
+
+   Expect `qch`. An empty result (the variable prints nothing, exit 1) means the deploy does
+   not yet carry the compose fix, or the Coolify variable was never set — do not proceed to
+   the next backup window believing this is done until this command prints `qch`.
+4. Or, once `php artisan instance:show` exists on the deployed image, prefer it — it reports
+   the slug alongside the institution, timezone and every owner-managed secret's configured
+   state in one command, with no secret value printed.
+5. Do this **before** the next `01:30` backup — the archive name is derived at the moment
+   `backup:run` executes, not retroactively, so a backup taken before this is confirmed still
+   gets the un-derived fallback name.
+6. Update the identifiers table row above once confirmed: replace "not yet confirmed set in
+   Coolify" with the confirmation date.

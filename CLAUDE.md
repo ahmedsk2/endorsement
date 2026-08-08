@@ -55,6 +55,27 @@ SCBU and WARD are seed data for the QCH institution.
   allow-list does not apply — and an allow-list keyed on `unit_field_definitions` would
   actively delete a value from history the moment its definition is retired. A clinical value
   must survive the removal of the definition that produced it.
+- **ONE DATABASE PER CUSTOMER (D11).** The isolation boundary is the database, not the row.
+  `institution_id` is provenance and in-instance grouping — never a query filter; row-level
+  tenancy fails open, and the schema is one-way committed against it (several UNIQUE indexes —
+  `units.code`, `people.email`, `users.member_name`, `handover_signoffs(unit_id,
+  handover_date)`, among others — are institution-blind by design; see D11,
+  `docs/superpowers/plans/2026-08-08-p0d-tenancy-provisioning.md`).
+  `App\Support\Instance::slug()` is the one token
+  that tells two deployments apart: it names the backup archive, scopes that archive's own
+  retention sweep, and names the host scripts' config/log/state files — and it must be wired
+  through `docker-compose.production.yml`'s `environment:` block with an explicit
+  `${VAR:-default}`, not just added to `config/`, or Coolify's Environment Variables screen has
+  no effect (P0d Task 9 found this empirically: two new variables shipped in Tasks 1 and 3 with
+  no compose passthrough, so setting them did nothing). Operator commands select a stack with
+  `docker/instance-env.sh <uuid>`, never by image ancestry.
+- `APP_TIMEZONE` is per customer and must be correct BEFORE the first clinical write: `now()`
+  moves with it, so the handover day boundary moves under existing rows. (It is not an
+  audit-chain hazard — v3 hashes stored datetimes verbatim for exactly that reason.)
+- Secrets that pass through Coolify are 48-character ALPHANUMERIC. `docker compose`
+  $-interpolates env values, so a `$` in a password is silently truncated into something
+  weaker. `APP_KEY` and `BACKUP_PASSPHRASE` are stored in DIFFERENT places — a backup and its
+  key never sit together, and both are needed to read an archive.
 
 ## Toolchain (this machine)
 

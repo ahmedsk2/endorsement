@@ -205,7 +205,10 @@ class User extends Authenticatable
     }
 
     /**
-     * The institution (tenant) this user belongs to.
+     * The institution this user's account belongs to — provenance and in-instance grouping
+     * (D11), NOT a security boundary. The isolation boundary is the database, not this column;
+     * never use it to scope a clinical query. See
+     * docs/superpowers/plans/2026-08-08-p0d-tenancy-provisioning.md.
      *
      * @return BelongsTo<Institution, $this>
      */

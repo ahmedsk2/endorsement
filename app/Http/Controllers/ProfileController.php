@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
+use App\Models\Person;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -68,15 +70,25 @@ class ProfileController extends Controller
                 'required', 'email', 'max:255',
                 Rule::unique('users', 'member_email')->ignore($user->getKey()),
                 Rule::unique('pending_registrations', 'member_email'),
+                Rule::unique('people', 'email')->ignore($user->person_id),
             ],
         ]);
 
-        // Explicit field list — nothing else from the request can reach the model.
-        $user->update([
-            'full_name' => $data['full_name'],
-            'member_name' => $data['member_name'],
-            'member_email' => $data['member_email'],
-        ]);
+        // The address lives twice on purpose (P0c finding 6): `users.member_email` because
+        // Laravel's password broker resolves accounts by that column, `people.email` because it
+        // is the roster's contact address and the import matching key. They are written together,
+        // here and at exactly two other sites, and never anywhere else.
+        DB::transaction(function () use ($user, $data): void {
+            $user->update([
+                'member_name' => $data['member_name'],
+                'member_email' => $data['member_email'],
+            ]);
+
+            $user->person?->update([
+                'full_name' => $data['full_name'],
+                'email' => Person::normalizeEmail($data['member_email']),
+            ]);
+        });
 
         AuditLog::record(
             'profile_update',

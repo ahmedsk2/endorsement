@@ -153,7 +153,10 @@ class InvitationController extends Controller
             ->whereNull('accepted_at')
             ->whereNull('revoked_at')
             ->where('expires_at', '>', now())
-            ->with('invitedBy:id,full_name')
+            // `full_name` is a read-through accessor since P0c: it resolves via the `person`
+            // relation, which needs `person_id` loaded — a narrow `id,full_name` constraint
+            // omits it and the accessor silently returns null even though the row was fetched.
+            ->with('invitedBy:id,person_id')
             ->orderByDesc('id')
             ->get()
             ->map(fn (Invitation $i) => [

@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Person;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 
@@ -21,13 +22,21 @@ class E2eSeeder extends Seeder
             throw new \RuntimeException('E2eSeeder must never run in production.');
         }
 
+        $person = Person::updateOrCreate(
+            ['email' => 'e2e-admin@example.org'],
+            [
+                'full_name' => 'E2E Administrator',
+                'position' => 0,
+                'active' => true,
+            ],
+        );
+
         User::updateOrCreate(
             ['member_name' => 'admin'],
             [
-                'full_name' => 'E2E Administrator',
+                'person_id' => $person->id,
                 'member_email' => 'e2e-admin@example.org',
                 'password' => 'AdminPass123!',
-                'position' => 0,
                 'active' => true,
                 'pass_exp_date' => now()->format('Y-m-d'),
                 // Past first-login setup. RequireSetup redirects every route to /setup while

@@ -98,15 +98,21 @@ class AccessControl
             ->pluck('user_id')
             ->all();
 
+        // `people` carries `position` and `full_name` since P0c, so the inverse of
+        // capabilitiesFor() joins it. `select('users.*')` is mandatory: without it the join
+        // clobbers `id` with people.id and every caller gets the wrong key.
         return User::query()
-            ->where('active', true)
+            ->join('people', 'people.id', '=', 'users.person_id')
+            ->whereNull('people.deleted_at')
+            ->where('users.active', true)
             ->where(function ($q) use ($positions, $granted): void {
                 // A role default OR an explicit per-user grant is enough to hold it.
-                $q->whereIn('position', $positions === [] ? [-1] : $positions)
-                    ->orWhereIn('id', $granted === [] ? [-1] : $granted);
+                $q->whereIn('people.position', $positions === [] ? [-1] : $positions)
+                    ->orWhereIn('users.id', $granted === [] ? [-1] : $granted);
             })
-            ->when($denied !== [], fn ($q) => $q->whereNotIn('id', $denied))
-            ->orderBy('full_name')
+            ->when($denied !== [], fn ($q) => $q->whereNotIn('users.id', $denied))
+            ->orderBy('people.full_name')
+            ->select('users.*')
             ->get()
             ->all();
     }

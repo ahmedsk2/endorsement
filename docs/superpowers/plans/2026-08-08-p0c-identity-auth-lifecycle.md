@@ -68,8 +68,48 @@ survives** and is implemented in Task 6.
 
 ## Amendments made during execution
 
-*(None yet. Record here what actually shipped and why, before treating any task text below as
-current — see the P0a plan for the precedent.)*
+**Task 2, 2026-08-08 — three sites the plan's enumeration missed, all found by grep + empirical
+test runs, not by inspection alone:**
+
+1. **`app/Console/Commands/LegacyImport.php::importUsers()` had to move onto `people` inside
+   Task 2, not Task 7.** It writes `users` via a raw query-builder upsert that never set
+   `person_id`. That's harmless while `users.full_name`/`users.position` still exist, but Task
+   2's own read-through accessors need `person_id` to resolve `$user->position`/`->full_name` —
+   so as soon as the accessors landed, `LegacyImportTest::test_users_import_with_verbatim_hashes`
+   went red (`$user->position` resolved to null), independently of Task 3's drop. Fixed by
+   pulling Task 7 Step 2's already-specified `importUsers()` rewrite (match-or-create a `person`
+   per legacy member, matched by existing `member_name` → `person_id` for idempotence, falling
+   back to `Person::matchByEmail()`) forward into this commit. Task 7 still owns
+   `importSignoffsFor()`'s person-id resolution and its own dedicated test coverage
+   (idempotence/matching assertions) — only the minimum needed to keep this commit green shipped
+   here.
+2. **A read-through `Attribute` accessor is not satisfied by a narrower SELECT that omits
+   `person_id`, even when the query correctly joins `people`.** `$user->full_name`/`->position`
+   always run the accessor (`$this->person?->full_name`), which needs `person_id` loaded to
+   resolve the relation — a `select('people.full_name', ...)` without `person_id` populates the
+   raw attribute with the *correct* value and then the accessor throws it away and returns null.
+   Caught empirically (a throwaway test), not by the plan. Three live sites, none of them
+   caught by the existing suite because nothing asserted on the actual name/position text
+   returned:
+   - `AccessControlController::index()`'s `users` picker — plan's own specified code
+     (`select('users.id', 'users.member_name', 'people.full_name', 'people.position')`) had this
+     bug; changed to `select('users.*')` + explicit `->map()`.
+   - `EndorsementController::staffPickers()` — `get(['id', 'full_name'])` had the same bug;
+     joined `people` and switched to `select('users.*')`, preserving current behaviour exactly
+     (both endorsers and consultants still require an account — the D9 split stays Task 6's).
+   - `InvitationController::openInvitations()` — `->with('invitedBy:id,full_name')` had the same
+     bug; changed to `->with('invitedBy:id,person_id')`.
+3. **`Eloquent\Builder::value()` does `first([$column])`, a narrow select with the identical
+   problem** — `tests/Feature/Console/CreateAdminCommandTest.php:96` used
+   `User::where(...)->value('position')` and got null for the same reason. Fixed the test to read
+   through a full model fetch (`->firstOrFail()->position`) instead; no application code used
+   this pattern.
+
+`EndorsementController::pickerRule()` was deliberately left untouched in Task 2 — its raw
+`whereIn('position', …)` still works today (the real column exists until Task 3) and it isn't
+read through an accessor, so it wasn't broken by Task 2. It has to change before Task 3 drops
+the column; that happens as part of Task 3, immediately before the drop, using the same
+`people`-join shape and preserving current behaviour (not D9's split).
 
 ---
 

@@ -93,7 +93,10 @@ class CreateAdminCommandTest extends TestCase
             ->expectsQuestion('Confirm password', 'Str0ng-pass!x')
             ->assertExitCode(1);
 
-        $this->assertSame(4, User::where('member_name', 'ahmed')->value('position'));
+        // Not ->value('position'): Eloquent's value() does first([$column]), a narrow SELECT
+        // that omits person_id, and the read-through accessor (P0c) needs it to resolve the
+        // person. A full row fetch loads person_id, so the accessor works as it does in the app.
+        $this->assertSame(4, User::where('member_name', 'ahmed')->firstOrFail()->position);
     }
 
     public function test_it_writes_an_audit_entry_without_the_password(): void

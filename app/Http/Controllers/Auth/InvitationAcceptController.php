@@ -86,12 +86,25 @@ class InvitationAcceptController extends Controller
 
             $now = now();
 
-            $userId = DB::table('users')->insertGetId([
+            // The person, carrying the name/role of record (P0c). Task 8 rewrites this to
+            // match-or-create against the invitation's own person; for now this keeps the tree
+            // green by giving every claimed account a linked person, as Task 1's invariant
+            // requires.
+            $personId = DB::table('people')->insertGetId([
                 'institution_id' => $locked->institution_id,
-                // FROM THE INVITATION, never from the request.
-                'position' => $locked->position,
-                'member_email' => $locked->member_email,
                 'full_name' => $data['full_name'],
+                'position' => $locked->position,   // FROM THE INVITATION, never from the request
+                'email' => \App\Models\Person::normalizeEmail($locked->member_email),
+                'external' => false,
+                'active' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            $userId = DB::table('users')->insertGetId([
+                'person_id' => $personId,
+                'institution_id' => $locked->institution_id,
+                'member_email' => $locked->member_email,
                 'member_name' => $data['member_name'],
                 'password' => Hash::make($data['password']),
                 'active' => true,

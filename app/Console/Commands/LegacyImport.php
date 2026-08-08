@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Handover;
 use App\Models\HandoverSignoff;
+use App\Models\Person;
 use App\Support\Plausibility;
 use Illuminate\Console\Command;
 use Illuminate\Database\ConnectionInterface;
@@ -146,13 +147,43 @@ class LegacyImport extends Command
                         continue;
                     }
 
+                    $email = Person::normalizeEmail(Plausibility::cleanMissing($r->member_email ?? null));
+
+                    // The account, if this member has been imported before (idempotent re-run).
+                    $existingUser = DB::table('users')->where('member_name', (string) $r->member_name)->first();
+
+                    // Match onto an existing PERSON before creating one: an imported roster and a
+                    // legacy members table describe the same humans, and `people.email` is unique,
+                    // so a blind insert would either 23000-crash mid-import or duplicate a person.
+                    // P0c pulled this forward from Task 7 — Task 2's read-through accessors need
+                    // every `users` row to carry a `person_id`, and this command minted rows
+                    // without one.
+                    $personId = $existingUser->person_id
+                        ?? (Person::matchByEmail($email)?->getKey());
+
+                    $personAttributes = [
+                        'institution_id' => $institutionId,
+                        'full_name' => (string) ($r->full_name ?? $r->member_name),
+                        'position' => $r->position === null ? 1 : (int) $r->position,
+                        'email' => $email,
+                        'active' => (bool) $r->active,
+                        'updated_at' => $now,
+                    ];
+
+                    if ($personId === null) {
+                        $personId = DB::table('people')->insertGetId(
+                            $personAttributes + ['external' => false, 'created_at' => $now]
+                        );
+                    } else {
+                        DB::table('people')->where('id', $personId)->update($personAttributes);
+                    }
+
                     // Query-builder upsert on purpose: the model's 'hashed' cast would
                     // re-hash the already-bcrypt legacy hash and lock everyone out.
                     DB::table('users')->upsert([[
+                        'person_id' => $personId,
                         'member_name' => (string) $r->member_name,
-                        'full_name' => $r->full_name,
                         'member_email' => Plausibility::cleanMissing($r->member_email ?? null),
-                        'position' => $r->position === null ? 1 : (int) $r->position,
                         'active' => (bool) $r->active,
                         'pass_exp_date' => $this->cleanDate($r->pass_exp_date ?? null),
                         'password' => (string) $r->member_password,
@@ -160,8 +191,8 @@ class LegacyImport extends Command
                         'created_at' => $now,
                         'updated_at' => $now,
                     ]], ['member_name'], [
-                        'full_name', 'member_email', 'position', 'active',
-                        'pass_exp_date', 'password', 'institution_id', 'updated_at',
+                        'person_id', 'member_email', 'active', 'pass_exp_date',
+                        'password', 'institution_id', 'updated_at',
                     ]);
                 }
             });

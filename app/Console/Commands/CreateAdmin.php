@@ -3,10 +3,13 @@
 namespace App\Console\Commands;
 
 use App\Models\AuditLog;
+use App\Models\Person;
 use App\Models\User;
 use App\Support\PasswordPolicy;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 
 /**
  * Creates the FIRST administrator on a clean database.
@@ -54,7 +57,10 @@ class CreateAdmin extends Command
             [
                 'member_name' => ['required', 'string', 'max:50', 'unique:users,member_name'],
                 'full_name' => ['required', 'string', 'max:100'],
-                'member_email' => ['required', 'email', 'max:150', 'unique:users,member_email'],
+                'member_email' => [
+                    'required', 'email', 'max:150', 'unique:users,member_email',
+                    Rule::unique('people', 'email'),
+                ],
                 'password' => PasswordPolicy::rules(),
             ],
         );
@@ -67,18 +73,26 @@ class CreateAdmin extends Command
             return self::FAILURE;
         }
 
-        $user = User::create([
-            'member_name' => $username,
-            'full_name' => $fullName,
-            'member_email' => $email,
-            'password' => $password,          // hashed by the model's `hashed` cast
-            'position' => 0,                  // Admin
-            'active' => true,
-            // Verified on creation: SMTP is configured in-app, AFTER login, so gating the
-            // bootstrap admin behind an email would deadlock the system it exists to open.
-            'email_verified_at' => now(),
-            'pass_exp_date' => now()->addYear()->format('Y-m-d'),
-        ]);
+        $user = DB::transaction(function () use ($username, $fullName, $email, $password): User {
+            $person = Person::create([
+                'full_name' => $fullName,
+                'position' => 0,                  // Admin
+                'email' => Person::normalizeEmail($email),
+                'active' => true,
+            ]);
+
+            return User::create([
+                'person_id' => $person->id,
+                'member_name' => $username,
+                'member_email' => $email,
+                'password' => $password,          // hashed by the model's `hashed` cast
+                'active' => true,
+                // Verified on creation: SMTP is configured in-app, AFTER login, so gating the
+                // bootstrap admin behind an email would deadlock the system it exists to open.
+                'email_verified_at' => now(),
+                'pass_exp_date' => now()->addYear()->format('Y-m-d'),
+            ]);
+        });
 
         // Identifiers and counts only — never the password, never the hash.
         AuditLog::record('admin_bootstrapped', 'user_id='.$user->id, $user->id, 'console');

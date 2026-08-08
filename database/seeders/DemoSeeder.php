@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Handover;
+use App\Models\Person;
 use App\Models\Unit;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -34,13 +35,23 @@ class DemoSeeder extends Seeder
         ];
 
         foreach ($accounts as [$name, $full, $position]) {
+            $email = $name.'@demo.example.org';
+
+            $person = Person::updateOrCreate(
+                ['email' => $email],
+                [
+                    'full_name' => $full,
+                    'position' => $position,
+                    'active' => true,
+                ],
+            );
+
             User::updateOrCreate(
                 ['member_name' => $name],
                 [
-                    'full_name' => $full,
-                    'member_email' => $name.'@demo.example.org',
+                    'person_id' => $person->id,
+                    'member_email' => $email,
                     'password' => 'demo-pass-1234',
-                    'position' => $position,
                     'active' => true,
                     'pass_exp_date' => now()->format('Y-m-d'),
                 ],

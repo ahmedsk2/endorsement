@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -24,9 +25,7 @@ class User extends Authenticatable
     protected $fillable = [
         'institution_id',
         'person_id',
-        'position',
         'preferred_unit_id',
-        'full_name',
         'member_name',
         'member_email',
         'password',
@@ -64,7 +63,6 @@ class User extends Authenticatable
         return [
             'password' => 'hashed',
             'active' => 'boolean',
-            'position' => 'integer',
             'pass_exp_date' => 'date',
             // MFA (B4): the TOTP secret and recovery codes are encrypted at rest so a DB
             // read alone never yields a usable second factor.
@@ -75,6 +73,31 @@ class User extends Authenticatable
             'signature_updated_at' => 'datetime',
             'last_login_at' => 'datetime',
         ];
+    }
+
+    /**
+     * The name of record, read through the person (P0c).
+     *
+     * `users.full_name` is dropped by 2026_08_10_120003; this accessor exists so that the ~40
+     * PHP reads of `$user->full_name` — the signed-off-by snapshot, the print header, the Inertia
+     * props, the OTP mail — need no change at all. Only the handful of SQL-level reads
+     * (`orderBy('full_name')`) had to move, and they are listed in the P0c plan.
+     */
+    protected function fullName(): Attribute
+    {
+        return Attribute::make(get: fn (): ?string => $this->person?->full_name);
+    }
+
+    /**
+     * The job role, read through the person (P0c). Capability resolution
+     * (App\Support\AccessControl::resolve) keys off this, and so does the two-factor privilege
+     * classifier — so there must be exactly one copy of it, and it is the roster's.
+     */
+    protected function position(): Attribute
+    {
+        return Attribute::make(
+            get: fn (): ?int => $this->person === null ? null : (int) $this->person->position,
+        );
     }
 
     /** The account's e-mail address is confirmed (a link sent to it was opened). */
@@ -182,16 +205,6 @@ class User extends Authenticatable
     public function person(): BelongsTo
     {
         return $this->belongsTo(Person::class);
-    }
-
-    /**
-     * The role catalog row matching this user's `position`.
-     *
-     * @return BelongsTo<Position, $this>
-     */
-    public function role(): BelongsTo
-    {
-        return $this->belongsTo(Position::class, 'position');
     }
 
     /**

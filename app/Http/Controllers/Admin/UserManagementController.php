@@ -69,8 +69,10 @@ class UserManagementController extends Controller
                     'requested_at' => $p->requested_at?->toIso8601String(),
                 ]),
             'users' => User::query()
-                ->when(! $all, fn ($q) => $q->where('position', self::RESIDENT))
-                ->orderBy('full_name')
+                ->join('people', 'people.id', '=', 'users.person_id')
+                ->when(! $all, fn ($q) => $q->where('people.position', self::RESIDENT))
+                ->orderBy('people.full_name')
+                ->select('users.*')
                 ->get()
                 ->map(fn (User $u): array => [
                     'id' => $u->id,
@@ -132,13 +134,25 @@ class UserManagementController extends Controller
         $userId = DB::transaction(function () use ($pending): int {
             $now = now();
 
+            // The person, carrying the name/role of record (P0c) — created first so the account
+            // insert below can link to it.
+            $personId = DB::table('people')->insertGetId([
+                'institution_id' => $pending->institution_id,
+                'full_name' => $pending->full_name,
+                'position' => (int) $pending->position,
+                'email' => \App\Models\Person::normalizeEmail($pending->member_email),
+                'external' => false,
+                'active' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
             // Query-builder insert (NOT the Eloquent model): the pending hash must land in
             // `users.password` byte-for-byte — the `hashed` cast would treat a model write as
             // a value to (re)derive, so it is bypassed the way LegacyImport copies members.
             $userId = DB::table('users')->insertGetId([
+                'person_id' => $personId,
                 'institution_id' => $pending->institution_id,
-                'position' => (int) $pending->position,
-                'full_name' => $pending->full_name,
                 'member_name' => $pending->member_name,
                 'member_email' => $pending->member_email,
                 'password' => $pending->getRawOriginal('password'),
@@ -211,6 +225,11 @@ class UserManagementController extends Controller
 
         $user->update(['active' => $active]);
 
+        // Deactivating a leaver must stop them being NAMED as well as stop them logging in. The
+        // two flags answer different questions (P0c) and the admin screen offers one control, so
+        // this is where they are kept in step.
+        $user->person?->update(['active' => $active]);
+
         AuditLog::record(
             $active ? 'user_activate' : 'user_deactivate',
             'user='.$user->id,
@@ -239,7 +258,7 @@ class UserManagementController extends Controller
             ]);
         }
 
-        $user->update(['position' => $position]);
+        $user->person?->update(['position' => $position]);
 
         // The role drives the capability set — bust this user's cached resolution at once.
         AccessControl::flush((int) $user->getKey());
@@ -278,14 +297,25 @@ class UserManagementController extends Controller
                 'required', 'email', 'max:255',
                 Rule::unique('users', 'member_email')->ignore($user->getKey())->withoutTrashed(),
                 Rule::unique('pending_registrations', 'member_email'),
+                Rule::unique('people', 'email')->ignore($user->person_id),
             ],
         ]);
 
-        $user->update([
-            'full_name' => $data['full_name'],
-            'member_name' => $data['member_name'],
-            'member_email' => $data['member_email'],
-        ]);
+        // The address lives twice on purpose (P0c finding 6): `users.member_email` because
+        // Laravel's password broker resolves accounts by that column, `people.email` because it
+        // is the roster's contact address and the import matching key. They are written together,
+        // here and at exactly two other sites, and never anywhere else.
+        DB::transaction(function () use ($user, $data): void {
+            $user->update([
+                'member_name' => $data['member_name'],
+                'member_email' => $data['member_email'],
+            ]);
+
+            $user->person?->update([
+                'full_name' => $data['full_name'],
+                'email' => \App\Models\Person::normalizeEmail($data['member_email']),
+            ]);
+        });
 
         // Ids only — a name/email IS the identifying data this edit touches, so it must not be
         // echoed into the audit detail.
@@ -368,10 +398,13 @@ class UserManagementController extends Controller
             return false;
         }
 
+        // `whereKeyNot` is avoided here: it filters on the unqualified `id` column, which is
+        // ambiguous once `people` is joined (both tables have one). `users.id` explicitly.
         return ! User::query()
-            ->whereKeyNot($user->getKey())
-            ->where('position', 0)
-            ->where('active', true)
+            ->join('people', 'people.id', '=', 'users.person_id')
+            ->where('users.id', '!=', $user->getKey())
+            ->where('people.position', 0)
+            ->where('users.active', true)
             ->exists();
     }
 }

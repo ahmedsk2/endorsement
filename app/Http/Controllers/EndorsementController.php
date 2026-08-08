@@ -1154,13 +1154,26 @@ class EndorsementController extends Controller
 
     private function staffPickers(): array
     {
-        /** @param list<int> $positions */
+        /**
+         * P0c: `full_name`/`position` are read-through accessors resolved via the `person`
+         * relation, which needs `person_id` loaded — a narrow `get(['id', 'full_name'])` omits
+         * it and the accessor silently returns null (proven by a throwaway test; nothing in the
+         * existing suite asserts on picker NAMES, so this shipped broken with no red test until
+         * caught here). `select('users.*')` includes `person_id`, so the lazy `person` load
+         * resolves correctly. The join is for `people.position`/`people.full_name`, which are
+         * the only copies of those facts since P0c; this keeps CURRENT behaviour (both lists
+         * still require an account) — the D9 split (consultants need only the roster) is Task 6.
+         *
+         * @param  list<int>  $positions
+         */
         $byPositions = function (array $positions): array {
             return User::query()
-                ->whereIn('position', $positions)
-                ->where('active', true)
-                ->orderBy('full_name')
-                ->get(['id', 'full_name'])
+                ->join('people', 'people.id', '=', 'users.person_id')
+                ->whereIn('people.position', $positions)
+                ->where('users.active', true)
+                ->orderBy('people.full_name')
+                ->select('users.*')
+                ->get()
                 ->map(fn (User $u): array => ['id' => $u->id, 'name' => (string) $u->full_name])
                 ->all();
         };

@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\Holiday;
 use App\Models\Institution;
 use App\Models\Period;
 use Carbon\CarbonImmutable;
@@ -41,12 +42,22 @@ final class Calendar
     /** Defaults for a deployment whose institution row does not exist yet. */
     private const DEFAULT_WEEKEND = [5, 6];
 
+    public const DAY_WEEKDAY = 'WD';
+
+    public const DAY_WEEKEND = 'WE';
+
+    public const DAY_HOLIDAY = 'HOL';
+
     private static ?array $settings = null;
+
+    /** @var list<Holiday>|null */
+    private static ?array $holidays = null;
 
     /** Tests and long-running processes must be able to drop the memoized settings. */
     public static function flush(): void
     {
         self::$settings = null;
+        self::$holidays = null;
     }
 
     public static function timezone(): string
@@ -188,18 +199,75 @@ final class Calendar
     }
 
     /**
+     * The active holiday rules matching `$date` — usually zero, occasionally more than one
+     * (a department could define an overlapping regional holiday alongside a national one).
+     *
+     * Walks BACKWARDS from `$date` up to `duration_days - 1` days, asking each candidate rule
+     * whether it is ANCHORED there (`Holiday::anchoredOn()`). Duration is counted in GREGORIAN
+     * days throughout, so a span defined in Hijri terms that crosses a Hijri month end (the run
+     * into Eid al-Fitr, say) needs no special case — see `HolidayTest`'s month-end case.
+     *
+     * @return list<Holiday>
+     */
+    public static function holidaysOn(DateTimeInterface|string $date): array
+    {
+        $day = self::coerce($date);
+        $matches = [];
+
+        foreach (self::activeHolidays() as $holiday) {
+            for ($back = 0; $back < $holiday->duration_days; $back++) {
+                if ($holiday->anchoredOn($day->subDays($back))) {
+                    $matches[] = $holiday;
+
+                    break;
+                }
+            }
+        }
+
+        return $matches;
+    }
+
+    public static function isHoliday(DateTimeInterface|string $date): bool
+    {
+        return self::holidaysOn($date) !== [];
+    }
+
+    /**
+     * SL-03's day type. HOLIDAY WINS OVER WEEKEND — a coverage template that asks for holiday
+     * staffing must get it on a holiday that happens to fall on a Friday, not weekend staffing.
+     *
+     * NEVER consulted by `App\Support\MissedDays` (owner decision 6) — the compliance
+     * denominator counts every calendar day exactly as it always has, and routing it through
+     * day-type knowledge the system did not previously have would silently change every
+     * historical compliance figure. See `MissedDays`' own docblock and
+     * `HolidayTest::test_missed_days_denominator_is_unaffected_by_a_holiday`.
+     */
+    public static function dayType(DateTimeInterface|string $date): string
+    {
+        if (self::isHoliday($date)) {
+            return self::DAY_HOLIDAY;
+        }
+
+        return self::isWeekend($date) ? self::DAY_WEEKEND : self::DAY_WEEKDAY;
+    }
+
+    /**
      * The one shape every screen renders a date as (UX-04).
      *
-     * @return array{date:string, hijri:string, weekend:bool}
+     * @return array{date:string, hijri:string, weekend:bool, holiday:?string, day_type:string}
      */
     public static function label(DateTimeInterface|string $date): array
     {
         $day = self::coerce($date);
+        $holidays = self::holidaysOn($day);
 
         return [
             'date' => $day->format(self::YMD),
             'hijri' => self::hijriLabel($day),
             'weekend' => self::isWeekend($day),
+            // The first matching rule's name; a screen needs one label, not a list.
+            'holiday' => $holidays === [] ? null : $holidays[0]->name,
+            'day_type' => $holidays !== [] ? self::DAY_HOLIDAY : (self::isWeekend($day) ? self::DAY_WEEKEND : self::DAY_WEEKDAY),
         ];
     }
 
@@ -267,6 +335,22 @@ final class Calendar
         return CarbonImmutable::instance($date)
             ->setTimezone(self::timezone())
             ->startOfDay();
+    }
+
+    /**
+     * Memoized per process, cleared by flush(). D11 — never filtered by `institution_id`
+     * (provenance/grouping only, not a query boundary; see `periods`' equivalent query and
+     * `InstitutionProvenanceTest::test_no_query_filters_on_institution_id`).
+     *
+     * @return list<Holiday>
+     */
+    private static function activeHolidays(): array
+    {
+        if (self::$holidays !== null) {
+            return self::$holidays;
+        }
+
+        return self::$holidays = Holiday::query()->where('active', true)->get()->all();
     }
 
     /**

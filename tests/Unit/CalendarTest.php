@@ -194,8 +194,11 @@ class CalendarTest extends TestCase
     {
         $this->institution(['hijri_offset_days' => -1]);
 
+        // Task 7 extends this shape with holiday/day_type — HolidayTest pins the resolver
+        // itself (a holiday's name, and HOL beating WE); this only pins that a day with no
+        // matching holiday rule reports 'holiday' => null, 'day_type' => 'WE'.
         $this->assertSame(
-            ['date' => '2026-08-08', 'hijri' => '24 Safar 1448', 'weekend' => true],
+            ['date' => '2026-08-08', 'hijri' => '24 Safar 1448', 'weekend' => true, 'holiday' => null, 'day_type' => 'WE'],
             Calendar::label('2026-08-08')
         );
     }

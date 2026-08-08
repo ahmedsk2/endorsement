@@ -239,14 +239,22 @@ customer stacks on one host that picks an arbitrary one, and the `GRANT ALTER` /
 ```bash
 eval "$(sudo bash docker/instance-env.sh oo7d7si62yhyi7fx10hrck6q)" && \
 PW=$(sudo docker exec "$DB" printenv MYSQL_ROOT_PASSWORD) && \
-sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "GRANT ALTER ON \`$DBNAME\`.* TO '$DBUSER'@'%'; FLUSH PRIVILEGES;" && \
-sudo docker exec -u app "$APP" php artisan migrate --force && \
-sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "REVOKE ALTER ON \`$DBNAME\`.* FROM '$DBUSER'@'%'; FLUSH PRIVILEGES;"
+sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "GRANT ALTER ON \`$DBNAME\`.* TO '$DBUSER'@'%'; FLUSH PRIVILEGES;" && {
+  sudo docker exec -u app "$APP" php artisan migrate --force; rc=$?
+  sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "REVOKE ALTER ON \`$DBNAME\`.* FROM '$DBUSER'@'%'; FLUSH PRIVILEGES;"
+  echo "migrate exit=$rc"
+}
 ```
 
-The `&&` chaining is load-bearing: `instance-env.sh` prints `false` on refusal, so nothing
-downstream runs. **Read the stderr line it prints and confirm the database name is the
-customer you meant** before typing anything else.
+Two different jobs are chained here, and they are meant to fail differently. Up to and
+including the `GRANT`, `&&` is load-bearing: `instance-env.sh` prints `false` on refusal, so
+nothing downstream runs at all — that refusal must abort everything. Past the `GRANT`, the
+brace group runs the `REVOKE` **unconditionally**, whatever `migrate` did: a failed migration
+is exactly the moment `ALTER` must not linger on the runtime credential while you stop to
+debug it. `rc` captures the migration's real exit code and `migrate exit=$rc` prints it back —
+anything but `0` means stop and investigate the migration before doing anything else, but the
+schema privilege is already gone either way. **Read the stderr line `instance-env.sh` prints
+and confirm the database name is the customer you meant** before typing anything else.
 
 `MYSQL_PWD` rather than `-p"$PW"` keeps the credential out of the container's process list.
 `-u app` keeps the artisan process unprivileged inside the container. **Verify the revoke
@@ -534,6 +542,12 @@ SELECT COUNT(*) FROM people WHERE institution_id IS NULL;
 -- and every count above is expected to be non-zero.
 SELECT id, code, name, active FROM institutions;
 ```
+
+A non-zero `users` count is not automatically a failed backfill: an invitation issued
+*before* this migration ran can carry a NULL `institution_id`, and the accept path
+(`InvitationAcceptController`) copies it forward verbatim — so a registration completed
+*after* the upgrade, from an invite issued *before* it, still yields a NULL user. Check
+`invitations.institution_id` on the offending row before treating this as a bug.
 
 ---
 

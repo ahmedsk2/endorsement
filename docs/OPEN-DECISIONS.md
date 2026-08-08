@@ -159,8 +159,10 @@ exactly one customer holding real patient data.
 **TRIGGER, verbatim — revisit before a second customer carries real patient data.** Not a
 "revisit periodically": a specific, checkable condition. Recorded identically in
 `docs/COMPLIANCE.md` ("Accepted deviations" §3) and `docs/PDPL-PACK.md` (§3.2, §3.3 item 3) so
-the same trigger is findable wherever an auditor looks, and the PDPL pack's DPIA is marked as
-needing re-signing to reflect it.
+the same trigger is findable wherever an auditor looks, and the PDPL pack's §3.4 conclusion now
+carries an amendment note pointing back at it. It is **not** re-signed for this — the risk was
+already owner-accepted with its own named trigger in §3.3, so the amendment brings the
+conclusion's wording into agreement with that acceptance rather than making a new decision.
 
 **Two items already open at N=1, now explicitly inherited by every additional customer:** the
 missing **object-lock/retention rule on the backup bucket** (write credentials are delete

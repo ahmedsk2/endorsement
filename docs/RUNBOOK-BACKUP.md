@@ -94,6 +94,16 @@ close. Once a slugged archive has been restored successfully at least once (prov
 did not break anything), remove or rename the pre-slug archives by hand; do not leave
 `backup:run` warning forever.
 
+There is a **second, easy-to-miss generation** in between: archives written after this code
+landed but *before* `INSTANCE_SLUG=qch` was actually set in Coolify used
+`App\Support\Instance::slug()`'s fallback — `Str::slug(APP_NAME)` — so they are already
+slug-**shaped** (`endorsement-paediatric-endorsement-YYYY-MM-DD_HHMMSS.sql.gz.enc`), just under
+the wrong slug. Those do not match the unslugged warning above either, so `backup:run` now
+widens the warning to catch any archive — database **and** signature — whose slug segment is
+not the current one, not only the fully-unslugged shape. Same rule applies: fold them into the
+same by-hand cleanup once a current-slug archive has restored successfully; never widen the
+*prune* glob to reach them.
+
 ```bash
 mysql --ssl-verify-server-cert=0 -h db -u <user> -p <database> < restore.sql
 ```
@@ -144,10 +154,19 @@ container boot, so the environment override on `docker exec` is silently ignored
 command verifies the **live** database instead — it still reports success, which looks like a
 completed drill but proves nothing about the restored copy. Two things are needed:
 
+`$MYSQL_ROOT_PASSWORD` exists only *inside* the db container's environment. Read it into a
+host-side variable first — the same `PW=` pattern `docs/RUNBOOK-DEPLOY.md` uses — and `$DB`/
+`$APP` come from `docker/instance-env.sh`, same as everywhere else in this document:
+`-e MYSQL_PWD="$MYSQL_ROOT_PASSWORD"` expands on the **host**, where that variable is unset, so
+it passes `-e MYSQL_PWD=` and dies with "Access denied for user 'root'".
+
 ```bash
+eval "$(sudo bash docker/instance-env.sh <uuid>)" && \
+PW=$(sudo docker exec "$DB" printenv MYSQL_ROOT_PASSWORD)
+
 # 1. The app's least-privilege database user can only SELECT its own schema (docs/sql/least-privilege.sql)
 #    — grant it SELECT on the scratch database too, or the next step gets "Access denied".
-sudo docker exec -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "$DB" mysql -uroot \
+sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot \
     -e "GRANT SELECT ON <scratch-db>.* TO '<app-db-user>'@'%'; FLUSH PRIVILEGES;"
 
 # 2. Force the ALREADY-RUNNING process to reconnect to the scratch database at runtime,

@@ -108,13 +108,22 @@ the one stack matching this instance's Coolify app UUID, or refuses:
 ```bash
 eval "$(sudo bash docker/instance-env.sh <this-instance's-uuid>)" && \
 PW=$(sudo docker exec "$DB" printenv MYSQL_ROOT_PASSWORD) && \
-sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "GRANT ALTER ON \`$DBNAME\`.* TO '$DBUSER'@'%'; FLUSH PRIVILEGES;" && \
-sudo docker exec -u app "$APP" php artisan migrate --force && \
-sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "REVOKE ALTER ON \`$DBNAME\`.* FROM '$DBUSER'@'%'; FLUSH PRIVILEGES;"
+sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "GRANT ALTER ON \`$DBNAME\`.* TO '$DBUSER'@'%'; FLUSH PRIVILEGES;" && {
+  sudo docker exec -u app "$APP" php artisan migrate --force; rc=$?
+  sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "REVOKE ALTER ON \`$DBNAME\`.* FROM '$DBUSER'@'%'; FLUSH PRIVILEGES;"
+  echo "migrate exit=$rc"
+}
 ```
 
-**Read the stderr line `instance-env.sh` prints and confirm the database name is the customer
-you meant** before typing anything else.
+`&&` up to and including the `GRANT` is load-bearing — `instance-env.sh` prints `false` on
+refusal, so nothing downstream runs at all. Past that point the brace group runs the `REVOKE`
+**unconditionally**, whatever `migrate` did: a failed migration on a first-ever bring-up is
+exactly the moment `ALTER` must not linger on the runtime credential while you stop to debug
+it. `rc` captures the migration's real exit code and `migrate exit=$rc` prints it back —
+anything but `0` means stop and investigate before continuing, but the schema privilege is
+already gone either way. **Read the stderr line `instance-env.sh` prints and confirm the
+database name is the customer you meant** before typing anything else. **Verify the revoke
+landed** — `SHOW GRANTS FOR '$DBUSER'@'%';` should show no ALTER.
 
 ```bash
 sudo docker exec -u app "$APP" php artisan db:seed --force

@@ -194,6 +194,65 @@ statement, which fixes the *function's* exit status to 0 regardless of the pipel
 scoped to `scripts/new-instance.sh` only; `docker/smoke.sh`'s heredoc usage was never actually
 affected and was left unchanged.
 
+**2026-08-08, Task 10 (review fixes), a real regression this branch introduced, caught by
+review rather than by a test:** `docs/RUNBOOK-DEPLOY.md` and `docs/RUNBOOK-PROVISION.md`'s
+grant/migrate/revoke sequences had become fully `&&`-chained. On `main` the `REVOKE` was
+newline-separated and ran regardless of what came before it; chaining it with `&&` on `migrate`
+means a **failed** migration now skips the revoke, leaving `ALTER` granted on the live clinical
+database exactly when an operator is distracted debugging the failure — the privilege
+`docs/sql/least-privilege.sql` exists to remove. Fixed by keeping `&&` up to and including the
+`GRANT` (still load-bearing: `instance-env.sh`'s refusal must abort everything) and running the
+`REVOKE` unconditionally in a brace group afterwards, capturing and printing `migrate`'s real
+exit code. No test guards runbook prose directly; verified by reading the resulting sequence
+against both failure and success paths.
+
+**2026-08-08, Task 10 (review fixes), a second runbook defect in the same family:**
+`docs/RUNBOOK-BACKUP.md`'s restore-drill grant used `-e MYSQL_PWD="$MYSQL_ROOT_PASSWORD"`
+directly — that variable exists only *inside* the db container's environment, but is expanded
+by the **host** shell at that exec, where it is unset, so the command passes `-e MYSQL_PWD=`
+and dies with "Access denied for user 'root'". Fixed to the same `PW=$(sudo docker exec "$DB"
+printenv MYSQL_ROOT_PASSWORD)` pattern already used at `RUNBOOK-DEPLOY.md:241`, and added the
+missing `eval "$(sudo bash docker/instance-env.sh <uuid>)"` line the block used `$DB`/`$APP`
+from without showing.
+
+**2026-08-08, Task 10 (review fixes), `warnAboutLegacyArchives` widened:** the original glob
+only caught the fully-unslugged pre-P0d shape (`endorsement-<stamp>.sql.gz.enc`). An archive
+written after this branch's code shipped but before `INSTANCE_SLUG=qch` was actually set in
+Coolify carries `Instance::slug()`'s `Str::slug(APP_NAME)` fallback instead — already
+slug-**shaped** (`endorsement-paediatric-endorsement-<stamp>.sql.gz.enc`), so the unslugged-only
+glob never caught it and it would have been silently synced off-host forever, uncounted by
+either the prune glob or the warning. Widened to catch any database or signature archive whose
+slug segment is not the current one (`BackupRun::archivesWithForeignSlug()`), leaving the prune
+glob itself untouched — its timestamp anchoring is what stops one slug's retention sweep eating
+another slug's archives, per finding 5. Covered by a new
+`BackupInstanceIdentityTest::test_archives_under_a_foreign_slug_including_the_derived_fallback_are_warned_about`.
+
+**2026-08-08, Task 10 (review fixes), test coverage added, not a defect:** the
+`2026_08_11_120001_backfill_institution_on_identity_rows` migration only had the zero-institution
+path implicitly exercised (`RefreshDatabase` runs it against an empty `institutions` table before
+every other test seeds one). Added `BackfillInstitutionOnIdentityRowsTest` covering exactly-one,
+two-or-more, "never overwrites an already-set row," and re-run idempotency, by `require`-ing the
+migration file directly and calling `up()` after seeding institutions and NULL rows — the same
+sequence a real upgrade goes through.
+
+**2026-08-08, Task 10 (review fixes), `docker/instance-env.sh` guard added:** `set -uo pipefail`
+(no `-e`) meant a failed `printenv MYSQL_DATABASE`/`printenv MYSQL_USER` left `dbname`/`dbuser`
+empty and the script still exited 0, printing `DBNAME=; DBUSER=;` — it failed closed only
+because MySQL happens to reject an empty database name, not because the script itself refused.
+Added an explicit `[ -n "$dbname" ] && [ -n "$dbuser" ] || refuse ...` guard, plus a static
+assertion in `HostScriptsAreInstanceScopedTest` that the guard text is present (the script itself
+needs a real `docker` daemon to execute, which this suite does not have).
+
+**2026-08-08, Task 10 (review fixes), documentation-only:** `docs/PDPL-PACK.md` §3.4's
+conclusion still named the pre-P0d third accepted risk ("absence of monitoring for a backup
+that stops running") instead of the co-tenancy risk §3.3 item 3 actually lists — the two lists
+had drifted apart. Corrected the conclusion to match §3.3, and added an amendment note stating
+the signature is deliberately **not** re-dated for this: the risk was already owner-accepted
+with its own named trigger, so this is wording catching up to an existing decision, not a new
+one. `docs/OPEN-DECISIONS.md`'s claim that the DPIA "is marked as needing re-signing" was
+adjusted to describe the amendment note actually added, rather than a re-signing that never
+happened and was never going to.
+
 ---
 
 ## Nine findings from reconnaissance that shape this plan

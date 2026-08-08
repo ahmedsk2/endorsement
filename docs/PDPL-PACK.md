@@ -189,9 +189,16 @@ All three are owned by the system owner, who signs this assessment (§3.4), and 
 **Conclusion.** The residual risks identified above are acceptable given the patient-safety
 benefit of a recorded, attributable shift handover and the controls listed in §3.2 and in
 `docs/COMPLIANCE.md`. Three risks are accepted rather than eliminated and are named as such:
-unrestricted access across the four units, signature-by-proxy for two roles, and the absence
-of monitoring for a backup that stops running. Each has a stated compensating control and a
-trigger that reopens it.
+unrestricted access across the four units, signature-by-proxy for two roles, and co-tenancy on
+the shared Docker network with other Coolify-hosted applications (P0d, 2026-08-08). Each has a
+stated compensating control and a trigger that reopens it.
+
+> **Amendment, 2026-08-08 (P0d).** §3.2 and §3.3 above were updated to add the co-tenancy risk
+> that multi-instance hosting introduced, and this conclusion was corrected to match — it had
+> drifted and still named the pre-P0d third risk. The signature below is **not** re-dated or
+> re-signed for this amendment: the added risk was already owner-accepted with its own named
+> trigger (§3.3 item 3), and the change here is bringing this section's wording into agreement
+> with that acceptance, not a new decision. See `docs/OPEN-DECISIONS.md` for the trigger.
 
 **Signed:**
 

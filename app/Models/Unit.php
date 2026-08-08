@@ -7,6 +7,7 @@ use App\Support\UnitProfile;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * A clinical unit. Since design §6.1 this row carries every per-unit difference — which
@@ -106,5 +107,17 @@ class Unit extends Model
     public function profile(): UnitProfile
     {
         return UnitProfile::fromUnit($this);
+    }
+
+    /**
+     * This unit's custom handover-sheet fields (design §6.2, "Ceiling 2"), active-only and in
+     * display order. A retired definition disappears from here without deleting its row or
+     * the values stored under its key elsewhere — see UnitFieldDefinition's docblock.
+     *
+     * @return HasMany<UnitFieldDefinition, $this>
+     */
+    public function fieldDefinitions(): HasMany
+    {
+        return $this->hasMany(UnitFieldDefinition::class)->active()->ordered();
     }
 }

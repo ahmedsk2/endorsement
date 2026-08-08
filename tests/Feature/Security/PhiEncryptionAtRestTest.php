@@ -110,6 +110,49 @@ class PhiEncryptionAtRestTest extends TestCase
         $this->assertSame(1, Handover::whereDate('handover_date', '2026-07-20')->count());
     }
 
+    /** P0b bounded custom fields (design §6.2) — the whole-column map is encrypted too. */
+    public function test_extra_fields_are_ciphertext_in_the_database(): void
+    {
+        $row = Handover::create([
+            'unit_id' => Unit::where('code', 'NICU')->value('id'),
+            'handover_date' => '2026-07-20',
+            'bed' => '4',
+            'extra_fields' => ['weight' => '3.2', 'allergy' => 'penicillin'],
+        ]);
+
+        $raw = DB::table('handovers')->where('id', $row->id)->first();
+
+        foreach (['weight', '3.2', 'allergy', 'penicillin'] as $secret) {
+            $this->assertStringNotContainsString(
+                $secret,
+                json_encode($raw),
+                "[{$secret}] is legible in handovers.extra_fields — it must be encrypted at rest.",
+            );
+        }
+    }
+
+    public function test_extra_fields_round_trip_through_the_model(): void
+    {
+        $row = Handover::create([
+            'unit_id' => Unit::where('code', 'NICU')->value('id'),
+            'handover_date' => '2026-07-20',
+            'bed' => '4',
+            'extra_fields' => ['weight' => '3.2', 'allergy' => 'penicillin'],
+        ]);
+
+        $fresh = Handover::findOrFail($row->id);
+
+        $this->assertSame(['allergy' => 'penicillin', 'weight' => '3.2'], $fresh->extra_fields);
+    }
+
+    /** A row that has never had a custom field set reads back as an empty array, never null. */
+    public function test_extra_fields_defaults_to_an_empty_array(): void
+    {
+        $row = $this->row();
+
+        $this->assertSame([], $row->fresh()->extra_fields);
+    }
+
     /**
      * A row written BEFORE encryption (or by a direct SQL insert) must still be readable —
      * the cast falls back to plaintext rather than losing a clinician's handover.

@@ -52,6 +52,33 @@ const extraFields = computed(() => (profile.value.extra_row_fields ?? []).map((k
 // datetime-local wants 'YYYY-MM-DDTHH:mm'; the server sends 'YYYY-MM-DD HH:mm'.
 const extraValue = (row, key) => (key === 'dob' ? String(row.dob ?? '').replace(' ', 'T') : (row[key] ?? ''));
 
+/*
+ * P0b (design §6.2, "Ceiling 2") — a unit's OWN custom fields, driven entirely by data
+ * (`unit.profile.field_definitions`: active-only, already ordered — see
+ * EndorsementController::unitPayload()). This is a SECOND, SEPARATE list from `extraFields`
+ * above: those are hardcoded named identity columns (dob/age/ward_unit) with their own
+ * column on `handovers`; these are unit-defined and keyed into the single `extra_fields` JSON
+ * map on each row. The two concepts are rendered one after the other, never merged.
+ */
+const customFields = computed(() => profile.value.field_definitions ?? []);
+
+// Custom-field values are PLAIN TEXT and are NEVER PURIFIED server-side (App\Casts\EncryptedJson's
+// own docblock) — every read here MUST stay a plain value binding (`:value`, never `v-html`).
+const customFieldValue = (row, key) => (row.extra_fields ?? {})[key] ?? '';
+
+// EncryptedJson's sentinel (App\Casts\EncryptedJson::UNREADABLE_KEY): the row's WHOLE
+// extra_fields column failed to decrypt (foreign APP_KEY). A renderer keyed strictly on
+// definitions would drop this silently and show a clean but incomplete clinical sheet — this
+// is the entire reason the sentinel exists, so it gets its own visible, row-level warning.
+const extraFieldsWarning = (row) => (row.extra_fields ?? {}).__unreadable ?? null;
+
+// bed + mrn + name, plus every rendered column, plus the delete button column when present —
+// so the desktop unreadable-warning row's colspan always spans the FULL width of that table,
+// whatever combination of identity/custom columns this unit happens to have.
+const desktopColumnCount = computed(() => (
+    3 + extraFields.value.length + customFields.value.length + richFields.value.length + (canEdit ? 1 : 0)
+));
+
 // Presentation only: the signature channel bar carries this sheet's unit hue.
 const unitBarClass = computed(() => profile.value.bar_class ?? '');
 
@@ -97,6 +124,28 @@ const saveField = (id, field, value) => {
 // Inline-save a plain-text cell (bed / mrn / name).
 const saveText = (id, field, event) => {
     saveField(id, field, event.target.value);
+};
+
+/*
+ * P0b — a custom field saves through the SAME PATCH endpoint and the SAME per-field
+ * save-on-blur/change path as every other cell, shaped {extra_fields: {[key]: value}}. The
+ * server (EndorsementController::updateRow()) merges this one key into the row's stored map
+ * (array_replace) rather than replacing the whole column, so sending one key here is safe —
+ * do NOT invent a second save mechanism or send the whole map from the client.
+ */
+const saveCustomField = (id, key, value) => {
+    const statusKey = `extra_fields.${key}`;
+    setStatus(id, statusKey, 'saving');
+    router.patch(`/endorsement/rows/${id}`, { extra_fields: { [key]: value } }, {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => setStatus(id, statusKey, 'saved'),
+        onError: () => setStatus(id, statusKey, 'error'),
+    });
+};
+
+const saveCustomText = (id, key, event) => {
+    saveCustomField(id, key, event.target.value);
 };
 
 const addRow = () => {
@@ -454,6 +503,31 @@ const submitReopen = () => {
                            @change="saveText(r.id, x.key, $event)" />
                     <SaveStatus :status="statusOf(r.id, x.key)" :testid="`m-status-${x.key}`" />
                 </div>
+                <!--
+                  P0b — the unit's OWN custom fields (design §6.2, "Ceiling 2"). A SECOND,
+                  separate list from `extraFields` above, rendered after them.
+                -->
+                <p v-if="extraFieldsWarning(r)" data-testid="m-extra-fields-unreadable" role="alert"
+                   class="channel-bar channel-bar-critical mb-3 rounded-md bg-critical-soft px-2 py-1.5 text-xs font-semibold text-critical">
+                    Custom fields unreadable: {{ extraFieldsWarning(r) }}
+                </p>
+                <div v-for="cf in customFields" :key="cf.key" :data-testid="`m-cf-${cf.key}`" class="mb-3">
+                    <label :for="`m-cf-${cf.key}-${r.id}`" class="channel-tag mb-0.5 block">
+                        {{ cf.label }}<span v-if="cf.required" aria-hidden="true"> *</span>
+                    </label>
+                    <select v-if="cf.type === 'select'" :id="`m-cf-${cf.key}-${r.id}`"
+                            :value="customFieldValue(r, cf.key)" :disabled="!canEdit"
+                            class="w-full rounded-md border border-line bg-panel px-2 py-2 text-base text-ink focus:border-channel focus:outline-none"
+                            @change="saveCustomText(r.id, cf.key, $event)">
+                        <option value="">Select</option>
+                        <option v-for="opt in cf.options ?? []" :key="opt" :value="opt">{{ opt }}</option>
+                    </select>
+                    <input v-else :id="`m-cf-${cf.key}-${r.id}`" :type="cf.type === 'date' ? 'date' : 'text'"
+                           :value="customFieldValue(r, cf.key)" :readonly="!canEdit"
+                           class="w-full rounded-md border border-line bg-panel px-2 py-2 text-base text-ink focus:border-channel focus:outline-none"
+                           @change="saveCustomText(r.id, cf.key, $event)" />
+                    <SaveStatus :status="statusOf(r.id, `extra_fields.${cf.key}`)" :testid="`m-status-cf-${cf.key}`" />
+                </div>
                 <div v-for="f in richFields" :key="f.key" class="mb-3">
                     <p class="channel-tag mb-0.5">{{ f.label }}</p>
                     <RichTextEditor :model-value="r[f.key]" :editable="canEdit" :label="f.label"
@@ -476,6 +550,7 @@ const submitReopen = () => {
                         <th class="channel-tag px-3 py-2">MRN</th>
                         <th class="channel-tag px-3 py-2">Name</th>
                         <th v-for="x in extraFields" :key="x.key" class="channel-tag px-3 py-2">{{ x.label }}</th>
+                        <th v-for="cf in customFields" :key="cf.key" class="channel-tag px-3 py-2">{{ cf.label }}</th>
                         <th v-for="f in richFields" :key="f.key" class="channel-tag px-3 py-2">{{ f.label }}</th>
                         <th v-if="canEdit" class="channel-tag px-3 py-2"></th>
                     </tr>
@@ -489,7 +564,8 @@ const submitReopen = () => {
                       same row after a reload to prove a handover edit persisted, and this is the
                       only non-PHI handle that survives the re-sort.
                     -->
-                    <tr v-for="r in rows" :key="r.id" data-testid="handover-row" :data-row-id="r.id" class="align-top">
+                    <template v-for="r in rows" :key="r.id">
+                    <tr data-testid="handover-row" :data-row-id="r.id" class="align-top">
                         <td class="px-2 py-2">
                             <input :value="r.bed" data-testid="cell-bed" :readonly="!canEdit" aria-label="Bed"
                                    class="readout w-16 rounded-md border border-transparent bg-transparent px-1 py-0.5 hover:border-line focus:border-channel focus:outline-none"
@@ -515,6 +591,21 @@ const submitReopen = () => {
                                    @change="saveText(r.id, x.key, $event)" />
                             <SaveStatus :status="statusOf(r.id, x.key)" :testid="`status-${x.key}`" />
                         </td>
+                        <!-- P0b — the unit's OWN custom fields, a second column set after extraFields. -->
+                        <td v-for="cf in customFields" :key="cf.key" :data-testid="`cell-cf-${cf.key}`" class="px-2 py-2">
+                            <select v-if="cf.type === 'select'" :value="customFieldValue(r, cf.key)" :disabled="!canEdit"
+                                    :aria-label="cf.label"
+                                    class="w-36 rounded-md border border-transparent bg-transparent px-1 py-0.5 hover:border-line focus:border-channel focus:outline-none"
+                                    @change="saveCustomText(r.id, cf.key, $event)">
+                                <option value="">Select</option>
+                                <option v-for="opt in cf.options ?? []" :key="opt" :value="opt">{{ opt }}</option>
+                            </select>
+                            <input v-else :type="cf.type === 'date' ? 'date' : 'text'" :value="customFieldValue(r, cf.key)"
+                                   :readonly="!canEdit" :aria-label="cf.label"
+                                   class="w-36 rounded-md border border-transparent bg-transparent px-1 py-0.5 hover:border-line focus:border-channel focus:outline-none"
+                                   @change="saveCustomText(r.id, cf.key, $event)" />
+                            <SaveStatus :status="statusOf(r.id, `extra_fields.${cf.key}`)" :testid="`status-cf-${cf.key}`" />
+                        </td>
                         <td v-for="f in richFields" :key="f.key" :data-testid="`cell-${f.key}`" class="px-2 py-2">
                             <RichTextEditor :model-value="r[f.key]" :editable="canEdit" :label="f.label"
                                             :status="statusOf(r.id, f.key)"
@@ -525,6 +616,17 @@ const submitReopen = () => {
                                     class="text-xs text-critical hover:underline">Remove</button>
                         </td>
                     </tr>
+                    <!--
+                      P0b — the sentinel row. `extra_fields.__unreadable` means the WHOLE map
+                      failed to decrypt (foreign APP_KEY); a renderer keyed on definitions alone
+                      would drop it and show a clean but silently incomplete clinical sheet.
+                    -->
+                    <tr v-if="extraFieldsWarning(r)" data-testid="row-extra-fields-unreadable" :data-row-id="r.id">
+                        <td :colspan="desktopColumnCount" class="bg-critical-soft px-3 py-1.5 text-xs font-semibold text-critical">
+                            Custom fields unreadable: {{ extraFieldsWarning(r) }}
+                        </td>
+                    </tr>
+                    </template>
                 </tbody>
             </table>
         </div>

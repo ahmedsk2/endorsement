@@ -324,16 +324,37 @@ defaults as data. Position 1 (Nurse) remains retired and is never reused. New: `
 
 ### 6.2 Bounded custom fields (D8, "Ceiling 2")
 
+**Implemented, P0b** (`docs/superpowers/plans/2026-08-08-p0b-bounded-custom-fields.md`).
+
 - `unit_field_definitions` — per unit: key, label, type (`text` | `date` | `select` +
   options), required, display order.
-- `handovers.extra_fields` — JSON, **encrypted whole**, since it will hold clinical text.
-  Consequence: extra fields are **not searchable or indexable**. Nothing searches them today;
-  recorded so it is a known limit rather than a surprise.
+- `handovers.extra_fields` — TEXT, **encrypted whole** (`App\Casts\EncryptedJson`), since it
+  holds clinical text. **Not** `json` — the stored value is base64 ciphertext, which MySQL's
+  JSON type rejects; SQLite maps `json` to TEXT, so that mistake passes every test and fails
+  only in production. Consequence of the whole-column encryption: extra fields are **not
+  searchable or indexable**. Nothing searches them today; recorded so it is a known limit
+  rather than a surprise. Degradation on a bad/foreign-key ciphertext is **all-or-nothing per
+  row** (unlike the named identity columns, which degrade field-by-field) — the cast surfaces
+  this as an `__unreadable` sentinel rather than an empty map, and the client renders it as a
+  visible row-level warning instead of a silently incomplete sheet.
 - **The four rich-text narrative fields stay first-class**, not user-definable — they carry
   the `SanitizedHtml` cast, the editor contract, and the print schema. Their *labels* are
-  per-unit configuration.
-- Validation rules are built dynamically from the definitions; the print view gains a generic
-  renderer for extra fields; the legacy import maps legacy columns onto definitions.
+  per-unit configuration. Custom-field values, by contrast, are plain text and are **never**
+  purified server-side; every consumer escapes on render (`{{ }}` / `:value`, never `v-html`).
+- Validation rules are built dynamically from the definitions, namespaced under
+  `extra_fields.*`; the sheet and the print view both gain a generic renderer for extra
+  fields (Sheet.vue renders the census twice — mobile cards and a desktop table — so the
+  renderer had to be added in both); print caps how many definitions it shows and says so,
+  since it is a fixed A4 page unlike the scrolling on-screen table.
+- **The legacy import does NOT map legacy columns onto definitions** — corrected from this
+  section's original draft. `LegacyImport` (`app/Console/Commands/LegacyImport.php`) maps
+  legacy row columns onto the NAMED identity columns only (`bed`/`mrn`/`patient_name`/the four
+  rich-text fields/`dob`/`age`/`ward_unit`); it never reads or writes `extra_fields`, because
+  legacy data predates custom field definitions entirely — there is nothing there to map.
+- **No admin UI ships in P0b.** Definitions are seedable/insertable only, which is still zero
+  *code* for a new department to gain a field. A management screen for
+  `unit_field_definitions` belongs alongside a future units settings screen, not before it —
+  noted here as deliberately deferred, not forgotten.
 
 ### 6.3 Rota tables
 

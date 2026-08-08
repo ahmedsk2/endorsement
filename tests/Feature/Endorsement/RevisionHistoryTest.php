@@ -5,6 +5,7 @@ namespace Tests\Feature\Endorsement;
 use App\Models\Handover;
 use App\Models\HandoverRevision;
 use App\Models\Unit;
+use App\Models\UnitFieldDefinition;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -116,5 +117,47 @@ class RevisionHistoryTest extends TestCase
         $this->assertCount(2, $history);
         $this->assertStringContainsString('Wean vasopressors', (string) $history[0]->old_value);
         $this->assertStringContainsString('Second', (string) $history[1]->old_value);
+    }
+
+    /**
+     * P0b (finding 3) — `extra_fields` cannot be added to TRACKED as-is: recordRevisions()
+     * casts the before-image to `(string)`, and an array raises "Array to string conversion"
+     * (promoted to a thrown ErrorException by HandleExceptions). Custom fields get their own
+     * before-image path instead, one row per changed subkey, named `extra_fields.{key}` —
+     * still giving a reopen-rewrite-resign case something to reconstruct from.
+     */
+    public function test_editing_a_custom_field_records_a_before_image_revision(): void
+    {
+        [$unit, $user, $row] = $this->setup4();
+
+        UnitFieldDefinition::create(['unit_id' => $unit->id, 'key' => 'weight', 'label' => 'Weight']);
+        $row->update(['extra_fields' => ['weight' => '3.0']]);
+
+        $this->actingAs($user)
+            ->patch("/endorsement/rows/{$row->id}", ['extra_fields' => ['weight' => '3.5']])
+            ->assertSessionHasNoErrors();
+
+        $revision = HandoverRevision::where('handover_id', $row->id)
+            ->where('field', 'extra_fields.weight')
+            ->firstOrFail();
+
+        $this->assertSame('3.0', $revision->old_value);
+        $this->assertSame($user->id, $revision->changed_by_user_id);
+    }
+
+    /** Save-on-blur re-submits the same value on every keystroke pause; a no-op resave must not
+     *  bury real changes in noise, exactly like the tracked-column case above. */
+    public function test_an_unchanged_custom_field_does_not_create_a_revision(): void
+    {
+        [$unit, $user, $row] = $this->setup4();
+
+        UnitFieldDefinition::create(['unit_id' => $unit->id, 'key' => 'weight', 'label' => 'Weight']);
+        $row->update(['extra_fields' => ['weight' => '3.0']]);
+
+        $this->actingAs($user)
+            ->patch("/endorsement/rows/{$row->id}", ['extra_fields' => ['weight' => '3.0']])
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame(0, HandoverRevision::where('field', 'extra_fields.weight')->count());
     }
 }

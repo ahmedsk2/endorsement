@@ -134,3 +134,131 @@ describe('Endorsement print sheet — per-unit column schemas (spec §11)', () =
         expect(mountFor('PICU').get('[data-testid="print-signoff-head"]').text()).toContain('Consultant covering: Not Selected');
     });
 });
+
+/*
+ * P0b (design §6.2, "Ceiling 2") — bounded custom fields on the printed A4 sheet. Same split
+ * as Sheet.vue: a SECOND, separate column set driven by `unit.profile.field_definitions`,
+ * rendered after the named identity columns. Print is a fixed page — an unbounded number of
+ * definitions could overflow it — so print caps what it renders and says so.
+ */
+describe('Endorsement print sheet — custom fields (P0b)', () => {
+    beforeEach(() => {
+        window.print = vi.fn();
+    });
+
+    const profileWithFields = (definitions) => ({
+        ...PROFILES.PICU,
+        field_definitions: definitions,
+    });
+
+    const mountWith = (definitions, rows) => mount(Print, {
+        props: {
+            unit: { code: 'PICU', name: 'PICU', profile: profileWithFields(definitions) },
+            date: '2026-07-19',
+            rows,
+            signoff: {},
+        },
+    });
+
+    const twoDefs = [
+        { key: 'weight_kg', label: 'Weight (kg)', type: 'text', options: null, required: false },
+        { key: 'allergy_status', label: 'Allergy status', type: 'select', options: ['none', 'known'], required: true },
+    ];
+
+    it('adds one printed column per definition, after the identity columns and before the rich-text columns', () => {
+        const w = mountWith(twoDefs, [
+            { id: 1, bed: '3', mrn: 'M-1', patient_name: 'Child', disease: 'x', details: 'y', plan: 'z', nevent: 'n',
+              extra_fields: { weight_kg: '3.2', allergy_status: 'known' } },
+        ]);
+
+        const headers = w.findAll('thead th').map((th) => th.text());
+        expect(headers).toEqual([
+            'Bed', 'MRN', 'Name', 'Weight (kg)', 'Allergy status',
+            'Diagnosis List', 'Clinical Condition', 'Plan Of Care', 'New events',
+        ]);
+    });
+
+    it('renders the custom field value for each row', () => {
+        const w = mountWith(twoDefs, [
+            { id: 1, bed: '3', mrn: 'M-1', patient_name: 'Child', disease: 'x', details: 'y', plan: 'z', nevent: 'n',
+              extra_fields: { weight_kg: '3.2', allergy_status: 'known' } },
+        ]);
+
+        const rowText = w.get('[data-testid="print-row"]').text();
+        expect(rowText).toContain('3.2');
+        expect(rowText).toContain('known');
+    });
+
+    it('renders an empty cell rather than erroring when a row has no extra_fields at all', () => {
+        const w = mountWith(twoDefs, [
+            { id: 1, bed: '3', mrn: 'M-1', patient_name: 'Child', disease: 'x', details: 'y', plan: 'z', nevent: 'n' },
+        ]);
+
+        expect(w.get('[data-testid="print-row"]').exists()).toBe(true);
+    });
+
+    it('never renders custom field values through v-html — only the four sanitized rich-text columns may use it', () => {
+        const source = readFileSync(
+            resolve(__dirname, '../../resources/js/Pages/Endorsement/Print.vue'),
+            'utf-8',
+        );
+
+        // Exactly the one known-safe v-html usage (the rich-text columns), never a second one
+        // for extra_fields — those values are plain text and are never sanitised server-side.
+        const template = source.match(/<template>([\s\S]*)<\/template>/)[1];
+        const vHtmlUses = template.match(/\bv-html\s*=/g) ?? [];
+        expect(vHtmlUses).toHaveLength(1);
+    });
+
+    it('a custom field value containing markup prints as inert text, never parsed as an element', () => {
+        const w = mountWith(twoDefs, [
+            { id: 1, bed: '3', mrn: 'M-1', patient_name: 'Child', disease: 'x', details: 'y', plan: 'z', nevent: 'n',
+              extra_fields: { weight_kg: '<b>3.2</b>', allergy_status: 'known' } },
+        ]);
+
+        const row = w.get('[data-testid="print-row"]');
+        expect(row.find('b').exists()).toBe(false);
+        expect(row.text()).toContain('<b>3.2</b>');
+    });
+
+    // The sentinel: a row whose extra_fields failed to decrypt must still print, with a visible
+    // warning — dropping it silently would hand out a clean-looking but incomplete legal sheet.
+    it('renders a visible warning on the printed sheet for the __unreadable sentinel', () => {
+        const w = mountWith(twoDefs, [
+            { id: 1, bed: '3', mrn: 'M-1', patient_name: 'Child', disease: 'x', details: 'y', plan: 'z', nevent: 'n',
+              extra_fields: { __unreadable: '[unreadable — encrypted with a different key]' } },
+        ]);
+
+        expect(w.text()).toContain('unreadable');
+    });
+
+    it('caps the printed custom columns and says so when a unit has many definitions', () => {
+        const manyDefs = Array.from({ length: 8 }, (_, i) => ({
+            key: `field_${i}`, label: `Field ${i}`, type: 'text', options: null, required: false,
+        }));
+
+        const w = mountWith(manyDefs, [
+            { id: 1, bed: '3', mrn: 'M-1', patient_name: 'Child', disease: 'x', details: 'y', plan: 'z', nevent: 'n', extra_fields: {} },
+        ]);
+
+        const headers = w.findAll('thead th').map((th) => th.text());
+        const printedCustomHeaders = headers.filter((h) => h.startsWith('Field '));
+
+        // Fewer columns than definitions were supplied — it capped.
+        expect(printedCustomHeaders.length).toBeGreaterThan(0);
+        expect(printedCustomHeaders.length).toBeLessThan(manyDefs.length);
+
+        // And it SAYS so, visibly, on the printed page (not print:hidden).
+        const note = w.get('[data-testid="print-custom-fields-note"]');
+        expect(note.text()).toMatch(/more/i);
+        expect(note.classes()).not.toContain('print:hidden');
+    });
+
+    it('does not show the cap note when every definition fits', () => {
+        const w = mountWith(twoDefs, [
+            { id: 1, bed: '3', mrn: 'M-1', patient_name: 'Child', disease: 'x', details: 'y', plan: 'z', nevent: 'n', extra_fields: {} },
+        ]);
+
+        expect(w.find('[data-testid="print-custom-fields-note"]').exists()).toBe(false);
+    });
+});

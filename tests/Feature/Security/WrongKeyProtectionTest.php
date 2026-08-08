@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Security;
 
+use App\Casts\EncryptedDateTime;
 use App\Casts\EncryptedString;
 use App\Casts\SanitizedHtml;
 use App\Models\Handover;
@@ -76,6 +77,59 @@ class WrongKeyProtectionTest extends TestCase
         $this->expectException(\RuntimeException::class);
 
         $cast->set(new Handover(), 'details', '<p>New note</p>', $attributes);
+    }
+
+    public function test_the_date_cast_shows_the_unreadable_marker_instead_of_a_blank_date(): void
+    {
+        // dob is a DIRECT IDENTIFIER by EncryptedDateTime's own docblock. Before this cast
+        // gained DetectsForeignCiphertext, foreign ciphertext failed Carbon::parse() and
+        // get() returned null — a blank date, indistinguishable from "never recorded", and
+        // silently overwritable by the very next save.
+        $cast = new EncryptedDateTime();
+        $foreign = $this->foreignCiphertext();
+
+        $out = $cast->get(new Handover(), 'dob', $foreign, []);
+
+        $this->assertNotNull($out, 'a foreign-key row must surface as unreadable, not as a blank date');
+        $this->assertStringContainsString('unreadable', strtolower((string) $out));
+    }
+
+    public function test_overwriting_a_date_encrypted_under_another_key_is_refused(): void
+    {
+        $cast = new EncryptedDateTime();
+        $attributes = ['dob' => $this->foreignCiphertext()];
+
+        $this->expectException(\RuntimeException::class);
+
+        $cast->set(new Handover(), 'dob', '2020-01-01', $attributes);
+    }
+
+    public function test_clearing_a_date_encrypted_under_another_key_is_also_refused(): void
+    {
+        // Same guard-before-short-circuit ordering as the string casts: the null/empty
+        // short-circuit must not run before the foreign-ciphertext check, or clearing the
+        // field silently destroys a birth date that is still recoverable.
+        $cast = new EncryptedDateTime();
+        $attributes = ['dob' => $this->foreignCiphertext()];
+
+        $this->expectException(\RuntimeException::class);
+
+        $cast->set(new Handover(), 'dob', null, $attributes);
+    }
+
+    public function test_the_date_cast_normal_writes_are_unaffected(): void
+    {
+        $cast = new EncryptedDateTime();
+
+        // No existing value.
+        $this->assertNotNull($cast->set(new Handover(), 'dob', '2020-01-01', []));
+
+        // An existing value written under the CURRENT key.
+        $current = $cast->set(new Handover(), 'dob', '2020-01-01', []);
+        $this->assertNotNull($cast->set(new Handover(), 'dob', '2020-06-01', ['dob' => $current]));
+
+        // An existing legacy plaintext value.
+        $this->assertNotNull($cast->set(new Handover(), 'dob', '2020-06-01', ['dob' => '2019-01-01 00:00:00']));
     }
 
     public function test_normal_writes_are_unaffected(): void

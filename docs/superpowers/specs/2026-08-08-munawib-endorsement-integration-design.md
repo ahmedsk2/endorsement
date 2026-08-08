@@ -34,8 +34,8 @@ settles, is the merge.
 | D11 | Customer isolation boundary? | **Database per customer** — one codebase, one image, N deployments (§3.4). |
 | D12 | Server capacity? | **Assume 4 OCPU / 24 GB**; scaling to it is a **prerequisite of P4**, not an assumption. |
 | D13 | Condition catalog scope? | **All 21 types in P2.** Objection logged in §1.3. |
-| D14 | Relationship to the QHN prototype? | Hassan AlSaif is a **co-developer and reviewer** on this programme. The prototype was used for **idea curation only** — it is not a code ancestor and not a data source. |
-| D15 | AU-06 solver fixture? | A **pseudonymised export** of one or two past QHN blocks, supplied by Hassan (§11.2). |
+| D14 | Relationship to the QHN prototype? | Used for **idea curation only** — not a code ancestor, not a data source, and no ongoing collaborator. *(Revised 2026-08-08: the co-developer/reviewer arrangement recorded earlier no longer applies. This is a solo build.)* |
+| D15 | AU-06 solver fixture? | **Synthesized fixtures**; AU-06's chief-acceptable criterion moves to post-first-month acceptance (§11.2). *(Revised with D14 — the pseudonymised real-block export it originally depended on is no longer available.)* |
 
 ### 1.2 Munawib clauses this adapts or overrides
 
@@ -458,18 +458,26 @@ existing bot.
 
 ### 11.2 Solver fixtures (D15)
 
-Hassan supplies one or two past QHN blocks as a test fixture, **pseudonymised at export**:
-real dates, rotations, vacations, constraints and the accepted output, with **stable synthetic
-handles instead of names and no contact data at all.**
+No real-data fixture is available. Fixtures are **synthesized**: hand-built rosters,
+rotations, vacations, unwanted days and coverage templates that exercise every condition
+type, plus deliberately over-constrained cases to drive the infeasibility path (AU-07).
 
-This is a hard requirement, not a preference. Those files contain 53 real residents' names,
-phone numbers and an email address; committing them as CI fixtures would place real personal
-data in version control permanently, in a repository whose entire posture forbids it, and
-against QA-05's rule that a security review precedes any real names entering the system. The
-scheduling *shape* is what makes the fixture valuable; the identities contribute nothing.
+**Consequence, stated plainly:** Munawib AU-06 binds solver acceptance to regenerating *a
+past real month from archived real inputs* and being chief-acceptable. Without real archived
+inputs, that criterion **cannot be met in P4**. It splits in two:
 
-AU-06 is then satisfiable in P4 as Munawib §38 intends — early in the solver work, not at its
-end.
+- **In P4 (automated, binding):** property tests — hard constraints never violated, coverage
+  minima always met when feasible, infeasibility reported rather than silently under-filled,
+  and determinism from a stored seed. These do not need real data.
+- **After the first real month is scheduled (binding before the solver is trusted
+  unsupervised):** regenerate that month from its own archived inputs and confirm it is
+  acceptable with minor edits. This is Munawib §38's warning inverted — the risk it flags
+  (CP-SAT producing schedules a chief will not sign) is now carried until first use, and must
+  be surfaced in the P4 gate rather than discovered later.
+
+Under no circumstances commit real resident names, phone numbers or emails as CI fixtures —
+QA-05 requires a security review before any real names enter the system, and this repository's
+whole posture forbids personal data in version control.
 
 ---
 
@@ -517,9 +525,11 @@ L3 lands incrementally across P3–P5.
 **Each phase gets its own implementation plan.** This document is too large to plan as one
 unit; P0 is planned and built first, and its completion triggers planning P1.
 
-**Review process:** Hassan AlSaif is a co-developer and reviewer (D14). Munawib Part A's stage
-gates are demo-**and-review**: `requesting-code-review` per slice, plus human review at each
-gate.
+**Review process:** solo build (D14). There is no second human reviewer, so the automated
+gates carry the whole load: `requesting-code-review` per slice, the golden-fixture
+cross-validation job, and `security-pan-check` / `prod-ready` audits at each stage gate. Where
+a decision would normally be caught by a colleague, it must instead be written down — the
+design doc's decision log and the plans' amendment sections exist for that.
 
 ---
 
@@ -532,7 +542,9 @@ None block starting P0.
    the local preset when the numbers arrive (§A8.3).
 3. **Email delivery credentials.** The existing SMTP settings screen covers this; until
    configured, Munawib's dev-outbox pattern (NT-06) applies.
-4. **The pseudonymised QHN block export** from Hassan (§11.2) — needed by P4, not before.
+4. **AU-06's real-month regeneration** (§11.2) cannot run until the platform has scheduled its
+   own first real month. The P4 gate must state that the solver is unproven against real
+   inputs rather than imply otherwise.
 5. Whether the existing `docs/spec/` slices are rewritten in place or superseded by a platform
    spec — a documentation decision, taken during P0.
 6. **Reserved unit codes.** `routes/web.php` declares `/endorsement/today`,

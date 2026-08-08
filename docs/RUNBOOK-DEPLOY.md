@@ -135,7 +135,8 @@ It exists because three bugs reached a deployment while all 299 unit tests passe
 
 ## The host scripts are NOT deployed by a deploy
 
-Two scripts run on the HOST, outside the container, and are installed by hand:
+Two scripts run on the HOST, outside any container, and are installed by hand — **ONE
+binary each, shared by every customer instance**, taking the instance slug as `$1`:
 
     /usr/local/bin/endorsement-backup-sync     <- docker/backup-offhost-sync.sh
     /usr/local/bin/endorsement-uptime-check    <- docker/uptime-check.sh
@@ -146,19 +147,57 @@ heartbeat entirely, so a heartbeat URL placed on that server would have been pin
 nothing, while the repository said the feature existed. The repo was right about the code
 and wrong about reality, which is the worse way round.
 
-After changing either script, install it:
+### Per-instance config, `/etc/endorsement/<slug>.conf`, `0600 root:root`
+
+Both scripts refuse to run without a slug, and read everything instance-specific out of this
+file. Root-only: `HEARTBEAT_FILE` names a secret and `DEST` names the off-host copy of the
+clinical record.
+
+```sh
+# /etc/endorsement/qch.conf — one per customer instance.
+PROJECT_UUID=oo7d7si62yhyi7fx10hrck6q
+RCLONE_CONF=/etc/endorsement/rclone.conf
+DEST=oci-qch:endorsement-backups-qch
+PUBLIC_URL=https://endorse.towardpcc.com/up
+HEARTBEAT_FILE=/etc/endorsement/qch-heartbeat.url
+```
+
+**A separate bucket per customer, not a shared bucket with prefixes** (owner decision
+2026-08-08). Three reasons, all already true of this system: a dedicated bucket keeps one
+customer's health data from sitting alongside another's; the outstanding object-lock/retention
+rule applies per bucket, so a shared bucket makes one customer's retention policy another's;
+and the freshness check that treats an empty destination as a failure is only meaningful when
+the destination belongs to one customer — otherwise customer B's fresh upload would satisfy
+customer A's assertion, and A's backups could stop permanently while the heartbeat keeps
+firing.
+
+Cron, per instance:
+
+```cron
+5 2 * * *  /usr/local/bin/endorsement-backup-sync qch
+*/5 * * * * /usr/local/bin/endorsement-uptime-check qch
+```
+
+### Installing a change to either script
 
 ```bash
 scp -i ~/.ssh/oci_server docker/backup-offhost-sync.sh ubuntu@145.241.105.239:/tmp/s.sh
 ssh -i ~/.ssh/oci_server ubuntu@145.241.105.239 '
   sudo cp /usr/local/bin/endorsement-backup-sync /root/endorsement-backup-sync.$(date +%F).bak
   bash -n /tmp/s.sh && sudo install -m 0755 -o root -g root /tmp/s.sh /usr/local/bin/endorsement-backup-sync
-  sudo /usr/local/bin/endorsement-backup-sync; echo "exit=$?"'
+  sudo /usr/local/bin/endorsement-backup-sync qch; echo "exit=$?"'
 ```
 
-Back up first, syntax-check before installing, run it once, and roll back on a non-zero
-exit. These are the scripts that protect the only off-site copy of the clinical record, so
-"it looked fine" is not a verification.
+Back up first, syntax-check before installing, run it once **with the slug**, and roll back
+on a non-zero exit. These are the scripts that protect the only off-site copy of the clinical
+record, so "it looked fine" is not a verification.
+
+**Installing the new (slugged) binary breaks any old crontab entry that passes no slug** —
+the script now exits 2 immediately instead of running. Update the crontab in the SAME
+session you install the binary, and confirm both scripts run by hand (with the slug) before
+leaving the host. A script that exits 2 every night is safer than one that guesses which
+customer it is protecting, but only if someone notices — and the first night after an install
+is exactly when nobody is watching for it.
 
 ## Database operations (yours to run)
 

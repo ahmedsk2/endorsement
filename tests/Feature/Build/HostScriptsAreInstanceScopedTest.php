@@ -131,8 +131,12 @@ class HostScriptsAreInstanceScopedTest extends TestCase
             'the slug must be a required positional argument, not defaulted',
         );
 
-        $this->assertStringNotContainsString(
-            'endorsement-backups/_data',
+        // The volume NAME (`endorsement-backups`) is correctly still literal — it is the
+        // same for every customer's compose stack. What must never be pasted is the
+        // Coolify app UUID that PREFIXES it, which differs per customer; it has to come out
+        // of the per-slug config file as $PROJECT_UUID, not be typed into the script.
+        $this->assertMatchesRegularExpression(
+            '/SRC="\/var\/lib\/docker\/volumes\/\$\{PROJECT_UUID\}_endorsement-backups\/_data"/',
             $script,
             'the volume source must be derived from a PROJECT_UUID read out of the per-slug config, never pasted',
         );

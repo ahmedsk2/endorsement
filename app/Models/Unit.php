@@ -17,6 +17,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Unit extends Model
 {
     /**
+     * Codes that can never be a unit, because routes/web.php declares them as literal segments
+     * before /endorsement/{unit}. A unit with one of these codes would be permanently shadowed
+     * by the earlier route and unreachable — silently, with no error at creation and a 404 at
+     * use. Impossible while the registry was hardcoded; reachable the moment a UI creates units.
+     *
+     * Kept in sync with the router by ReservedUnitCodesTest, which derives the list from the
+     * registered routes rather than trusting this constant.
+     */
+    public const RESERVED_CODES = ['TODAY', 'COMPLIANCE', 'ROWS'];
+
+    /**
      * @var list<string>
      */
     protected $fillable = [
@@ -72,6 +83,27 @@ class Unit extends Model
     public static function findByCode(string $code): ?self
     {
         return static::query()->where('code', strtoupper(trim($code)))->first();
+    }
+
+    /**
+     * Refuse a reserved code on every write path — a seeder, a console command, a factory and a
+     * future controller are all covered by this one gate. Compares against the NORMALIZED code,
+     * since the `code` Attribute above uppercases and trims before this fires.
+     *
+     * There is no unit-creation UI yet (P1), so this model guard is the whole enforcement today.
+     * When one lands, it must surface this as a validation message (`Rule::notIn(self::
+     * RESERVED_CODES)`) rather than let this exception reach the user raw.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $unit): void {
+            if (in_array($unit->code, self::RESERVED_CODES, true)) {
+                throw new \InvalidArgumentException(
+                    "Unit code [{$unit->code}] is reserved by a route under /endorsement and would "
+                    .'be unreachable. Choose another code.'
+                );
+            }
+        });
     }
 
     /**

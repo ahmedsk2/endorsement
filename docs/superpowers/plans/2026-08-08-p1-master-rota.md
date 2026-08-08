@@ -444,7 +444,7 @@ a value pasted into Coolify had **zero effect** and a throwaway instance configu
 `INSTITUTION_CODE=TSA` seeded as `QCH` anyway. A `HIJRI_OFFSET_DAYS` that does not reach the
 container renders every Hijri date one day wrong, silently.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/Calendar/InstitutionCalendarSettingsTest.php`. Cover:
 
@@ -475,7 +475,7 @@ export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/com
 php artisan test --filter InstitutionCalendarSettings | tail -30
 ```
 
-- [ ] **Step 2: The migration**
+- [x] **Step 2: The migration**
 
 `database/migrations/2026_08_12_120001_add_calendar_settings_to_institutions.php`:
 
@@ -548,7 +548,7 @@ return new class extends Migration
 };
 ```
 
-- [ ] **Step 3: The model**
+- [x] **Step 3: The model**
 
 In `app/Models/Institution.php`, extend `$fillable` with the six keys and add casts:
 
@@ -577,7 +577,7 @@ institutions. `Calendar` must treat that null as "use the defaults", never as an
 `RefreshDatabase` runs every test against an empty `institutions` table until something seeds
 one, and a calendar that throws there breaks 600+ unrelated tests.
 
-- [ ] **Step 4: Config, seeder, env, compose**
+- [x] **Step 4: Config, seeder, env, compose**
 
 `config/endorsement.php`, beside the existing `institution` block:
 
@@ -632,7 +632,7 @@ HIJRI_OFFSET_DAYS=
       HIJRI_OFFSET_DAYS: ${HIJRI_OFFSET_DAYS:-0}
 ```
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
@@ -663,7 +663,7 @@ git commit -m "feat: a department's calendar has somewhere to be configured"
 - Test: `tests/Unit/CalendarTest.php`
 - Test: `tests/Feature/Build/CalendarIsTheOnlyConverterTest.php`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/Unit/CalendarTest.php` — at minimum:
 
@@ -704,7 +704,7 @@ php artisan test --filter CalendarTest | tail -30
 php artisan test --filter CalendarIsTheOnlyConverter | tail -30
 ```
 
-- [ ] **Step 2: `lang/en/calendar.php`**
+- [x] **Step 2: `lang/en/calendar.php`**
 
 AR-07 requires externalized strings — no hard-coded UI text — from launch, so the month names
 are a language file from day one rather than a later migration:
@@ -725,7 +725,7 @@ return [
 ];
 ```
 
-- [ ] **Step 3: `App\Support\Calendar`**
+- [x] **Step 3: `App\Support\Calendar`**
 
 ```php
 <?php
@@ -981,7 +981,7 @@ final class Calendar
 static state, or a test that seeds an institution inherits the previous test's memoized
 defaults.
 
-- [ ] **Step 4: Declare the dependency**
+- [x] **Step 4: Declare the dependency**
 
 `ext-intl` is installed everywhere but declared nowhere. Add to `composer.json`'s `require`,
 after `"php": "^8.3"`:
@@ -994,7 +994,7 @@ Then `composer update --lock` to refresh the lock hash only. This is not bureauc
 it, a future `composer install` on a host lacking `intl` succeeds and the failure surfaces as
 a fatal error the first time a screen renders a Hijri date.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```bash
 npm run build 2>&1 | tail -5
@@ -1019,7 +1019,7 @@ Finding 1. This task comes **before** any task that renders a date, because a da
 regression at +03:00 is invisible in a suite that runs at +00:00, and the whole point of the
 module is to be right about day boundaries.
 
-- [ ] **Step 1: A helper that genuinely moves the timezone**
+- [x] **Step 1: A helper that genuinely moves the timezone**
 
 CLAUDE.md is explicit that `config(['app.timezone' => …])` alone proves nothing — it does not
 move PHP's default timezone, so `now()` and `Carbon::parse()` do not move either. Add to
@@ -1051,7 +1051,7 @@ move PHP's default timezone, so `now()` and `Carbon::parse()` do not move either
     }
 ```
 
-- [ ] **Step 2: The failing test**
+- [x] **Step 2: The failing test**
 
 `tests/Feature/Calendar/DayBoundaryTest.php`. Use PHPUnit 12's **attribute** form —
 `#[\PHPUnit\Framework\Attributes\DataProvider('...')]`; the `@dataProvider` docblock was
@@ -1072,7 +1072,7 @@ Cover, over a provider of `['UTC', 'Asia/Riyadh']`:
   concrete statement of why `APP_TIMEZONE` cannot change after the first clinical write
   (`docs/RUNBOOK-PROVISION.md:25`).
 
-- [ ] **Step 3: Try moving the whole suite to Riyadh, and report honestly**
+- [x] **Step 3: Try moving the whole suite to Riyadh, and report honestly**
 
 Add `<env name="APP_TIMEZONE" value="Asia/Riyadh"/>` to `phpunit.xml` and run the full suite.
 
@@ -1091,7 +1091,7 @@ test. If the red is large or lands outside P1a's scope, **revert the `phpunit.xm
 keep the explicit dual-timezone harness from Steps 1–2, and record in *Amendments* exactly what
 went red and why. A suite-wide timezone flip is not worth blocking the calendar module on.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```bash
 npm run build 2>&1 | tail -5

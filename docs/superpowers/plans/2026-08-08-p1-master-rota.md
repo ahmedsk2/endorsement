@@ -115,6 +115,47 @@ predict, a behaviour that differs between SQLite and MySQL or between UTC and As
 record it here, dated, with what was found and how it was resolved. Findings caught
 empirically rather than by inspection are the ones worth writing down.)*
 
+**2026-08-09, Task 8 — the plan's own `golden.json` draft is the same superseded 371-day
+arithmetic Task 4's amendment already fixed once, plus a genuinely new leap-year fixture the
+plan did not include.** The plan's Step 1 JSON snippet was written from reconnaissance finding
+7's pre-decision-4 reading (13 blocks of 4 weeks plus a fixed 5-week block 13), the same
+arithmetic Task 4 had already corrected in code and tests. Recomputed by actually running
+`PeriodGenerator::weekBlocks()`/`::months()` (via a throwaway test that dumped its output,
+deleted before commit — never copied numbers by hand) and reading the result back:
+
+- `week_blocks` (`next_year_starts_on` supplied, `2027-07-01`): count 13, **total_days 365**
+  (not 371), last block `Block 13, 2027-06-02 .. 2027-06-30` (not `.. 2027-07-06`) — matches
+  `PeriodGenerationTest::test_week_blocks_final_block_absorbs_the_remainder_before_next_years_start`
+  exactly, since both were produced by the same corrected generator.
+- Added a **second** `week_blocks` case with `next_year_starts_on: null` — the FALLBACK path,
+  where the final block legitimately IS the nominal 35-day/371-day-total reading, because no
+  next year's start is known yet (a preview convenience, per Task 4's amendment). This is the
+  one entry in the whole file where 371 is the *correct* number, and it is labelled as such so
+  a future reader does not "fix" it back to 365.
+- `months`: count 12, total_days 365, first/last unchanged from the plan's draft — the plan's
+  month-run numbers were already correct; only the week-block run was written under the
+  superseded arithmetic.
+- Added, not in the plan's draft at all: a **leap-year** case (`months` run starting
+  `2027-07-01`, position 8 = `February 2028, 2028-02-01 .. 2028-02-29`, 29 days) and a
+  **2028-02-29** date-level case (`hijri` `1449-10-04`) — the task instructions asked for a
+  leap year explicitly and the plan's original fixture had none.
+- Also added beyond the plan's draft, per the task's explicit list of divergence-catching
+  cases: a `day_boundary_cases` block reusing `DayBoundaryTest`'s proven
+  `2026-08-08T22:30:00Z` instant (UTC day `2026-08-08` vs Riyadh day `2026-08-09`), and a
+  `holiday_cases` block covering a Hijri-ruled holiday moving with `hijri_offset_days`
+  (Eid al-Fitr, `2027-03-09` at offset 0 vs `2027-03-10` at offset -1) and a holiday span
+  crossing a Hijri month end (`HolidayTest`'s Ramadan-tail case, `2027-03-08..11`) — both
+  reusing values `HolidayTest` had already proven, not new claims.
+- The plan's date-level `cases` (offset 0 and -1, the four dates plus the weekend pair) were
+  **already correct** when checked against `CalendarTest`/`DayBoundaryTest` and the generator
+  directly — decision 4 only affects period generation, not day-level Hijri/weekend
+  resolution, so those entries were kept as the plan wrote them (plus the added leap-year
+  entry).
+
+`tests/Feature/Calendar/GoldenFixtureTest.php` loads the JSON and asserts every field against
+the live code (94 assertions across 6 test methods); nothing in `golden.json` is asserted only
+by inspection.
+
 **2026-08-09, Task 7 — the plan's own migration snippet indexes `['institution_id', 'active']`,
 which repeats the D11 mistake Task 4's amendment already caught and fixed on `periods`.** Every
 query this task adds (`Calendar::activeHolidays()`) filters on `active` alone, never on
@@ -1683,7 +1724,7 @@ mirror to P2 — this task builds the corpus now so that mirror has something to
 against on the day it is written, rather than being written and then having fixtures
 retro-fitted to whatever it already does.
 
-- [ ] **Step 1: The corpus**
+- [x] **Step 1: The corpus**
 
 `tests/fixtures/calendar/golden.json` — a plain JSON document, deliberately readable by both
 PHP and JS with no framework:
@@ -1746,7 +1787,7 @@ requires and the one the owner can check against the department's published cale
 read them and confirm they are right** — do not copy the numbers above on faith. If they
 differ, the fixture is wrong and the *Amendments* section records what the real values are.
 
-- [ ] **Step 2: The test**
+- [x] **Step 2: The test**
 
 `GoldenFixtureTest` loads the JSON, applies each `settings` block to an institution row, calls
 `Calendar::flush()`, and asserts every field of every case. It is a data-driven test, so
@@ -1756,7 +1797,7 @@ Add a docblock stating in one sentence: *"P2's `packages/engine` calendar assert
 same file. A change here that is not also a change there is the drift this file exists to
 catch."*
 
-- [ ] **Step 3: Verify and commit**
+- [x] **Step 3: Verify and commit**
 
 ```bash
 npm run build 2>&1 | tail -5

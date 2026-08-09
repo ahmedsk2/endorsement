@@ -32,7 +32,7 @@
 | # | Decision | Ruling |
 |---|---|---|
 | 20 | Annual promotion target | Chosen by the operator, explicit, every time — never inferred. There is no `levels.terminal` column and no `Level::nextAfter()` method; P1b Owner Decision A restated as the screen it was written for |
-| 21 | Contact visibility | `phone` behind a two-valued department setting (`institutions.contact_visibility`: `admins` default, `members`); `notes` behind neither value — always `people.manage`-only |
+| 21 | Contact visibility | `email` AND `phone` together behind a two-valued department setting (`institutions.contact_visibility`: `admins` default, `members`) — one decision (`PersonPolicy::viewContact()` / `ContactVisibility::membersMaySeeContact()`), never one field governed and the other forgotten; `notes` behind neither value — always `people.manage`-only. Amended 2026-08-10: P1d Task 7 put `email` behind the gate when the rota grid became the first `viewContact` holder narrower than `people.manage`, and this row still named `phone` alone |
 
 ## P1d-1 rulings (2026-08-10)
 

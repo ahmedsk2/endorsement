@@ -196,6 +196,84 @@ class Person extends Model
         return $out;
     }
 
+    /**
+     * Every level span for a set of people that INTERSECTS a date range, in one query, keyed by
+     * person id and ordered oldest-first. The rota grid's question is not "the level on one
+     * date" but "the level in each of thirteen periods" — thirteen `levelsAt()` calls is
+     * thirteen queries, and `levelAt()` per cell is 780 (P1 finding 10, generalised).
+     *
+     * Shares `inForceOn()`'s BOTH-BOUNDS-INCLUSIVE semantics by construction: a span is in the
+     * range if it starts on or before the range's end and has not ended before the range's
+     * start.
+     *
+     * Returns an entry for EVERY person passed in — an empty list where there is no history —
+     * so a caller iterating it never hits an undefined index. Same contract as `levelsAt()`.
+     *
+     * @param  \Illuminate\Support\Collection<int, Person>|array<int, Person>  $people
+     * @return array<int, list<PersonLevel>>
+     */
+    public static function levelSpansBetween(iterable $people, string $fromYmd, string $toYmd): array
+    {
+        $out = [];
+        $ids = [];
+
+        foreach ($people as $person) {
+            $id = (int) $person->getKey();
+            $out[$id] = [];
+            $ids[] = $id;
+        }
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $spans = PersonLevel::query()
+            ->whereIn('person_levels.person_id', $ids)
+            ->whereDate('person_levels.effective_from', '<=', $toYmd)
+            ->where(fn (Builder $q) => $q->whereNull('person_levels.effective_to')
+                ->orWhereDate('person_levels.effective_to', '>=', $fromYmd))
+            ->orderBy('person_levels.effective_from')
+            ->with('level')
+            ->get();
+
+        foreach ($spans as $span) {
+            $out[(int) $span->person_id][] = $span;
+        }
+
+        return $out;
+    }
+
+    /**
+     * The level in force on `$on`, resolved against an ALREADY-FETCHED span list from
+     * `levelSpansBetween()`. No query.
+     *
+     * This is the one place in this codebase where a predicate exists twice — once as SQL
+     * (`inForceOn()`), once as PHP (here) — because a query builder cannot be run against an
+     * array. `LevelResolverParityTest` proves the two agree across a matrix of span shapes and
+     * dates, which is the same answer `PickerParityTest` gives for `SignoffPickers`'s two-sided
+     * rule. If you change either side, that test is what catches you.
+     *
+     * The spans arrive ordered oldest-first, so the LAST match wins — exactly `levelAt()`'s
+     * `orderByDesc('effective_from')->first()`.
+     *
+     * @param  list<PersonLevel>  $spans
+     */
+    public static function levelFromSpans(array $spans, string $on): ?Level
+    {
+        $found = null;
+
+        foreach ($spans as $span) {
+            $from = $span->effective_from->format(Calendar::YMD);
+            $to = $span->effective_to?->format(Calendar::YMD);
+
+            if ($from <= $on && ($to === null || $to >= $on)) {
+                $found = $span->level;
+            }
+        }
+
+        return $found;
+    }
+
     public function currentLevel(): ?Level
     {
         return $this->levelAt();

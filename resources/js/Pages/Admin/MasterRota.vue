@@ -16,8 +16,16 @@ import SaveStatus from '../../Components/SaveStatus.vue';
  * A cell with more than one span, OR a single span that does not cover the whole period (a
  * gap — owner decision 3), renders read-only: the plain unit `<select>` is not the control for
  * that state, because changing it would silently collapse deliberate split work into one
- * whole-period assignment. The "Split" editor that opens from it is Task 9. Existing vacations
- * render read-only here too; booking/cancelling one is Task 10.
+ * whole-period assignment. Every cell — empty, simple or already split — offers a "Split…"
+ * affordance that opens Task 9's editor below. Existing vacations render read-only here too;
+ * booking/cancelling one is Task 10.
+ *
+ * Task 9's split editor NEVER computes the uncovered-day count itself from the (unsaved) date
+ * inputs it holds — `splitCellState` below reads `uncovered_days` straight from `grid.rows`,
+ * which is always the server's own last-known figure for that cell. Before any save this is
+ * whatever was already persisted; after a successful save Inertia re-renders `grid` with the
+ * server's fresh count, and the editor picks it up because it is a `computed`, not a snapshot
+ * taken when the panel opened.
  */
 const props = defineProps({
     academic_years: { type: Array, default: () => [] },
@@ -110,6 +118,84 @@ const onCellSelect = (personId, periodId, event) => {
     if (value === '') return;
     saveCell(personId, periodId, Number(value));
 };
+
+// --- Task 9: splits in a cell -----------------------------------------------------------
+
+// `{ personId, periodId, spans: [{unit_id, starts_on, ends_on}] }` while a split is being
+// edited; the local `spans` array is the ONLY thing this panel keeps as working state — the
+// period bounds and the uncovered-day count are always read live from `props.grid` below.
+const splitEditor = ref(null);
+const splitProcessing = ref(false);
+const splitErrors = ref({});
+
+const splitPeriod = computed(() => {
+    if (!splitEditor.value || !props.grid) return null;
+    return props.grid.periods.find((period) => period.id === splitEditor.value.periodId) ?? null;
+});
+
+// The live cell this editor is working on — re-derived from `props.grid` on every render, so a
+// fresh save's server-computed `uncovered_days` shows up here without this component ever
+// computing that count itself from the (possibly unsaved) rows in `splitEditor.spans`.
+const splitCellState = computed(() => {
+    if (!splitEditor.value || !props.grid) return null;
+    const row = props.grid.rows.find((r) => r.person.id === splitEditor.value.personId);
+    return row ? row.cells[splitEditor.value.periodId] : null;
+});
+
+const openSplit = (row, period) => {
+    const cell = row.cells[period.id];
+
+    splitErrors.value = {};
+    splitEditor.value = {
+        personId: row.person.id,
+        periodId: period.id,
+        // A blank cell starts the editor with one empty row rather than zero — an empty panel
+        // with only "Add span" would make the first span harder to add than every later one.
+        spans: cell.spans.length > 0
+            ? cell.spans.map((span) => ({ unit_id: span.unit_id, starts_on: span.starts_on, ends_on: span.ends_on }))
+            : [{ unit_id: '', starts_on: '', ends_on: '' }],
+    };
+};
+
+const closeSplit = () => {
+    splitEditor.value = null;
+    splitErrors.value = {};
+};
+
+const addSpan = () => {
+    // Empty, never guessed — a blank row makes the person pick both dates deliberately rather
+    // than silently inheriting a neighbour's range.
+    splitEditor.value.spans.push({ unit_id: '', starts_on: '', ends_on: '' });
+};
+
+const removeSpan = (index) => {
+    // The title matches the writer's own refusal message (RotaAssignment::split()'s "To remove
+    // an assignment, clear it.") so the UI and the exception say the same thing.
+    if (splitEditor.value.spans.length <= 1) return;
+    splitEditor.value.spans.splice(index, 1);
+};
+
+const submitSplit = () => {
+    splitProcessing.value = true;
+    splitErrors.value = {};
+
+    router.post('/admin/rota/cell/split', {
+        person_id: splitEditor.value.personId,
+        period_id: splitEditor.value.periodId,
+        spans: splitEditor.value.spans,
+    }, {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => {
+            splitProcessing.value = false;
+            closeSplit();
+        },
+        onError: (errors) => {
+            splitProcessing.value = false;
+            splitErrors.value = errors;
+        },
+    });
+};
 </script>
 
 <template>
@@ -192,6 +278,12 @@ const onCellSelect = (personId, periodId, event) => {
                                         </p>
                                     </template>
 
+                                    <button type="button" class="mt-1 text-xs font-semibold text-channel-ink"
+                                            :data-testid="`split-open-${row.person.id}-${period.id}`"
+                                            @click="openSplit(row, period)">
+                                        Split&hellip;
+                                    </button>
+
                                     <ul v-if="row.cells[period.id].vacations.length" class="mt-2 space-y-1">
                                         <li v-for="vac in row.cells[period.id].vacations" :key="vac.id" class="channel-tag">
                                             On leave: {{ vac.starts_label.date }} &ndash; {{ vac.ends_label.date }}
@@ -261,6 +353,12 @@ const onCellSelect = (personId, periodId, event) => {
                                             </p>
                                         </template>
 
+                                        <button type="button" class="mt-0.5 block text-xs font-semibold text-channel-ink"
+                                                :data-testid="`split-open-${row.person.id}-${period.id}`"
+                                                @click="openSplit(row, period)">
+                                            Split&hellip;
+                                        </button>
+
                                         <ul v-if="row.cells[period.id].vacations.length" class="mt-1 space-y-0.5">
                                             <li v-for="vac in row.cells[period.id].vacations" :key="vac.id" class="channel-tag">
                                                 Leave {{ vac.starts_label.date }}&ndash;{{ vac.ends_label.date }}
@@ -275,6 +373,84 @@ const onCellSelect = (personId, periodId, event) => {
                     </table>
                 </div>
             </template>
+
+            <!-- Task 9: the split editor. Submits the WHOLE span set to POST /admin/rota/cell/split
+                 — RotaAssignment::split() replaces, never merges (Decision F). -->
+            <section v-if="splitEditor" class="rounded-md border border-line bg-panel p-6" data-testid="split-editor">
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <p class="text-sm font-semibold text-ink">Split assignment</p>
+                        <p v-if="splitPeriod" class="text-xs text-muted">
+                            {{ splitPeriod.label }}: {{ splitPeriod.starts_label.date }} &ndash; {{ splitPeriod.ends_label.date }}
+                        </p>
+                    </div>
+                    <button type="button" class="text-sm font-semibold text-body" @click="closeSplit">Close</button>
+                </div>
+
+                <div class="mt-4 space-y-3">
+                    <div v-for="(span, index) in splitEditor.spans" :key="index"
+                         class="grid grid-cols-1 gap-2 rounded-md border border-line-soft p-3 sm:grid-cols-4 sm:items-end"
+                         data-testid="split-span-row">
+                        <div>
+                            <label class="channel-tag mb-1 block" :for="`split-unit-${index}`">Unit</label>
+                            <select :id="`split-unit-${index}`" v-model="span.unit_id"
+                                    class="w-full min-h-11 rounded-md border border-line bg-panel px-2 py-1 text-sm text-ink"
+                                    data-testid="split-span-unit">
+                                <option value="">&mdash; choose &mdash;</option>
+                                <option v-for="unit in grid.units" :key="unit.id" :value="unit.id">{{ unit.code }}</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="channel-tag mb-1 block" :for="`split-start-${index}`">Starts</label>
+                            <input :id="`split-start-${index}`" v-model="span.starts_on" type="date"
+                                   :min="splitPeriod?.starts_on" :max="splitPeriod?.ends_on"
+                                   class="w-full min-h-11 rounded-md border border-line bg-panel px-2 py-1 text-sm text-ink"
+                                   data-testid="split-span-start" />
+                        </div>
+                        <div>
+                            <label class="channel-tag mb-1 block" :for="`split-end-${index}`">Ends</label>
+                            <input :id="`split-end-${index}`" v-model="span.ends_on" type="date"
+                                   :min="splitPeriod?.starts_on" :max="splitPeriod?.ends_on"
+                                   class="w-full min-h-11 rounded-md border border-line bg-panel px-2 py-1 text-sm text-ink"
+                                   data-testid="split-span-end" />
+                        </div>
+                        <div>
+                            <button type="button"
+                                    class="min-h-11 rounded-md border border-line px-3 py-2 text-xs font-semibold text-critical disabled:opacity-40"
+                                    :disabled="splitEditor.spans.length <= 1"
+                                    :title="splitEditor.spans.length <= 1 ? 'Use Clear on the cell to remove the last span.' : 'Remove this span'"
+                                    data-testid="split-remove-span"
+                                    @click="removeSpan(index)">
+                                Remove
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-3 flex flex-wrap items-center gap-3">
+                    <button type="button" class="min-h-11 rounded-md border border-line px-3 py-2 text-sm font-semibold text-body"
+                            data-testid="split-add-span" @click="addSpan">
+                        + Add span
+                    </button>
+                    <!-- Always the SERVER's own count (splitCellState is derived from props.grid,
+                         never from the unsaved rows above) — a gap is a legitimate state
+                         (owner decision 3), never treated as an error here. -->
+                    <p v-if="splitCellState" class="text-xs text-muted" data-testid="split-uncovered">
+                        {{ splitCellState.uncovered_days }} day(s) in this block are currently unassigned.
+                    </p>
+                </div>
+
+                <p v-if="splitErrors.spans" class="mt-2 text-sm text-critical" data-testid="split-error">{{ splitErrors.spans }}</p>
+
+                <div class="mt-4 flex items-center gap-3 border-t border-line-soft pt-4">
+                    <button type="button" :disabled="splitProcessing"
+                            class="min-h-11 rounded-md bg-channel px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                            data-testid="split-save" @click="submitSplit">
+                        Save split
+                    </button>
+                    <button type="button" class="text-sm font-semibold text-body" @click="closeSplit">Cancel</button>
+                </div>
+            </section>
         </div>
     </AppLayout>
 </template>

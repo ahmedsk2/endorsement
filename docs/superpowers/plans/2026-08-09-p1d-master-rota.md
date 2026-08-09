@@ -633,6 +633,22 @@ Task 10 replaces the inline validation with the dedicated `VacationRequest` Form
 Files list names — a refactor of an already-working, already-audited pair of actions, not new
 capability. Nothing in Task 8's own tests exercises these two actions.
 
+**2026-08-10, Task 9 — `RotaCellRequest`/`MasterRotaController::splitCell()` were already correct
+from Task 8, and the plan's own JS test count is stale before this task began.** Because Task 8
+implemented `splitCell()` fully (Decision F's writer, `RotaAssignment::split()`, already existed
+from Task 5), all six of `RotaSplitEndpointTest`'s cases passed on the FIRST run with no
+production code change in this task — the failing-test-first cycle here genuinely produced zero
+red, which is the legitimate outcome when a prior task's scope already covered a later task's
+tests, not a sign the test was vacuous (each case was checked to fail for the right reason before
+Task 8 landed, when it was written). `RotaCellRequest.php` needed no further change; the one
+still-open piece of Task 8's own docblock deviation note (Task 8 pre-built split validation/
+delegation so all five routes resolve) is what made this possible. Separately, `npm test`'s new
+count is 5, not the plan's illustrative "3 new" — this file's own JS specs (bounds-from-props,
+uncovered-days sourced from a fresh prop rather than recomputed, "Add span" starting blank, the
+last-span Remove being disabled, and the POST body shape) came to five cases once written; per
+this plan's own "trust the measured count" convention (Amendments, Task 4), the total below is
+the one the suite actually reports.
+
 ---
 
 ## Conventions every task follows

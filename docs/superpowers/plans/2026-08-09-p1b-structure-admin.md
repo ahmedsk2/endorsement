@@ -3509,7 +3509,7 @@ unchanged. `npm run build`, `HolidayTest`, `CalendarWritersFlushTest` and the fu
 
 Every plan in this project has found the documents wrong. P1b's job is to leave them right.
 
-- [ ] **Step 1: `CLAUDE.md`**
+- [x] **Step 1: `CLAUDE.md`**
 
 Three edits:
 
@@ -3534,7 +3534,7 @@ Three edits:
   `EXT` is `external`, `R4` is `terminal`, and `Level::nextAfter()` is the ONE definition of
   "advance one level" that P1c's LV-03 preview and commit will both read.
 
-- [ ] **Step 2: The design doc**
+- [x] **Step 2: The design doc**
 
 - **§6.1:** flip the "not shipped" wording. UN-02's three flags, UN-03's `aliases` and UN-05's
   `name2` shipped in P1b Task 1 (`2026_08_13_120001`). Record Decision B: there is **no** `color`
@@ -3552,13 +3552,13 @@ Three edits:
 - **§14, new item:** `Calendar::flush()`'s production contract and the one allow-listed
   non-flushing writer (`ReferenceSeeder`, which exits).
 
-- [ ] **Step 3: `docs/spec/08-foundation.md`**
+- [x] **Step 3: `docs/spec/08-foundation.md`**
 
 Verify Task 2's two edits are still present and correct after the whole plan has run — the
 catalog line and the role-defaults line. This file has been found stale twice; check it, do not
 assume it.
 
-- [ ] **Step 4: `docs/RUNBOOK-DEPLOY.md`**
+- [x] **Step 4: `docs/RUNBOOK-DEPLOY.md`**
 
 Verification queries for the two migrations, and a post-deploy note:
 
@@ -3578,12 +3578,12 @@ reached the container** — the screen shows today's Gregorian and Hijri labels 
 the calibration can be checked against the department's published calendar from the app rather
 than from a SQL prompt.
 
-- [ ] **Step 5: `docs/OPEN-DECISIONS.md`**
+- [x] **Step 5: `docs/OPEN-DECISIONS.md`**
 
 Add the owner items this plan surfaced (below), each with what it blocks and what happens by
 default until answered.
 
-- [ ] **Step 6: The P1 master plan**
+- [x] **Step 6: The P1 master plan**
 
 `docs/superpowers/plans/2026-08-08-p1-master-rota.md`'s P1b task list is scoping written before
 the tree was read. Add a dated pointer under it: this plan supersedes it, three items changed
@@ -3591,7 +3591,7 @@ the tree was read. Add a dated pointer under it: this plan supersedes it, three 
 and palette move to configuration in Task 3, which that list did not name at all), and the
 `Next plan` section's two P1a outputs P1b must respect were both honoured.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
@@ -3601,6 +3601,51 @@ php artisan test 2>&1 | tail -3
 
 ```bash
 git add CLAUDE.md docs/
+git commit -m "docs: five documents described a department nobody could configure"
+```
+
+**2026-08-09, Task 13 — the largest plan-text error found across P1b: Task 13's OWN Step 1 text
+asked for a false claim to be written into CLAUDE.md, and it was not written.** Step 1's third
+bullet ("Domain vocabulary, a new line for levels") reads, verbatim in the plan as handed to
+this session: *"`R4` is terminal, and `Level::nextAfter()` is the ONE definition of 'advance one
+level' that P1c's LV-03 preview and commit will both read."* That sentence directly contradicts
+this plan's own binding OWNER DECISIONS block (Decision A, at the top of this file) and what
+Tasks 6-8 actually shipped: there is no `terminal` column, no `nextAfter()` method, and the
+`Owner decisions still needed` section's own item 2 below ("Is `R4` really the terminal level at
+QCH?") is likewise a question Decision A already closed outright, not one still open. Writing
+either into CLAUDE.md — project instructions read at the start of every session — would have
+been a documented falsehood about the tree, the exact "design doc wrong a seventh time" the
+task's own framing warned against. Resolved by writing the TRUE state instead (`external` only,
+no `terminal`, no `nextAfter()`, P1c's promotion screen takes the target level as explicit
+input) into all three touched documents (CLAUDE.md, the design doc, the P1 master plan), and by
+**omitting** the stale item 2 from `docs/OPEN-DECISIONS.md` rather than transcribing a question
+Decision A had already answered — `docs/OPEN-DECISIONS.md` gained items D and E (which units own
+clinics; the next academic year's start date) instead, the two genuinely-still-open items from
+this plan's "Owner decisions still needed" section; item 4 (invitation lifetime) was not
+re-added there either, since it is already recorded under that file's own
+"DECIDED — 2026-08-08 (P1a...)" section and a second copy would be the two-places-one-fact drift
+this whole task exists to prevent.
+
+Two further, smaller findings, both from re-reading the plan's own instructions against the
+current tree rather than executing them blind:
+
+- **Editing the design doc's §13 sequencing table cell as separate `Edit` calls produced real
+  newlines inside a single markdown table cell**, silently breaking the table (a `|`-delimited
+  row cannot contain a line break) and leaving a duplicated `**P1c** **P1c**` fragment behind.
+  Caught by reading the file back before moving on, not assumed correct because the tool call
+  succeeded — fixed by rewriting the whole row as one line. Worth recording because it is a
+  trap this specific editing pattern (several sequential edits inside one table row) will
+  reproduce identically on any other document with a wide table.
+- **`docs/spec/08-foundation.md` needed no edit at all** (Step 3): its `structure.manage`
+  catalog line and role-defaults line already correctly named "calendar, periods, holidays" —
+  Task 2 apparently wrote description text slightly ahead of what existed at the time, and
+  Tasks 10-12 caught up to it rather than the reverse. Verified by grep, not assumed, per the
+  task's own "this file has been found stale twice; check it, do not assume it" instruction.
+
+`npm run build` and the full suite green, unchanged at 886 (a documentation-only task).
+
+```bash
+git add CLAUDE.md docs/ docs/superpowers/plans/2026-08-09-p1b-structure-admin.md
 git commit -m "docs: five documents described a department nobody could configure"
 ```
 

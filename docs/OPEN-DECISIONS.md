@@ -44,6 +44,27 @@ guard now works — it had never once engaged. What remains is yours:
 Two things for the password manager: the monitoring account (note the continuity risk — it
 is tied to your personal email) and the heartbeat URL, which is a secret.
 
+### D. Which units own clinics?
+
+P1b (2026-08-09) seeded UN-02's `clinic_owner` flag `false` for all four QCH units — PICU,
+NICU, SCBU and WARD are training rotations and on-call targets, but no clinic concept exists
+in the codebase until P1e, so marking any of them a clinic owner today would be a clinical
+guess this repo has no standing to make. *Blocks:* P1e's CL-01 clinic screen, which needs at
+least one clinic-owning unit to have anything to show. *Default if unanswered:* stays `false`
+everywhere — the flag is a checkbox on Admin → Structure → Units, so P1e's own first step can
+simply be ticking it, and this may never need a standalone answer at all.
+
+### E. What is the department's next academic year start date?
+
+P1b's period generator (Admin → Structure → Periods) absorbs the remainder of a week-block
+year into its final block, computed against the *following* year's fixed start date (owner
+decision 4) — so generating "2026-2027" correctly needs to know when "2027-2028" begins.
+*Blocks:* nothing today — the preview falls back to a nominal 35-day final block when the next
+year's start is not yet known, and says so on screen. *Default if unanswered:* the fallback,
+which is the one place a 35-day (not the department's real) final block is the right preview
+answer; regenerate that year once the following year's start is confirmed (Admin → Structure →
+Periods → delete the year → generate again).
+
 ---
 
 ## DECIDED — 2026-07-27

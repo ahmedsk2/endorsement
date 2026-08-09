@@ -2061,6 +2061,39 @@ Scoping, not implementation. Each becomes its own plan, written when its predece
    year start with the period-run preview and its gap/overlap warning, weekend days, Hijri
    toggle and offset, holidays CRUD. Every write audited by key, never by value.
 
+**2026-08-09 — superseded by `docs/superpowers/plans/2026-08-09-p1b-structure-admin.md`,
+written when P1a merged and SHIPPED the same day.** This scoping is left as written above (the
+P0a–P0d convention: amend, do not silently rewrite, so a reader can compare original intent
+against what actually shipped), but three items changed once the sub-plan was read against the
+real tree:
+
+- **Item 1's "an explicit `color` distinct from `bar_class`" was rejected (Decision B).** A
+  second colour column would be two definitions of one fact. `bar_class` itself widened to an
+  eight-entry allow-list (`Unit::BAR_CLASSES`) that both offers the choice on the units screen
+  and validates it — one column, one list, zero data migration.
+- **Item 6's "terminal/graduating marker" was rejected (Owner Decision A, folded into the
+  sub-plan's own binding decisions block the same day this scoping predates).** `levels` gained
+  `external` only. A wrong terminal marker fails silently in two directions — an unmarked top
+  level advances a cohort into a level that does not exist, a wrongly-marked middle level
+  graduates one a year early — and Decision A removes the whole failure class by having P1c's
+  promotion screen take the **target level as explicit operator input** instead of inferring
+  "one step up" from a column. The same correction applies to this section's own "Next plan"
+  paragraph below, written before Decision A landed.
+- **Item 8's "the period-run preview and its gap/overlap warning" undersold what shipped.** The
+  sub-plan's own finding 4: `PeriodGenerator` had ZERO production callers, so a preview alone
+  would leave `periods` permanently empty and P1d's rota grid with no columns to render. The
+  sub-plan ships preview **and** generate-and-commit **and** delete-a-year (the hard-lock's own
+  unlock path) — scope this list's one line did not name.
+- **Not a correction, an omission this list never named at all:** `AppLayout.vue`'s hardcoded
+  sidebar array and `app.css`'s four-hue palette had to move to configuration (the sub-plan's
+  own Task 3) *before* item 3's unit-creation screen could land — otherwise the first unit an
+  administrator created would be invisible in the sidebar and colourless, a defect shipped by
+  the plan rather than inherited from before it.
+
+Confirmed honoured throughout: both of the "Next plan" section's P1a outputs below held for
+every P1b task — no screen formats a date except through `Calendar::label()`/`::ymd()`, and
+`tests/fixtures/calendar/golden.json` was never touched.
+
 ### P1c — People, roster and accounts *(PE-01…03, AC-01…04, LV-02…04, ST-04)*
 
 1. `people.manage` capability, gated route group, `PeopleController`, and the first People

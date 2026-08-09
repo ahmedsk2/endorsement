@@ -7,6 +7,7 @@ use App\Models\Period;
 use App\Models\Person;
 use App\Models\Unit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -210,5 +211,37 @@ class AssignmentIntegrityTest extends TestCase
         $row->update(['ends_on' => '2026-07-21']);
 
         $this->assertSame('2026-07-21', $row->fresh()->ends_on->format('Y-m-d'));
+    }
+
+    /**
+     * Pre-merge finding 4. Unreachable today — both writers always supply dates, the FormRequest
+     * requires them, and the columns are NOT NULL — but the guard reached `Calendar::ymd()` with
+     * no null check of its own, so a null would have surfaced as a `TypeError`. `TypeError` is
+     * neither `RuntimeException` nor `InvalidArgumentException`, so `MasterRotaController`'s
+     * catches would not have caught it, and a future write path would have got the raw 500 that
+     * this class's contract promises is always a 422.
+     */
+    #[DataProvider('missingDateProvider')]
+    public function test_a_span_missing_either_bound_is_refused_as_a_runtime_exception(?string $from, ?string $to): void
+    {
+        $this->expectException(RuntimeException::class);
+
+        MasterRotaAssignment::create([
+            'person_id' => $this->person->getKey(),
+            'period_id' => $this->period->getKey(),
+            'unit_id' => $this->unit->getKey(),
+            'starts_on' => $from,
+            'ends_on' => $to,
+        ]);
+    }
+
+    /** @return array<string, array{0: ?string, 1: ?string}> */
+    public static function missingDateProvider(): array
+    {
+        return [
+            'no start' => [null, '2026-07-28'],
+            'no end' => ['2026-07-01', null],
+            'neither' => [null, null],
+        ];
     }
 }

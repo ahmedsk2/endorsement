@@ -68,6 +68,16 @@ class MasterRotaAssignment extends Model
                 throw new RuntimeException('A master rota assignment must belong to a period.');
             }
 
+            // Ahead of Calendar::ymd(), which takes no null and would raise a TypeError —
+            // neither a RuntimeException nor an InvalidArgumentException, so
+            // MasterRotaController's catches would let it through as the raw 500 this guard's
+            // whole contract says never happens. Unreachable today (both writers always supply
+            // dates, the FormRequest requires them, and both columns are NOT NULL); the point is
+            // that the next write path does not have to be.
+            if ($row->starts_on === null || $row->ends_on === null) {
+                throw new RuntimeException('A rota assignment must have both a start and an end date.');
+            }
+
             $from = Calendar::ymd($row->starts_on);
             $to = Calendar::ymd($row->ends_on);
 

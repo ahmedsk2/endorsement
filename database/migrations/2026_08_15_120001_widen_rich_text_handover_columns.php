@@ -37,6 +37,14 @@ use Illuminate\Support\Facades\Schema;
  * on rollback. `LENGTH()` returns bytes (not `CHAR_LENGTH()`'s characters) for a text column,
  * which is exactly what TEXT's 65,535-byte ceiling is measured in, and these columns store
  * base64 ciphertext (all-ASCII), so byte length and character length agree here regardless.
+ *
+ * OPERATIONAL NOTE (2026-08-09 ops rehearsal): on MySQL 8.4 this is NOT instant. A
+ * `TEXT`->`MEDIUMTEXT` change widens the on-disk length prefix (2 bytes -> 3), which neither
+ * `ALGORITHM=INSTANT` nor `ALGORITHM=INPLACE` can apply, so MySQL falls back to `COPY` and
+ * rebuilds the whole `handovers` table. Reads continue; writes to `handovers` block for the
+ * duration. Measured: ~26 MB/s (20,000 rows / 157 MB (~6s). The owner should schedule this
+ * outside a shift-change window — see docs/RUNBOOK-DEPLOY.md's "OWNER ACTION — schedule
+ * 2026_08_15_120001_widen_rich_text_handover_columns" for the sizing query and full detail.
  */
 return new class extends Migration
 {

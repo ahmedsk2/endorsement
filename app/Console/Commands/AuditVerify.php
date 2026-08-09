@@ -23,10 +23,19 @@ class AuditVerify extends Command
         $prevHash = null;
         $count = 0;
 
-        // Chunk in id order; the chain is defined by insertion order.
+        // `chunkById`, not `chunk`. `chunk()` pages with OFFSET, so the database has to walk
+        // and discard every earlier row on every page — O(n²) overall — while `chunkById`
+        // pages with `WHERE id > :lastId ORDER BY id`, an index seek, O(n) overall. Measured
+        // on this table: 20,000 rows, 1.3s either way; 200,000 rows, `chunk()` 33.5s vs
+        // `chunkById()` 0.7s. `data:retention` never prunes audit_log, so this table only
+        // grows — see docs/superpowers/plans/2026-08-09-ops-rehearsal-defects.md. Safe here
+        // specifically because the chain's own definition IS id order and the table is
+        // append-only (enforced by docs/sql/least-privilege.sql's triggers) — chunkById's
+        // usual caveat, that concurrent deletes of already-yielded rows can skip a row that
+        // shifts into a processed id range, cannot happen to a table nothing can delete from.
         $broken = null;
 
-        DB::table('audit_log')->orderBy('id')->chunk(500, function ($rows) use (&$prevHash, &$count, &$broken) {
+        DB::table('audit_log')->chunkById(500, function ($rows) use (&$prevHash, &$count, &$broken) {
             foreach ($rows as $row) {
                 // Row's recorded prev_hash must equal the hash of the row before it.
                 if ((string) $row->prev_hash !== (string) $prevHash) {

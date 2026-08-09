@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Casts\ExtraRowFields;
+use App\Casts\UnitAliases;
 use App\Support\UnitProfile;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -33,8 +34,13 @@ class Unit extends Model
     protected $fillable = [
         'code',
         'name',
+        'name2',
         'display_order',
         'active',
+        'training_rotation',
+        'call_target',
+        'clinic_owner',
+        'aliases',
         'extra_row_fields',
         'bed_label',
         'consultant_pair',
@@ -52,6 +58,10 @@ class Unit extends Model
         return [
             'display_order' => 'integer',
             'active' => 'boolean',
+            'training_rotation' => 'boolean',
+            'call_target' => 'boolean',
+            'clinic_owner' => 'boolean',
+            'aliases' => UnitAliases::class,
             'consultant_pair' => 'boolean',
             'extra_row_fields' => ExtraRowFields::class,
         ];
@@ -83,6 +93,40 @@ class Unit extends Model
     public static function findByCode(string $code): ?self
     {
         return static::query()->where('code', strtoupper(trim($code)))->first();
+    }
+
+    /**
+     * Munawib UN-03's typo-tolerant resolver: exact code first, then any unit whose alias list
+     * matches case- and whitespace-insensitively.
+     *
+     * CODE WINS. An exact identity beats another unit's typo-tolerance hint, or an alias could
+     * shadow a real unit and silently redirect an import.
+     *
+     * Loads the whole unit set and matches in PHP rather than querying JSON: units number in
+     * the tens, JSON containment predicates are MySQL-only, and this schema runs on SQLite
+     * under test. `findByCode()` remains the resolver for anything ROUTING — a URL segment must
+     * never resolve through a fuzzy alias.
+     *
+     * No production consumer yet: ST-04's roster import is P1c and the rota import is P1d.
+     * Shipped with the column so the two arrive together rather than the import inventing its
+     * own matcher.
+     */
+    public static function findByCodeOrAlias(string $value): ?self
+    {
+        if (($exact = static::findByCode($value)) !== null) {
+            return $exact;
+        }
+
+        $needle = UnitAliases::fold($value);
+
+        if ($needle === '') {
+            return null;
+        }
+
+        return static::query()->get()->first(
+            fn (self $unit): bool => collect($unit->aliases)
+                ->contains(fn (string $alias): bool => UnitAliases::fold($alias) === $needle)
+        );
     }
 
     /**

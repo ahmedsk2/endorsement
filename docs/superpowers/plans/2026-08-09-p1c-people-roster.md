@@ -636,6 +636,69 @@ cases stayed green throughout, proving `levelAt()`'s semantics did not move when
 was extracted. `npm test`: 112 (unchanged — Task 3's Files list names no JS test). `npm run
 build` and the full suite green.
 
+**2026-08-09, Task 4 — three real plan errors, all caught empirically by running the code the
+plan itself specifies, none a clinical-evidence risk.**
+
+1. **The plan's own `PositionChangeTest::test_the_account_console_delegates_to_the_one_definition`
+   contradicts the plan's own required refactor of `setActive()`.** The plan's Step 1 test text
+   asserts `assertStringNotContainsString('isLastActiveAdministrator', $source)` against
+   `UserManagementController.php`. But the SAME plan's Step 4 text requires `setActive()`'s guard
+   to become `PositionChange::isLastActiveAdministrator($user)` — a legitimate call to the one
+   shared definition, not a second declaration of it — and that qualified call still contains the
+   bare word "isLastActiveAdministrator" as a substring. Run verbatim, the blanket assertion
+   failed against the exact code the plan's own Step 4 asks for, dumping the controller's full
+   ~21 KB source into the failure message (a `SebastianBergmann\Diff` semantic-diff artifact that
+   inserted "not"/"does not" into nearly every sentence of the class's docblocks trying to
+   visualise the mismatch — confusing output, not a real bug in the file itself; confirmed by
+   `grep`ping the actual file directly, which showed only the one, correct,
+   `PositionChange::isLastActiveAdministrator(...)` call). Fixed by asserting the narrower, correct
+   claim: `PositionChange::isLastActiveAdministrator` IS present (the delegation), while
+   `function isLastActiveAdministrator(` (a re-declaration) is NOT — the actual "two definitions
+   that happen to agree today" signal the test's own docblock says it exists to catch.
+2. **`Person::accountEmailRule()` alone is unsafe for `PersonController::store()`'s plain
+   create, and the plan's own Step 3 `PersonRequest` code (copied verbatim) does not catch it.**
+   `accountEmailRule()`'s documented behaviour — "a roster-only match is deliberately NOT a
+   failure" — is correct in the contexts it was written for
+   (`UserManagementController::approve()`, invitation acceptance), which then CLAIM the matched
+   row in place rather than inserting a second one (design §5.2.4). `PersonController::store()`
+   does a plain `Person::create()` with no claim-or-merge step, so a roster-only match passes
+   `accountEmailRule()` and then hits `people.email`'s genuine UNIQUE column constraint as a raw
+   500 — reproduced empirically (`test_email_matching_an_existing_roster_only_person_is_a_422_
+   not_a_500`, written to probe exactly this, returned an actual `SQLSTATE[23000]` 500 before the
+   fix). Fixed by adding a second, independent rule, `Rule::unique('people', 'email')->ignore($id)`,
+   alongside `accountEmailRule($id)` — the same `withoutTrashed()`-omission reasoning the plan's
+   own `short_name` rule already states (soft-deleted people still occupy the index) applies
+   here too. `accountEmailRule()` is kept for its distinct "an account with this email already
+   exists" message on the claimed-account path; the added `unique()` rule is the backstop that
+   catches the roster-only case the plan's original single-rule field would have let reach the
+   database as an unhandled crash.
+3. **The plan's own prose for `joined_at`'s validation rule reproduces the literal string
+   `strtotime()`, which trips `CalendarIsTheOnlyConverterTest`'s own guard the moment it lands in
+   a real file.** Copying the plan's exact wording ("Not `date`: strtotime() leniency accepted...")
+   into `PersonRequest.php`'s docblock made `test_strtotime_appears_only_on_the_allow_list` fail
+   over the whole suite, listing `app/Http/Requests/Admin/PersonRequest.php` as an offender — the
+   same self-referential-docblock trap the P1a master-rota plan's own amendment already named and
+   fixed once for `2026_08_12_120002_create_periods_table.php`'s migration comment. Fixed the same
+   way: reworded the docblock to describe PHP's implicit date-string leniency without reproducing
+   the literal `strtotime(` call syntax, rather than allow-listing a file that calls the function
+   nowhere in its actual code.
+
+Everything else matches the plan's own code verbatim: `PersonRequest`, `PositionChange`,
+`UserManagementController::setPosition()`'s refactor, the routes (`visibility` still declared
+before `{person}`), and `People.vue`'s create/inline-edit forms mirroring `Levels.vue`'s
+`createOpen`/`editingId` structure. `constraints` (PE-01's structured JSON) has no dedicated
+field-by-field editor in this task — the screen round-trips it through a plain JSON textarea,
+parsed client-side before submit; not specified by the plan's own text, which left the concrete
+form control to the implementer.
+
+`php artisan test`: 914 → 932 (18 new: 6 `PositionChangeTest` + 12 `PersonCrudTest` — one more
+test than the plan's own listed cases, `test_email_uniqueness_is_ignored_on_self_edit`, added
+alongside the corrected email-collision case above). `UserManagementTest`'s audit-detail
+assertion was updated in this commit (the `person=<id>;` prefix is new, exactly as the plan's own
+Step 4 text names) — `ChiefResidentTest` and `AccessControlPageTest` needed no changes and stayed
+green throughout. `npm test`: 112 (unchanged — Task 4's Files list names no JS test). `npm run
+build` and the full suite green.
+
 ---
 
 ## Conventions every task follows
@@ -1801,7 +1864,7 @@ capability cache lives 600 seconds, and only `UserManagementController::setPosit
 or guards the last administrator. A People screen written in the house style would silently
 introduce a ten-minute privilege-retention window and a route around the last-admin guard.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/Feature/Admin/PositionChangeTest.php` — the security cases, first because they are the
 reason for the task:
@@ -1853,9 +1916,9 @@ reason for the task:
   deactivated, never deleted (owner ruling; the four named roles on `handover_signoffs` depend on
   the row staying resolvable).
 
-- [ ] **Step 2: Run and watch them go red**
+- [x] **Step 2: Run and watch them go red**
 
-- [ ] **Step 3: The FormRequest**
+- [x] **Step 3: The FormRequest**
 
 Create `app/Http/Requests/Admin/PersonRequest.php`. The load-bearing rules:
 
@@ -1902,7 +1965,7 @@ than retyping the array.
 created real backdated clinical rows once (P1 finding 3), and a lenient sibling anywhere is the
 same bug waiting.
 
-- [ ] **Step 4: `PositionChange`**
+- [x] **Step 4: `PositionChange`**
 
 Create `app/Support/PositionChange.php`:
 
@@ -2013,7 +2076,7 @@ branch on the audit detail is new — the previous format was `user=<id>;positio
 `UserManagementTest`'s assertion on that string needs updating in this commit, and the plan says
 so here rather than letting it surface as a mystery red.
 
-- [ ] **Step 5: Controller, routes and screen**
+- [x] **Step 5: Controller, routes and screen**
 
 `PersonController` gains `store(PersonRequest)` and `update(PersonRequest, Person $person)`.
 Both:
@@ -2041,14 +2104,14 @@ refuses — `LevelController`'s own docblock established that shape for the same
 `createOpen` / `editingId` structure verbatim. Contact fields render in the form only when the
 projection supplied them.
 
-- [ ] **Step 6: Add the allow-list line**
+- [x] **Step 6: Add the allow-list line**
 
 Add `'app/Http/Requests/Admin/PersonRequest.php'` to
 `ContactFieldsAreProjectedOnceTest::ALLOW_LIST` with the stated reason ("the write-side
 validation names the fields it accepts; it renders nothing"). This is why Task 2 shipped a
 two-entry list.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Expected: full suite **929 passed** (912 + 17). `UserManagementTest`, `ChiefResidentTest` and
 `AccessControlPageTest` must all stay green — if `UserManagementTest` is red it is the audit-detail

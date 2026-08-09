@@ -200,9 +200,14 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:people.manage'])
     ->name('admin.')
     ->group(function () {
         Route::get('/people', [PersonController::class, 'index'])->name('people');
-        // Declared BEFORE any /people/{person} route (Task 4) so `visibility` never binds as a
-        // person id — the same discipline routes/web.php already applies to `units/merge`.
+        // Declared BEFORE any /people/{person} route so `visibility` never binds as a person id
+        // — the same discipline routes/web.php already applies to `units/merge`.
         Route::patch('/people/visibility', [PersonController::class, 'updateVisibility'])->name('people.visibility');
+        Route::post('/people', [PersonController::class, 'store'])->name('people.store');
+        Route::patch('/people/{person}', [PersonController::class, 'update'])->name('people.update');
+        // No destroy — people are deactivated, never deleted (owner ruling). PersonController
+        // exposes no delete action at all rather than a route that refuses, matching
+        // LevelController's own precedent: DELETE against this URI is a plain 405.
     });
 
 /*

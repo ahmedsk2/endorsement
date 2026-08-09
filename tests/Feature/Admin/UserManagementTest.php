@@ -330,10 +330,13 @@ class UserManagementTest extends TestCase
         // The per-user cache was flushed — the new (admin) capability set is visible at once.
         $this->assertTrue(AccessControl::allows($fresh, 'users.manage'));
 
+        // P1c Decision C: setPosition() now delegates to App\Support\PositionChange::apply(),
+        // which prefixes the detail with `person=<id>` — the roster identity, not the account
+        // — so the People screen and this console produce one shared audit shape.
         $this->assertDatabaseHas('audit_log', [
             'action' => 'user_role_change',
             'user_id' => $admin->id,
-            'detail' => 'user='.$user->id.';position=0',
+            'detail' => 'person='.$user->person_id.';user='.$user->id.';position=0',
         ]);
     }
 

@@ -3,14 +3,17 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\PersonRequest;
 use App\Models\AuditLog;
 use App\Models\Institution;
 use App\Models\Person;
 use App\Models\Position;
 use App\Support\ContactVisibility;
 use App\Support\PersonPresenter;
+use App\Support\PositionChange;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -84,5 +87,66 @@ class PersonController extends Controller
         );
 
         return back()->with('status', 'Contact visibility updated.');
+    }
+
+    /**
+     * PE-01 create. NOTHING HERE CREATES AN ACCOUNT — see this class's own docblock.
+     *
+     * `position` is written twice, deliberately: once in the initial `Person::create()` (the
+     * column is NOT NULL with no default, so the insert must supply a value) and once through
+     * `PositionChange::apply()`, which is what actually decides whether that value survives. A
+     * brand-new person has no linked `users` row yet, so the last-admin guard can never fire
+     * here — but every position write, including this one, goes through the SAME definition
+     * (Decision C) rather than a create-time exception to it.
+     */
+    public function store(PersonRequest $request): RedirectResponse
+    {
+        $data = $request->validated();
+        $position = (int) $data['position'];
+
+        $person = DB::transaction(function () use ($data, $position, $request): Person {
+            $person = Person::create($data);
+
+            PositionChange::apply($person, $position, $request);
+
+            return $person;
+        });
+
+        AuditLog::record(
+            'person_create',
+            'person='.$person->getKey().';fields='.implode(',', array_keys($data)),
+            $request->user()->getKey(),
+            $request->ip(),
+        );
+
+        return back()->with('status', 'Person created.');
+    }
+
+    /**
+     * PE-01 update. Every field except `position` is written directly; `position` goes through
+     * `PositionChange::apply()` inside the SAME transaction, so a refusal (the last active
+     * Administrator) rolls the whole edit back rather than leaving other fields half-saved.
+     */
+    public function update(PersonRequest $request, Person $person): RedirectResponse
+    {
+        $data = $request->validated();
+        $position = (int) $data['position'];
+        $fields = array_keys($data);
+        unset($data['position']);
+
+        DB::transaction(function () use ($data, $position, $person, $request): void {
+            $person->update($data);
+
+            PositionChange::apply($person, $position, $request);
+        });
+
+        AuditLog::record(
+            'person_update',
+            'person='.$person->getKey().';fields='.implode(',', $fields),
+            $request->user()->getKey(),
+            $request->ip(),
+        );
+
+        return back()->with('status', 'Person updated.');
     }
 }

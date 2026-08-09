@@ -34,6 +34,8 @@ class ContactFieldsAreProjectedOnceTest extends TestCase
         // and cannot tell "the column exists" from "the value was read". Verified empirically
         // (finding 2's own text already names this file as one of the "zero reads" matches).
         'database/migrations/2026_08_10_120001_create_people_and_link_users.php',
+        // The write-side validation names the fields it accepts; it renders nothing.
+        'app/Http/Requests/Admin/PersonRequest.php',
     ];
 
     private const NEEDLES = ['->phone', '->notes', "'phone'", "'notes'"];

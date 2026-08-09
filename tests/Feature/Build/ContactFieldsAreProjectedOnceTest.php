@@ -22,6 +22,14 @@ use Tests\TestCase;
  * behind the SAME `viewNotes` ability as `notes` (both are content a supervisor wrote about a
  * person, not contact detail — but the presenter is still the one place either may be read).
  *
+ * `email` (P1d Task 7, OWNER DECISIONS #7) joined the watch list once `PersonPresenter` stopped
+ * emitting it unconditionally — it is now gated behind the SAME `viewContact` ability as `phone`.
+ * It produces a much longer allow-list than any other field here, and that is a genuine property
+ * of the word, not a guard gone slack: Laravel's built-in validation rule is itself named `email`,
+ * and this app authenticates BY email (login-method choice, OTP, verification, password reset),
+ * so `'email'` appears constantly in code that has nothing to do with a Person's contact field.
+ * Every allow-listed file below was read in full before being added.
+ *
  * Scanned: app/ + database/ + routes/. NOT database/factories/ — a factory populating a fixture
  * phone number is not a disclosure surface.
  */
@@ -61,9 +69,70 @@ class ContactFieldsAreProjectedOnceTest extends TestCase
         // results TODAY, but a future reader relying on "no props at all" would be relying on
         // something false; this is a different, ungated shape, not an absent one.
         'app/Support/Roster/RosterImport.php',
+
+        // --- P1d Task 7: `->email`/`'email'` added to NEEDLES below, watching `email` exactly
+        // like `phone` (OWNER DECISIONS #7 / finding 1). `email` produces FAR more matches than
+        // `phone`/`notes` ever did, for a reason worth recording rather than silently absorbing:
+        // Laravel's built-in validation rule is literally named `email` (`['required', 'email']`),
+        // and this app authenticates by email (login-method choice, OTP, password reset,
+        // verification) — none of which exists for `phone`. Every entry below was read in full,
+        // not pattern-matched, before being added.
+
+        // WRITE-ONLY: names `email` as a field being written onto a Person the caller just
+        // created or matched (Person::create()/update()/matchByEmail()), and renders nothing
+        // back — the same "validation/write, never a render" reasoning PersonRequest.php has
+        // above, applied to each write site individually because each is a different class.
+        'app/Console/Commands/CreateAdmin.php',
+        'app/Console/Commands/LegacyImport.php',
+        'app/Http/Controllers/Admin/InvitationController.php',
+        'app/Http/Controllers/Admin/UserManagementController.php',
+        'app/Http/Controllers/Auth/InvitationAcceptController.php',
+
+        // SELF-SERVICE: reads/writes the SIGNED-IN account's OWN address for their OWN profile
+        // or first-login setup screen — never another person's, so `PersonPolicy::viewContact()`
+        // (which answers "may I see SOMEONE ELSE's contact field") does not apply; a person
+        // always sees their own data.
+        'app/Http/Controllers/ProfileController.php',
+        'app/Http/Controllers/SetupController.php',
+        // The read-through accessor `$user->member_email` resolves through `$this->person?->email`
+        // (P0c/D9) — used by the account's OWN password-reset/notification routing
+        // (`getEmailForPasswordReset()`, `routeNotificationForMail()`) and `activeTwoFactorMethod()`,
+        // never to show one person's address to another.
+        'app/Models/User.php',
+
+        // AUTHENTICATION MECHANICS: `'email'` here is either Laravel's BUILT-IN validation rule
+        // name (`['required', 'email']`, matched on the login/reset/settings forms below), the
+        // two-factor METHOD name (`'totp'` vs `'email'`, an enum-like string with no relation to
+        // any address), or an error-bag KEY (`['email' => 'message'])` on the login form) — none
+        // of it is `people.email` being read for display.
+        'app/Http/Controllers/Auth/AuthenticatedSessionController.php',
+        'app/Http/Controllers/Auth/EmailOtpChallengeController.php',
+        'app/Http/Controllers/Auth/NewPasswordController.php',
+        'app/Http/Controllers/Auth/PasswordResetLinkController.php',
+        'app/Http/Controllers/Admin/SettingsController.php',
+        'app/Http/Middleware/EnsureAccountActive.php',
+        // `->email` here is a SUBSTRING MATCH on `->email_verified_at` (verification-confirmation
+        // timestamp), not a read of the address itself — the needle scan cannot tell "email" the
+        // prefix of a longer identifier from "email" the whole one.
+        'app/Http/Controllers/Auth/EmailVerificationController.php',
+
+        // SCHEMA/FIXTURES: column declarations and comments on `users`/`password_reset_tokens`
+        // (Laravel's own stock tables — an entirely different `email` from `people.email`), and
+        // seeders creating fixture accounts via `Person::updateOrCreate()` the same way a factory
+        // would (this guard already excludes `database/factories/` for the identical reason;
+        // these two seeders are outside that directory but are the same kind of fixture data).
+        'database/migrations/0001_01_01_000000_create_users_table.php',
+        'database/migrations/2026_07_25_130001_add_identity_verification_signature_and_otp.php',
+        'database/seeders/DemoSeeder.php',
+        'database/seeders/E2eSeeder.php',
     ];
 
-    private const NEEDLES = ['->phone', '->notes', "'phone'", "'notes'", '->constraints', "'constraints'"];
+    private const NEEDLES = [
+        '->phone', '->notes', "'phone'", "'notes'", '->constraints', "'constraints'",
+        // P1d Task 7: `email` is now gated exactly like `phone` (OWNER DECISIONS #7 / finding 1)
+        // — watched the same way, for the same reason.
+        '->email', "'email'",
+    ];
 
     public function test_only_the_presenter_reads_a_persons_contact_fields(): void
     {

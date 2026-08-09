@@ -731,6 +731,49 @@ held. `npm test`: 112 (unchanged — `staffLabel()`'s retired-branch string is u
 `EndorsementSignoff.test.js`'s existing `'Dr Gone (no longer offered)'` assertion needed no edit).
 `npm run build` and the full suite green.
 
+**2026-08-09, Task 6 — one real plan error, a genuine contradiction between the plan's own Step 1
+tests and its own Step 5 draft code, caught before writing any implementation by tracing both
+against each other rather than by running anything.**
+
+1. **Step 5's illustrative branch order (same-level check, THEN exact-date-collision check)
+   contradicts Step 1's own two tests when read together.** Step 5's prose lists the checks as
+   "returns SKIPPED_SAME_LEVEL when `levelAt($from)?->is($level)`... returns SKIPPED_EXISTING
+   when a row already exists... returns REFUSED_OVERLAP...". Applied literally, "assign the same
+   level on the same date twice" (the first half of Step 1's own
+   `test_a_duplicate_effective_from_is_skipped_not_upserted`) would hit the same-level branch
+   FIRST — `levelAt($from)` resolves to the level already stored at that exact date, so it
+   returns `SKIPPED_SAME_LEVEL`, never reaching the exact-date check at all — but the test's own
+   name and its bullet text both require `'skipped_existing'`. Tracing the two tests together
+   (this one plus `test_reassigning_the_same_level_is_a_no_op`, which needs `SKIPPED_SAME_LEVEL`
+   for a *different* effective_from with no row there) shows only ONE order satisfies both:
+   **the exact-date collision check runs first**, then the same-level check, then the overlap
+   check. That order also matches Decision G's OWN prose better than Step 5's draft does —
+   Decision G lists the unique-key collision ("on a collision with unique(person_id,
+   effective_from), pre-checks and skips") as the load-bearing safety property, ahead of same-level
+   in the read order. Implemented with exact-date-collision first; both Step 1 tests pass as
+   written, with no change to either test's expected outcome. `PersonLevelsHaveOneWriterTest`'s
+   own text ("scanning app/ + database/seeders/ + routes/") also undersells its own allow-list,
+   which names `database/factories/PersonLevelFactory.php` — a file only reachable by scanning all
+   of `database/`, not `database/seeders/` alone; implemented scanning the whole `database/` tree,
+   matching `ContactFieldsAreProjectedOnceTest`'s own precedent (scan `database/` wholesale, then
+   excuse factories) rather than the narrower prose.
+2. **`PersonLevel::createdBy(): BelongsTo` is not named in either Task 6's or Task 7's Files/Step
+   text, but Task 7's own Step 1 prose requires it** ("the eager load must be
+   `with('createdBy:id,person_id')`") and Task 7's Files list does not include
+   `app/Models/PersonLevel.php`. Added the relation in this task instead, alongside the
+   `created_by` column it resolves — Task 6 already had the model file open for the `$fillable`/
+   `casts()` changes, and leaving the relation for a task whose own file list omits the model
+   would have made Task 7 either silently fail or need an undocumented file addition.
+
+`php artisan test`: 938 → 947 (9 new: 7 `LevelAssignmentTest` + 2 `PersonLevelsHaveOneWriterTest`
+— the plan's own Step 6 text predicts "10 new" against a "935" baseline that Task 5's amendment
+already shows was never the tree's real number; 938 is the real baseline this task started from,
+and 9 is the real count of test METHODS the plan's own Step 1 text calls for, once counted
+directly rather than assumed). `LevelHistoryTest`'s existing 9 cases — which write
+`PersonLevel::create()` directly, outside `LevelAssignment` — stayed green throughout, unaffected
+by `person_levels` gaining three nullable columns. `npm test`: 112 (unchanged — Task 6's Files
+list names no JS test). `npm run build` and the full suite green.
+
 ---
 
 ## Conventions every task follows
@@ -2259,7 +2302,7 @@ git commit -am "feat: an external rotator says so on every screen that names the
 Finding 4 and P1 finding 9. This must land **before** the first promotion: adding provenance
 afterwards is not an additive migration, it is a backfill of facts nobody recorded.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/Feature/Identity/LevelAssignmentTest.php`:
 
@@ -2289,9 +2332,9 @@ afterwards is not an additive migration, it is a backfill of facts nobody record
 `app/` + `database/seeders/` + `routes/` for `PersonLevel::create(`, `PersonLevel::insert(`,
 `->levels()->create(` and `DB::table('person_levels')`.
 
-- [ ] **Step 2: Run and watch them go red**
+- [x] **Step 2: Run and watch them go red**
 
-- [ ] **Step 3: The migration**
+- [x] **Step 3: The migration**
 
 ```php
 <?php
@@ -2364,7 +2407,7 @@ Per-column `Schema::hasColumn` guards follow P0a's own hardening (its amendment 
 emits one ALTER TABLE per column, so guarding only the first leaves a partial failure
 unrecoverable.
 
-- [ ] **Step 4: Model and factory**
+- [x] **Step 4: Model and factory**
 
 `PersonLevel` gains `use HasFactory;`, the three columns in `$fillable`, and
 `'created_by' => 'integer'` in `casts()`. Create `database/factories/PersonLevelFactory.php` with
@@ -2372,7 +2415,7 @@ a `definition()` of `person_id`/`level_id` factory closures, `effective_from` a 
 `'2026-07-01'` (never `fake()->date()` — a random start date makes an inclusive-bounds failure
 reproduce one run in thirty), `effective_to` null, and the three provenance columns null.
 
-- [ ] **Step 5: The one writer**
+- [x] **Step 5: The one writer**
 
 Create `app/Support/LevelAssignment.php`. The contract, verbatim in its docblock and asserted by
 the tests above:
@@ -2400,7 +2443,7 @@ is what the promotion must never do silently), otherwise closes the open span to
 row plus one per person and a per-write audit inside a transaction is exactly the unwinding
 problem Decision H describes.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Expected: full suite **945 passed** (935 + 10). `LevelHistoryTest` green.
 

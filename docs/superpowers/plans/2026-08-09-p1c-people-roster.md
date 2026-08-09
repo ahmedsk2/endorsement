@@ -609,6 +609,33 @@ correct unit boundary; noted here because the plan's prose reads as if it goes t
 its new allow-list entry). `npm test`: 112 (unchanged — Task 2's Files list names no JS test, and
 none was needed). `npm run build` and the full suite green.
 
+**2026-08-09, Task 3 — built to the plan's own code verbatim; the only deviations are in the
+test suite, both traced to the running baseline rather than to a plan error.** `Person::
+inForceOn()` (the extracted predicate), `levelAt()`'s rewrite to call it, `Person::levelsAt()`
+and `Level::scopeActive()`'s table-qualification fix all match the plan's Step 3 code exactly.
+Two notes on the test file:
+
+1. `test_the_people_screen_shows_a_current_level_without_an_n_plus_one`'s own fixture originally
+   reused the plan's implicit assumption that a fresh level code is free to pick — `Level::
+   factory()->create(['code' => 'R3'])` collided with `ReferenceSeeder`'s own R1…R4/EXT seed
+   (`levels.code` is unique outright). Caught immediately by the red run (a `QueryException` on
+   `levels.code`, not the expected `levelsAt()`-missing error), fixed by leaving the code
+   unspecified so the factory's own `fake()->unique()->lexify('L??')` default applies.
+2. The `test_level_scope_active_is_table_qualified_and_survives_a_join_with_people` case is
+   written here rather than copied from the plan (the plan's Step 3 text describes the fix but
+   does not supply this test verbatim) — it joins `levels` to `people` through `person_levels`
+   (the shape Task 10's promotion picker will actually build) rather than an artificial `1 = 1`
+   join, so it doubles as a regression guard against the exact ambiguous-column error finding 7
+   names. Run BEFORE the fix, it reproduced `SQLSTATE[HY000]: General error: 1 ambiguous column
+   name: active` verbatim, confirming the test exercises the real bug rather than a synthetic one.
+
+`php artisan test`: 908 → 914 (6 new, matching the plan's own stated count of 5 plus the extra
+`Level::scopeActive()` join-safety case above the plan's Step 1 text did not itemise separately
+from "Task 3's resolver does so in the one place it is defined"). `LevelHistoryTest`'s existing 9
+cases stayed green throughout, proving `levelAt()`'s semantics did not move when the predicate
+was extracted. `npm test`: 112 (unchanged — Task 3's Files list names no JS test). `npm run
+build` and the full suite green.
+
 ---
 
 ## Conventions every task follows
@@ -1577,7 +1604,7 @@ table-qualified, so a joined query calling it fails with an ambiguous-column err
 resolved once, here, before three separate consumers (this screen, the promotion preview, the
 rota grid) each invent their own.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/Identity/LevelResolverTest.php`. Cases:
 
@@ -1626,11 +1653,11 @@ Create `tests/Feature/Identity/LevelResolverTest.php`. Cases:
   assertion through the HTTP layer, because the resolver being constant does not prove the
   controller uses it.
 
-- [ ] **Step 2: Run and watch it go red**
+- [x] **Step 2: Run and watch it go red**
 
 Expected: `Call to undefined method App\Models\Person::levelsAt()`.
 
-- [ ] **Step 3: Extract the predicate, then use it twice**
+- [x] **Step 3: Extract the predicate, then use it twice**
 
 In `app/Models/Person.php`, add a private static predicate and rewrite `levelAt()` to call it, so
 there is exactly one definition of "the span in force on a date":
@@ -1721,7 +1748,7 @@ Also **fix finding 7 at its source**: in `app/Models/Level.php`, table-qualify `
 form. No caller's behaviour changes — the only current callers query `levels` alone — and the
 next caller is Task 10's promotion picker, which joins.
 
-- [ ] **Step 4: Carry the level onto the screen**
+- [x] **Step 4: Carry the level onto the screen**
 
 `PersonController::index()` computes `$levels = Person::levelsAt($people)` once and passes each
 person's entry through `PersonPresenter::one()`'s `$extra`:
@@ -1744,7 +1771,7 @@ person's entry through `PersonPresenter::one()`'s `$extra`:
 
 `People.vue` gains a Level column rendering `p.level?.code ?? '—'`.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Expected: full suite **912 passed** (907 + 5). `LevelHistoryTest` (9 cases) must stay green — it
 is the existing proof that `levelAt()`'s semantics did not move when the predicate was extracted.

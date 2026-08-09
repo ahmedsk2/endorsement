@@ -10,7 +10,7 @@ import AppLayout from '../../Layouts/AppLayout.vue';
  * appears here and nowhere on Admin → Users, because that screen's list is
  * `User::query()->join('people', ...)`.
  *
- * Read-only for now (Task 1/2). No level column yet (Task 3), no create/edit yet (Task 4).
+ * Read-only for now (Task 1/2/3). No create/edit yet (Task 4).
  *
  * Contact fields (Task 2, PE-02): `phone` renders only when the key is PRESENT in a person's
  * props — `'phone' in p`, never `p.phone` — because absent and null are different facts (a
@@ -104,7 +104,7 @@ const submitVisibility = () => {
                         <span class="readout text-sm font-semibold text-ink">{{ person.full_name }}</span>
                         <span class="channel-tag">{{ person.active ? 'Active' : 'Retired' }}</span>
                     </div>
-                    <p class="text-sm text-body">{{ positionName(person.position) }}</p>
+                    <p class="text-sm text-body">{{ positionName(person.position) }} · {{ person.level?.code ?? '—' }}</p>
                     <p v-if="person.short_name" class="text-xs text-muted">{{ person.short_name }}</p>
                     <p v-if="'phone' in person" class="readout text-xs text-body">{{ person.phone || '—' }}</p>
                     <div class="mt-2 flex flex-wrap gap-2">
@@ -122,6 +122,7 @@ const submitVisibility = () => {
                             <th scope="col" class="channel-tag px-4 py-2">Name</th>
                             <th scope="col" class="channel-tag px-4 py-2">Short name</th>
                             <th scope="col" class="channel-tag px-4 py-2">Role</th>
+                            <th scope="col" class="channel-tag px-4 py-2">Level</th>
                             <th v-if="showsPhone" scope="col" class="channel-tag px-4 py-2">Phone</th>
                             <th scope="col" class="channel-tag px-4 py-2">Status</th>
                         </tr>
@@ -131,6 +132,7 @@ const submitVisibility = () => {
                             <td class="readout px-4 py-2 font-semibold text-ink">{{ person.full_name }}</td>
                             <td class="readout px-4 py-2 text-body">{{ person.short_name || '—' }}</td>
                             <td class="px-4 py-2 text-body">{{ positionName(person.position) }}</td>
+                            <td class="readout px-4 py-2 text-body">{{ person.level?.code ?? '—' }}</td>
                             <td v-if="'phone' in person" class="readout px-4 py-2 text-body">{{ person.phone || '—' }}</td>
                             <td class="px-4 py-2">
                                 <div class="flex flex-wrap gap-2">

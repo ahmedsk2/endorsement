@@ -40,8 +40,21 @@ class PersonController extends Controller
             ->orderBy('people.full_name')
             ->get();
 
+        // ONE query for the whole roster's current level (finding 5) — Person::levelsAt() shares
+        // its predicate with levelAt(), so this and every future set-wise consumer (Task 10's
+        // promotion preview, P1d's rota grid) never invent a second copy.
+        $levels = Person::levelsAt($people);
+
         return Inertia::render('Admin/People', [
-            'people' => PersonPresenter::many($people, $request->user()),
+            'people' => $people->map(fn (Person $p): array => PersonPresenter::one(
+                $p,
+                $request->user(),
+                ['level' => ($l = $levels[(int) $p->getKey()] ?? null) === null ? null : [
+                    'id' => (int) $l->getKey(),
+                    'code' => (string) $l->code,
+                    'name' => (string) $l->name,
+                ]],
+            ))->values()->all(),
             'positions' => Position::orderBy('id')->get(['id', 'name']),
             'contact_visibility' => ContactVisibility::current(),
             'contact_visibilities' => Institution::CONTACT_VISIBILITIES,

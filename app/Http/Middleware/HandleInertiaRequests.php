@@ -82,6 +82,10 @@ class HandleInertiaRequests extends Middleware
                 // scroll away, and the answer to "did that work?" must not land off screen.
                 'mail_test' => $request->session()->get('mail_test'),
                 'push_test' => $request->session()->get('push_test'),
+                // LV-02's bulk operations report: {person_id: outcome}, from the writer's own
+                // return values (LevelAssignment::assign()'s outcome constants, or
+                // 'activated'/'deactivated') — never a client-side guess at what happened.
+                'bulk_report' => $request->session()->get('bulk_report'),
             ],
         ];
     }

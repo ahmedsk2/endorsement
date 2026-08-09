@@ -886,6 +886,119 @@ its finding is that the existing 404 is *already* correct, not a gap.
 `UserManagementTest`). `npm test`: 112 (unchanged — no client code touched). `npm run build`
 green.
 
+**2026-08-09, Task 8 — built to the plan's own code verbatim; the only correction is arithmetic,
+same shape as prior tasks' amendments.** The plan's own Step 1 text lists six named test cases,
+but one (`test_every_dangerous_leading_character_is_neutralised`) is explicitly a data-provider
+case over six dangerous characters — six PHPUnit test-count entries, not one. Counted directly
+before running anything: 11 test-count entries (6 provider cases + 5 ordinary methods), one of
+which (`test_a_neutralised_cell_round_trips_through_the_reader`) is skipped until Task 11. The
+plan's own Step 4 arithmetic ("957 passed … 951 + 6") assumes both a stale baseline (the real
+post-Task-7 baseline, confirmed by running the suite before touching any file, is **960**, not
+951 — Task 7's own amendment already established this) and the 6-vs-11 undercount above; same
+shape as Tasks 1/5/6's own "the plan's stated total was already wrong" amendments. `Csv.php`
+itself matches the plan's Step 3 code exactly, including the `-` in `DANGEROUS_PREFIXES` and the
+BOM.
+
+`php artisan test`: 960 → 971 (11 new, 1 skipped pending Task 11's `CsvRosterReader`). `npm test`:
+112 (unchanged — Task 8's Files list names no JS file). `npm run build` and the full suite green.
+
+```bash
+git commit -am "feat: a spreadsheet this system writes cannot execute anything"
+```
+
+Commit `a1cace8`.
+
+**2026-08-09, Task 9 — one genuine design gap in the plan's own text (what "authorize every
+member of the set" concretely means), one real latent bug caught empirically (a query against a
+column that does not exist), and three files added beyond the plan's own Files list, each
+load-bearing.**
+
+1. **The plan's Step 4 point 2 ("authorize every member of the set, in a full pass, before any
+   mutation") names no concrete mechanism, and this codebase has none to reach for: `people.manage`
+   carries no scoped tier the way `users.manage_residents` does for `users.manage`, so there is no
+   per-person Gate/Policy check that could legitimately differ by row under today's rules — adding
+   one anyway would be dead code with no test able to distinguish it from always-true. Traced
+   against finding 12's own worked example (`InvitationController::store()` authorizing each
+   *superseded* invitation against its own `position` via `ManagerScope::assertMayTarget()`) before
+   writing anything: the property that actually matters — refuse the WHOLE batch before writing
+   ANY of it, never per-row with partial application — is already guaranteed structurally by two
+   existing mechanisms once composed correctly: (a) `PersonBulkRequest`'s `ids.*` validation, which
+   Laravel resolves and fails atomically before `bulk()` ever runs, so an invalid id blocks the
+   entire submission with nothing written for the valid ones; and (b) the SET-AWARE last-admin
+   guard (finding 13), computed once outside any loop, before the transaction opens. Implemented
+   `test_the_whole_selection_is_authorized_before_any_write` against mechanism (a) — a selection
+   ending in an unknown id — and documented the reasoning in `PersonController::bulk()`'s own
+   docblock so a future reader does not go looking for a `PersonPolicy::update()` ability that was
+   deliberately not built.
+2. **`PositionChange::wouldLeaveNoActiveAdministrator()` — the set-aware guard this task's own
+   Step 3 specifies — was first written querying `users.position` directly, and `position` was
+   moved OFF `users` onto `people` in P0c (`2026_08_10_120003_move_name_and_position_off_users.php`,
+   named in this very plan's own "Invariants the 2026-07-26 audit had to restore" section as
+   `$user->position` being a read-through accessor, "none is a real column on `users` any more").
+   `isLastActiveAdministrator()`, two methods above the one just added, already joins `people` for
+   exactly this reason — copied its shape by memory instead of by reading it, and the omission
+   passed PHP's own syntax/type checking silently (a raw query builder predicate against a
+   nonexistent column is only caught at run time). Caught empirically, not by inspection: the new
+   guard test `test_deactivating_all_but_one_administrator_is_allowed` failed with "Failed
+   asserting that true is false" — the deactivation silently never applied, because the guard
+   itself was throwing... except only where the query actually ran with a bound WHERE that SQLite
+   accepts as "no such column" would have surfaced as a request-level exception, not a clean
+   assertion failure, which is itself the tell that something subtler than a query error was
+   afoot; re-reading the method against `isLastActiveAdministrator()` side by side found the
+   missing `->join('people', ...)` immediately. Fixed by joining `people` and qualifying every
+   column, matching the sibling method exactly; both guard tests pass afterwards, including the
+   set-aware case (`test_deactivating_every_remaining_administrator_is_refused_as_a_set`).
+3. **Three files beyond the plan's own Files list, none optional:**
+   - `app/Support/PositionChange.php` — the plan's own Decision B text says "extend
+     `PositionChange::isLastActiveAdministrator()` rather than writing a second," which is
+     exactly what `wouldLeaveNoActiveAdministrator()` does, but the plan's Task 9 Files list
+     omits the file that discipline requires touching.
+   - `app/Http/Middleware/HandleInertiaRequests.php` — `back()->with('bulk_report', $outcomes)`
+     flashes to the SESSION; without adding `bulk_report` to this middleware's shared `flash`
+     array (the same channel `status`/`error`/`invitation_link` already use), the key never
+     reaches an Inertia page prop at all, and the plan's own Step 5 ("a per-person outcome list
+     rendered from `bulk_report`") would have nothing to render from. Caught by reading the
+     existing `flash.status` wiring before writing `People.vue`'s consumer, not by a failing
+     test — no test in this task exercises the client-side render (Task 9's Files list names no
+     JS test), so this would otherwise have shipped silently broken.
+   - `tests/Feature/Build/ContactFieldsAreProjectedOnceTest.php` — adding one allow-list entry,
+     `app/Http/Controllers/Admin/PersonController.php`, for `PersonController::exportTable()`'s
+     `array_key_exists('phone', $projected)` / `$p['phone']`. Both read a KEY off an array
+     `PersonPresenter::one()` already built, to decide whether the CSV needs a Phone column — the
+     same content-blind, presence-only pattern `People.vue`'s own `'phone' in person` check
+     already uses (outside this guard's scanned directories) — never `->phone` off a `Person`
+     model. Caught by running the guard, exactly as Task 2's own amendment predicted this class of
+     false positive would recur: "the needle list is a plain substring scan and cannot distinguish
+     'the column is declared here' from 'the value is read here'".
+4. **`test_the_export_respects_contact_visibility` cannot be exercised end-to-end through
+   `/admin/people/bulk` at all, for the identical structural reason Task 2's own amendment records
+   for the People screen itself:** the route requires `people.manage`, so `PersonPolicy::
+   viewContact()`'s first branch is always true for whoever can reach it, and a phone-suppressed
+   export can never be observed through the real endpoint. Rather than re-test the POLICY (already
+   covered by `ContactVisibilityTest`), extracted the CSV column-shaping step into
+   `PersonController::exportTable(Collection $projected, Collection $positions): array{headers,
+   rows}` — `public static`, pure, taking already-projected arrays — so this task's OWN new logic
+   (does an absent `phone` key correctly drop the Phone header) is tested directly, matching Task
+   2's own precedent ("testing the presenter directly is therefore not a workaround but the
+   correct unit boundary").
+
+Everything else matches the plan's own text: `PersonBulkRequest`'s three rules exactly as
+specified (`Rule::exists` on the raw builder, deliberately soft-delete-blind — commented in place
+so a future reader does not "fix" it), `LevelAssignment::assign()` as the one writer for
+`set_level`, `people.active`/`users.active` kept in step for `set_active` (mirroring
+`UserManagementController::setActive()`'s own coupling, cited by name in `applySetActive()`'s
+docblock), audit ordering after the commit matching `AccessControlController::applyRoleSet()`, and
+export columns built from `PersonPresenter` so contact visibility is enforced by the same code
+that enforces it on screen. Bulk "Resend invitations" is offered on screen, disabled, with the
+title naming AC-02 — not built, per the plan's own P1c-2 scoping.
+
+`php artisan test`: 971 → 982 (11 new `PeopleBulkTest`). `npm test`: 112 (unchanged — Task 9's
+Files list names no JS test). `npm run build` and the full suite green.
+
+```bash
+git commit -am "feat: bulk actions that check the whole selection before touching any of it"
+```
+
 ---
 
 ## Conventions every task follows
@@ -2635,7 +2748,7 @@ Finding 16: there is no CSV writer in this codebase, so this is a greenfield cho
 because the neutralisation and the un-neutralisation are one decision and shipping half of it is
 how a round trip silently renames everything.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/Feature/Build/CsvInjectionTest.php`:
 
@@ -2655,9 +2768,9 @@ how a round trip silently renames everything.
 - `test_embedded_newlines_and_quotes_survive` — `fputcsv`'s own quoting, asserted rather than
   assumed.
 
-- [ ] **Step 2: Run and watch it go red**
+- [x] **Step 2: Run and watch it go red**
 
-- [ ] **Step 3: The writer**
+- [x] **Step 3: The writer**
 
 ```php
 <?php
@@ -2730,7 +2843,7 @@ export has no numeric column where one leads, and an unescaped `-` is a live for
 Stated so a future maintainer with a numeric column knows to solve it by column type, not by
 shortening the list.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Expected: full suite **957 passed** (951 + 6, with one skipped — `npm run build`, then check the
 run reports **1 skipped**, and that the skip is the named pairing test and nothing else. A skip
@@ -2749,6 +2862,9 @@ git commit -am "feat: a spreadsheet this system writes cannot execute anything"
 - Modify: `app/Http/Controllers/Admin/PersonController.php`
 - Modify: `routes/web.php`
 - Modify: `resources/js/Pages/Admin/People.vue`
+- Modify: `app/Support/PositionChange.php` (not in the plan's own list — see Amendments)
+- Modify: `app/Http/Middleware/HandleInertiaRequests.php` (not in the plan's own list — see Amendments)
+- Modify: `tests/Feature/Build/ContactFieldsAreProjectedOnceTest.php` (allow-list entry — see Amendments)
 - Test: create `tests/Feature/Admin/PeopleBulkTest.php`
 
 LV-02: *"People screens support multi-select bulk actions: set level, set status, resend
@@ -2758,7 +2874,7 @@ endpoint) and the screen says so rather than shipping a dead button.
 Findings 12 and 13 shape the whole task: authorize the **entire** selection before any mutation,
 and make the last-administrator guard **set-aware**.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/Feature/Admin/PeopleBulkTest.php`:
 
@@ -2788,9 +2904,9 @@ and make the last-administrator guard **set-aware**.
   are missing, let me get them another way";
 - `test_bulk_writes_are_audited_as_one_summary_plus_one_row_per_person`.
 
-- [ ] **Step 2: Run and watch it go red**
+- [x] **Step 2: Run and watch it go red**
 
-- [ ] **Step 3: The request**
+- [x] **Step 3: The request**
 
 `PersonBulkRequest` validates `action` against `Rule::in(['set_level', 'set_active', 'export'])`,
 `ids` as `['required','array','min:1','max:500']`, `ids.*` as
@@ -2800,7 +2916,7 @@ in a selection), and is stated in the rule's comment so the next reader does not
 `level_id` is `required_if:action,set_level` plus `Rule::exists('levels','id')`; `active` is
 `required_if:action,set_active` and boolean.
 
-- [ ] **Step 4: The controller**
+- [x] **Step 4: The controller**
 
 `PersonController::bulk(PersonBulkRequest $request)`, in this order — the order **is** the
 feature:
@@ -2822,7 +2938,7 @@ feature:
 and its columns are built from `PersonPresenter::many()` so contact visibility is enforced by the
 same code that enforces it on screen rather than by a second copy of the rule.
 
-- [ ] **Step 5: The screen**
+- [x] **Step 5: The screen**
 
 `People.vue` gains a checkbox column, a "select all filtered" control (all *filtered*, never all
 *loaded* — the two differ the moment the search box has text, and selecting invisible rows is how
@@ -2831,7 +2947,7 @@ per-person outcome list rendered from `bulk_report`. A disabled "Resend invitati
 the title *"Arrives with the invitation work (AC-02)"* — visible so the screen matches LV-02's
 described shape, disabled so it cannot lie.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Expected: full suite **968 passed** (957 + 11).
 

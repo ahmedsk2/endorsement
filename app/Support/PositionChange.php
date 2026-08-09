@@ -74,4 +74,37 @@ final class PositionChange
             ->where('users.active', true)
             ->exists();
     }
+
+    /**
+     * The SET-AWARE sibling of {@see isLastActiveAdministrator()} (P1c finding 13) — extending
+     * the one definition rather than writing a second, per Decision B.
+     *
+     * The per-row check asks "is there ANOTHER active Administrator besides THIS ONE" — true for
+     * every one of the last two Administrators checked individually, so a loop that applies
+     * `isLastActiveAdministrator()` row by row lets a bulk deactivation of the last N accounts
+     * through one row at a time, each seeing the others as cover, and empties the Administrator
+     * set permanently. This asks the question for the WHOLE batch at once, in one query, called
+     * BEFORE any row in the batch is written: excluding every account this one batch is about to
+     * deactivate, does any active Administrator remain?
+     *
+     * @param  list<int>  $userIds  every account this one batch is about to deactivate — accounts
+     *                              only; a person with no linked account has none to exclude and
+     *                              carries no capability set to lose
+     */
+    public static function wouldLeaveNoActiveAdministrator(array $userIds): bool
+    {
+        if ($userIds === []) {
+            return false;
+        }
+
+        // `position` was moved off `users` onto `people` (2026_08_10_120003) — `$user->position`
+        // is a read-through accessor, not a real column, so a raw query predicate must join
+        // `people` the same way `isLastActiveAdministrator()` above does.
+        return ! User::query()
+            ->join('people', 'people.id', '=', 'users.person_id')
+            ->whereNotIn('users.id', $userIds)
+            ->where('people.position', 0)
+            ->where('users.active', true)
+            ->exists();
+    }
 }

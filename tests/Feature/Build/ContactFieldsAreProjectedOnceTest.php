@@ -36,6 +36,15 @@ class ContactFieldsAreProjectedOnceTest extends TestCase
         'database/migrations/2026_08_10_120001_create_people_and_link_users.php',
         // The write-side validation names the fields it accepts; it renders nothing.
         'app/Http/Requests/Admin/PersonRequest.php',
+        // P1c Task 9 (LV-02 export): `array_key_exists('phone', $projected)` and `$p['phone']`
+        // in `PersonController::exportTable()` read the KEY off an array `PersonPresenter::one()`
+        // already built — never `->phone` off a Person model — to decide whether the CSV needs a
+        // Phone column at all. Same content-blind, presence-only pattern `People.vue`'s own
+        // `'phone' in person` check already uses for the identical reason (that file is outside
+        // this guard's scanned directories); matched here only because the needle is a plain
+        // substring scan that cannot distinguish "reading a key that exists" from "reading the
+        // model column directly".
+        'app/Http/Controllers/Admin/PersonController.php',
     ];
 
     private const NEEDLES = ['->phone', '->notes', "'phone'", "'notes'"];

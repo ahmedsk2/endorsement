@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { router, useForm } from '@inertiajs/vue3';
+import { router, useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '../../Layouts/AppLayout.vue';
 
 /**
@@ -30,6 +30,8 @@ import AppLayout from '../../Layouts/AppLayout.vue';
 const props = defineProps({
     people: { type: Array, default: () => [] },
     positions: { type: Array, default: () => [] },
+    // LV-02's bulk "set level" picker (Task 9). Every active level, EXT included.
+    levels: { type: Array, default: () => [] },
     contact_visibility: { type: String, default: 'admins' },
     contact_visibilities: { type: Object, default: () => ({}) },
     // LV-04. Only the currently-open row's spans — `PersonController::history()` is a dedicated,
@@ -212,6 +214,114 @@ const submitEdit = (person) => {
             onSuccess: () => { editingId.value = null; },
         });
 };
+
+// --- Bulk operations (LV-02) ---------------------------------------------------------------
+//
+// Selection is a Set of person ids, independent of search/edit/history state. "Select all
+// filtered" selects only what the search box currently shows — never every row ever LOADED —
+// because selecting rows the search has hidden from view is exactly how a bulk deactivation
+// surprises someone. Bulk "Resend invitations" is not offered here: it is an ACCOUNT action
+// that needs AC-02's resend endpoint (P1c-2), so the control below is shown, disabled, rather
+// than shipping a button that does nothing.
+const page = usePage();
+
+const selected = ref(new Set());
+
+const isSelected = (id) => selected.value.has(id);
+
+const toggleSelected = (id) => {
+    const next = new Set(selected.value);
+    if (next.has(id)) {
+        next.delete(id);
+    } else {
+        next.add(id);
+    }
+    selected.value = next;
+};
+
+const allFilteredSelected = computed(() => filteredPeople.value.length > 0
+    && filteredPeople.value.every((p) => selected.value.has(p.id)));
+
+const toggleSelectAllFiltered = () => {
+    selected.value = allFilteredSelected.value
+        ? new Set()
+        : new Set(filteredPeople.value.map((p) => p.id));
+};
+
+const selectionCount = computed(() => selected.value.size);
+
+const bulkLevelId = ref(props.levels[0]?.id ?? null);
+const bulkForm = useForm({ action: '', ids: [], level_id: null, active: true });
+
+const runBulk = (overrides) => {
+    bulkForm.clearErrors();
+    bulkForm
+        .transform((data) => ({ ...data, ...overrides, ids: Array.from(selected.value) }))
+        .post('/admin/people/bulk', {
+            preserveScroll: true,
+            onSuccess: () => { selected.value = new Set(); },
+        });
+};
+
+const bulkSetLevel = () => runBulk({ action: 'set_level', level_id: bulkLevelId.value });
+const bulkActivate = () => runBulk({ action: 'set_active', active: true });
+const bulkDeactivate = () => runBulk({ action: 'set_active', active: false });
+
+// A plain (non-Inertia) form submission: the export response is a file stream carrying a
+// Content-Disposition header, not an X-Inertia page object, so Inertia's own router cannot
+// handle it — a native <form> POST lets the browser do what it already knows how to do with a
+// file download. The first file download this application has ever shipped (finding 16).
+const submitExport = () => {
+    const token = document.querySelector('meta[name="csrf-token"]')?.content ?? '';
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/admin/people/bulk';
+    form.style.display = 'none';
+
+    const field = (name, value) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
+    };
+
+    field('_token', token);
+    field('action', 'export');
+    Array.from(selected.value).forEach((id) => field('ids[]', id));
+
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
+};
+
+// Per-person outcome, straight from the writer's own return values
+// (LevelAssignment::ASSIGNED etc., or 'activated'/'deactivated') — never a client-side guess at
+// what happened. Shared via the same session-flash channel as `flash.status`/`flash.error`
+// (HandleInertiaRequests), because a bulk report is exactly as one-shot as those.
+const outcomeLabels = {
+    assigned: 'Level set',
+    skipped_existing: 'Already had a change recorded on that date',
+    skipped_same_level: 'Already at that level',
+    refused_overlap: 'A later change already exists — not applied',
+    activated: 'Activated',
+    deactivated: 'Deactivated',
+};
+
+const bulkReport = computed(() => {
+    const report = page.props.flash?.bulk_report;
+    if (!report) return [];
+
+    return Object.entries(report).map(([id, outcome]) => {
+        const person = props.people.find((p) => p.id === Number(id));
+
+        return {
+            id: Number(id),
+            name: person?.full_name ?? `Person #${id}`,
+            label: outcomeLabels[outcome] ?? outcome,
+        };
+    });
+});
 </script>
 
 <template>
@@ -325,11 +435,66 @@ const submitEdit = (person) => {
                 </form>
             </section>
 
-            <div>
-                <label class="channel-tag mb-1 block" for="people-search">Search</label>
-                <input id="people-search" v-model="search" type="search"
-                       class="w-full max-w-sm rounded-md border border-line bg-panel px-3 py-2 text-sm text-ink focus:border-channel focus:outline-none"
-                       placeholder="Name…" />
+            <div class="flex flex-wrap items-end justify-between gap-4">
+                <div>
+                    <label class="channel-tag mb-1 block" for="people-search">Search</label>
+                    <input id="people-search" v-model="search" type="search"
+                           class="w-full max-w-sm rounded-md border border-line bg-panel px-3 py-2 text-sm text-ink focus:border-channel focus:outline-none"
+                           placeholder="Name…" />
+                </div>
+                <label class="flex items-center gap-2 text-sm text-body">
+                    <input type="checkbox" :checked="allFilteredSelected" @change="toggleSelectAllFiltered" />
+                    Select all filtered ({{ filteredPeople.length }})
+                </label>
+            </div>
+
+            <!-- LV-02's bulk action bar: appears once anything is selected, sticky so it stays
+                 reachable while scrolling a long roster. -->
+            <div v-if="selectionCount > 0" class="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-md border border-line bg-ground-deep p-4">
+                <span class="channel-tag">{{ selectionCount }} selected</span>
+
+                <label class="flex items-center gap-2 text-sm text-body">
+                    <select v-model.number="bulkLevelId" :class="inputClass" class="w-auto">
+                        <option v-for="l in levels" :key="l.id" :value="l.id">{{ l.code }} — {{ l.name }}</option>
+                    </select>
+                    <button type="button" :disabled="bulkForm.processing || !bulkLevelId"
+                            class="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm font-semibold text-ink disabled:opacity-60"
+                            @click="bulkSetLevel">
+                        Set level
+                    </button>
+                </label>
+
+                <button type="button" :disabled="bulkForm.processing"
+                        class="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm font-semibold text-ink disabled:opacity-60"
+                        @click="bulkActivate">
+                    Activate
+                </button>
+                <button type="button" :disabled="bulkForm.processing"
+                        class="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm font-semibold text-ink disabled:opacity-60"
+                        @click="bulkDeactivate">
+                    Deactivate
+                </button>
+                <button type="button" class="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm font-semibold text-ink"
+                        @click="submitExport">
+                    Export CSV
+                </button>
+                <button type="button" disabled title="Arrives with the invitation work (AC-02)"
+                        class="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm font-semibold text-muted opacity-60">
+                    Resend invitations
+                </button>
+
+                <p v-if="bulkForm.errors.ids" class="w-full text-xs text-critical">{{ bulkForm.errors.ids }}</p>
+            </div>
+
+            <!-- The last bulk action's per-person outcome — from the writer's own return
+                 values, never "Done." -->
+            <div v-if="bulkReport.length" class="rounded-md border border-line bg-panel p-4">
+                <p class="channel-tag mb-2">Last bulk action</p>
+                <ul class="space-y-1 text-sm text-body">
+                    <li v-for="row in bulkReport" :key="row.id">
+                        <span class="readout font-semibold text-ink">{{ row.name }}</span> — {{ row.label }}
+                    </li>
+                </ul>
             </div>
 
             <!-- Phone: one card per person. -->
@@ -337,7 +502,10 @@ const submitEdit = (person) => {
                 <article v-for="person in filteredPeople" :key="person.id" class="rounded-md border border-line bg-panel p-4">
                     <div v-if="editingId !== person.id">
                         <div class="flex items-baseline justify-between gap-3">
-                            <span class="readout text-sm font-semibold text-ink">{{ person.full_name }}</span>
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" :checked="isSelected(person.id)" @change="toggleSelected(person.id)" />
+                                <span class="readout text-sm font-semibold text-ink">{{ person.full_name }}</span>
+                            </label>
                             <span class="channel-tag">{{ person.active ? 'Active' : 'Retired' }}</span>
                         </div>
                         <p class="text-sm text-body">{{ positionName(person.position) }} · {{ person.level?.code ?? '—' }}</p>
@@ -387,6 +555,9 @@ const submitEdit = (person) => {
                 <table class="w-full text-left text-sm">
                     <thead class="bg-ground-deep">
                         <tr>
+                            <th scope="col" class="px-4 py-2">
+                                <span class="sr-only">Select</span>
+                            </th>
                             <th scope="col" class="channel-tag px-4 py-2">Name</th>
                             <th scope="col" class="channel-tag px-4 py-2">Short name</th>
                             <th scope="col" class="channel-tag px-4 py-2">Role</th>
@@ -401,6 +572,10 @@ const submitEdit = (person) => {
                     <tbody>
                         <template v-for="person in filteredPeople" :key="person.id">
                             <tr v-if="editingId !== person.id" class="border-t border-line">
+                                <td class="px-4 py-2">
+                                    <input type="checkbox" :aria-label="`Select ${person.full_name}`"
+                                           :checked="isSelected(person.id)" @change="toggleSelected(person.id)" />
+                                </td>
                                 <td class="readout px-4 py-2 font-semibold text-ink">{{ person.full_name }}</td>
                                 <td class="readout px-4 py-2 text-body">{{ person.short_name || '—' }}</td>
                                 <td class="px-4 py-2 text-body">{{ positionName(person.position) }}</td>
@@ -421,7 +596,7 @@ const submitEdit = (person) => {
                                 </td>
                             </tr>
                             <tr v-else class="border-t border-line bg-ground-deep">
-                                <td :colspan="showsPhone ? 7 : 6" class="px-4 py-4">
+                                <td :colspan="showsPhone ? 8 : 7" class="px-4 py-4">
                                     <form class="space-y-4" @submit.prevent="submitEdit(person)">
                                         <div class="grid gap-3 sm:grid-cols-3">
                                             <div>
@@ -491,7 +666,7 @@ const submitEdit = (person) => {
                                 </td>
                             </tr>
                             <tr v-if="editingId !== person.id && openHistoryId === person.id" class="border-t border-line bg-ground-deep">
-                                <td :colspan="showsPhone ? 7 : 6" class="px-4 py-3">
+                                <td :colspan="showsPhone ? 8 : 7" class="px-4 py-3">
                                     <p v-if="historyLoading && !historySpans" class="text-xs text-muted">Loading…</p>
                                     <p v-else-if="historySpans && historySpans.length === 0" class="text-xs text-muted">
                                         No level history recorded.

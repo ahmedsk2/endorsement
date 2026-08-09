@@ -225,6 +225,9 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:people.manage'])
         Route::get('/people/{person}/history', [PersonController::class, 'history'])
             ->name('people.history')->withTrashed();
         Route::post('/people', [PersonController::class, 'store'])->name('people.store');
+        // LV-02's bulk operations (set level, set status, export). A distinct URI, not a
+        // `{person}`-shaped one, so it never collides with the PATCH route below.
+        Route::post('/people/bulk', [PersonController::class, 'bulk'])->name('people.bulk');
         // ->withTrashed() for the same reason as people.history above (P1c Task 7's audit): the
         // roster's own Edit button is offered on every row index() lists, retired or not
         // (People.vue never conditions it on `retired`), so PATCHing a retired person's record

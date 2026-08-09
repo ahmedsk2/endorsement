@@ -26,9 +26,12 @@ class RotaWritersAreSingularTest extends TestCase
     private const ALLOW_LIST = [
         // The one writer of master_rota_assignments (P1d Decision F).
         'app/Support/Rota/RotaAssignment.php',
-        // A factory populating fixture rows for OTHER tests is not a production writer — same
+        // The one writer of vacations (P1d Decision F).
+        'app/Support/Rota/VacationBooking.php',
+        // Factories populating fixture rows for OTHER tests are not production writers — same
         // carve-out PersonLevelsHaveOneWriterTest makes for PersonLevelFactory.
         'database/factories/MasterRotaAssignmentFactory.php',
+        'database/factories/VacationFactory.php',
     ];
 
     private const NEEDLES = [

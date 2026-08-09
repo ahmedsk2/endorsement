@@ -86,6 +86,12 @@ class HandleInertiaRequests extends Middleware
                 // return values (LevelAssignment::assign()'s outcome constants, or
                 // 'activated'/'deactivated') — never a client-side guess at what happened.
                 'bulk_report' => $request->session()->get('bulk_report'),
+                // LV-03's promotion preview/commit results (App\Support\Promotion). Same
+                // one-shot flash channel — a stale preview is cleared by the next navigation,
+                // which is exactly the property "changing any of the three inputs clears the
+                // preview" needs.
+                'promotion_preview' => $request->session()->get('promotion_preview'),
+                'promotion_result' => $request->session()->get('promotion_result'),
             ],
         ];
     }

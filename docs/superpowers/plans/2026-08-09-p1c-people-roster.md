@@ -999,6 +999,94 @@ Files list names no JS test). `npm run build` and the full suite green.
 git commit -am "feat: bulk actions that check the whole selection before touching any of it"
 ```
 
+**2026-08-09, Task 10 — one real design gap the plan's own code left for the implementer to
+resolve (how a preview computes an outcome without writing), one file added beyond the plan's own
+Files list plus one already implied by Task 9's own precedent, two self-referential-docblock traps
+(same species as Task 4's and P1a's own amendments), and one genuine mathematical impossibility in
+the plan's own Step 1 prose, caught before it could waste a run.**
+
+1. **The plan's Step 3 code gives `preview()`'s docblock ("computes … what `assign()` WOULD
+   return … by asking the same questions LevelAssignment asks") but supplies no read-only method
+   on `LevelAssignment` to ask them with — `assign()` itself always writes once it passes its own
+   three checks.** Reusing `assign()` unmodified would have meant either duplicating its three
+   checks a second time (the exact "two predicates that drift" shape `AuditChain::canonical()`'s
+   own docblock warns about) or calling it destructively from a preview. Resolved by extracting
+   the three checks into `LevelAssignment::predictOutcome()` — `public static`, read-only, and
+   called BY `assign()` itself before it writes anything — so `Promotion::preview()` and
+   `LevelAssignment::assign()` share one predicate rather than each defining their own. Ran
+   `LevelAssignmentTest` before and after the extraction (7/7 both times) to confirm the refactor
+   changed no observable behaviour.
+2. **Decision D's "closes the open level span" (the retire path) has no writer either — `assign()`
+   always requires a target `Level`, and there is deliberately no target on this path.** Added
+   `LevelAssignment::close(Person, string): string`, returning new `CLOSED`/`NOTHING_TO_CLOSE`
+   constants, alongside `predictOutcome()` — keeping `person_levels` at exactly one writer
+   (`PersonLevelsHaveOneWriterTest` stayed green with no allow-list change, since `close()` lives
+   inside the one writer file, not a second one). Deliberately does NOT stamp `promotion_batch_id`/
+   `reason`/`created_by` onto the row being closed — those columns record who OPENED a span, and
+   overwriting them on close would misattribute the original assignment to today's retirement;
+   the retirement's own provenance is what the caller's audit rows exist to carry (Decision H).
+3. **Two self-referential-docblock traps, same species as Task 4's `strtotime()` amendment and
+   the P1a master-rota plan's own migration-comment amendment**: writing `Level::nextAfter()` and
+   `'person_level_change'` as literal quoted strings inside EXPLANATORY prose (describing what was
+   deliberately NOT built, or NOT watched) trips the exact guards that prose is explaining. Both
+   caught by running the guards for real, not by inspection — `LevelLadderTest`'s widened scan
+   failed on `app/Support/Promotion.php` and `PromotionController.php`'s own docblocks
+   (`Level::nextAfter()`), and `PromotionTest::test_only_the_summary_action_is_on_the_anomaly_watch_list`
+   failed on `AuditAnomalies.php`'s own new comment (`'person_level_change'`). Fixed the same way
+   Task 4's amendment fixed the first instance of this trap: reworded the prose to describe the
+   absent thing without reproducing its literal name/string, rather than allow-listing a file that
+   doesn't otherwise need one.
+4. **A genuine mathematical impossibility in the plan's own Step 1 prose, caught while writing the
+   test rather than by running it (an "Undefined array key" error on the first attempt is what
+   surfaced it).** `test_the_preview_names_who_will_be_skipped_and_why`'s bullet names three skip
+   reasons: "a person already at the target, a person with a later closed span, a person on a
+   retired account." The FIRST is unreachable through a real preview call: `cohort($from, $on)`
+   only ever returns people whose `levelAt($on)` resolves to `$from`, and `predictOutcome()`'s
+   `SKIPPED_SAME_LEVEL` branch fires exactly when that resolved level already equals the TARGET —
+   since the controller separately refuses `$from === $to` as a no-op, a person genuinely IN the
+   `$from` cohort can never simultaneously already BE at a DIFFERENT `$to`. The two conditions are
+   mutually exclusive by construction, not merely untested; a person who has already been promoted
+   to the target has, by that very fact, LEFT the source cohort (their source-level span closed
+   the day the target span opened) and would not appear in the preview to be reported as
+   "skipped" at all. Substituted the reachable sibling: an EXACT-DATE COLLISION
+   (`SKIPPED_EXISTING`) — a person with a re-affirming span recorded starting exactly on the
+   promotion date, seeded directly via `PersonLevel::factory()` (not `LevelAssignment::assign()`,
+   which would itself refuse to write a same-level re-affirmation and return `SKIPPED_SAME_LEVEL`
+   with nothing on disk to collide with) — matching the SAME "test fixture, not a production
+   writer" exception `LevelHistoryTest` already relies on. The third named reason ("a person on a
+   retired account") was interpreted as a roster-active person whose LINKED ACCOUNT is
+   deactivated — `people.active` and `users.active` are different flags (P0c/Task 9's own
+   distinction) — proving the opposite of "skipped": promotion is a roster/level fact, not a
+   login one, so such a person is correctly `ASSIGNED`, not skipped.
+5. **Two files touched beyond the plan's own Files list, both load-bearing:**
+   - `app/Support/LevelAssignment.php` — see points 1–2 above.
+   - `app/Http/Middleware/HandleInertiaRequests.php` — `back()->with('promotion_preview', …)`/
+     `with('promotion_result', …)` flash to the SESSION; without adding both keys to this
+     middleware's shared `flash` array (the same channel Task 9 already extended for
+     `bulk_report`), neither key would ever reach an Inertia prop and `Promotion.vue` would have
+     nothing to render a preview or a result from. Same omission class Task 9's own amendment
+     already flagged for `bulk_report` — the plan's Files lists consistently miss this file
+     whenever a task's UI depends on a NEW flash key, which is now three-for-three (Tasks 7lite/9/10
+     each needed it in some form).
+
+Everything else matches the plan's own text: the cohort predicate is table-qualified and shared
+verbatim between `preview()` and `commit()`'s fresh re-derivation; `offerableLevels()` is the one
+predicate `PromotionController::index()` offers from and `Rule::in()` validates against (never
+`exists:levels,id`); the retire path is a distinct `action=retire` value, never a `to_level_id`
+that means "out"; audit ordering runs after the commit, matching
+`AccessControlController::applyRoleSet()`.
+
+`php artisan test`: 982 → 998 (16 new `PromotionTest`; `LevelLadderTest`'s existing 5 stayed at 5 —
+its widened scan is inside an existing test method, not a new one). `npm test`: 112 → 113 (1 new
+`AppLayout.test.js` case — the negative symmetric check that `structure.manage` alone does NOT
+show Promotion — added alongside extending the existing `people.manage`-alone case to also assert
+the Promotion link, matching the plan's own final tally of 113). `npm run build` and the full
+suite green throughout.
+
+```bash
+git commit -am "feat: a cohort moves up when a human says where to"
+```
+
 ---
 
 ## Conventions every task follows
@@ -2966,6 +3054,8 @@ git commit -am "feat: bulk actions that check the whole selection before touchin
 - Modify: `routes/web.php`
 - Modify: `app/Console/Commands/AuditAnomalies.php`
 - Modify: `resources/js/Layouts/AppLayout.vue`
+- Modify: `app/Support/LevelAssignment.php` (not in the plan's own list — see Amendments)
+- Modify: `app/Http/Middleware/HandleInertiaRequests.php` (not in the plan's own list — see Amendments)
 - Test: create `tests/Feature/Admin/PromotionTest.php`
 - Test: modify `tests/Feature/Identity/LevelLadderTest.php`
 - Test: modify `tests/js/AppLayout.test.js`
@@ -2984,7 +3074,7 @@ git commit -am "feat: bulk actions that check the whole selection before touchin
 > **`EXT` is outside the ladder and is never promoted.** `scopeInternal()` is what excludes it,
 > from **both** the source list and the target list.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/Feature/Admin/PromotionTest.php`:
 
@@ -3033,9 +3123,9 @@ In `tests/Feature/Identity/LevelLadderTest.php`, widen
 just `Level.php`, for `nextAfter`, `'terminal'` and `->terminal`. P1c is the first plan with a
 live reason to want the inference, so this is the first time the guard has anything to catch.
 
-- [ ] **Step 2: Run and watch them go red**
+- [x] **Step 2: Run and watch them go red**
 
-- [ ] **Step 3: `App\Support\Promotion`**
+- [x] **Step 3: `App\Support\Promotion`**
 
 Two public methods and no state:
 
@@ -3084,7 +3174,7 @@ The cohort predicate is written **once**, table-qualified (finding 7), and used 
     }
 ```
 
-- [ ] **Step 4: The controller and its pickers**
+- [x] **Step 4: The controller and its pickers**
 
 `PromotionController::index()` renders the source/target lists from **one** predicate, and
 `store()` validates against the **same** one — the `SignoffPickers` discipline applied to a
@@ -3108,7 +3198,7 @@ before it can happen rather than after.
 `academic_year_start` when one is configured, rendered through `Calendar::label()` so the operator
 sees the Hijri date too. The client computes nothing.
 
-- [ ] **Step 5: The screen**
+- [x] **Step 5: The screen**
 
 `resources/js/Pages/Admin/Promotion.vue`: two `<select>`s (source, target), a date field, a
 "Preview" button, and a table of the cohort with a per-person outcome and a checkbox per row so
@@ -3123,7 +3213,7 @@ committed against changed inputs is the failure mode this whole screen exists to
 The nav gains a "Promotion" link behind `people.manage`, beside People, with a matching
 `tests/js/AppLayout.test.js` assertion.
 
-- [ ] **Step 6: The watch list**
+- [x] **Step 6: The watch list**
 
 In `app/Console/Commands/AuditAnomalies.php`, add to the single-occurrence array (`:83-94`):
 
@@ -3134,7 +3224,7 @@ In `app/Console/Commands/AuditAnomalies.php`, add to the single-occurrence array
 and **not** `person_level_change` — Decision H, with the reason stated in a comment at the site
 so a later reader does not "complete" the pair.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 Expected: full suite **986 passed** (968 + 18). `LevelLadderTest` green with its widened scan.
 

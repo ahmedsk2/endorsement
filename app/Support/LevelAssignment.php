@@ -36,6 +36,56 @@ final class LevelAssignment
 
     public const REFUSED_OVERLAP = 'refused_overlap';
 
+    /** LV-03's "retire this cohort instead" path (Decision D) — a span closed with no successor. */
+    public const CLOSED = 'closed';
+
+    /** The retire path found no open span to close — a genuine no-op, reported rather than guessed at. */
+    public const NOTHING_TO_CLOSE = 'nothing_to_close';
+
+    /**
+     * Read-only. The EXACT three questions {@see assign()} asks, in the exact order, without
+     * writing anything — the single predicate a preview and a commit share (P1c Task 10), so a
+     * preview's outcomes cannot be derived a different way from what committing would actually
+     * do. `assign()` itself calls this first and only writes when it comes back `ASSIGNED`.
+     *
+     * @return self::ASSIGNED|self::SKIPPED_EXISTING|self::SKIPPED_SAME_LEVEL|self::REFUSED_OVERLAP
+     */
+    public static function predictOutcome(Person $person, Level $level, string $effectiveFromYmd): string
+    {
+        // 1. An EXACT-DATE collision is checked first, ahead of the same-level check below: the
+        // unique(person_id, effective_from) index is the constraint that must never be upserted
+        // through, whatever level either side names — a second call naming the SAME level on the
+        // SAME date must be reported identically to one naming a DIFFERENT level there, because
+        // in both cases the existing row must survive untouched.
+        $existing = PersonLevel::query()
+            ->where('person_id', $person->getKey())
+            ->whereDate('effective_from', $effectiveFromYmd)
+            ->exists();
+
+        if ($existing) {
+            return self::SKIPPED_EXISTING;
+        }
+
+        // 2. The level already in force on that date, from an EARLIER span — a genuine no-op
+        // regardless of the newly-proposed effective_from, so no new span is written at all.
+        if ($person->levelAt($effectiveFromYmd)?->is($level)) {
+            return self::SKIPPED_SAME_LEVEL;
+        }
+
+        // 3. Refuse to write BEHIND a span that already starts later — writing here would
+        // silently rewrite history that a later, already-recorded span has already claimed.
+        $laterSpanExists = PersonLevel::query()
+            ->where('person_id', $person->getKey())
+            ->whereDate('effective_from', '>', $effectiveFromYmd)
+            ->exists();
+
+        if ($laterSpanExists) {
+            return self::REFUSED_OVERLAP;
+        }
+
+        return self::ASSIGNED;
+    }
+
     /**
      * @param  array{batch?: ?string, reason?: ?string, actor?: ?int}  $context
      * @return self::ASSIGNED|self::SKIPPED_EXISTING|self::SKIPPED_SAME_LEVEL|self::REFUSED_OVERLAP
@@ -46,35 +96,10 @@ final class LevelAssignment
         // exactly what let "+5 years" create backdated clinical rows elsewhere in this codebase.
         $from = Calendar::parse($effectiveFrom)->format(Calendar::YMD);
 
-        // 1. An EXACT-DATE collision is checked first, ahead of the same-level check below: the
-        // unique(person_id, effective_from) index is the constraint that must never be upserted
-        // through, whatever level either side names — a second call naming the SAME level on the
-        // SAME date must be reported identically to one naming a DIFFERENT level there, because
-        // in both cases the existing row must survive untouched.
-        $existing = PersonLevel::query()
-            ->where('person_id', $person->getKey())
-            ->whereDate('effective_from', $from)
-            ->exists();
+        $outcome = self::predictOutcome($person, $level, $from);
 
-        if ($existing) {
-            return self::SKIPPED_EXISTING;
-        }
-
-        // 2. The level already in force on that date, from an EARLIER span — a genuine no-op
-        // regardless of the newly-proposed effective_from, so no new span is written at all.
-        if ($person->levelAt($from)?->is($level)) {
-            return self::SKIPPED_SAME_LEVEL;
-        }
-
-        // 3. Refuse to write BEHIND a span that already starts later — writing here would
-        // silently rewrite history that a later, already-recorded span has already claimed.
-        $laterSpanExists = PersonLevel::query()
-            ->where('person_id', $person->getKey())
-            ->whereDate('effective_from', '>', $from)
-            ->exists();
-
-        if ($laterSpanExists) {
-            return self::REFUSED_OVERLAP;
+        if ($outcome !== self::ASSIGNED) {
+            return $outcome;
         }
 
         DB::transaction(function () use ($person, $level, $from, $context): void {
@@ -98,5 +123,35 @@ final class LevelAssignment
         });
 
         return self::ASSIGNED;
+    }
+
+    /**
+     * LV-03's "retire this cohort instead" (Decision D): close a person's OPEN span with no
+     * successor. The counterpart to {@see assign()}'s own close-prior-span step, used when there
+     * is no new level to open — `people.active` is what actually changes on `$onYmd` (the
+     * caller's job, not this one); the level HISTORY simply ends the day before, the same
+     * non-overlapping boundary `assign()` already establishes for a real promotion.
+     *
+     * Does not touch `promotion_batch_id`/`reason`/`created_by` on the row being closed: those
+     * columns record who OPENED a span, and this only closes one — overwriting them on close
+     * would misattribute the ORIGINAL assignment to whoever is retiring the cohort today. The
+     * retirement itself is what the caller's own audit rows exist to record (Decision H).
+     *
+     * @return self::CLOSED|self::NOTHING_TO_CLOSE
+     */
+    public static function close(Person $person, string $onYmd): string
+    {
+        $open = PersonLevel::query()
+            ->where('person_id', $person->getKey())
+            ->whereNull('effective_to')
+            ->first();
+
+        if ($open === null) {
+            return self::NOTHING_TO_CLOSE;
+        }
+
+        $open->update(['effective_to' => Calendar::addDays($onYmd, -1)->format(Calendar::YMD)]);
+
+        return self::CLOSED;
     }
 }

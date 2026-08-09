@@ -188,6 +188,10 @@ const navClass = (active) => [
                           :class="navClass(isActive('/admin/people'))">
                         People
                     </Link>
+                    <Link v-if="can('people.manage')" href="/admin/promotion"
+                          :class="navClass(isActive('/admin/promotion'))">
+                        Promotion
+                    </Link>
                     <Link v-if="can('access.manage')" href="/admin/access-control"
                           :class="navClass(isActive('/admin/access-control'))">
                         Access Control

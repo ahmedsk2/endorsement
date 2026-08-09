@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\HolidayController;
 use App\Http\Controllers\Admin\LevelController;
 use App\Http\Controllers\Admin\PeriodController;
 use App\Http\Controllers\Admin\PersonController;
+use App\Http\Controllers\Admin\PromotionController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UnitController;
 use App\Http\Controllers\Admin\UnitMergeController;
@@ -238,6 +239,12 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:people.manage'])
         // No destroy — people are deactivated, never deleted (owner ruling). PersonController
         // exposes no delete action at all rather than a route that refuses, matching
         // LevelController's own precedent: DELETE against this URI is a plain 405.
+
+        // LV-03's annual promotion (P1b Owner Decision A / P1c Decision D). The operator picks
+        // BOTH ends explicitly; nothing here computes a target.
+        Route::get('/promotion', [PromotionController::class, 'index'])->name('promotion');
+        Route::post('/promotion/preview', [PromotionController::class, 'preview'])->name('promotion.preview');
+        Route::post('/promotion/commit', [PromotionController::class, 'commit'])->name('promotion.commit');
     });
 
 /*

@@ -115,6 +115,29 @@ class GoldenFixtureTest extends TestCase
     }
 
     /**
+     * P1d Task 2: the department's week is derived from `weekend_days`, not constant — a
+     * Friday+Saturday weekend and a Saturday+Sunday weekend start their weeks on different
+     * days. Every value here was produced by running `Calendar::weekOf()`, not written by hand.
+     */
+    public function test_the_week_fixtures_reproduce(): void
+    {
+        foreach ($this->fixture['weeks'] as $case) {
+            $this->institution(['weekend_days' => $case['weekend_days']]);
+
+            $this->assertSame(
+                $case['week_start_iso_day'],
+                Calendar::weekStartIsoDay(),
+                "weekStartIsoDay() for weekend_days ".json_encode($case['weekend_days'])
+            );
+
+            $week = Calendar::weekOf($case['of']);
+
+            $this->assertSame($case['starts_on'], $week['starts_on'], "weekOf({$case['of']})['starts_on']");
+            $this->assertSame($case['ends_on'], $week['ends_on'], "weekOf({$case['of']})['ends_on']");
+        }
+    }
+
+    /**
      * The whole reason `Calendar::hijri()` applies the offset to the GREGORIAN instant before
      * conversion, never by decrementing the resulting Hijri day number afterwards: doing the
      * latter produces the impossible 1448-02-00 at exactly this boundary.

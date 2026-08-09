@@ -27,6 +27,18 @@
     }
   ],
 
+  "weeks": [
+    { "_description": "QCH: Friday+Saturday weekend, so weeks run Sunday..Saturday.",
+      "weekend_days": [5, 6], "week_start_iso_day": 7,
+      "of": "2026-08-12", "starts_on": "2026-08-09", "ends_on": "2026-08-15" },
+    { "_description": "A Saturday+Sunday weekend runs Monday..Sunday.",
+      "weekend_days": [6, 7], "week_start_iso_day": 1,
+      "of": "2026-08-12", "starts_on": "2026-08-10", "ends_on": "2026-08-16" },
+    { "_description": "A one-day (Friday) weekend still resolves.",
+      "weekend_days": [5], "week_start_iso_day": 6,
+      "of": "2026-08-12", "starts_on": "2026-08-08", "ends_on": "2026-08-14" }
+  ],
+
   "hijri_month_boundary": {
     "_description": "THE reason the offset is applied to the GREGORIAN instant before conversion, never by decrementing the resulting Hijri day number: doing the latter produces the impossible 1448-02-00 at this exact boundary. 2026-07-15 is the FIRST day of Hijri month 2 (Safar) at offset 0, and the LAST day of Hijri month 1 (Muharram) at offset -1 — see `cases` above for the paired values (2026-07-15 -> 1448-02-01 at offset 0, -> 1448-01-29 at offset -1; 2026-07-16 -> 1448-02-02 at offset 0, -> 1448-02-01 at offset -1).",
     "offset_0":  { "date": "2026-07-15", "hijri": "1448-02-01" },

@@ -282,6 +282,101 @@ final class Calendar
         return in_array((int) self::coerce($date)->isoWeekday(), self::weekendDays(), true);
     }
 
+    /**
+     * The ISO weekday (Mon=1 … Sun=7) a week begins on for THIS department.
+     *
+     * Munawib AR-05 gives vacations a `granularity: 'week'` and MR-07 reports availability "each
+     * week", but the spec never says what a week is — while ST-01 makes weekend days department
+     * configuration. Two departments with different weekends would otherwise snap the same leave
+     * to different dates.
+     *
+     * The rule: the week begins the day after the LAST configured weekend day, wrapping. Friday
+     * and Saturday off (the QCH default, [5, 6]) gives a Sunday start; a Saturday–Sunday weekend
+     * gives a Monday start. An empty weekend list falls back to Monday rather than producing no
+     * answer.
+     */
+    public static function weekStartIsoDay(): int
+    {
+        $weekend = self::weekendDays();
+
+        if ($weekend === []) {
+            return 1;
+        }
+
+        sort($weekend);
+
+        return (int) (max($weekend) % 7) + 1;
+    }
+
+    /**
+     * The week containing a date, BOTH BOUNDS INCLUSIVE — the same idiom `Person::levelAt()` and
+     * `Period::contains()` share. Labels are dual-dated (UX-04) because the client performs no
+     * date formatting at all (Decision A, P1a).
+     *
+     * @return array{starts_on:string, ends_on:string, starts_label:array<string,mixed>, ends_label:array<string,mixed>}
+     */
+    public static function weekOf(DateTimeInterface|string $date): array
+    {
+        $day = self::coerce($date);
+        $start = self::weekStartIsoDay();
+
+        // How many days back to the most recent $start-weekday, 0..6.
+        $back = ((int) $day->isoWeekday() - $start + 7) % 7;
+
+        $from = $day->subDays($back);
+        $to = $from->addDays(6);
+
+        return [
+            'starts_on' => $from->format(self::YMD),
+            'ends_on' => $to->format(self::YMD),
+            'starts_label' => self::label($from),
+            'ends_label' => self::label($to),
+        ];
+    }
+
+    /**
+     * Every week INTERSECTING a range, in order. `starts_on`/`ends_on` are the true week bounds;
+     * `clipped_*` are those bounds trimmed to the range, which is what a per-period week strip
+     * (MR-07) actually renders — a period rarely begins on a week boundary.
+     *
+     * Capped, deliberately: an unbounded loop over a range built from a mistyped year is how a
+     * screen becomes a memory exhaustion. 550 days is comfortably more than the longest academic
+     * year this system generates (owner decision 4: 365 or 366 days, block 13 absorbing the
+     * remainder).
+     *
+     * @return list<array{starts_on:string, ends_on:string, clipped_starts_on:string, clipped_ends_on:string, starts_label:array<string,mixed>, ends_label:array<string,mixed>}>
+     */
+    public static function weeksIn(DateTimeInterface|string $from, DateTimeInterface|string $to): array
+    {
+        $rangeStart = self::coerce($from);
+        $rangeEnd = self::coerce($to);
+
+        if ($rangeEnd->lessThan($rangeStart)) {
+            throw new InvalidArgumentException('A week range ends before it starts.');
+        }
+
+        if ($rangeStart->diffInDays($rangeEnd) > 550) {
+            throw new InvalidArgumentException('A week range may not exceed 550 days.');
+        }
+
+        $out = [];
+        $cursor = self::parse(self::weekOf($rangeStart)['starts_on']);
+        $endYmd = $rangeEnd->format(self::YMD);
+
+        while ($cursor->format(self::YMD) <= $endYmd) {
+            $week = self::weekOf($cursor);
+
+            $out[] = $week + [
+                'clipped_starts_on' => max($week['starts_on'], $rangeStart->format(self::YMD)),
+                'clipped_ends_on' => min($week['ends_on'], $endYmd),
+            ];
+
+            $cursor = $cursor->addDays(7);
+        }
+
+        return $out;
+    }
+
     /** MR-01: 'months' or 'week_blocks' (`Institution::PERIOD_MONTHS`/`PERIOD_WEEK_BLOCKS`). */
     public static function periodType(): string
     {
@@ -373,7 +468,17 @@ final class Calendar
         return self::$settings = [
             'hijri_enabled' => (bool) ($institution?->hijri_enabled ?? true),
             'hijri_offset_days' => (int) ($institution?->hijri_offset_days ?? 0),
-            'weekend_days' => array_map('intval', $institution?->weekend_days ?: self::DEFAULT_WEEKEND),
+            // `??`, not `?:` — an institution row's weekend_days is NULLABLE, but once a row
+            // exists its value (even `[]`) is a real, explicit configuration, not "unset". The
+            // admin form already refuses an empty list (`CalendarSettingsTest::
+            // test_weekend_days_rejects_an_empty_list`), so `[]` never reaches here through
+            // normal use — but `weekStartIsoDay()`'s own empty-weekend fallback (P1d Task 2)
+            // needs `weekendDays()` to actually be able to report `[]` rather than have it
+            // silently rewritten to the default first, or that defensive branch is dead code
+            // no test can ever reach.
+            'weekend_days' => $institution?->weekend_days === null
+                ? self::DEFAULT_WEEKEND
+                : array_map('intval', $institution->weekend_days),
             'period_type' => (string) ($institution?->period_type ?? Institution::PERIOD_WEEK_BLOCKS),
             'block_weeks' => array_map('intval', $institution?->block_weeks ?: []),
             'academic_year_start' => $institution?->academic_year_start?->format(self::YMD),

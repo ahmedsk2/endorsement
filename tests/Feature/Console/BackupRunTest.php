@@ -97,6 +97,95 @@ class BackupRunTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    /**
+     * Finding 2, 2026-08-09 ops rehearsal. `assertPlausibleDump()` deliberately does NOT check
+     * the payload for `CREATE TRIGGER` text — a real dump taken under least privilege never
+     * contains one, hardened or not (`mariadb-dump`/`mysqldump` need the TRIGGER privilege to
+     * see triggers at all, which the app credential is deliberately never granted), so that
+     * check would reject every real MySQL backup forever once an instance was properly
+     * hardened. Proven wrong empirically against a real MySQL 8.4 container after an earlier
+     * version of this fix shipped exactly that check and passed its own (synthetic) tests.
+     * The real check is `missingAppendOnlyProtections()` below, fed by a live probe
+     * (`assertAuditLogAppendOnlyTriggersAreActive()`, private — verified empirically, not by
+     * PHPUnit: no real MySQL trigger exists for the suite's sqlite connection to fire).
+     */
+    public function test_a_dump_missing_the_audit_log_triggers_is_still_accepted_by_the_payload_check(): void
+    {
+        $payload = "-- MySQL dump 10.19  Distrib 8.4.10\n--\n-- Host: db    Database: endorsement\n"
+            ."-- ------------------------------------------------------\n\n"
+            ."CREATE TABLE `handovers` (`id` bigint unsigned NOT NULL) ENGINE=InnoDB;\n";
+
+        BackupRun::assertPlausibleDump($payload, 'mysql');
+
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * Pure decision logic behind the live probe: given which directions were actually
+     * blocked, name exactly what's missing — the same predicate the rehearsal's own A/B
+     * exercised by hand (`SET GLOBAL`-style privilege experiments against a real MySQL 8.4
+     * container), now expressed as a unit-testable function.
+     */
+    public function test_missing_append_only_protections_names_exactly_what_was_not_blocked(): void
+    {
+        $this->assertSame([], BackupRun::missingAppendOnlyProtections(updateBlocked: true, deleteBlocked: true));
+
+        $this->assertSame(
+            ['audit_log_is_append_only_delete'],
+            BackupRun::missingAppendOnlyProtections(updateBlocked: true, deleteBlocked: false),
+        );
+
+        $this->assertSame(
+            ['audit_log_is_append_only_update'],
+            BackupRun::missingAppendOnlyProtections(updateBlocked: false, deleteBlocked: true),
+        );
+
+        $this->assertSame(
+            ['audit_log_is_append_only_update', 'audit_log_is_append_only_delete'],
+            BackupRun::missingAppendOnlyProtections(updateBlocked: false, deleteBlocked: false),
+        );
+    }
+
+    /**
+     * The live probe is skipped entirely for sqlite (no engine-level trigger to fire there),
+     * so `backup:run` against the suite's normal sqlite connection must behave exactly as it
+     * did before this finding — proven by the existing sqlite-path tests below still passing
+     * unmodified. This test pins that the probe path is a no-op for sqlite specifically,
+     * rather than relying on that being an accidental side effect of the other tests.
+     */
+    public function test_the_live_trigger_probe_is_a_no_op_for_sqlite(): void
+    {
+        if (! $this->hasOpenssl()) {
+            $this->markTestSkipped('openssl is not on PATH in this environment.');
+        }
+
+        $source = storage_path('framework/testing/backup-tzprobe-source.sqlite');
+        @mkdir(dirname($source), 0777, true);
+        file_put_contents($source, '');
+        $pdo = new \PDO('sqlite:'.$source);
+        $pdo->exec('CREATE TABLE handovers (id INTEGER PRIMARY KEY)');
+        $pdo->exec('CREATE TABLE audit_log (id INTEGER PRIMARY KEY, action TEXT NOT NULL, created_at TEXT)');
+        $pdo = null;
+
+        config(['database.default' => 'sqlite', 'database.connections.sqlite.database' => $source]);
+        putenv('BACKUP_PASSPHRASE=a-long-test-passphrase-1234567890');
+
+        $dir = storage_path('framework/testing/backups-tzprobe');
+
+        // No audit_log rows exist, and sqlite has no trigger to fire — if the probe were NOT
+        // skipped for sqlite it would either error (no engine trigger to catch) or, worse,
+        // leave a probe row behind. Neither happens: the command still succeeds.
+        $this->artisan('backup:run', ['--path' => $dir])->assertExitCode(0);
+
+        $this->assertSame(0, (new \PDO('sqlite:'.$source))
+            ->query("SELECT COUNT(*) FROM audit_log WHERE action LIKE 'backup_trigger_probe%'")
+            ->fetchColumn());
+
+        array_map('unlink', glob($dir.DIRECTORY_SEPARATOR.'*') ?: []);
+        @unlink($source);
+        putenv('BACKUP_PASSPHRASE=');
+    }
+
     public function test_a_truncated_sqlite_copy_is_rejected_and_a_real_one_accepted(): void
     {
         BackupRun::assertPlausibleDump("SQLite format 3\0".str_repeat('x', 200), 'sqlite');

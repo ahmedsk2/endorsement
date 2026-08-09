@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Support\Instance;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 
@@ -67,6 +68,7 @@ class BackupRun extends Command
         $driver = (string) config('database.connections.'.config('database.default').'.driver');
 
         try {
+            $this->assertAuditLogAppendOnlyTriggersAreActive($driver);
             $this->dump($plain);
             $this->compressAndEncrypt($plain, $archive, $passphrase);
             $this->verify($archive, $passphrase, $driver);
@@ -314,6 +316,155 @@ class BackupRun extends Command
         if (stripos($payload, 'handovers') === false) {
             throw new \RuntimeException('The archive payload does not contain the handovers table.');
         }
+
+        // Deliberately NOT checked here: whether the payload contains the `audit_log`
+        // append-only trigger DEFINITIONS. It never will, on a correctly hardened instance —
+        // see assertAuditLogAppendOnlyTriggersAreActive() below for why, and why that is
+        // checked live, against the SOURCE, before the dump is even taken, rather than by
+        // reading the dump afterwards.
+    }
+
+    /** The two directions `docs/sql/least-privilege.sql`'s triggers block, by name. */
+    private const AUDIT_LOG_APPEND_ONLY_TRIGGERS = [
+        'update' => 'audit_log_is_append_only_update',
+        'delete' => 'audit_log_is_append_only_delete',
+    ];
+
+    /**
+     * Pure decision logic, split out from the live probe below so it is unit-testable without
+     * a real MySQL connection: given whether each direction was actually blocked, name which
+     * of `docs/sql/least-privilege.sql`'s triggers is missing.
+     *
+     * @return array<int, string>
+     */
+    public static function missingAppendOnlyProtections(bool $updateBlocked, bool $deleteBlocked): array
+    {
+        $missing = [];
+
+        if (! $updateBlocked) {
+            $missing[] = self::AUDIT_LOG_APPEND_ONLY_TRIGGERS['update'];
+        }
+
+        if (! $deleteBlocked) {
+            $missing[] = self::AUDIT_LOG_APPEND_ONLY_TRIGGERS['delete'];
+        }
+
+        return $missing;
+    }
+
+    /**
+     * Prove — by trying it for real — that `audit_log`'s append-only triggers are currently
+     * enforced on the SOURCE database, before spending any time on a dump.
+     *
+     * This is deliberately NOT a metadata query (`information_schema.TRIGGERS`, `SHOW
+     * TRIGGERS`) and NOT a check of the dump's own content, and that is not an oversight —
+     * it is the fix, after the first version of this fix (checking the dump payload for
+     * `CREATE TRIGGER ...`) turned out to be unsatisfiable by construction and was caught only
+     * by testing it against a real MySQL 8.4 container rather than trusting the synthetic
+     * fixtures in this file's own test suite:
+     *
+     *  - MySQL requires the TRIGGER privilege — or being the trigger's recorded DEFINER, also
+     *    tried, also blind — to see so much as a row in information_schema.TRIGGERS. Proven
+     *    empirically, four ways, against a real MySQL 8.4 container: the app's least-privilege
+     *    credential (SELECT, INSERT, UPDATE, DELETE — no TRIGGER) sees zero rows for a table
+     *    that demonstrably has two; adding PROCESS changes nothing; recording the trigger's
+     *    DEFINER as the app's own account changes nothing (MySQL then refuses to even FIRE it,
+     *    "TRIGGER command denied", since the definer itself lacks TRIGGER); and a real
+     *    `mariadb-dump`/`mysqldump` run under that same credential emits zero `CREATE TRIGGER`
+     *    statements, exit 0, nothing on stderr — dump-side confirmation of the same blindness.
+     *  - That blindness is unconditional, not a symptom of misconfiguration: a dump taken
+     *    under least privilege NEVER carries a trigger definition, whether the source is
+     *    hardened or not. Checking the payload for one — this method's first version — would
+     *    therefore reject every real MySQL backup FOREVER once an instance was properly
+     *    hardened, which is the opposite of what "hardened" is supposed to buy. It only looked
+     *    correct because the unit tests supplied hand-written payloads that simply asserted
+     *    trigger text into existence; against a real dump they never fire this way.
+     *  - The one thing the app's EXISTING credential can do — because UPDATE and DELETE are
+     *    already granted schema-wide, precisely so the engine-level trigger has something to
+     *    override — is ATTEMPT the exact write the trigger exists to block, on a disposable
+     *    row, and see whether it is actually blocked. That needs no new privilege and no new
+     *    credential.
+     *
+     * Safe by construction: the probe row is inserted and the transaction is unconditionally
+     * rolled back in `finally`, whether the writes were blocked or (if triggers are missing)
+     * silently succeeded — nothing this method does can ever persist. Proven empirically: after
+     * `rollBack()`, zero rows matching the probe's action name remain, in both the
+     * triggers-present and triggers-missing cases.
+     */
+    private function assertAuditLogAppendOnlyTriggersAreActive(string $driver): void
+    {
+        // SQLite enforces nothing at the engine level here — append-only is a PHP-layer
+        // convention there, out of scope for a check whose whole point is the engine control.
+        if ($driver === 'sqlite') {
+            return;
+        }
+
+        $connection = DB::connection(config('database.default'));
+        $updateBlocked = false;
+        $deleteBlocked = false;
+
+        $connection->beginTransaction();
+
+        try {
+            $id = (int) $connection->table('audit_log')->insertGetId([
+                'action' => 'backup_trigger_probe',
+                'created_at' => now(),
+            ]);
+
+            try {
+                $connection->table('audit_log')->where('id', $id)->update(['action' => 'backup_trigger_probe_write']);
+            } catch (\Throwable $e) {
+                // Only the trigger's OWN signal counts as "blocked". Anything else (a dropped
+                // connection, a lock-wait timeout) must not be silently read as a healthy
+                // trigger — that would misreport a real infrastructure problem as "the audit
+                // log is protected" and let a broken backup run report success.
+                if (! self::isAppendOnlyTriggerSignal($e)) {
+                    throw $e;
+                }
+
+                $updateBlocked = true;
+            }
+
+            try {
+                $connection->table('audit_log')->where('id', $id)->delete();
+            } catch (\Throwable $e) {
+                if (! self::isAppendOnlyTriggerSignal($e)) {
+                    throw $e;
+                }
+
+                $deleteBlocked = true;
+            }
+        } finally {
+            // Unconditional. Whether or not the probe was blocked, this row is not a real
+            // audit event and must never be left behind — it would corrupt both the row
+            // count and the hash chain's ordering if it survived.
+            $connection->rollBack();
+        }
+
+        $missing = self::missingAppendOnlyProtections($updateBlocked, $deleteBlocked);
+
+        if ($missing !== []) {
+            throw new \RuntimeException(
+                'A live probe against audit_log was NOT blocked by: '.implode(', ', $missing)
+                .'. Either this instance has never had `docs/sql/least-privilege.sql` applied, '
+                .'or its triggers were removed — the audit trail is not currently '
+                .'tamper-evident. Do NOT grant TRIGGER to the application credential to make '
+                .'this pass; see docs/RUNBOOK-BACKUP.md.'
+            );
+        }
+    }
+
+    /**
+     * True only for the exact SIGNAL `docs/sql/least-privilege.sql`'s triggers raise —
+     * MySQL error 1644 (`ER_SIGNAL_EXCEPTION`), SQLSTATE 45000, with this application's own
+     * message text. Matched on the message rather than just the SQLSTATE: 45000 is the
+     * generic "unhandled user-defined exception" state and could in principle be raised by a
+     * DIFFERENT trigger someone added later for an unrelated reason, which must not be read
+     * as "the append-only protection is active".
+     */
+    private static function isAppendOnlyTriggerSignal(\Throwable $e): bool
+    {
+        return str_contains($e->getMessage(), 'audit_log is append-only');
     }
 
     private function compressAndEncrypt(string $plain, string $archive, string $passphrase): void

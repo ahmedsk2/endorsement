@@ -196,6 +196,93 @@ const submitSplit = () => {
         },
     });
 };
+
+// --- Task 10: vacations on the grid -----------------------------------------------------
+
+// `{ personId, periodId, granularity, starts_on, ends_on }`. Week/date is a toggle on the
+// LOCAL working state only — the writer (App\Support\Rota\VacationBooking) is what actually
+// snaps a week booking to the department's own week; this panel only PREVIEWS that snap.
+const vacationEditor = ref(null);
+const vacationProcessing = ref(false);
+const vacationErrors = ref({});
+
+const vacationPeriod = computed(() => {
+    if (!vacationEditor.value || !props.grid) return null;
+    return props.grid.periods.find((period) => period.id === vacationEditor.value.periodId) ?? null;
+});
+
+/**
+ * The week `date` falls in, found by matching it against the CURRENT period's own `weeks` list
+ * (`Calendar::weeksIn()`, built once server-side in Task 8 — no extra query). This is a
+ * lexicographic comparison of two already-server-supplied `Y-m-d` strings, the exact idiom
+ * `Period::contains()` and `Calendar::weeksIn()`'s own PHP implementation use — no client date
+ * object is ever constructed (finding 7's guard).
+ */
+const weekContaining = (date) => {
+    if (!date || !vacationPeriod.value) return null;
+    return vacationPeriod.value.weeks.find((week) => date >= week.starts_on && date <= week.ends_on) ?? null;
+};
+
+// The snapped range a `week`-granularity booking would actually store — a PREVIEW only. When
+// either date falls outside the currently open period's own week list (a booking that reaches
+// into a neighbouring block), this stays null and the form says so rather than guessing; the
+// server's own snap (App\Support\Rota\VacationBooking::book()) is authoritative regardless.
+const vacationWeekPreview = computed(() => {
+    if (!vacationEditor.value || vacationEditor.value.granularity !== 'week') return null;
+
+    const startWeek = weekContaining(vacationEditor.value.starts_on);
+    const endWeek = weekContaining(vacationEditor.value.ends_on || vacationEditor.value.starts_on);
+
+    if (!startWeek || !endWeek) return null;
+
+    return {
+        starts_on: startWeek.starts_on, starts_label: startWeek.starts_label,
+        ends_on: endWeek.ends_on, ends_label: endWeek.ends_label,
+    };
+});
+
+const openVacation = (row, period) => {
+    vacationErrors.value = {};
+    vacationEditor.value = {
+        personId: row.person.id,
+        periodId: period.id,
+        granularity: 'date',
+        starts_on: '',
+        ends_on: '',
+    };
+};
+
+const closeVacationEditor = () => {
+    vacationEditor.value = null;
+    vacationErrors.value = {};
+};
+
+const submitVacation = () => {
+    vacationProcessing.value = true;
+    vacationErrors.value = {};
+
+    router.post('/admin/rota/vacations', {
+        person_id: vacationEditor.value.personId,
+        starts_on: vacationEditor.value.starts_on,
+        ends_on: vacationEditor.value.ends_on,
+        granularity: vacationEditor.value.granularity,
+    }, {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => {
+            vacationProcessing.value = false;
+            closeVacationEditor();
+        },
+        onError: (errors) => {
+            vacationProcessing.value = false;
+            vacationErrors.value = errors;
+        },
+    });
+};
+
+const cancelLeave = (vacationId) => {
+    router.delete(`/admin/rota/vacations/${vacationId}`, { preserveScroll: true, preserveState: true });
+};
 </script>
 
 <template>
@@ -278,15 +365,27 @@ const submitSplit = () => {
                                         </p>
                                     </template>
 
-                                    <button type="button" class="mt-1 text-xs font-semibold text-channel-ink"
-                                            :data-testid="`split-open-${row.person.id}-${period.id}`"
-                                            @click="openSplit(row, period)">
-                                        Split&hellip;
-                                    </button>
+                                    <div class="mt-1 flex gap-3">
+                                        <button type="button" class="text-xs font-semibold text-channel-ink"
+                                                :data-testid="`split-open-${row.person.id}-${period.id}`"
+                                                @click="openSplit(row, period)">
+                                            Split&hellip;
+                                        </button>
+                                        <button type="button" class="text-xs font-semibold text-channel-ink"
+                                                :data-testid="`vacation-open-${row.person.id}-${period.id}`"
+                                                @click="openVacation(row, period)">
+                                            On leave&hellip;
+                                        </button>
+                                    </div>
 
                                     <ul v-if="row.cells[period.id].vacations.length" class="mt-2 space-y-1">
                                         <li v-for="vac in row.cells[period.id].vacations" :key="vac.id" class="channel-tag">
                                             On leave: {{ vac.starts_label.date }} &ndash; {{ vac.ends_label.date }}
+                                            <button type="button" class="ml-1 text-critical"
+                                                    :data-testid="`vacation-cancel-${vac.id}`"
+                                                    @click="cancelLeave(vac.id)">
+                                                Cancel
+                                            </button>
                                         </li>
                                     </ul>
 
@@ -353,15 +452,27 @@ const submitSplit = () => {
                                             </p>
                                         </template>
 
-                                        <button type="button" class="mt-0.5 block text-xs font-semibold text-channel-ink"
-                                                :data-testid="`split-open-${row.person.id}-${period.id}`"
-                                                @click="openSplit(row, period)">
-                                            Split&hellip;
-                                        </button>
+                                        <div class="mt-0.5 flex gap-2">
+                                            <button type="button" class="text-xs font-semibold text-channel-ink"
+                                                    :data-testid="`split-open-${row.person.id}-${period.id}`"
+                                                    @click="openSplit(row, period)">
+                                                Split&hellip;
+                                            </button>
+                                            <button type="button" class="text-xs font-semibold text-channel-ink"
+                                                    :data-testid="`vacation-open-${row.person.id}-${period.id}`"
+                                                    @click="openVacation(row, period)">
+                                                On leave&hellip;
+                                            </button>
+                                        </div>
 
                                         <ul v-if="row.cells[period.id].vacations.length" class="mt-1 space-y-0.5">
                                             <li v-for="vac in row.cells[period.id].vacations" :key="vac.id" class="channel-tag">
                                                 Leave {{ vac.starts_label.date }}&ndash;{{ vac.ends_label.date }}
+                                                <button type="button" class="ml-1 text-critical"
+                                                        :data-testid="`vacation-cancel-${vac.id}`"
+                                                        @click="cancelLeave(vac.id)">
+                                                    Cancel
+                                                </button>
                                             </li>
                                         </ul>
 
@@ -449,6 +560,71 @@ const submitSplit = () => {
                         Save split
                     </button>
                     <button type="button" class="text-sm font-semibold text-body" @click="closeSplit">Cancel</button>
+                </div>
+            </section>
+
+            <!-- Task 10: book leave at week or exact-date granularity. -->
+            <section v-if="vacationEditor" class="rounded-md border border-line bg-panel p-6" data-testid="vacation-editor">
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <p class="text-sm font-semibold text-ink">Book leave</p>
+                        <p v-if="vacationPeriod" class="text-xs text-muted">{{ vacationPeriod.label }}</p>
+                    </div>
+                    <button type="button" class="text-sm font-semibold text-body" @click="closeVacationEditor">Close</button>
+                </div>
+
+                <div class="mt-4 space-y-3">
+                    <fieldset class="flex flex-wrap items-center gap-4">
+                        <legend class="channel-tag mb-1 w-full">Granularity</legend>
+                        <label class="flex items-center gap-2 text-sm text-body">
+                            <input v-model="vacationEditor.granularity" type="radio" value="week" data-testid="vacation-granularity-week" />
+                            Week
+                        </label>
+                        <label class="flex items-center gap-2 text-sm text-body">
+                            <input v-model="vacationEditor.granularity" type="radio" value="date" data-testid="vacation-granularity-date" />
+                            Exact dates
+                        </label>
+                    </fieldset>
+
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                            <label class="channel-tag mb-1 block" for="vacation-starts-on">Starts</label>
+                            <input id="vacation-starts-on" v-model="vacationEditor.starts_on" type="date"
+                                   :min="vacationPeriod?.starts_on" :max="vacationPeriod?.ends_on"
+                                   class="w-full min-h-11 rounded-md border border-line bg-panel px-2 py-1 text-sm text-ink"
+                                   data-testid="vacation-starts-on" />
+                        </div>
+                        <div>
+                            <label class="channel-tag mb-1 block" for="vacation-ends-on">Ends</label>
+                            <input id="vacation-ends-on" v-model="vacationEditor.ends_on" type="date"
+                                   :min="vacationPeriod?.starts_on" :max="vacationPeriod?.ends_on"
+                                   class="w-full min-h-11 rounded-md border border-line bg-panel px-2 py-1 text-sm text-ink"
+                                   data-testid="vacation-ends-on" />
+                        </div>
+                    </div>
+
+                    <!-- The snap is server-side (VacationBooking::book()); this line PREVIEWS it
+                         from periods[].weeks, which Task 8 already built, so no date arithmetic
+                         happens here at all. -->
+                    <p v-if="vacationEditor.granularity === 'week'" class="text-xs text-muted" data-testid="vacation-week-preview">
+                        <template v-if="vacationWeekPreview">
+                            Will be stored as {{ vacationWeekPreview.starts_label.date }} &ndash; {{ vacationWeekPreview.ends_label.date }} (the department's full week).
+                        </template>
+                        <template v-else>
+                            Choose dates within this block to preview the snapped week.
+                        </template>
+                    </p>
+                </div>
+
+                <p v-if="vacationErrors.starts_on" class="mt-2 text-sm text-critical" data-testid="vacation-error">{{ vacationErrors.starts_on }}</p>
+
+                <div class="mt-4 flex items-center gap-3 border-t border-line-soft pt-4">
+                    <button type="button" :disabled="vacationProcessing"
+                            class="min-h-11 rounded-md bg-channel px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                            data-testid="vacation-save" @click="submitVacation">
+                        Book leave
+                    </button>
+                    <button type="button" class="text-sm font-semibold text-body" @click="closeVacationEditor">Cancel</button>
                 </div>
             </section>
         </div>

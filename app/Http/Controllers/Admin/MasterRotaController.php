@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\RotaCellRequest;
+use App\Http\Requests\Admin\VacationRequest;
 use App\Models\AuditLog;
 use App\Models\Period;
 use App\Models\Person;
@@ -14,7 +15,6 @@ use App\Support\Rota\RotaGrid;
 use App\Support\Rota\VacationBooking;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -130,21 +130,10 @@ class MasterRotaController extends Controller
         return back();
     }
 
-    /**
-     * Munawib AR-05/MR-03. Task 10 replaces this ad-hoc validation with a dedicated
-     * `App\Http\Requests\Admin\VacationRequest` and its own screen affordance; the route exists
-     * from Task 8 so the URL space is settled in one commit, and the writer
-     * (`App\Support\Rota\VacationBooking`) already exists from Task 6.
-     */
-    public function bookVacation(Request $request): RedirectResponse
+    /** Munawib AR-05/MR-03. Delegates to the one writer of `vacations` (Decision F, Task 6). */
+    public function bookVacation(VacationRequest $request): RedirectResponse
     {
-        $data = $request->validate([
-            'person_id' => ['required', 'integer', Rule::exists('people', 'id')
-                ->where(fn ($q) => $q->where('active', true)->whereNull('deleted_at'))],
-            'starts_on' => ['required', 'date_format:Y-m-d'],
-            'ends_on' => ['required', 'date_format:Y-m-d'],
-            'granularity' => ['required', Rule::in([Vacation::GRANULARITY_WEEK, Vacation::GRANULARITY_DATE])],
-        ]);
+        $data = $request->validated();
 
         $person = Person::query()->findOrFail($data['person_id']);
 

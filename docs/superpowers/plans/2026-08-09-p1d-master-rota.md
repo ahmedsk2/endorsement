@@ -649,6 +649,28 @@ last-span Remove being disabled, and the POST body shape) came to five cases onc
 this plan's own "trust the measured count" convention (Amendments, Task 4), the total below is
 the one the suite actually reports.
 
+**2026-08-10, Task 10 — `bookVacation()`/`cancelVacation()` were already correct from Task 8's
+deviation, so this task's real content was the planned `VacationRequest` refactor plus the
+screen; a second, unrelated docblock-substring guard hit recurred.** `VacationEndpointTest`'s six
+cases (week snapping against `Calendar::weekOf()` rather than a literal date, verbatim date
+storage, a 422 — not a 500 — on an overlapping booking, both audit actions carrying ids/dates
+only, and a straddling vacation appearing on both period cells) all passed against Task 8's
+inline-validated `bookVacation()`/`cancelVacation()` with zero production change, for the same
+reason Task 9 was zero-red: the writer (`VacationBooking`, Task 6) and the controller wiring
+(Task 8's deviation) already existed. `App\Http\Requests\Admin\VacationRequest` was still built
+and swapped in exactly as Task 8's own deviation note promised — a real, if small, refactor
+(`Request` to a typed `VacationRequest`, inline rules moved into the class, `Rule` import dropped
+from the controller) — verified green before and after by the same filtered run. Separately,
+`CalendarIsTheOnlyConverterTest::test_no_client_side_date_construction_appears_under_resources_js`
+flagged `MasterRota.vue` a second time in this plan (after Task 8's `strtotime()` docblock hit) —
+this time for a literal `` `new Date(...)` `` in prose describing what `weekContaining()`
+deliberately does NOT do. Same root cause as Task 8's finding, same fix: reworded the comment to
+drop the call-shaped substring rather than allow-listing a file that constructs no date object at
+all. Worth naming as a pattern now that it has recurred twice: this guard's needle list has no
+allow-list mechanism by design (finding 7), so any docblock in `resources/js` that quotes one of
+its ten needles as *code being described* rather than *code being written* will trip it — write
+around the literal parenthesised call shape in prose, never suppress the guard.
+
 ---
 
 ## Conventions every task follows

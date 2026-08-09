@@ -56,6 +56,15 @@ class AccessControlSeeder extends Seeder
             .'days in a chosen date range have no signed endorsement, expandable to the missing dates '
             .'themselves. Counts and dates only — the page carries no patient data. Default: '
             .'Administrator only, grantable per role (e.g. Consultants) or per named user.',
+
+        'structure.manage' => 'Define the department\'s STRUCTURE: units (create, rename, colour, '
+            .'order, capability flags, aliases, deactivate, merge), the training-level ladder, the '
+            .'calendar (weekend days, Hijri display and its calibration), rota periods, and the '
+            .'holiday list. Distinct from “settings.manage”, which covers infrastructure (mail '
+            .'server, push keys, reminder times) — mistyping an SMTP host bounces a message, '
+            .'whereas mistyping the Hijri offset silently redates every Hijri label and every '
+            .'Hijri-ruled holiday in the system. Default: Administrator only; grantable per role '
+            .'or per named user like any capability.',
     ];
 
     /**
@@ -78,6 +87,9 @@ class AccessControlSeeder extends Seeder
         'users.manage_residents' => 'Approve, activate and deactivate RESIDENT accounts only',
         'access.manage' => 'Manage the access-control catalog and per-user overrides',
         'settings.manage' => 'Edit runtime settings (mail server, push keys, reminder times)',
+
+        // Departmental structure (Munawib UN-*, LV-01, ST-02, ST-06).
+        'structure.manage' => 'Manage units, training levels, the calendar, periods and holidays',
     ];
 
     /**
@@ -91,6 +103,7 @@ class AccessControlSeeder extends Seeder
             'profile.manage',
             'endorsement.view', 'endorsement.edit', 'endorsement.reopen', 'endorsement.compliance',
             'users.manage', 'users.manage_residents', 'access.manage', 'settings.manage',
+            'structure.manage',
         ],
         // Position 1 (Nurse) is RETIRED — no defaults exist for it.
         // Charge Nurse (2): endorsement.

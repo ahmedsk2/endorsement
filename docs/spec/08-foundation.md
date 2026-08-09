@@ -33,9 +33,9 @@ hashes fresh.
 
 Data-driven capabilities × role defaults × per-user grant/deny, **deny wins**, unknown key denied; `AccessControl` support class with generation-counter cache bust (Cache::add-then-increment, database-store safe); `cap:` middleware (403 + `access_denied` audit); applied-once role-default seeder (`applied_role_defaults`, so admin revocations are never resurrected); Admin → Access Control page with self-lockout guard.
 
-**Capability catalog (complete):** `endorsement.view`, `endorsement.edit`, `endorsement.reopen`, `endorsement.compliance`, `profile.manage`, `users.manage`, `users.manage_residents`, `access.manage`, `settings.manage`.
+**Capability catalog (complete):** `endorsement.view`, `endorsement.edit`, `endorsement.reopen`, `endorsement.compliance`, `profile.manage`, `users.manage`, `users.manage_residents`, `access.manage`, `settings.manage`, `structure.manage`.
 
-**Role defaults:** Administrator — all. Charge Nurse, Consultant, Resident — view + edit + profile.manage. Chief Resident — view + edit + profile.manage + `users.manage_residents`. Nurse (position 1, RETIRED) — no defaults. `endorsement.reopen` and `endorsement.compliance` default **Administrator-only**, grantable per role or per named user. Capabilities are **global**, not unit-scoped **[RULING]** (unit-scoped keys can be added to the same catalog later without schema change).
+**Role defaults:** Administrator — all. Charge Nurse, Consultant, Resident — view + edit + profile.manage. Chief Resident — view + edit + profile.manage + `users.manage_residents`. Nurse (position 1, RETIRED) — no defaults. `endorsement.reopen` and `endorsement.compliance` default **Administrator-only**, grantable per role or per named user. `structure.manage` (units, levels, calendar, periods, holidays — Munawib UN-*, LV-01, ST-02) also defaults **Administrator-only**, added P1b 2026-08-09. Capabilities are **global**, not unit-scoped **[RULING]** (unit-scoped keys can be added to the same catalog later without schema change).
 
 ### Security bootstrap
 

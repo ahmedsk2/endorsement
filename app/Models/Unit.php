@@ -29,6 +29,20 @@ class Unit extends Model
     public const RESERVED_CODES = ['TODAY', 'COMPLIANCE', 'ROWS'];
 
     /**
+     * The unit colour palette: class => human label. `bar_class` IS the unit's colour; there
+     * is deliberately no second `color` column (P1b Decision B — two definitions of one fact).
+     * This map both OFFERS the choice and validates it, so the two cannot drift.
+     *
+     * Widened by P1b Task 3 with four hue-named entries, so a fifth department has a colour.
+     */
+    public const BAR_CLASSES = [
+        'channel-bar-picu' => 'Teal',
+        'channel-bar-nicu' => 'Indigo',
+        'channel-bar-scbu' => 'Violet',
+        'channel-bar-ward' => 'Plum',
+    ];
+
+    /**
      * @var list<string>
      */
     protected $fillable = [

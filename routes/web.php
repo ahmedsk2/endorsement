@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AccessControlController;
 use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\UnitController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\EndorsementController;
 use App\Http\Controllers\ProfileController;
@@ -127,6 +128,23 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:settings.manage'])
         // left wide open it is a small relay. Six a minute is plenty for testing a config.
         Route::post('/settings/test-email', [SettingsController::class, 'sendTestEmail'])
             ->middleware('throttle:6,1')->name('settings.test-email');
+    });
+
+/*
+ * Admin → Structure: the department's SHAPE — units, training levels, the calendar, rota
+ * periods and holidays (Munawib UN-01…05, LV-01, ST-02, ST-06). One capability covers all of
+ * them: they are edited by the same person in the same sitting, and they are a different kind
+ * of thing from `settings.manage`'s infrastructure.
+ *
+ * `/admin/structure/*` is deliberately NOT under `/endorsement`, so Unit::RESERVED_CODES —
+ * which ReservedUnitCodesTest derives from the literal segments under /endorsement alone — is
+ * unaffected by anything added here.
+ */
+Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
+    ->prefix('admin/structure')
+    ->name('admin.structure.')
+    ->group(function () {
+        Route::get('/units', [UnitController::class, 'index'])->name('units');
     });
 
 /*

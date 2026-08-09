@@ -368,6 +368,23 @@ only now) plus a new `test_ward_alone_is_seeded_as_a_clinic_owner` pinning the o
 shape. `php artisan test`: 746 → 759 (13 new, one more than the plan's stated 758 — the split
 test adds one case). `npm run build` and the full suite green.
 
+**2026-08-09, Task 2 — `AccessControlParityTest`'s hardcoded Administrator capability list is
+not mentioned anywhere in the plan's Task 2 text, and went red the moment `structure.manage`
+was seeded.** `test_each_role_effective_set_matches_the_documented_server_gates` and
+`test_seeder_is_idempotent` both build their expected position-0 set from a private
+`expectedByPosition()` array that enumerates every Administrator-default key by name (finding
+7's own "drift" tests, but for the *effective set*, not the catalog/seeder pair finding 7
+describes). Adding `structure.manage` to `AccessControlSeeder::ROLE_DEFAULTS[0]` is exactly the
+intended change, so this is the expected/legitimate kind of red, not drift — added
+`'structure.manage'` to the `$adminOnly` array in `expectedByPosition()`, with a comment. No
+other hardcoded capability list in the file needed touching
+(`test_a_chief_resident_holds_the_scoped_power_but_no_admin_console`,
+`test_only_admin_has_users_and_access_manage`, etc. assert against individual keys, not the
+full set). `php artisan test`: 759 → 766 (7 new, matching the plan's stated count exactly this
+time — Task 1's own +1 offset carries forward unchanged). `npm test`: 110 (109 + 1,
+`AppLayout.test.js`'s new structure.manage-alone case). `npm run build` and the full suite
+green.
+
 ---
 
 ## Conventions every task follows

@@ -70,7 +70,7 @@ const units = [
 // Resident's scoped users.manage_residents. Nav visibility never keys off role
 // numbers — only capability keys.
 const canAdmin = computed(() => can('access.manage') || can('users.manage')
-    || can('users.manage_residents') || can('settings.manage'));
+    || can('users.manage_residents') || can('settings.manage') || can('structure.manage'));
 
 const initials = computed(() => (user.value?.full_name || user.value?.member_name || '')
     .split(' ')
@@ -188,6 +188,10 @@ const navClass = (active) => [
                     <Link v-if="can('access.manage')" href="/admin/access-control"
                           :class="navClass(isActive('/admin/access-control'))">
                         Access Control
+                    </Link>
+                    <Link v-if="can('structure.manage')" href="/admin/structure/units"
+                          :class="navClass(isActive('/admin/structure/units'))">
+                        Units
                     </Link>
                     <Link v-if="can('settings.manage')" href="/admin/settings"
                           :class="navClass(isActive('/admin/settings'))">

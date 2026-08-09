@@ -92,6 +92,11 @@ class HandleInertiaRequests extends Middleware
                 // preview" needs.
                 'promotion_preview' => $request->session()->get('promotion_preview'),
                 'promotion_result' => $request->session()->get('promotion_result'),
+                // ST-04's roster import (P1c Task 12). Same one-shot flash channel and the same
+                // reason: a stale preview must not survive the next navigation, and a fresh
+                // upload clears it client-side before either of these is ever consulted again.
+                'roster_preview' => $request->session()->get('roster_preview'),
+                'roster_result' => $request->session()->get('roster_result'),
             ],
         ];
     }

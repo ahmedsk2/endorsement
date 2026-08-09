@@ -1146,6 +1146,100 @@ methods, 0 now skipped). `npm test`: 113 (unchanged — Task 11's Files list nam
 git commit -am "feat: a roster file the system can read without guessing at it"
 ```
 
+Commit `b58652b`.
+
+**2026-08-09, Task 12 — one real plan-contradicts-its-own-tests case (the third in this
+programme, same species as the two the delegating brief warned about), one genuine bug in the
+request layer caught only by comparing two code paths side by side, one test-harness constraint
+worth recording, and the dry-run preview verified against a REAL running server, not just
+PHPUnit.**
+
+1. **Task 11's own fixture table and Task 12's own test-bullet prose contradict each other on
+   `clean.csv`, once the no-email-confirmation rule (Task 12's own separately-named requirement)
+   is implemented.** Task 11 Step 1 explicitly specifies `clean.csv` carries "one with a blank
+   email" (a genuine, deliberate case — the reader must return an empty string for it, which
+   `CsvRosterReaderTest` already exercises). Task 12 Step 1's own prose says this SAME file
+   "previews \[as\] 8 creates, 0 updates, 0 errors" and "commit creates exactly 8 people" — but
+   `Person::matchByEmail()` returns null for a null address (finding, P1 plan item 4), and this
+   plan's OWN separately-listed test requirement
+   (`test_a_row_with_no_email_requires_an_explicit_new_person_confirmation`) means the blank-email
+   row cannot legitimately preview as a plain `create`: it must show as
+   `SKIP_NO_EMAIL_UNCONFIRMED` until the operator ticks it. Both cannot be true of the same file
+   at once — a preview showing "8 creates, 0 skips" for a file containing a row the system is
+   simultaneously required to refuse-until-confirmed is not a stricter reading of the spec, it is
+   a contradiction. Resolved in favour of the safety rule, not the round number: `clean.csv`
+   previews as **7 creates, 1 skip** (`test_clean_csv_previews_seven_creates_and_one_unconfirmed_row`),
+   and a commit reaches "8 people, 0 users" only once that ROW's confirmation is supplied
+   (`test_a_row_with_no_email_is_created_once_confirmed`) — exactly the real operator workflow the
+   confirmation gate exists to enforce. This also produced a STRONGER test than the plan's literal
+   text would have: committing the SAME file a second time now exercises Maha Al-Qahtani being
+   REDISCOVERED BY SHORT NAME (the documented secondary key), not email, which the "8 creates, 0
+   skips" reading would never have reached at all
+   (`test_a_second_commit_of_clean_csv_is_idempotent_and_reports_updates`). Not touched: Task 11's
+   own fixture, already committed and already correct per its own spec — the fix is entirely in
+   how Task 12's tests use it.
+2. **`RosterImportRequest::prepareForValidation()`'s own `$this->merge(['mapping' => ...,
+   'confirmations' => ...])` call silently defeats finding 9's detection, because `merge()` adds
+   BOTH keys to the request's parameter bag even when their decoded value is `null` — which makes
+   `$this->post()` non-empty from that point on.** The oversized-upload guard
+   (`isEmptyPostPastUploadLimit()`) checks `$this->post() === []`; written to run inline inside
+   `rules()`/`withValidator()` (both of which execute AFTER `prepareForValidation()` in Laravel's
+   FormRequest lifecycle), it therefore NEVER saw the empty-post shape finding 9 describes — the
+   guard was dead code that happened to compile. Caught empirically, not by inspection: a
+   standalone `Illuminate\Http\Request::create()` built with the identical server variables showed
+   `post()` correctly empty, but the SAME shape routed through the real FormRequest pipeline
+   reported "The file field is required" instead of the size message — comparing the two side by
+   side (a temporary diagnostic assertion dumping both) is what surfaced the merge as the
+   culprit, not the detection logic itself, which was already correct. Fixed by computing the
+   flag ONCE, at the very top of `prepareForValidation()`, into a stored `private bool
+   $emptyPostPastUploadLimit`, before ANY `merge()` call — `rules()` and `withValidator()` now
+   read the stored flag rather than recomputing it against an already-polluted request.
+3. **Laravel's own `ValidatePostSize` middleware pre-empts finding 9's scenario for any
+   `Content-Length` that genuinely exceeds `post_max_size`, returning a generic 413 before the
+   request reaches `RosterImportRequest` at all** — confirmed empirically (a `CONTENT_LENGTH` of
+   9,000,000 against this machine's `post_max_size=8M` produced a 413 HTML page, not a session
+   validation error). This is not a bug — it is Laravel correctly doing its own, coarser job — but
+   it means the test simulating finding 9 must pick a `Content-Length` ABOVE this app's own 4 MB
+   roster-import cap yet BELOW the container's 8 MB `post_max_size`, so Laravel's middleware
+   stays out of the way and `RosterImportRequest`'s own, more specific message is what the
+   operator actually sees. `test_an_oversized_upload_reports_the_size_not_a_missing_field` uses
+   6,000,000 for exactly this reason, documented inline so a future reader does not "simplify" it
+   back to a rounder, middleware-triggering number.
+4. **The dry-run preview was additionally verified against a REAL server in a REAL browser, not
+   only PHPUnit** — matching the brief's own framing ("the first real import must hold no
+   surprises" as the acceptance criterion; `superpowers:verification-before-completion`'s evidence
+   discipline). A throwaway sqlite database was migrated, seeded (`ReferenceSeeder`,
+   `AccessControlSeeder`, `E2eSeeder` — the harness's own fictional local-only identity) and served
+   via `php artisan serve`; `clean.csv` was uploaded through the ACTUAL file input (simulated via
+   `DataTransfer`, since native OS file dialogs are not scriptable), the mapping auto-guessed
+   correctly against the server's own header list, the preview table rendered all eight rows with
+   the correct outcomes (including the Arabic names displaying correctly and Maha's row correctly
+   demanding confirmation), and committing produced exactly 8 `people` rows and 0 new `users` rows
+   — verified directly against the sqlite file afterward, plus one clean `roster_import` audit row
+   reading `created=8;updated=0;skipped=0` with no name, email or filename in it. The throwaway
+   database and dev server were torn down afterward; nothing from this check is part of the
+   repository or the test suite.
+
+Everything else matches the plan's own text: `RosterImport::preview()`/`commit()` share one
+`analyse()` (never a second estimate), the in-file duplicate check runs over the whole parsed set
+before any write and refuses the file outright, level codes resolve through `Level::query()->
+where('code', trim($value))->first()` verbatim as given, an unmatched level never invents one, a
+matched account holder is always skipped and never silently renamed, `RosterImportRequest`'s
+`mapping.full_name`/`mapping.position` are deliberately NOT `required` at the HTTP layer (the
+header-discovery call the screen makes on file selection would otherwise 422 before ever learning
+the file's real headers) — whether they are usably mapped is `RosterImport::analyse()`'s own
+`file_errors` check, one definition rather than two — and the commit's digest ties a commit to the
+exact bytes a preview was run against, refusing outright on any mismatch.
+
+`php artisan test`: 1010 → 1029 (17 new `RosterImportTest` + 2 new `RosterNeverMintsCredentialsTest`).
+`npm test`: 113 (unchanged — Task 12's Files list names no JS test; the new `RosterImport.vue`
+screen is exercised by the manual browser check above, not by a new Vitest case). `npm run build`
+and the full suite green.
+
+```bash
+git commit -am "feat: a roster import that shows its work before it does any"
+```
+
 ---
 
 ## Conventions every task follows
@@ -3428,7 +3522,7 @@ Owner decision 3's second half: **the dry-run preview is a requirement.** A prev
 "8 rows will be imported" and then does something else is worse than no preview, because it buys
 confidence it has not earned.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/Feature/Admin/RosterImportTest.php` — every fixture from Task 11 gets its own case, and
 each asserts the **preview** and then the **commit** and that they agree:
@@ -3476,9 +3570,9 @@ each asserts the **preview** and then the **commit** and that they agree:
 `PersonController`, `PromotionController`, `RosterImportController` and `RosterImport`, for
 `User::create(`, `DB::table('users')`, `->users()->create(` and `new User(`.
 
-- [ ] **Step 2: Run and watch them go red**
+- [x] **Step 2: Run and watch them go red**
 
-- [ ] **Step 3: `RosterImport`**
+- [x] **Step 3: `RosterImport`**
 
 One class, two entry points that share every rule:
 
@@ -3505,7 +3599,7 @@ import — the ladder is administrator-owned data (P1 owner decision 1) and lett
 invent one is how `PGY7` becomes a real level nobody chose. Where a level is present, the history
 row is written through `LevelAssignment` (Task 6's single writer), never directly.
 
-- [ ] **Step 4: The screen**
+- [x] **Step 4: The screen**
 
 Three steps on one page: **upload → map columns → preview → commit.** The mapping step shows each
 file header beside a `<select>` of destination fields, pre-selected by a case- and
@@ -3523,14 +3617,15 @@ Save As → **CSV UTF-8**. Up to 4 MB and 2000 rows."* It does not silently reje
 and, in `withValidator()`, detects the empty-POST shape (finding 9) to produce the size message
 rather than a missing-field one.
 
-- [ ] **Step 5: Add the allow-list line**
+- [x] **Step 5: Add the allow-list line**
 
 Add `'app/Support/Roster/RosterImport.php'` to `ContactFieldsAreProjectedOnceTest::ALLOW_LIST`
 ("writes `phone` from a spreadsheet column; renders none").
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
-Expected: full suite **1017 passed** (999 + 18).
+Expected (per the Amendments entry above, correcting this task's own stale arithmetic): full
+suite **1029 passed** (1010 + 19).
 
 ```bash
 git commit -am "feat: a roster import that shows its work before it does any"

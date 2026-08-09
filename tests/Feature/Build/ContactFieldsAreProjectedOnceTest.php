@@ -45,6 +45,12 @@ class ContactFieldsAreProjectedOnceTest extends TestCase
         // substring scan that cannot distinguish "reading a key that exists" from "reading the
         // model column directly".
         'app/Http/Controllers/Admin/PersonController.php',
+        // P1c Task 12 (ST-04): writes `phone` from a spreadsheet column onto the created/updated
+        // Person — a WRITE, never a render. This importer builds no Inertia props at all; the
+        // preview/result the screen shows come from its own row-report arrays, not from
+        // PersonPresenter, so contact visibility (Decision B) is not in play here the way it is
+        // for a screen that displays a roster.
+        'app/Support/Roster/RosterImport.php',
     ];
 
     private const NEEDLES = ['->phone', '->notes', "'phone'", "'notes'"];

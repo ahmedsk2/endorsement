@@ -192,6 +192,10 @@ const navClass = (active) => [
                           :class="navClass(isActive('/admin/promotion'))">
                         Promotion
                     </Link>
+                    <Link v-if="can('people.manage')" href="/admin/roster-import"
+                          :class="navClass(isActive('/admin/roster-import'))">
+                        Roster import
+                    </Link>
                     <Link v-if="can('access.manage')" href="/admin/access-control"
                           :class="navClass(isActive('/admin/access-control'))">
                         Access Control

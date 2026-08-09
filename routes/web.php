@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\LevelController;
 use App\Http\Controllers\Admin\PeriodController;
 use App\Http\Controllers\Admin\PersonController;
 use App\Http\Controllers\Admin\PromotionController;
+use App\Http\Controllers\Admin\RosterImportController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UnitController;
 use App\Http\Controllers\Admin\UnitMergeController;
@@ -245,6 +246,13 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:people.manage'])
         Route::get('/promotion', [PromotionController::class, 'index'])->name('promotion');
         Route::post('/promotion/preview', [PromotionController::class, 'preview'])->name('promotion.preview');
         Route::post('/promotion/commit', [PromotionController::class, 'commit'])->name('promotion.commit');
+
+        // ST-04's roster import (P1c Decision E). CSV/TSV only; the dry-run PREVIEW is the
+        // deliverable — it writes nothing (see RosterImportController's own docblock) and is the
+        // only thing standing between a malformed file and a corrupted roster.
+        Route::get('/roster-import', [RosterImportController::class, 'index'])->name('roster-import');
+        Route::post('/roster-import/preview', [RosterImportController::class, 'preview'])->name('roster-import.preview');
+        Route::post('/roster-import/commit', [RosterImportController::class, 'commit'])->name('roster-import.commit');
     });
 
 /*

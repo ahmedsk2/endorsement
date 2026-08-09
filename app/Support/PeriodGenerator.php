@@ -32,9 +32,41 @@ final class PeriodGenerator
 
     private const MAX_BLOCKS = 26;
 
+    /**
+     * A calendar-month period system requires the academic year to begin on the FIRST of a
+     * month. Without this, `months()` mislabels: a run starting 2026-01-31 renders its first
+     * period as "January 2026" although 27 of its 28 days are in February (P1b finding 3,
+     * confirmed by running it).
+     *
+     * The alternative — relabelling that period "Jan-Feb 2026" — would mean MR-01's "months"
+     * system produces periods that are not calendar months, which is a third period system
+     * nobody asked for and which breaks the department's own vocabulary ("Block 11", "August").
+     * See P1b Decision C.
+     *
+     * Public and called from BOTH `months()` and the calendar-settings FormRequest, because a
+     * rule written once as a validation string and once as a generator guard is two rules that
+     * drift — the failure `SignoffPickers` and `AuditChain::canonical()` each carry a docblock
+     * about.
+     *
+     * Week-blocks are deliberately NOT constrained: a block is measured in weeks from an
+     * arbitrary date, so any start is legitimate there.
+     */
+    public static function assertMonthAligned(CarbonImmutable $start): void
+    {
+        if ((int) $start->format('j') !== 1) {
+            throw new InvalidArgumentException(
+                'A calendar-month period system must begin on the first of a month; got '
+                .$start->format(Calendar::YMD).'. A run starting mid-month produces periods that '
+                .'are not calendar months and would be labelled with the wrong one.'
+            );
+        }
+    }
+
     /** @return list<array{position:int,label:string,starts_on:string,ends_on:string,kind:string}> */
     public static function months(CarbonImmutable $start, int $count = 12): array
     {
+        self::assertMonthAligned($start);
+
         $out = [];
         $cursor = $start->startOfDay();
 
@@ -110,6 +142,24 @@ final class PeriodGenerator
         }
 
         return $out;
+    }
+
+    /**
+     * P1b finding 15: `academic_year` is the overlap-scope key and half of the unique index
+     * (`periods_year_position_unique`), so it must be derived DETERMINISTICALLY from the start
+     * date rather than typed by an operator — two spellings of one year ("2026-2027" vs
+     * "2026-27") would otherwise become two non-overlapping year-sets both claiming the same
+     * days. Derived from the ACTUAL generated run (its first start, its last end) rather than a
+     * month-number heuristic, so it is correct for any period system: a run that stays within
+     * one calendar year (a January `months` start) is labelled with that year alone; a run that
+     * crosses into the next calendar year (QCH's July start) is labelled "start-end".
+     */
+    public static function deriveAcademicYear(CarbonImmutable $firstStart, CarbonImmutable $lastEnd): string
+    {
+        $startYear = (int) $firstStart->format('Y');
+        $endYear = (int) $lastEnd->format('Y');
+
+        return $startYear === $endYear ? (string) $startYear : "{$startYear}-{$endYear}";
     }
 
     /**

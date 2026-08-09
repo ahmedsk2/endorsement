@@ -582,6 +582,37 @@ UPDATE institutions SET hijri_offset_days = -1 WHERE code = 'QCH';
 
 ---
 
+## Verifying the 2026-08-13 structure migrations (P1b)
+
+Two additive migrations: `2026_08_13_120001_add_munawib_configuration_to_units` (backfills the
+four seeded units), `2026_08_13_120002_add_external_to_levels` (schema only — `levels` was
+empty until `db:seed --force` runs `ReferenceSeeder`'s ladder seed). Neither retypes or drops
+anything.
+
+```sql
+-- Expect four rows, all training_rotation=1, call_target=1, clinic_owner=0, name2=NULL.
+SELECT code, training_rotation, call_target, clinic_owner, name2 FROM units ORDER BY display_order;
+
+-- Expect five rows: R1 R2 R3 R4 EXT at display_order 10/20/30/40/90, EXT.external=1, the rest
+-- external=0. There is no `terminal` column to check — Owner Decision A (P1b, 2026-08-09)
+-- removed it before it shipped; `SELECT * FROM levels` will not show one.
+SELECT code, name, display_order, external, active FROM levels ORDER BY display_order;
+```
+
+Post-deploy checklist addition:
+
+- **`structure.manage` lands on the Administrator role automatically.** The
+  `applied_role_defaults` marker is per (role, capability) pair and a brand-new key has never
+  been marked, so `AccessControlSeeder`'s idempotent apply grants it the first time this
+  migration set runs — no owner action needed, but worth confirming on the Access Control page
+  after deploy if a non-Administrator role is expected to hold it too.
+- **Admin → Structure → Calendar is now the place to verify `HIJRI_OFFSET_DAYS` reached the
+  container**, not just the SQL query above: the screen shows today's Gregorian and Hijri
+  labels side by side, computed the same way every clinical screen computes them, so the
+  calibration check in the OWNER ACTION section below can be done from the app.
+
+---
+
 ## OWNER ACTION — set `HIJRI_OFFSET_DAYS=-1` for QCH (P1a)
 
 QCH's Hijri calibration was established once, against the department's own published calendar
@@ -607,6 +638,11 @@ done, QCH's screens render every Hijri date **one day late**.
 4. Open two consecutive days on screen that cross a Hijri month boundary and compare the
    displayed Hijri date against the department's own published calendar — that comparison is
    the actual calibration check, not just reading the number back from the database.
+   **P1b, 2026-08-09:** Admin → Structure → Calendar shows today's Gregorian and Hijri labels
+   side by side and is now the easiest place to do this — no SQL prompt or tinker session
+   needed. If the calibration ever needs correcting after go-live, that screen is also where an
+   administrator changes `hijri_offset_days` (bounded to `[-2, 2]`, audited by key), not a
+   direct database edit.
 5. Update the identifiers table row above once confirmed.
 
 ---

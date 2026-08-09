@@ -57,20 +57,18 @@ const isActive = (href) => {
 // The chooser is "active" only on the exact URL — unit pages highlight their own entry.
 const isExactly = (href) => (page.props ? page.url : '') === href;
 
-// The four first-class units. Codes are the routing identity; the bar class carries
-// each unit's channel hue so the sidebar can be scanned by edge colour alone.
-const units = [
-    { code: 'picu', label: 'PICU', bar: 'channel-bar-picu' },
-    { code: 'nicu', label: 'NICU', bar: 'channel-bar-nicu' },
-    { code: 'scbu', label: 'SCBU', bar: 'channel-bar-scbu' },
-    { code: 'ward', label: 'Ward', bar: 'channel-bar-ward' },
-];
+// The unit list comes from the server (`nav.units`, built by Unit::navList()) rather than a
+// literal array here, so creating, renaming, recolouring, reordering or retiring a unit on
+// Admin -> Structure -> Units is reflected without a frontend change. Codes are the routing
+// identity; the bar class carries each unit's channel hue so the sidebar can be scanned by
+// edge colour alone.
+const units = computed(() => page.props.nav?.units ?? []);
 
 // Admin section is visible with ANY admin-surface capability — including the Chief
 // Resident's scoped users.manage_residents. Nav visibility never keys off role
 // numbers — only capability keys.
 const canAdmin = computed(() => can('access.manage') || can('users.manage')
-    || can('users.manage_residents') || can('settings.manage'));
+    || can('users.manage_residents') || can('settings.manage') || can('structure.manage'));
 
 const initials = computed(() => (user.value?.full_name || user.value?.member_name || '')
     .split(' ')
@@ -167,7 +165,7 @@ const navClass = (active) => [
                                   ? `channel-bar ${unit.bar} bg-channel-soft text-channel-ink`
                                   : 'text-body hover:bg-ground',
                           ]">
-                        {{ unit.label }} Endorsement
+                        {{ unit.label }}
                     </Link>
                 </template>
 
@@ -188,6 +186,26 @@ const navClass = (active) => [
                     <Link v-if="can('access.manage')" href="/admin/access-control"
                           :class="navClass(isActive('/admin/access-control'))">
                         Access Control
+                    </Link>
+                    <Link v-if="can('structure.manage')" href="/admin/structure/units"
+                          :class="navClass(isActive('/admin/structure/units'))">
+                        Units
+                    </Link>
+                    <Link v-if="can('structure.manage')" href="/admin/structure/levels"
+                          :class="navClass(isActive('/admin/structure/levels'))">
+                        Levels
+                    </Link>
+                    <Link v-if="can('structure.manage')" href="/admin/structure/calendar"
+                          :class="navClass(isActive('/admin/structure/calendar'))">
+                        Calendar
+                    </Link>
+                    <Link v-if="can('structure.manage')" href="/admin/structure/periods"
+                          :class="navClass(isActive('/admin/structure/periods'))">
+                        Periods
+                    </Link>
+                    <Link v-if="can('structure.manage')" href="/admin/structure/holidays"
+                          :class="navClass(isActive('/admin/structure/holidays'))">
+                        Holidays
                     </Link>
                     <Link v-if="can('settings.manage')" href="/admin/settings"
                           :class="navClass(isActive('/admin/settings'))">

@@ -1,7 +1,13 @@
 <?php
 
 use App\Http\Controllers\Admin\AccessControlController;
+use App\Http\Controllers\Admin\CalendarSettingsController;
+use App\Http\Controllers\Admin\HolidayController;
+use App\Http\Controllers\Admin\LevelController;
+use App\Http\Controllers\Admin\PeriodController;
 use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\UnitController;
+use App\Http\Controllers\Admin\UnitMergeController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\EndorsementController;
 use App\Http\Controllers\ProfileController;
@@ -127,6 +133,57 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:settings.manage'])
         // left wide open it is a small relay. Six a minute is plenty for testing a config.
         Route::post('/settings/test-email', [SettingsController::class, 'sendTestEmail'])
             ->middleware('throttle:6,1')->name('settings.test-email');
+    });
+
+/*
+ * Admin → Structure: the department's SHAPE — units, training levels, the calendar, rota
+ * periods and holidays (Munawib UN-01…05, LV-01, ST-02, ST-06). One capability covers all of
+ * them: they are edited by the same person in the same sitting, and they are a different kind
+ * of thing from `settings.manage`'s infrastructure.
+ *
+ * `/admin/structure/*` is deliberately NOT under `/endorsement`, so Unit::RESERVED_CODES —
+ * which ReservedUnitCodesTest derives from the literal segments under /endorsement alone — is
+ * unaffected by anything added here.
+ */
+Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
+    ->prefix('admin/structure')
+    ->name('admin.structure.')
+    ->group(function () {
+        Route::get('/units', [UnitController::class, 'index'])->name('units');
+        Route::post('/units', [UnitController::class, 'store'])->name('units.store');
+        // Declared BEFORE {unit} so `merge` never binds as a unit id — the same discipline the
+        // endorsement routes use for `today`/`compliance`/`rows`.
+        Route::get('/units/merge', [UnitMergeController::class, 'index'])->name('units.merge');
+        Route::post('/units/merge', [UnitMergeController::class, 'store'])->name('units.merge.store');
+        Route::patch('/units/{unit}', [UnitController::class, 'update'])->name('units.update');
+        Route::patch('/units/{unit}/active', [UnitController::class, 'setActive'])->name('units.active');
+
+        // Munawib LV-01. No DELETE — person_levels.level_id is restrictOnDelete, and
+        // LevelController deliberately exposes no destroy() to refuse (see its own docblock).
+        Route::get('/levels', [LevelController::class, 'index'])->name('levels');
+        Route::post('/levels', [LevelController::class, 'store'])->name('levels.store');
+        Route::patch('/levels/{level}', [LevelController::class, 'update'])->name('levels.update');
+        Route::patch('/levels/{level}/active', [LevelController::class, 'setActive'])->name('levels.active');
+
+        // Munawib ST-02. Declared BEFORE {unit}/{level}? Not applicable here — 'calendar' is
+        // not a route parameter on either sibling group, so ordering is not load-bearing, but
+        // the GET/PUT pair mirrors admin/settings' own shape.
+        Route::get('/calendar', [CalendarSettingsController::class, 'index'])->name('calendar');
+        Route::put('/calendar', [CalendarSettingsController::class, 'update'])->name('calendar.update');
+
+        // Munawib MR-01. {academicYear} is regex-pinned — periods.academic_year is free text
+        // (finding 15's own docblock) but the URI segment stays narrow on purpose.
+        Route::get('/periods', [PeriodController::class, 'index'])->name('periods');
+        Route::post('/periods', [PeriodController::class, 'store'])->name('periods.store');
+        Route::delete('/periods/{academicYear}', [PeriodController::class, 'destroy'])
+            ->where('academicYear', '[A-Za-z0-9\- ]{1,20}')->name('periods.destroy');
+
+        // Munawib §30. No destroy() — a holiday observed last year is history; setActive() is
+        // the only "this rule is done" action, mirroring Unit/Level's own precedent.
+        Route::get('/holidays', [HolidayController::class, 'index'])->name('holidays');
+        Route::post('/holidays', [HolidayController::class, 'store'])->name('holidays.store');
+        Route::patch('/holidays/{holiday}', [HolidayController::class, 'update'])->name('holidays.update');
+        Route::patch('/holidays/{holiday}/active', [HolidayController::class, 'setActive'])->name('holidays.active');
     });
 
 /*

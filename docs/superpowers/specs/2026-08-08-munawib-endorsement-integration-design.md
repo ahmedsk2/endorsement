@@ -501,26 +501,38 @@ and narrative labels, hue token. `EndorsementController::UNIT_CODES` and the fou
 assumption are removed; PICU/NICU/SCBU/WARD become seed rows.
 
 **Units gain UN-02's three independent capability flags (training rotation / on-call coverage
-target / clinic owner) and UN-03 import aliases in P1b, not P0a.** This section originally
-claimed they shipped with P0a; they did not — P0a's
-`2026_08_08_120001_add_configuration_to_units.php` added `display_order`, `active`,
-`extra_row_fields`, `bed_label`, `consultant_pair`, `consultant_by_label`, `bar_class`,
-`print_plan_label`, `print_narrative_label`, and nothing else. There is no `rotation`/
-`call_target`/`clinic_owner` flag and no `aliases` column on `units` as of P1a
-(2026-08-09). `positions` become admin-managed; **capabilities stay code-defined** (they name
+target / clinic owner), UN-03 import aliases, and UN-05's optional secondary display name —
+shipped P1b Task 1 (2026-08-09), `2026_08_13_120001_add_munawib_configuration_to_units.php`.**
+This section originally claimed they shipped with P0a; they did not (P0a's
+`2026_08_08_120001_add_configuration_to_units.php` added nine presentation columns and nothing
+else) — corrected once already by P1a Task 9, and now genuinely true. The three flags
+(`training_rotation`, `call_target`, `clinic_owner`) default `false` and are independent, never
+collapsed into one enum; `aliases` is a JSON list, source spelling preserved, matched case- and
+whitespace-insensitively via `Unit::findByCodeOrAlias()` (`Unit::findByCode()` remains what
+routing uses — an alias never resolves a URL segment); `name2` is stored and, per Munawib UN-05
+itself, rendered **nowhere** yet. **There is no `color` column** — a P1 plan draft asked for one
+distinct from `bar_class`; rejected (P1b Decision B) as two definitions of one fact. `bar_class`
+is the colour: `Unit::BAR_CLASSES` is an eight-entry allow-list (four original hues plus four
+more, `channel-bar-slate` the default) that both offers the choice on the units screen and
+validates it. All of the above is administrator-editable from Admin → Structure → Units (P1b
+Task 4); `positions` become admin-managed; **capabilities stay code-defined** (they name
 features) with role→capability defaults as data. Position 1 (Nurse) remains retired and is
 never reused.
 
 **The level ladder table is `person_levels`, not `user_levels`.** P0c's
 `2026_08_10_120002_create_levels_and_person_levels.php` shipped it under that name, matching
 the `people`/`users` split (D3 reversed) — a level history belongs to the roster identity
-(`Person`), not the account (`User`). `levels` itself exists but is **still empty** as of P1a
-(2026-08-09); P0c deliberately seeded no rows ("the QCH level set is departmental data the
-owner supplies; inventing one here would be a clinical guess this plan has no standing to
-make"). A 2026-08-08 owner decision has since settled what the ladder is —
-`R1, R2, R3, R4, EXT` (External), code/name/order/`external` all administrator-owned data after
-the seed — but seeding it and building the CRUD/LV-03 promotion workflow on top is P1b scope,
-not yet done.
+(`Person`), not the account (`User`). **The ladder is seeded and administrator-editable as of
+P1b Tasks 6-8 (2026-08-09):** `R1, R2, R3, R4, EXT`, explicit `display_order` 10/20/30/40/90
+(gapped by ten), `EXT` flagged `external` and last, all edited from Admin → Structure → Levels
+— a rename survives `db:seed --force`. **`levels` gained `external` only, never `terminal`.**
+This section's earlier text (and this plan's own original Task 6 draft) asked for a `terminal`
+flag and a `Level::nextAfter()` "advance one level" inference; **Owner Decision A (P1b,
+2026-08-09) rejected both outright** — a wrong terminal marker fails silently in two directions
+(an unmarked top level advances a cohort into a level that does not exist; a wrongly-marked
+middle level graduates a cohort a year early), and removing the inference removes the whole
+failure class. Whatever P1c's LV-03 annual-promotion screen needs, it takes the **target level
+as explicit operator input**, not a column reading "one step up".
 
 ### 6.2 Bounded custom fields (D8, "Ceiling 2")
 
@@ -633,6 +645,20 @@ department's published calendar across a month boundary; that value is set via
 
 The calendar converts for display and scheduling day-boundary math only — **never** for audit
 canonicalization, which stays byte-verbatim.
+
+**The memo now has a production flush contract (P1b Task 10, 2026-08-09).**
+`Calendar::settings()`/`::activeHolidays()` are memoised in statics for the life of the
+process; `Calendar::flush()` existed since P1a but had **no production caller at all** until
+P1b's calendar-settings and holiday-CRUD screens gave the module its first runtime writers.
+Every write path touching `institutions`' calendar columns or a `holidays` row now calls
+`flush()` in the same request, guarded at source level by
+`tests/Feature/Build/CalendarWritersFlushTest.php` (observed failing against a deliberately
+non-flushing throwaway file before being trusted, the same discipline
+`CalendarIsTheOnlyConverterTest` uses). The same task adds
+`PeriodGenerator::assertMonthAligned()` — a calendar-month period system must begin on the
+first of a month, checked once and consumed by both `months()` and the settings screen's
+validation — and hard-locks `period_type`/`academic_year_start` the moment any `periods` row
+exists (Decision D), unlocked only by deleting that academic year's periods (P1b Task 11).
 
 ---
 
@@ -772,7 +798,7 @@ paediatrics goes live once, with both modules ready.
 | Phase | Content |
 |---|---|
 | **P0 — Platform foundation** | Save Munawib Part B as `docs/munawib/SPEC.md`. Units and `UnitProfile` become configuration; **Ceiling-2 custom fields** (definitions, encrypted JSON, dynamic validation, generic print renderer, import mapping); `levels` + `person_levels` (shipped under this name, not `user_levels` — §6.1); `users` extended with §5.1 columns and CHECK constraints; **auth lifecycle reconciled into one state machine**; the password-reset and email-collision gates; `pickerRule()` rewritten per D9; provisioning script for database-per-customer. Endorsement stays green throughout. |
-| **P1 — Munawib Stage 1** | People, invitations, roles on the merged identity; master rota (both period systems, splits, vacations, import/export, publish view); clinics; holidays. **Split into five sub-plans** (`docs/superpowers/plans/2026-08-08-p1-master-rota.md`) once reconnaissance found the operational layer above `Person`/`PersonLevel` entirely empty and P1 too large to plan as one unit: **P1a** the calendar module, per-department calendar settings, both period systems, holidays, and absorption of every existing date converter (no new route); **P1b** units CRUD with UN-02/UN-03, the level ladder CRUD, and the calendar/period/holiday settings screens; **P1c** the People screen, external people made real, bulk level operations, annual promotion, invitation resend/unbinding/per-person roles, roster import; **P1d** the master rota grid itself — periods × people, split assignments, vacations, fill-down/copy, import/export, the publish view; **P1e** clinics, the weekly clinic map, and the setup wizard threading every step above, plus the removable demo department seed. Each sub-plan is written when its predecessor merges, per the P0a–P0d convention. |
+| **P1 — Munawib Stage 1** | People, invitations, roles on the merged identity; master rota (both period systems, splits, vacations, import/export, publish view); clinics; holidays. **Split into five sub-plans** (`docs/superpowers/plans/2026-08-08-p1-master-rota.md`) once reconnaissance found the operational layer above `Person`/`PersonLevel` entirely empty and P1 too large to plan as one unit: **P1a** the calendar module, per-department calendar settings, both period systems, holidays, and absorption of every existing date converter (no new route); **P1b** — **SHIPPED, 2026-08-09.** Units CRUD (UN-01…05: create/rename/recolour from an eight-entry `bar_class` allow-list — Decision B, no separate `color` column — reorder, reflag, alias, retire, merge) and the level ladder CRUD (LV-01: seeded `R1…R4, EXT`, `external` flag only — Owner Decision A dropped `terminal`/`Level::nextAfter()` outright), both behind a new `structure.manage` capability; then the three ST-02 settings surfaces — calendar settings (bounds-checked Hijri offset, month-alignment-validated period start, `period_type`/`academic_year_start` hard-locked once periods exist), periods (preview **and** generate-and-commit **and** delete-a-year — `PeriodGenerator` had zero production callers before this), and holidays CRUD — plus the production `Calendar::flush()` contract every one of those writes now honours. Adds **no** anonymous route (§9.1 holds); **P1c** the People screen, external people made real, bulk level operations, annual promotion, invitation resend/unbinding/per-person roles, roster import; **P1d** the master rota grid itself — periods × people, split assignments, vacations, fill-down/copy, import/export, the publish view; **P1e** clinics, the weekly clinic map, and the setup wizard threading every step above, plus the removable demo department seed. Each sub-plan is written when its predecessor merges, per the P0a–P0d convention. |
 | **P2 — Engine** | `packages/engine` with **all 21 CG-07 types** (D13), golden fixtures, plain-language previews, severity/rank model; `services/engine`; the CI cross-validation job. |
 | **P3 — Munawib Stage 2** | Slots, call windows, coverage templates, conditions gate with drag ranking, draft workbench with live hints, trackers, undo ≥30, unfilled lens, publish + archive, morning coverage, who's-on-call board, personal pages, tallies, exports. **L1 and the §9.1 share-token feed land here.** |
 | **P4 — Munawib Stage 3** | *Prerequisite: host scaled to 4 OCPU / 24 GB.* Solver service, §4.2 evaluation mode, ranked-sacrifice report, per-placement explanations, partial modes, infeasibility reporting, AU-06 against §11.2's fixture; requests with deadlines and reminders; approval queue with coverage impact; versioned change log; ICS feeds. **L4 lands here.** |
@@ -843,10 +869,14 @@ None block starting P0.
     passed since, per instance. At N=1 this is a discipline gap; at N customers it is N
     untracked obligations. Not addressed by P0d — the runbook carries a per-instance register
     (a place to write the date down), not an alert.
-12. **`institutions` still has no admin surface.** `INSTITUTION_CODE`/`INSTITUTION_NAME` are
-    env-only (P0d Task 3), read once by `ReferenceSeeder` on `db:seed --force`. There is no
-    screen to view or change them after go-live — doing so today means a direct database edit,
-    outside the audit trail that covers every other administrative change in this system.
+12. ~~**`institutions` still has no admin surface.**~~ **PARTIALLY CLOSED, P1b Task 10,
+    2026-08-09.** The calendar columns (`hijri_enabled`, `hijri_offset_days`, `weekend_days`,
+    `period_type`, `block_weeks`, `academic_year_start`) are editable at
+    `/admin/structure/calendar`, bounds-checked server-side, audited by key name. `name` and
+    `code` remain `INSTITUTION_CODE`/`INSTITUTION_NAME`, env-only (P0d Task 3), read once by
+    `ReferenceSeeder` on `db:seed --force` — changing either still means a direct database edit
+    outside the audit trail. Narrowed rather than closed: a rename/re-code screen is a separate,
+    not-yet-scoped item.
 13. ~~**AC-02 invitation lifetime: 7 days or 14?**~~ **SETTLED, owner decision, round 2,
     2026-08-08.** `Invitation::LIFETIME_DAYS = 7` today, deliberately shorter than Munawib
     AC-02's 14 — an invitation is a credential that reaches children's clinical records once
@@ -865,6 +895,15 @@ None block starting P0.
     `HolidayTest::test_missed_days_denominator_is_unaffected_by_a_holiday` and
     `ConverterAbsorptionTest`'s weekend-day equivalent (P1a Tasks 5 and 7). If ever revisited,
     it must be a deliberate, dated change with the old figures preserved, not this one.
+15. **`Calendar::flush()`'s production contract, and its one allow-listed non-flushing writer.**
+    P1b Task 10 gave `flush()` its first production callers (the calendar-settings and holiday
+    screens); `tests/Feature/Build/CalendarWritersFlushTest.php` enforces at source level that
+    every file writing `institutions`' calendar columns or a `holidays` row also calls it
+    somewhere in the same file. One legitimate exception: `database/seeders/ReferenceSeeder.php`
+    writes `hijri_offset_days` on create (or when `HIJRI_OFFSET_DAYS` is explicitly configured)
+    without flushing, because a seeder run is its own process that exits — nothing renders from
+    the stale in-process memo afterward. Any future non-flushing writer needs the same kind of
+    stated reason, or the guard will name it.
 
 ---
 

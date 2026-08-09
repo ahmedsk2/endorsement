@@ -98,6 +98,21 @@ SCBU and WARD are seed data for the QCH institution.
   (`tests/Feature/Calendar/GoldenFixtureTest.php` asserts it here) is a durable artifact, not
   test scaffolding — P2's `packages/engine` calendar must assert the same file against itself.
   A change to one side not matched on the other is the drift this file exists to catch.
+- **Any write path touching `institutions`' calendar columns or a `holidays` row must call
+  `App\Support\Calendar::flush()`.** `Calendar::settings()`/`::activeHolidays()` are memoised in
+  statics for the life of the process; before P1b Task 10, `flush()` had NO production caller at
+  all, so the redirect that followed a save would have rendered from the pre-save memo — the
+  admin presses Save, the row changes, and the page still shows the old value. Guarded at source
+  level by `tests/Feature/Build/CalendarWritersFlushTest.php` (same file-must-also-call-flush()
+  discipline as the SQL-injection/dark-mode guards above), which has itself been observed
+  failing against a deliberately non-flushing throwaway file before being trusted. Also from
+  P1b Task 10: a calendar-month period system must begin on the FIRST of a month
+  (`App\Support\PeriodGenerator::assertMonthAligned()`, called from both `months()` itself and
+  the calendar-settings FormRequest — one definition, two consumers, never re-typed) or
+  `months()` mislabels every period; and `period_type`/`academic_year_start` hard-lock, both
+  server- and client-side, the moment any `periods` row exists (Decision D) — the refusal names
+  the unlock ("delete this academic year's periods first"), and P1b Task 11 is what makes that
+  unlock actually work.
 - **An index or unique key led by `institution_id` is a recurring mistake, not a one-off.**
   D11 keeps `institution_id` as provenance/in-instance grouping, never a query filter — but a
   plan-supplied migration snippet has twice proposed one anyway (P1a Task 4's `periods` unique
@@ -165,10 +180,27 @@ SCBU and WARD are seed data for the QCH institution.
   object that shape travels in (`$unit->profile()`); it holds no per-unit values. Never
   reintroduce a hardcoded unit list — `Unit::codes()` is the only source, and every lookup
   built from user input goes through `Unit::findByCode()` (the `code` mutator normalizes
-  writes, not a query's WHERE value). Units are opt-in `active`. Two known exceptions, pending:
-  `resources/js/Layouts/AppLayout.vue` (sidebar nav) and `resources/css/app.css` (hue classes)
-  still hardcode the four units — a fifth department gets no nav entry or hue until those move
-  to configuration.
+  writes, not a query's WHERE value). Units are opt-in `active`, and are administrator-creatable
+  from Admin → Structure → Units (P1b Task 4). The two exceptions this file used to flag as
+  pending — `resources/js/Layouts/AppLayout.vue`'s hardcoded sidebar array and
+  `resources/css/app.css`'s four-hue palette — were closed by P1b Task 3: the sidebar renders
+  the shared `nav.units` Inertia prop (`Unit::navList()`), and `Unit::BAR_CLASSES` is an
+  eight-entry allow-list (the original four plus four hue-named additions) that both offers the
+  colour choice on the units screen and validates it, with `Unit::DEFAULT_BAR_CLASS`
+  (`channel-bar-slate`) as the fallback for a unit with none chosen. A fifth department now gets
+  a nav entry and a colour with no frontend change.
+- The training-level ladder (Munawib LV-01) is seeded `R1, R2, R3, R4, EXT` with explicit
+  `display_order` 10/20/30/40/90 (gapped by ten so an `R5` or `R2.5` can be inserted without
+  renumbering), `EXT` flagged `external` and last, and is fully administrator-editable from
+  Admin → Structure → Levels (P1b Task 8) — a rename survives `db:seed --force`. **There is no
+  `levels.terminal` column and no `Level::nextAfter()` method — do not build either.** Owner
+  Decision A (2026-08-09, `docs/superpowers/plans/2026-08-09-p1b-structure-admin.md`) rejected
+  the inference outright: a wrong terminal marker fails silently in two directions — an
+  unmarked top level lets a cohort advance into a level that does not exist, and a
+  wrongly-marked middle level graduates a cohort a year early — and removing the inference
+  removes the whole failure class. Whatever P1c's annual-promotion screen needs, it takes the
+  **target level as explicit operator input**; it is not "the one definition of advance one
+  level" reading off a column. `EXT` sits outside the ladder and is never promoted.
 
 ## Invariants the 2026-07-26 audit had to restore (don't regress these)
 

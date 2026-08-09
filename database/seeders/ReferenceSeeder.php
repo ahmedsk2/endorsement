@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Institution;
+use App\Models\Level;
 use App\Models\Position;
 use App\Models\Unit;
 use Illuminate\Database\Seeder;
@@ -53,6 +54,9 @@ class ReferenceSeeder extends Seeder
                 'name' => 'Pediatric Intensive Care Unit',
                 'display_order' => 1,
                 'active' => true,
+                'training_rotation' => true,
+                'call_target' => true,
+                'clinic_owner' => false,
                 'extra_row_fields' => [],
                 'bed_label' => 'Bed',
                 'consultant_pair' => true,
@@ -65,6 +69,9 @@ class ReferenceSeeder extends Seeder
                 'name' => 'Neonatal Intensive Care Unit',
                 'display_order' => 2,
                 'active' => true,
+                'training_rotation' => true,
+                'call_target' => true,
+                'clinic_owner' => false,
                 'extra_row_fields' => ['dob'],
                 'bed_label' => 'Bed',
                 'consultant_pair' => true,
@@ -77,6 +84,9 @@ class ReferenceSeeder extends Seeder
                 'name' => 'Special Care Baby Unit',
                 'display_order' => 3,
                 'active' => true,
+                'training_rotation' => true,
+                'call_target' => true,
+                'clinic_owner' => false,
                 'extra_row_fields' => ['dob'],
                 'bed_label' => 'Bed',
                 'consultant_pair' => true,
@@ -89,6 +99,11 @@ class ReferenceSeeder extends Seeder
                 'name' => 'Pediatric Ward',
                 'display_order' => 4,
                 'active' => true,
+                // Owner decision B (2026-08-09): WARD is the only clinic owner. Affects
+                // nothing before P1e; settles CL-01's first screen.
+                'training_rotation' => true,
+                'call_target' => true,
+                'clinic_owner' => true,
                 'extra_row_fields' => ['age', 'ward_unit'],
                 'bed_label' => 'Room',
                 'consultant_pair' => false,
@@ -122,6 +137,37 @@ class ReferenceSeeder extends Seeder
 
         $institution->active = true;
         $institution->save();
+
+        // The training-level ladder (Munawib LV-01; owner decision 1, 2026-08-08). P0c seeded
+        // none deliberately — "the QCH level set is departmental data the owner supplies" —
+        // and that decision has since been made. Names, codes, order and `external` are all
+        // administrator-owned data AFTER this seed: everything below is written on CREATE
+        // only, so a rename survives `db:seed --force`.
+        //
+        // display_order is explicit and gapped by ten. The migration's default is 1000, and
+        // five levels sharing it would leave the ladder's ordering effectively undefined.
+        //
+        // No level is marked terminal — Owner Decision A (2026-08-09) removed that column and
+        // the "advance one level" inference that would have read it (see LevelLadderTest).
+        // `EXT` sits outside the ladder (Munawib PE-03) and is never promoted.
+        $levels = [
+            'R1' => ['name' => 'Resident 1', 'display_order' => 10, 'external' => false],
+            'R2' => ['name' => 'Resident 2', 'display_order' => 20, 'external' => false],
+            'R3' => ['name' => 'Resident 3', 'display_order' => 30, 'external' => false],
+            'R4' => ['name' => 'Resident 4', 'display_order' => 40, 'external' => false],
+            'EXT' => ['name' => 'External', 'display_order' => 90, 'external' => true],
+        ];
+
+        foreach ($levels as $code => $attributes) {
+            $level = Level::firstOrNew(['code' => $code]);
+
+            if (! $level->exists) {
+                // institution_id is set here and only here: the P0d backfill migration
+                // deliberately skipped `levels` (it had no rows to backfill).
+                $level->fill($attributes + ['active' => true, 'institution_id' => $institution->getKey()]);
+                $level->save();
+            }
+        }
 
         // Written on CREATE, or when HIJRI_OFFSET_DAYS is explicitly provided. NEVER reverted
         // to 0 by a re-seed of a deployment that has since calibrated: `db:seed --force` runs

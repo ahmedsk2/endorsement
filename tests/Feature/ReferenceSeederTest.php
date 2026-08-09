@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Institution;
+use App\Models\Level;
 use App\Models\Unit;
 use Database\Seeders\ReferenceSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -100,5 +102,74 @@ class ReferenceSeederTest extends TestCase
         $this->seed(ReferenceSeeder::class);
 
         $this->assertDatabaseHas('institutions', ['code' => 'QCH', 'name' => "Qatif Children's Hospital"]);
+    }
+
+    /**
+     * Owner decision 1 (P1 plan, binding): the level ladder is `R1, R2, R3, R4, EXT`, seeded
+     * rather than left as an undecided empty table. `display_order` is explicit and gapped by
+     * ten (10/20/30/40/90) — NOT the migration's default of 1000, which would leave all five
+     * levels tied and the ordering effectively undefined.
+     *
+     * Owner Decision A (2026-08-09) means none of the five carries a `terminal` flag: that
+     * column was never built (see LevelLadderTest), so there is nothing to assert here beyond
+     * `external`.
+     */
+    public function test_it_seeds_the_five_levels_in_display_order(): void
+    {
+        $this->seed(ReferenceSeeder::class);
+
+        $this->assertSame(5, Level::count());
+        $this->assertSame(
+            ['R1', 'R2', 'R3', 'R4', 'EXT'],
+            Level::query()->ordered()->pluck('code')->all()
+        );
+        $this->assertSame(
+            [10, 20, 30, 40, 90],
+            Level::query()->ordered()->pluck('display_order')->map(intval(...))->all()
+        );
+    }
+
+    /** `EXT` sits outside the training ladder (Munawib PE-03) and is flagged accordingly. */
+    public function test_ext_alone_is_seeded_external(): void
+    {
+        $this->seed(ReferenceSeeder::class);
+
+        foreach (['R1', 'R2', 'R3', 'R4'] as $code) {
+            $this->assertFalse(Level::where('code', $code)->value('external'), $code);
+        }
+
+        $this->assertTrue((bool) Level::where('code', 'EXT')->value('external'));
+    }
+
+    /**
+     * The P0d backfill deliberately skipped `levels` (finding 5 — it had no rows to backfill at
+     * the time), so nothing else will ever set `institution_id` on a seeded level except this
+     * seeder, at CREATE time.
+     */
+    public function test_every_seeded_level_carries_the_institutions_id(): void
+    {
+        $this->seed(ReferenceSeeder::class);
+
+        $institutionId = Institution::where('code', 'QCH')->value('id');
+
+        foreach (['R1', 'R2', 'R3', 'R4', 'EXT'] as $code) {
+            $this->assertSame($institutionId, Level::where('code', $code)->value('institution_id'), $code);
+        }
+    }
+
+    /**
+     * LV-01: names are cosmetic and administrator-owned after the seed. `db:seed --force` runs
+     * on every deploy, so a rename must survive it — the same `firstOrNew` +
+     * `if (! $exists)` shape the units and the institution already use.
+     */
+    public function test_a_reseed_preserves_an_administrators_rename_of_a_level(): void
+    {
+        $this->seed(ReferenceSeeder::class);
+
+        Level::where('code', 'R1')->update(['name' => 'PGY-1']);
+
+        $this->seed(ReferenceSeeder::class);
+
+        $this->assertSame('PGY-1', Level::where('code', 'R1')->value('name'));
     }
 }

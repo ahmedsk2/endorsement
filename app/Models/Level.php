@@ -31,6 +31,7 @@ class Level extends Model
         'name',
         'display_order',
         'active',
+        'external',
     ];
 
     /**
@@ -41,6 +42,7 @@ class Level extends Model
         return [
             'display_order' => 'integer',
             'active' => 'boolean',
+            'external' => 'boolean',
         ];
     }
 
@@ -76,5 +78,17 @@ class Level extends Model
     public function scopeOrdered(Builder $query): Builder
     {
         return $query->orderBy('display_order')->orderBy('id');
+    }
+
+    /**
+     * Munawib LV-01's `external` flag: `EXT` sits outside the training ladder and is never
+     * promoted. `internal()` is the levels a promotion picker (P1c) offers.
+     *
+     * @param  Builder<Level>  $query
+     * @return Builder<Level>
+     */
+    public function scopeInternal(Builder $query): Builder
+    {
+        return $query->where('external', false);
     }
 }

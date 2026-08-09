@@ -72,6 +72,10 @@
     --color-unit-nicu: #5b6bbf;   /* indigo */
     --color-unit-scbu: #8a5ba8;   /* violet */
     --color-unit-ward: #9c5470;   /* plum */
+    --color-unit-amber: #94660f;   /* amber */
+    --color-unit-moss:  #3f7340;   /* moss */
+    --color-unit-clay:  #a2542f;   /* clay */
+    --color-unit-slate: #4a5a6b;   /* slate — the fallback for a unit with no colour chosen */
 
     /* Dawn — the signed-out hero only.
        Handover is at 07:30, so first light is the moment the system exists for; these are
@@ -119,6 +123,10 @@
     .channel-bar-nicu { border-left-color: var(--color-unit-nicu); }
     .channel-bar-scbu { border-left-color: var(--color-unit-scbu); }
     .channel-bar-ward { border-left-color: var(--color-unit-ward); }
+    .channel-bar-amber { border-left-color: var(--color-unit-amber); }
+    .channel-bar-moss { border-left-color: var(--color-unit-moss); }
+    .channel-bar-clay { border-left-color: var(--color-unit-clay); }
+    .channel-bar-slate { border-left-color: var(--color-unit-slate); }
     .channel-bar-ok { border-left-color: var(--color-ok); }
     .channel-bar-critical { border-left-color: var(--color-critical); }
     .channel-bar-caution { border-left-color: var(--color-caution); }

@@ -533,6 +533,41 @@ worth writing down. P1a recorded nine amendments across nine tasks and P1b eight
 including two real plan errors and seven owner-decision conflicts; assume this plan is wrong
 somewhere too.)*
 
+**2026-08-09, Task 1 — two real bugs, both plan errors, neither a security issue.**
+
+1. **The plan's own `PeopleAccessTest` draft has 11 test methods, not the 10 its own Step 8 text
+   claims.** Counting the methods the plan's Step 1 code block actually contains
+   (`test_the_capability_is_in_the_catalog` through `test_a_guest_is_redirected_to_login`) gives
+   eleven, so the expected full-suite total is **897** (886 + 11), not the stated 896. Same shape
+   as P1b Task 1's and Task 4's own "+1 more than the plan's stated count" amendments — a
+   miscount in the plan's prose, not in the code it specifies. Verified by literally counting
+   `public function test_` occurrences in the pasted block before running anything.
+2. **Two of the plan's own test cases are flaky under the full suite, non-deterministically,
+   because they assert on an array INDEX (`people.1.*`) into a list sorted by `full_name`
+   without pinning the admin's own name.** `User::factory()->create(['position' => 0])` (no
+   `full_name` override) gives the admin's linked person a random `fake()->name()`; the
+   controller lists everyone `orderBy('people.full_name')`, so whichever of "the admin's random
+   name" and the test's fixture name ("Never Logged In", "Departed Rotator") sorts first
+   determines which index the fixture lands at. `test_a_roster_only_person_is_listed` and
+   `test_status_is_derived_from_active_and_the_account_join` both asserted `people.1.*`
+   unconditionally. Caught empirically, not by inspection: `--filter PeopleAccessTest` passed all
+   11 cases standalone, but the SAME test file failed `test_status_is_derived_from_active_and_
+   the_account_join` (`people.1.active` expected `false`, got `true`) when run as part of the
+   full 897-test suite — the shared Faker PRNG had advanced further by the time that test ran,
+   producing a different admin name that happened to alphabetically sort AFTER "Departed
+   Rotator" this time, pushing the admin to index 1 and the fixture to index 0. The plan's third
+   index-asserting case, `test_an_administrator_can_open_the_people_screen`, already pinned the
+   admin's name (`'full_name' => 'Aisha Admin'`, sorting before "Bilal Roster") and never showed
+   the bug — that is what the other two should have copied. Fixed by pinning
+   `'full_name' => 'AAA Admin'` on the admin in both remaining cases (sorts before every letter
+   the fixture names start with), with a comment recording the empirical failure so a future
+   reader does not "clean up" the pin back out. `test_inactive_and_soft_deleted_people_are_listed`
+   was unaffected — it only asserts a `has('people', 2)` count, never an index.
+
+`php artisan test`: 886 → 897 (11 new, matching the corrected count above). `npm test`: 111 → 112
+(1 new `AppLayout.test.js` case, matching the plan's own stated `people.manage`-alone shape).
+`npm run build` and the full suite green throughout.
+
 ---
 
 ## Conventions every task follows
@@ -615,7 +650,7 @@ level column (Task 3), no writes (Task 4). That ordering is deliberate: the proj
 decides what a person's props contain is a security control, and it gets its own task and its own
 tests rather than arriving inside a screen.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/Admin/PeopleAccessTest.php`:
 
@@ -789,7 +824,7 @@ class PeopleAccessTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it and watch it go red**
+- [x] **Step 2: Run it and watch it go red**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
@@ -799,7 +834,7 @@ php artisan test --filter PeopleAccessTest 2>&1 | tail -15
 Expected: FAIL — `Failed asserting that a row in the table [capabilities] matches the attributes
 {"key":"people.manage"}`.
 
-- [ ] **Step 3: Seed the capability, and update the two documents that enumerate it**
+- [x] **Step 3: Seed the capability, and update the two documents that enumerate it**
 
 In `database/seeders/AccessControlSeeder.php`, add to `DESCRIPTIONS`:
 
@@ -844,7 +879,7 @@ In `tests/Feature/AccessControlParityTest.php`, add `'people.manage'` to the `$a
 (`:37-40`) and extend the comment above it. Finding 17: this test will go red the moment the
 seeder changes, and that red is the expected one.
 
-- [ ] **Step 4: The controller**
+- [x] **Step 4: The controller**
 
 Create `app/Http/Controllers/Admin/PersonController.php`:
 
@@ -907,7 +942,7 @@ class PersonController extends Controller
 Note `withExists(['user as has_account'])` rather than `$p->hasAccount()` per row: the latter is
 one `EXISTS` query per person and this list is the N+1 the master rota will inherit.
 
-- [ ] **Step 5: The route**
+- [x] **Step 5: The route**
 
 In `routes/web.php`, after the `admin/structure` group closes, add a new group. It is **not**
 under `admin/structure` — a person is not part of the department's shape, and `structure.manage`
@@ -933,7 +968,7 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:people.manage'])
 Add `use App\Http\Controllers\Admin\PersonController;` to the imports at the top of the file,
 beside the existing `UnitController`/`LevelController` imports.
 
-- [ ] **Step 6: The screen**
+- [x] **Step 6: The screen**
 
 Create `resources/js/Pages/Admin/People.vue` — `AppLayout`, a client-side search box over
 `full_name`/`short_name` (the `Users.vue:70-76` shape, but never touching a contact field), a
@@ -949,7 +984,7 @@ External                  a `.channel-tag` when `external` is true (fully wired 
 No contact column exists yet. No level column exists yet. Both arrive with the tasks that build
 their controls, so a reviewer can see exactly which commit introduced each.
 
-- [ ] **Step 7: The nav**
+- [x] **Step 7: The nav**
 
 In `resources/js/Layouts/AppLayout.vue`, extend `canAdmin` (`:70-71`):
 
@@ -973,7 +1008,7 @@ In `tests/js/AppLayout.test.js`, add a case mirroring the existing `structure.ma
 (`:103-117`): `people.manage` alone shows Administration and People, and shows neither Access
 Control, Settings, Units nor Users.
 
-- [ ] **Step 8: Verify and commit**
+- [x] **Step 8: Verify and commit**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"

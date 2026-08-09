@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\CalendarSettingsController;
 use App\Http\Controllers\Admin\HolidayController;
 use App\Http\Controllers\Admin\LevelController;
 use App\Http\Controllers\Admin\PeriodController;
+use App\Http\Controllers\Admin\PersonController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UnitController;
 use App\Http\Controllers\Admin\UnitMergeController;
@@ -184,6 +185,21 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
         Route::post('/holidays', [HolidayController::class, 'store'])->name('holidays.store');
         Route::patch('/holidays/{holiday}', [HolidayController::class, 'update'])->name('holidays.update');
         Route::patch('/holidays/{holiday}/active', [HolidayController::class, 'setActive'])->name('holidays.active');
+    });
+
+/*
+ * Admin → People: the departmental ROSTER (Munawib PE-01…03, LV-02…04, ST-04). Its own
+ * capability, `people.manage`, deliberately separate from `users.manage` (the ACCOUNT console)
+ * and from `structure.manage` (the department's shape) — see the P1c plan's Decision A.
+ *
+ * Nothing in this group creates an account. The invitation flow under `admin/invitations`
+ * remains the only path from a roster entry to a credential.
+ */
+Route::middleware(['auth', 'throttle:clinical', 'cap:people.manage'])
+    ->prefix('admin')
+    ->name('admin.')
+    ->group(function () {
+        Route::get('/people', [PersonController::class, 'index'])->name('people');
     });
 
 /*

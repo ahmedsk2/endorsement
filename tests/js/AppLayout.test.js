@@ -116,6 +116,23 @@ describe('AppLayout — role-gated navigation', () => {
         expect(text).not.toContain('Settings');
     });
 
+    // P1c: a user holding ONLY the new people.manage capability must still see the
+    // Administration section with a People link — the same recon-frontend risk P1b's Decision A
+    // named, now proven for the roster capability too.
+    it('shows the admin section with people.manage alone, with a People link only', () => {
+        store.page.props.auth.can = ['people.manage'];
+        store.page.props.auth.user = { id: 6, member_name: 'pm', full_name: 'People Manager', position: 0 };
+
+        const text = navText(mountLayout());
+        expect(text).toContain('Administration');
+        expect(text).toContain('People');
+        // people.manage alone does not grant the other admin links.
+        expect(text).not.toContain('Access Control');
+        expect(text).not.toContain('Units');
+        expect(text).not.toContain('Settings');
+        expect(text).not.toContain('Users');
+    });
+
     it('shows the signed-in user name and logs out via router.post', async () => {
         store.page.props.auth.can = ['profile.manage'];
         store.page.props.auth.user = { id: 1, member_name: 'jdoe', full_name: 'Jane Doe', position: 1 };

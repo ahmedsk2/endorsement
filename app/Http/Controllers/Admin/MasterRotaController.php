@@ -109,11 +109,20 @@ class MasterRotaController extends Controller
         return back();
     }
 
+    /**
+     * `withTrashed()`, unlike every other action here (pre-merge finding 1). `RotaCellRequest`
+     * deliberately validates DELETE against a bare `Rule::exists('people', 'id')` so a person who
+     * was assigned and then deactivated — or retired — can still have their spans removed; a
+     * `findOrFail()` under SoftDeletes' global scope would 404 on exactly the retired half of that
+     * and leave the academic year wedged against `PeriodController::destroy()` regardless. Reading
+     * a person here names nobody: `RotaAssignment::clear()` only deletes rows already keyed to
+     * them.
+     */
     public function clearCell(RotaCellRequest $request): RedirectResponse
     {
         $data = $request->validated();
 
-        $person = Person::query()->findOrFail($data['person_id']);
+        $person = Person::query()->withTrashed()->findOrFail($data['person_id']);
         $period = Period::query()->findOrFail($data['period_id']);
 
         $result = RotaAssignment::clear($person, $period);

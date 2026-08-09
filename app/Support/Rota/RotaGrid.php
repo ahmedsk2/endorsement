@@ -11,15 +11,24 @@ use App\Models\User;
 use App\Models\Vacation;
 use App\Support\Calendar;
 use App\Support\PersonPresenter;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 
 /**
  * Munawib MR-02's master rota grid: rows by level (held at the academic year's start), columns
- * by period. Decision G's SEVEN-QUERY budget, constant in both people and periods — the query
- * count does not grow whether the year has one person or sixty, one period or thirteen.
+ * by period. Decision G's query budget — EIGHT since pre-merge finding 1 added the stale-row
+ * union — constant in both people and periods: the count does not grow whether the year has one
+ * person or sixty, one period or thirteen, nor with the number of stale rows.
  *
  * `RotaGridTest::test_the_whole_grid_is_a_bounded_number_of_queries` pins the budget with a
  * measured bound, not an exact count (a logged-in Inertia request contributes its own
- * session/auth/capability reads on top of the seven data queries below).
+ * session/auth/capability reads on top of the eight data queries below), and it measures a
+ * POPULATED year — split assignments, vacations, mid-year promotions and a stale row — because a
+ * budget measured on an empty grid only ever proves the empty case (pre-merge finding 3).
+ *
+ * Rows are the active roster UNIONED with anybody who still holds an assignment in this year but
+ * is no longer active (finding 1). That union is one query, never one per stale person, and the
+ * span/vacation queries below take the COMBINED set — a second round for stale people would be
+ * the same N+1 in a new costume.
  *
  * Named N+1 traps this class exists to avoid — each is a real defect this codebase has already
  * paid for once elsewhere:
@@ -58,20 +67,8 @@ final class RotaGrid
         $yearStart = $periods->first()->starts_on->format(Calendar::YMD);
         $yearEnd = $periods->last()->ends_on->format(Calendar::YMD);
 
-        // Query 2 — the rows. Whole models, never select()/pluck(): a narrowed query that drops
-        // person_id makes PersonPresenter's full_name/position accessors resolve to null with
-        // no error. withExists() stops PersonPresenter running one EXISTS per row.
-        $people = Person::query()->active()
-            ->withExists(['user as has_account'])
-            ->orderBy('people.full_name')
-            ->get();
-
-        // Query 3 (+ its own eager-loaded 'level' load) — every level span intersecting the
-        // year, once for the whole roster. Person::levelFromSpans() resolves each cell's level
-        // from this in memory; no per-cell/per-date query.
-        $spans = Person::levelSpansBetween($people, $yearStart, $yearEnd);
-
-        // Query 4 — every assignment for every period in this year, in one shot.
+        // Query 2 — every assignment for every period in this year, in one shot. It comes BEFORE
+        // the roster because it is what says which non-active people still occupy a cell.
         $periodIds = $periods->pluck('id')->all();
         $assignments = MasterRotaAssignment::query()
             ->whereIn('period_id', $periodIds)
@@ -84,7 +81,46 @@ final class RotaGrid
             $assignmentsByPersonPeriod[(int) $assignment->person_id][(int) $assignment->period_id][] = $assignment;
         }
 
-        // Query 5 — every vacation intersecting the year for this roster, grouped in PHP.
+        // Query 3 — the rows. Whole models, never select()/pluck(): a narrowed query that drops
+        // person_id makes PersonPresenter's full_name/position accessors resolve to null with
+        // no error. withExists() stops PersonPresenter running one EXISTS per row.
+        $active = Person::query()->active()
+            ->withExists(['user as has_account'])
+            ->orderBy('people.full_name')
+            ->get();
+
+        // Query 4 — the STALE rows (pre-merge finding 1), and the only query this union adds:
+        // anybody who still holds a span in this year but is no longer on the active roster.
+        // People are deactivated, never deleted, so a resident who leaves mid-year keeps every
+        // span already planned for them; without this the row simply vanished, the operator had
+        // no control to clear it, and the assignment blocked PeriodController::destroy() — and so
+        // Decision D's unlock — forever. `withTrashed()`: a retired person's spans wedge the year
+        // exactly as an inactive person's do. Same whole-model, same withExists() as query 3, so a
+        // stale row costs no EXISTS and loses no accessor.
+        $activeIds = $active->modelKeys();
+        $staleIds = array_values(array_diff(array_keys($assignmentsByPersonPeriod), $activeIds));
+
+        $stale = $staleIds === []
+            ? new EloquentCollection
+            : Person::query()->withTrashed()
+                ->whereIn('id', $staleIds)
+                ->withExists(['user as has_account'])
+                ->get();
+
+        // Interleaved alphabetically, never appended: a stale row is a normal row of its level
+        // group that happens to be read-only. Query 3's own ORDER BY is left untouched in the
+        // common case (no stale rows at all), so the department's usual ordering is unchanged.
+        $people = $stale->isEmpty()
+            ? $active
+            : $active->concat($stale)->sortBy(fn (Person $person): string => (string) $person->full_name)->values();
+
+        // Query 5 (+ its own eager-loaded 'level' load) — every level span intersecting the
+        // year, once for the whole roster INCLUDING the stale rows (never a second round for
+        // them). Person::levelFromSpans() resolves each cell's level from this in memory; no
+        // per-cell/per-date query.
+        $spans = Person::levelSpansBetween($people, $yearStart, $yearEnd);
+
+        // Query 6 — every vacation intersecting the year for this roster, grouped in PHP.
         $personIds = $people->pluck('id')->all();
         $vacations = Vacation::query()
             ->whereIn('person_id', $personIds)
@@ -97,12 +133,12 @@ final class RotaGrid
             $vacationsByPerson[(int) $vacation->person_id][] = $vacation;
         }
 
-        // Query 6 — the unit picker AND the per-cell id->unit map. A cell never touches
+        // Query 7 — the unit picker AND the per-cell id->unit map. A cell never touches
         // $assignment->unit.
         $units = Unit::query()->active()->ordered()->get();
         $unitsById = $units->keyBy('id');
 
-        // Query 7 — the row-group headers, in display order.
+        // Query 8 — the row-group headers, in display order.
         $levels = Level::query()->active()->ordered()->get();
         $levelOrder = [];
 
@@ -162,6 +198,10 @@ final class RotaGrid
             $rows[] = [
                 'person' => PersonPresenter::one($person, $viewer),
                 'group_level_id' => $groupLevel?->getKey(),
+                // On the ROW, not inside `person` — PersonPresenter projects a person, and "this
+                // row is only here because it still holds a span" is a fact about the grid. The
+                // client renders a flagged row read-only except for Clear.
+                'stale' => ! $person->active || $person->trashed(),
                 'cells' => $cells,
             ];
         }

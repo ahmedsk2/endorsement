@@ -20,6 +20,15 @@ import SaveStatus from '../../Components/SaveStatus.vue';
  * affordance that opens Task 9's editor below. Existing vacations render read-only here too;
  * booking/cancelling one is Task 10.
  *
+ * A row flagged `stale` (pre-merge finding 1) belongs to somebody who is no longer on the active
+ * roster but still holds a span in this year — people are deactivated, never deleted, so a
+ * resident who leaves mid-year keeps every span already planned for them. That row renders
+ * READ-ONLY except for Clear: the server refuses to name an inactive person on set/split, so a
+ * unit picker or a Split…/On leave… button there would only ever 422. Clear stays, because
+ * emptying the cell is the one thing that has to remain possible — an assignment nobody can
+ * remove blocks its academic year's periods from ever being deleted, and with them Decision D's
+ * unlock of period_type/academic_year_start.
+ *
  * Task 9's split editor NEVER computes the uncovered-day count itself from the (unsaved) date
  * inputs it holds — `splitCellState` below reads `uncovered_days` straight from `grid.rows`,
  * which is always the server's own last-known figure for that cell. Before any save this is
@@ -353,6 +362,9 @@ const cancelLeave = (vacationId) => {
                                  class="rounded-md border border-line bg-panel p-4">
                             <p class="text-sm font-semibold text-ink">{{ row.person.full_name }}</p>
                             <p v-if="row.person.external" class="channel-tag">External</p>
+                            <p v-if="row.stale" class="channel-tag text-critical">
+                                Inactive &middot; read-only, clear only
+                            </p>
                             <div class="mt-3 space-y-3">
                                 <div v-for="period in grid.periods" :key="period.id"
                                      :data-col-key="`period-${period.id}`"
@@ -365,7 +377,7 @@ const cancelLeave = (vacationId) => {
                                     </p>
                                     <p class="text-xs text-muted">{{ period.starts_label.date }} ({{ period.starts_label.hijri }}) &ndash; {{ period.ends_label.date }}</p>
 
-                                    <template v-if="cellMode(row.cells[period.id]) !== 'split'">
+                                    <template v-if="!row.stale && cellMode(row.cells[period.id]) !== 'split'">
                                         <select class="mt-2 w-full min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm text-ink"
                                                 :value="row.cells[period.id].spans[0]?.unit_id ?? ''"
                                                 @change="onCellSelect(row.person.id, period.id, $event)">
@@ -373,24 +385,29 @@ const cancelLeave = (vacationId) => {
                                             <option v-for="unit in grid.units" :key="unit.id" :value="unit.id">{{ unit.code }}</option>
                                         </select>
                                     </template>
-                                    <template v-else>
+                                    <template v-else-if="row.cells[period.id].spans.length">
                                         <ul class="mt-2 space-y-1">
                                             <li v-for="span in row.cells[period.id].spans" :key="span.id" class="channel-tag">
                                                 {{ unitsById[span.unit_id]?.code ?? span.unit_code }}: {{ span.starts_label.date }} &ndash; {{ span.ends_label.date }}
                                             </li>
                                         </ul>
-                                        <p v-if="row.cells[period.id].uncovered_days > 0" class="mt-1 text-xs text-critical">
+                                        <!-- A stale row's uncovered days are not a planning gap to fill — nobody
+                                             may be assigned into them — so the count is left off that row. -->
+                                        <p v-if="!row.stale && row.cells[period.id].uncovered_days > 0" class="mt-1 text-xs text-critical">
                                             {{ row.cells[period.id].uncovered_days }} day(s) unassigned in this block
                                         </p>
                                     </template>
+                                    <template v-else>
+                                        <p class="mt-2 text-sm text-muted">&mdash;</p>
+                                    </template>
 
                                     <div class="mt-1 flex gap-3">
-                                        <button type="button" class="text-xs font-semibold text-channel-ink"
+                                        <button v-if="!row.stale" type="button" class="text-xs font-semibold text-channel-ink"
                                                 :data-testid="`split-open-${row.person.id}-${period.id}`"
                                                 @click="openSplit(row, period)">
                                             Split&hellip;
                                         </button>
-                                        <button type="button" class="text-xs font-semibold text-channel-ink"
+                                        <button v-if="!row.stale" type="button" class="text-xs font-semibold text-channel-ink"
                                                 :data-testid="`vacation-open-${row.person.id}-${period.id}`"
                                                 @click="openVacation(row, period)">
                                             On leave&hellip;
@@ -448,13 +465,16 @@ const cancelLeave = (vacationId) => {
                                     <td class="px-4 py-2 text-body">
                                         {{ row.person.full_name }}
                                         <span v-if="row.person.external" class="channel-tag ml-1">External</span>
+                                        <span v-if="row.stale" class="channel-tag ml-1 text-critical">
+                                            Inactive &middot; read-only
+                                        </span>
                                     </td>
                                     <td v-for="period in grid.periods" :key="period.id" :data-col-key="`period-${period.id}`"
                                         class="px-3 py-2 align-top">
                                         <span v-if="row.cells[period.id].level_id !== row.group_level_id"
                                               class="channel-tag mb-1 block text-critical">level differs</span>
 
-                                        <template v-if="cellMode(row.cells[period.id]) !== 'split'">
+                                        <template v-if="!row.stale && cellMode(row.cells[period.id]) !== 'split'">
                                             <select class="channel-bar w-full min-h-11 rounded-md border border-line bg-panel px-2 py-1 text-sm text-ink"
                                                     :class="unitsById[row.cells[period.id].spans[0]?.unit_id]?.bar_class"
                                                     :value="row.cells[period.id].spans[0]?.unit_id ?? ''"
@@ -463,7 +483,7 @@ const cancelLeave = (vacationId) => {
                                                 <option v-for="unit in grid.units" :key="unit.id" :value="unit.id">{{ unit.code }}</option>
                                             </select>
                                         </template>
-                                        <template v-else>
+                                        <template v-else-if="row.cells[period.id].spans.length">
                                             <ul class="space-y-0.5">
                                                 <li v-for="span in row.cells[period.id].spans" :key="span.id"
                                                     class="channel-bar channel-tag rounded-sm px-1"
@@ -472,18 +492,21 @@ const cancelLeave = (vacationId) => {
                                                     {{ span.starts_label.date }}&ndash;{{ span.ends_label.date }}
                                                 </li>
                                             </ul>
-                                            <p v-if="row.cells[period.id].uncovered_days > 0" class="mt-0.5 text-xs text-critical">
+                                            <p v-if="!row.stale && row.cells[period.id].uncovered_days > 0" class="mt-0.5 text-xs text-critical">
                                                 {{ row.cells[period.id].uncovered_days }}d unassigned
                                             </p>
                                         </template>
+                                        <template v-else>
+                                            <p class="text-sm text-muted">&mdash;</p>
+                                        </template>
 
                                         <div class="mt-0.5 flex gap-2">
-                                            <button type="button" class="text-xs font-semibold text-channel-ink"
+                                            <button v-if="!row.stale" type="button" class="text-xs font-semibold text-channel-ink"
                                                     :data-testid="`split-open-${row.person.id}-${period.id}`"
                                                     @click="openSplit(row, period)">
                                                 Split&hellip;
                                             </button>
-                                            <button type="button" class="text-xs font-semibold text-channel-ink"
+                                            <button v-if="!row.stale" type="button" class="text-xs font-semibold text-channel-ink"
                                                     :data-testid="`vacation-open-${row.person.id}-${period.id}`"
                                                     @click="openVacation(row, period)">
                                                 On leave&hellip;

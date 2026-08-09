@@ -119,6 +119,25 @@ const onCellSelect = (personId, periodId, event) => {
     saveCell(personId, periodId, Number(value));
 };
 
+/**
+ * Empties a cell — every span, whole-period or split alike (`RotaAssignment::clear()` does not
+ * distinguish). The route existed from Task 8 and Task 9's own "Remove span" tooltip already
+ * named Clear as the way to do this, but no task before Task 11 actually built the control — the
+ * plain `<select>`'s blank option is deliberately a no-op (`onCellSelect` above), not a clear, so
+ * without this button there was no way to empty an assignment from the screen at all. Found while
+ * writing the e2e journey, which needs a real control to drive; see this task's Amendments entry.
+ */
+const clearCell = (personId, periodId) => {
+    setStatus(personId, periodId, 'saving');
+    router.delete('/admin/rota/cell', {
+        data: { person_id: personId, period_id: periodId },
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => setStatus(personId, periodId, 'saved'),
+        onError: () => setStatus(personId, periodId, 'error'),
+    });
+};
+
 // --- Task 9: splits in a cell -----------------------------------------------------------
 
 // `{ personId, periodId, spans: [{unit_id, starts_on, ends_on}] }` while a split is being
@@ -376,6 +395,12 @@ const cancelLeave = (vacationId) => {
                                                 @click="openVacation(row, period)">
                                             On leave&hellip;
                                         </button>
+                                        <button v-if="cellMode(row.cells[period.id]) !== 'empty'" type="button"
+                                                class="text-xs font-semibold text-critical"
+                                                :data-testid="`clear-cell-${row.person.id}-${period.id}`"
+                                                @click="clearCell(row.person.id, period.id)">
+                                            Clear
+                                        </button>
                                     </div>
 
                                     <ul v-if="row.cells[period.id].vacations.length" class="mt-2 space-y-1">
@@ -462,6 +487,12 @@ const cancelLeave = (vacationId) => {
                                                     :data-testid="`vacation-open-${row.person.id}-${period.id}`"
                                                     @click="openVacation(row, period)">
                                                 On leave&hellip;
+                                            </button>
+                                            <button v-if="cellMode(row.cells[period.id]) !== 'empty'" type="button"
+                                                    class="text-xs font-semibold text-critical"
+                                                    :data-testid="`clear-cell-${row.person.id}-${period.id}`"
+                                                    @click="clearCell(row.person.id, period.id)">
+                                                Clear
                                             </button>
                                         </div>
 

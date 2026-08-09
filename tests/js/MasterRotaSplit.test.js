@@ -174,3 +174,93 @@ describe('Admin/MasterRota — the split editor (Task 9)', () => {
         );
     });
 });
+
+/**
+ * The Clear affordance. Neither Task 8 nor Task 9 specified building this control despite the
+ * backend route existing from Task 8 and Task 9's own "Remove span" tooltip naming Clear as the
+ * way to empty a cell — found empirically while writing Task 11's e2e journey, which needs a real
+ * UI control to drive (see this task's Amendments entry). `DELETE /admin/rota/cell` itself is
+ * proven at the HTTP layer by `RotaClearEndpointTest`; this only proves the button sends the
+ * right identity pair and appears/disappears with the cell's own contents.
+ */
+describe('Admin/MasterRota — the Clear affordance', () => {
+    beforeEach(() => {
+        router.delete.mockClear();
+    });
+
+    const emptyCellGrid = () => ({
+        periods: [period],
+        levels,
+        units,
+        rows: [{
+            person: {
+                id: 6, full_name: 'Riley Empty', short_name: null, position: 4,
+                external: false, active: true, retired: false, has_account: true, joined_at: null,
+            },
+            group_level_id: 1,
+            cells: { 101: { spans: [], uncovered_days: 28, level_id: 1, vacations: [] } },
+        }],
+    });
+
+    it('renders no Clear control on an empty cell — there is nothing to clear', () => {
+        const w = mountGrid(emptyCellGrid());
+
+        expect(w.find('[data-testid="clear-cell-6-101"]').exists()).toBe(false);
+    });
+
+    it('renders a Clear control on a simple, whole-period assignment', () => {
+        const w = mount(MasterRota, {
+            props: {
+                academic_years: ['2026-2027'],
+                year: '2026-2027',
+                grid: {
+                    periods: [period],
+                    levels,
+                    units,
+                    rows: [{
+                        person: {
+                            id: 7, full_name: 'Sam Simple', short_name: null, position: 4,
+                            external: false, active: true, retired: false, has_account: true, joined_at: null,
+                        },
+                        group_level_id: 1,
+                        cells: {
+                            101: {
+                                spans: [{
+                                    id: 950, unit_id: 10, unit_code: 'PICU', starts_on: '2026-07-01', ends_on: '2026-07-28',
+                                    starts_label: { date: '2026-07-01', hijri: '' }, ends_label: { date: '2026-07-28', hijri: '' },
+                                }],
+                                uncovered_days: 0,
+                                level_id: 1,
+                                vacations: [],
+                            },
+                        },
+                    }],
+                },
+            },
+        });
+
+        expect(w.find('[data-testid="clear-cell-7-101"]').exists()).toBe(true);
+    });
+
+    it('renders a Clear control on an already-split cell too', () => {
+        const w = mountGrid();
+
+        expect(w.find('[data-testid="clear-cell-5-101"]').exists()).toBe(true);
+    });
+
+    it('sends only the person/period identity pair to DELETE /admin/rota/cell', async () => {
+        const w = mountGrid();
+
+        await w.get('[data-testid="clear-cell-5-101"]').trigger('click');
+
+        expect(router.delete).toHaveBeenCalledTimes(1);
+        expect(router.delete).toHaveBeenCalledWith(
+            '/admin/rota/cell',
+            expect.objectContaining({
+                data: { person_id: 5, period_id: 101 },
+                preserveScroll: true,
+                preserveState: true,
+            }),
+        );
+    });
+});

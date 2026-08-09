@@ -671,6 +671,58 @@ allow-list mechanism by design (finding 7), so any docblock in `resources/js` th
 its ten needles as *code being described* rather than *code being written* will trip it — write
 around the literal parenthesised call shape in prose, never suppress the guard.
 
+**2026-08-10, Task 11 — there was no way to clear a cell from the screen at all, and the e2e
+journey's own Step 1.6 could not be written until that was fixed.** `DELETE /admin/rota/cell`
+(`MasterRotaController::clearCell()`) was registered and delegated to `RotaAssignment::clear()`
+from Task 8's own deviation (all five `/admin/rota/*` write routes wired in one commit "so all
+five routes resolve"), and Task 9's "Remove span" tooltip already read *"Use Clear on the cell to
+remove the last span"* — but no task from 1 through 10 ever specified building that control.
+`resources/js/Pages/Admin/MasterRota.vue`'s plain `<select>` deliberately treats its blank
+`"— unassigned —"` option as a no-op (`onCellSelect`'s `if (value === '') return;`), so there was
+genuinely no UI path to empty an assignment, and correspondingly no test anywhere — HTTP or
+JS — ever exercised the DELETE route (confirmed by grepping `tests/` for `rota/cell` and
+`clearCell` before writing anything: zero hits outside the controller and the writer's own
+unit-level `RotaAssignmentWriterTest`). This is exactly the gap this plan's own Amendments
+convention exists to catch, and it blocks the task at hand rather than being adjacent to it: Task
+11's Step 1.6 ("Clear the cell, reload, assert it is empty and the leave is still there") cannot
+be written as a real user journey without a real control to drive. Resolved, TDD throughout: (1)
+`tests/Feature/Rota/RotaClearEndpointTest.php` — five cases (simple clear, split clear, no-op on
+an empty cell writes no audit row, a real clear audits `rota_clear` with ids only, a resident gets
+403) — all five passed on the FIRST run, the same legitimate zero-red Tasks 9 and 10 already
+recorded, because the controller/writer path was already correct; only the coverage was missing.
+(2) A "Clear" button added to both the mobile card and the desktop table cell in `MasterRota.vue`,
+`data-testid="clear-cell-<personId>-<periodId>"`, visible whenever `cellMode(cell) !== 'empty'`,
+calling `router.delete('/admin/rota/cell', { data: { person_id, period_id }, preserveScroll: true,
+preserveState: true, ... })` through the same `SaveStatus` machine `saveCell()` already uses. (3)
+Four new cases appended to `tests/js/MasterRotaSplit.test.js` (renders on a simple cell, renders
+on a split cell, does not render on an empty cell, sends exactly `{ person_id, period_id }`) —
+written first, watched red (`data-testid` not found), then made to pass. `1140 → 1145` PHP (5 new),
+`122 → 126` JS (4 new), committed as a first commit ahead of the e2e spec itself so the spec's own
+diff is pure test.
+
+Separately, two Playwright-specific findings while writing `tests/e2e/master-rota.spec.js`, neither
+a plan defect: **(a)** the desktop table row and the mobile card for the same person both carry the
+identical `data-row-id`/`data-testid` attributes (only one is visible per viewport, via CSS `hidden`
+classes, per `Units.vue`'s own established pattern) — an unscoped `page.getByTestId(...)` for a
+per-cell control hits Playwright's strict-mode "resolved to 2 elements" the instant both are in the
+DOM, regardless of which is visible. Every per-cell lookup in the spec is scoped through a `cell()`
+helper built from the row's own `data-row-id` and the column's own `data-col-key`, discovered from
+the DOM rather than assumed, never through an unscoped `page.getByTestId`. **(b)** The unit
+`<select>` is bound one-way to `props.grid` (`:value`, no `v-model`), so reading its value with
+`inputValue()` immediately after `selectOption()` races a Vue re-render triggered by the
+`cellStatus` ref flipping to `'saving'` — that re-render reapplies the OLD server-known value
+(since the PATCH has not returned yet) and snaps the just-picked option back, making an
+immediately-read value meaningless. Reading `inputValue()` only after the `SaveStatus` indicator
+reaches `'Saved'` — i.e., after Inertia has applied the server's response to `props.grid` — reads
+the real, settled value. `E2eSeeder` gained a roster person and two periods (`2026-2027`, Block 1
+`2026-08-01..2026-08-14`, Block 2 `2026-08-15..2026-08-28`) — the exact boundary
+`VacationEndpointTest`'s own straddling-vacation case already uses, and `2026-08-12` is the exact
+Wednesday `CalendarTest`/`GoldenFixtureTest` already prove resolves to the department week
+`2026-08-09..2026-08-15` — so the spec is pinned to facts already proven elsewhere, not asserting a
+new one. `17 → 18` e2e specs (one file, one test, covering assignment, split, vacation and clear —
+Task 11's own instruction to give splits and vacations the same reload treatment, not just the
+plain assignment).
+
 ---
 
 ## Conventions every task follows

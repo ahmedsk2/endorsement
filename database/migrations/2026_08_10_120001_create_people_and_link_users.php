@@ -123,10 +123,16 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->dropUnique(['person_id']);
-        });
-
+        // Order matters on MySQL/InnoDB and did not on the original SQLite-tested order:
+        // dropUnique(['person_id']) before dropConstrainedForeignId('person_id') hit
+        // `SQLSTATE[HY000]: 1553 Cannot drop index 'users_person_id_unique': needed in a
+        // foreign key constraint` — InnoDB requires an index on an FK column, and that
+        // unique index was the only one. SQLite rebuilds the whole table for both
+        // operations, so statement order never mattered there. dropConstrainedForeignId()
+        // drops the foreign key constraint AND its column (and, with it, the unique index
+        // that lived on that same column) in one pass — see docs/RUNBOOK-DEPLOY.md's
+        // "Verifying the 2026-08-10 identity migrations" section for the verified-clean
+        // rollback sequence this is one step of.
         Schema::table('users', function (Blueprint $table) {
             $table->dropConstrainedForeignId('person_id');
         });

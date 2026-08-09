@@ -3389,7 +3389,7 @@ nav case widened again to assert a "Periods" link). `npm run build` and the full
 P1a built `holidays`, `Holiday::anchoredOn()` and `Calendar::holidaysOn()`/`dayType()`, and its
 own docblock says *"The CRUD screen is P1b"*. This is it.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/Admin/HolidayCrudTest.php`. Cover:
 
@@ -3422,14 +3422,14 @@ Create `tests/Feature/Admin/HolidayCrudTest.php`. Cover:
   of the trail;
 - resident 403, guest redirect.
 
-- [ ] **Step 2: Run it and watch it go red**
+- [x] **Step 2: Run it and watch it go red**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
 php artisan test --filter HolidayCrudTest 2>&1 | tail -15
 ```
 
-- [ ] **Steps 3-5: FormRequest, controller, screen**
+- [x] **Steps 3-5: FormRequest, controller, screen**
 
 Same shape as Tasks 4 and 10. **Every write path calls `Calendar::flush()`** — and
 `CalendarWritersFlushTest`'s needle list already names `Holiday::create(` and `Holiday::query()`,
@@ -3442,7 +3442,7 @@ Gregorian dates for this year and next.
 
 Nav link "Holidays".
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
@@ -3459,6 +3459,41 @@ npm run test:e2e 2>&1 | tail -5
 git add app/ resources/ routes/ tests/
 git commit -m "feat: a department writes down its own holidays"
 ```
+
+**2026-08-09, Task 12 — `CalendarWritersFlushTest` needed no modification (a plan gap already
+closed in Task 10), one real test-fixture bug caught by the plan's own cross-screen assertion,
+and one design point (how "this year and next" is resolved) the plan left to the implementer.**
+
+1. **The plan's Files list names `tests/Feature/Build/CalendarWritersFlushTest.php` as
+   Modified; it was not touched.** `HolidayController.php` contains `Holiday::create(` (in
+   `store()`) and calls `Calendar::flush()` in all three write methods — the guard's file-level
+   check (finding 1: "somewhere in the same file") is satisfied by construction, and running
+   the guard confirms it (`CalendarWritersFlushTest`: 2 passed, unchanged). The plan's own text
+   ("CalendarWritersFlushTest's needle list already names `Holiday::create(` and
+   `Holiday::query()`, so a path that forgets fails the build") is correct in spirit; the Files
+   list simply over-stated what needed editing, likely because it was written before Task 10's
+   own amendment widened and corrected that guard's needle set and scan scope.
+2. **A test fixture bug, caught by the plan's own cross-screen assertion, not by inspection.**
+   `test_a_hijri_rule_moves_across_both_screens_when_the_offset_changes` first used
+   `duration_days = 4` (matching `HolidayTest`'s own duration-spanning fixture). At offset 0
+   that spans BOTH 2027-03-09 and 2027-03-10, so `assertFalse(Calendar::isHoliday('2027-03-10'))`
+   failed immediately — not a defect in the controller, a defect in the test's own borrowed
+   fixture, which needed the single-day flip `HolidayTest`'s Eid al-Fitr case (`duration_days =
+   1`) actually produces. Fixed by using `duration_days = 1` for this specific test, with a
+   comment explaining why, rather than weakening the assertion.
+3. **"This year and next"'s resolution is a forward day-by-day scan from today
+   (`HolidayController::resolve()`, 750 days, using `Holiday::anchoredOn()` — the SAME method
+   `Calendar::holidaysOn()` already walks), not a month-number heuristic.** The plan's Step 4
+   text names the requirement ("the resolved Gregorian dates for this year and next") but not
+   the mechanism. A scan works identically for BOTH calendars without a special case (Hijri's
+   ~354-day year and Gregorian's 365/366-day year both just produce ~1.03 matches per scan
+   year), and it reuses `anchoredOn()` rather than adding a second, un-audited resolver — the
+   same "one definition of a rule" discipline `PeriodGenerator::assertMonthAligned()` and
+   `SignoffPickers` both exist to enforce elsewhere in this codebase.
+
+`php artisan test`: 867 → 886 (19 new). `npm test`: 111 (unchanged — the structure.manage-alone
+nav case widened a fifth time, to assert a "Holidays" link). `npm run test:e2e`: 17 passed,
+unchanged. `npm run build`, `HolidayTest`, `CalendarWritersFlushTest` and the full suite green.
 
 ---
 

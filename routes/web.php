@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AccessControlController;
 use App\Http\Controllers\Admin\CalendarSettingsController;
+use App\Http\Controllers\Admin\HolidayController;
 use App\Http\Controllers\Admin\LevelController;
 use App\Http\Controllers\Admin\PeriodController;
 use App\Http\Controllers\Admin\SettingsController;
@@ -176,6 +177,13 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
         Route::post('/periods', [PeriodController::class, 'store'])->name('periods.store');
         Route::delete('/periods/{academicYear}', [PeriodController::class, 'destroy'])
             ->where('academicYear', '[A-Za-z0-9\- ]{1,20}')->name('periods.destroy');
+
+        // Munawib §30. No destroy() — a holiday observed last year is history; setActive() is
+        // the only "this rule is done" action, mirroring Unit/Level's own precedent.
+        Route::get('/holidays', [HolidayController::class, 'index'])->name('holidays');
+        Route::post('/holidays', [HolidayController::class, 'store'])->name('holidays.store');
+        Route::patch('/holidays/{holiday}', [HolidayController::class, 'update'])->name('holidays.update');
+        Route::patch('/holidays/{holiday}/active', [HolidayController::class, 'setActive'])->name('holidays.active');
     });
 
 /*

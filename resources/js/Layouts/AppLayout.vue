@@ -203,6 +203,10 @@ const navClass = (active) => [
                           :class="navClass(isActive('/admin/structure/periods'))">
                         Periods
                     </Link>
+                    <Link v-if="can('structure.manage')" href="/admin/structure/holidays"
+                          :class="navClass(isActive('/admin/structure/holidays'))">
+                        Holidays
+                    </Link>
                     <Link v-if="can('settings.manage')" href="/admin/settings"
                           :class="navClass(isActive('/admin/settings'))">
                         Settings

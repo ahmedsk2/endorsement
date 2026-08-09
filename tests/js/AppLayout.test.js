@@ -98,9 +98,9 @@ describe('AppLayout — role-gated navigation', () => {
     // The recon frontend risk P1b names: a user holding ONLY the new structure.manage
     // capability must still see the Administration section — omitting it from canAdmin would
     // leave that user with no way in at all. Task 8 adds a second structure.manage-gated
-    // entry (Levels); Task 10 adds a third (Calendar); Task 11 a fourth (Periods) — all belong
-    // beside Units here.
-    it('shows the admin section with structure.manage alone, with Units, Levels, Calendar and Periods links', () => {
+    // entry (Levels); Task 10 a third (Calendar); Task 11 a fourth (Periods); Task 12 a fifth
+    // (Holidays) — all belong beside Units here.
+    it('shows the admin section with structure.manage alone, with Units, Levels, Calendar, Periods and Holidays links', () => {
         store.page.props.auth.can = ['structure.manage'];
         store.page.props.auth.user = { id: 4, member_name: 'sm', full_name: 'Structure Manager', position: 0 };
 
@@ -110,6 +110,7 @@ describe('AppLayout — role-gated navigation', () => {
         expect(text).toContain('Levels');
         expect(text).toContain('Calendar');
         expect(text).toContain('Periods');
+        expect(text).toContain('Holidays');
         // structure.manage alone does not grant the other admin links.
         expect(text).not.toContain('Access Control');
         expect(text).not.toContain('Settings');

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AccessControlController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UnitController;
+use App\Http\Controllers\Admin\UnitMergeController;
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\EndorsementController;
 use App\Http\Controllers\ProfileController;
@@ -146,6 +147,10 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
     ->group(function () {
         Route::get('/units', [UnitController::class, 'index'])->name('units');
         Route::post('/units', [UnitController::class, 'store'])->name('units.store');
+        // Declared BEFORE {unit} so `merge` never binds as a unit id — the same discipline the
+        // endorsement routes use for `today`/`compliance`/`rows`.
+        Route::get('/units/merge', [UnitMergeController::class, 'index'])->name('units.merge');
+        Route::post('/units/merge', [UnitMergeController::class, 'store'])->name('units.merge.store');
         Route::patch('/units/{unit}', [UnitController::class, 'update'])->name('units.update');
         Route::patch('/units/{unit}/active', [UnitController::class, 'setActive'])->name('units.active');
     });

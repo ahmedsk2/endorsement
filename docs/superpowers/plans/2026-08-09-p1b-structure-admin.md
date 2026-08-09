@@ -421,6 +421,56 @@ split/joined at the transform step, per the plan's Step 5 note. `php artisan tes
 1's own +1). `npm test`: 111 (unchanged — Task 4's Files list names no JS test, and none was
 needed). `npm run build` and the full suite green.
 
+**2026-08-09, Task 5 — two real plan errors, both verified against the tree before writing
+code, neither one a clinical-evidence risk.**
+
+1. **`users.preferred_unit` is not a code string.** The plan's Task 5 text says twice that it
+   is ("a code string, not an FK … `User::where('preferred_unit', $source->code)->update(...)`")
+   and cites migration `2026_07_24_140001`. Reading that migration shows the column is actually
+   `preferred_unit_id`, a real `foreignId('preferred_unit_id')->nullable()->constrained('units')
+   ->nullOnDelete()` — added for Phase 7.1 "one-tap access", added to `$fillable` in `User.php`,
+   and read at `EndorsementController.php:259,287-288`. `UnitMerge::commit()` therefore updates
+   `preferred_unit_id` by **id** (`User::where('preferred_unit_id', $source->id)->update(['preferred_unit_id' => $target->id])`),
+   which is simpler than the plan's described code-string rewrite, not harder — id-to-id is
+   exactly what an explicit UPDATE on a real FK should look like. Still an explicit statement
+   inside the transaction, still counted in the plan and the audit entry, exactly as the plan
+   required; only the column name and type were wrong in the plan text.
+2. **A second unique-index collision exists that the plan's own prose never names.**
+   `unit_field_definitions` carries `UNIQUE(unit_id, key)` (`2026_08_09_120001:61`) — the same
+   shape of hazard as `handover_signoffs`' `UNIQUE(unit_id, handover_date)`, on a table the
+   plan's own findings list as one of the four `unit_id`-bearing tables a merge touches. Two
+   units each defining a custom field under the same key would collide on re-point exactly like
+   a signoff date does. No unit has ever defined a custom field (design §6.2's admin UI does not
+   exist yet), so this cannot fire against real data today, but it is a live schema hazard for
+   the moment it can. Unlike the signoff case there is no `keep_target`-style resolution
+   available (nothing to "keep on the source" — a field definition is a shape, not evidence), so
+   `UnitMerge::conflictingFieldDefinitionKeys()` refuses the merge outright, checked (both in the
+   controller and again inside `commit()`'s transaction) BEFORE any write — finding 14's
+   pre-check-and-refuse discipline, applied to a collision the plan didn't name.
+
+Neither finding is clinical-evidence risk: the FK correction only changes *how* a housekeeping
+column is rewritten, and the field-definition guard *prevents* a hazard from ever reaching a
+write, exactly the "surfaced before insert" standard the plan set for the signoff collision.
+Work proceeded rather than stopping, per the instruction that only a collision-handling design
+that would LOSE or REWRITE clinical evidence should halt execution.
+
+Design choices made where the plan intentionally left the wire contract to the implementer:
+`UnitMerge::plan()`'s `signoffs` count is signoffs that will actually MOVE (total minus
+collisions), matching `handovers`/`field_definitions`' "rows this merge changes" meaning: a
+colliding date's row does not move, so it is not counted as moving, and the collision itself is
+reported separately by date. The commit endpoint accepts an explicit `resolution` of
+`keep_target` or `abort` (`UnitMerge::KEEP_TARGET`/`::ABORT`) plus `accepted_collisions` (the
+exact date list the operator confirmed, re-checked against a FRESH `plan()` computed inside the
+transaction — a signoff created between preview and submit cannot slip past a stale list).
+`abort` is honoured unconditionally, before any other check, so it always means "make no
+changes" regardless of what else is true about the pair. The merge screen (`UnitMerge.vue`)
+requires one checkbox per colliding date, not a blanket acknowledgement, per the plan's Step 4
+text.
+
+`php artisan test`: 785 → 798 (13 new). `npm test`: 111 (unchanged — Task 5's Files list names
+no JS test). `npm run build`, `CompiledCssIsLightOnlyTest` and the client-side-date-math guards
+green.
+
 ---
 
 ## Conventions every task follows
@@ -2191,7 +2241,7 @@ rows; the merge must be written so adding a fifth table is one line and a test, 
 source's row onto the target violates that index. **The merge resolves it explicitly, in a
 preview the administrator confirms — it never discovers it at insert time.**
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/Admin/UnitMergeTest.php`. Cover, at minimum:
 
@@ -2220,14 +2270,14 @@ Create `tests/Feature/Admin/UnitMergeTest.php`. Cover, at minimum:
 - after the merge, `/endorsement/<source>` 404s and `/endorsement/<target>` shows the merged
   days.
 
-- [ ] **Step 2: Run it and watch it go red**
+- [x] **Step 2: Run it and watch it go red**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
 php artisan test --filter UnitMergeTest 2>&1 | tail -15
 ```
 
-- [ ] **Step 3: `App\Support\UnitMerge`**
+- [x] **Step 3: `App\Support\UnitMerge`**
 
 A support class, not controller code, because the preview and the commit must share **one**
 definition of "what this merge would do" — a preview computed one way and a commit performed
@@ -2286,7 +2336,7 @@ Write the bodies against the tests. Two rules the implementation must honour:
   `User::where('preferred_unit', $source->code)->update([...])` inside the same transaction, and
   include the count in the plan — an FK cascade will not do it and nothing else will notice.
 
-- [ ] **Step 4: Controller, routes, screen**
+- [x] **Step 4: Controller, routes, screen**
 
 `GET /admin/structure/units/merge` renders the picker plus the live plan;
 `POST /admin/structure/units/merge` commits. The screen shows the plan's counts and every
@@ -2294,7 +2344,7 @@ colliding date, and the submit button is **disabled until each collision is ackn
 a checkbox per date, not one blanket "I understand". The confirmation text names the source and
 target codes and states that the source will be retired, not deleted.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"

@@ -870,3 +870,48 @@ temporary grant dance to be reverted any differently — it is an ordinary migra
 ordinary way (`docs/sql/least-privilege.sql`'s temporary `ALTER, CREATE, REFERENCES` grant,
 `php artisan migrate --force`, revoke). The only thing that is unusual is the WAIT, and that
 is what needs scheduling, not the privilege.
+
+---
+
+## Verifying the 2026-08-15 rota migrations (P1d-1)
+
+Two additive migrations, both brand-new tables: `2026_08_15_120003_create_master_rota_assignments_table`,
+`2026_08_15_120004_create_vacations_table`. Neither retypes nor drops anything, and neither is
+touched by the widening migration above — this section documents `120003`/`120004` specifically,
+not the unrelated `120001`/`120002` hotfix pair from the MySQL-defects branch that occupies the
+rest of that day's date stamp (P1d-1 finding 4: the P1 plan's original "P1d `2026_08_15_*`"
+allocation assumed both slots were free; they were not, so P1d-1 continues the sequence at
+`120003`).
+
+```sql
+-- Expect zero rows on a fresh deploy — nobody has planned a rota yet. Every row this table
+-- ever holds is a real, date-bounded span: starts_on/ends_on are NOT NULL on every row, both
+-- bounds inclusive (P1d Decision B — there is no nullable "means the whole period" shape).
+SHOW CREATE TABLE master_rota_assignments;
+SELECT COUNT(*) FROM master_rota_assignments;
+
+-- Expect zero rows on a fresh deploy. No period_id column to check for (P1d Decision C —
+-- deliberate: a vacation crosses period boundaries and must survive a department switching
+-- period systems).
+SHOW CREATE TABLE vacations;
+SELECT COUNT(*) FROM vacations;
+```
+
+Post-deploy checklist addition:
+
+- **`rota.view` lands on EVERY seeded role automatically, `rota.manage` on Administrator and
+  Chief Resident** — the same `applied_role_defaults` idempotent-apply mechanism `structure.manage`
+  and `people.manage` used above, no owner action needed. `rota.view` reaching every position is
+  deliberate (MR-05: a resident needs to read which unit they rotate through next) — worth a
+  glance at the Access Control page after deploy if a department wants it narrower than the
+  default.
+- **`/admin/rota` shows a teaching empty state, not an error, until an academic year of periods
+  exists.** The rota's columns are periods (P1b's Structure → Periods screen); a fresh deployment
+  or a new academic year has nothing to plan against until that screen generates one.
+- **Neither new table soft-deletes.** A cleared assignment or a cancelled vacation is a real
+  `DELETE`; the hash-chained `audit_log` (`rota_assign`, `rota_split`, `rota_clear`,
+  `vacation_book`, `vacation_cancel` — ids, field names and counts only, never a person's name) is
+  the only history. There is no UI undo for a mistaken clear in P1d-1.
+- **Deleting an academic year's periods (Structure → Periods) is now refused while any
+  `master_rota_assignments` row references that year.** The unlock is "clear the rota for that
+  year first (Master Rota), then delete the periods" — the screen's own error message says so.

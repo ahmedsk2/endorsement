@@ -124,4 +124,29 @@ class RotaAccessTest extends TestCase
         // matching reserved code in the same commit; this one deliberately avoids the question.
         $this->assertNotContains('ROTA', \App\Models\Unit::RESERVED_CODES);
     }
+
+    public function test_nothing_in_the_rota_infers_on_call_eligibility(): void
+    {
+        // Owner decision 1: MR-04 is Stage 2. It has nothing to drive — slots, call rosters and
+        // per-person include/exclude overrides do not exist. This guard pins the absence so a
+        // later plan reaching for "the rota already knows who is eligible" fails the build
+        // instead of shipping half of a requirement.
+        $offenders = [];
+
+        foreach (\Illuminate\Support\Facades\File::allFiles(app_path()) as $file) {
+            if ($file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $source = file_get_contents($file->getPathname());
+
+            foreach (['off_roster', 'offRoster', 'callEligib', 'call_eligib'] as $needle) {
+                if (str_contains($source, $needle)) {
+                    $offenders[] = str_replace('\\', '/', $file->getRelativePathname()).": {$needle}";
+                }
+            }
+        }
+
+        $this->assertSame([], $offenders, 'MR-04 is Stage 2 (P1d owner decision 1) — see the plan.');
+    }
 }

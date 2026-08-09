@@ -723,9 +723,29 @@ new one. `17 → 18` e2e specs (one file, one test, covering assignment, split, 
 Task 11's own instruction to give splits and vacations the same reload treatment, not just the
 plain assignment).
 
----
-
-## Conventions every task follows
+**2026-08-10, Task 12 — every claim verified against the tree before being written; one trap
+avoided, no falsehood found.** Per the task's own instruction, `grep -n "AppLayout.vue" CLAUDE.md`
+was run FIRST, before touching anything: exactly one hit, already reading *"were closed by P1b
+Task 3"* — the on-disk file was already correct, and nothing there was touched. The stale *"Two
+known exceptions, pending"* wording exists only in cached/embedded copies of CLAUDE.md handed to
+agents (this task's own briefing carried it), not on disk. Every other claim written into the five
+documents was checked against the actual code first, not assumed from the plan's own prose:
+`RotaWritersAreSingularTest` read in full to confirm it is one file covering both writers;
+`PersonPresenter.php` read to confirm `email` **and** `phone` are both gated behind
+`viewContact()`, together, since P1d Task 7; `MasterRotaAssignment::booted()` and
+`Vacation::booted()` read to confirm overlaps are refused and gaps are not (there is no gap check
+at all — a gap is simply never rejected); both migrations read to confirm neither carries
+`period_id` on `vacations` and neither model uses `SoftDeletes`; `PeriodController::destroy()`
+and `CalendarSettingsRequest`'s unlock message re-read to confirm the hardening and its message
+both already match what Task 12 was asked to record (Task 4 already did this correctly); a bare
+`grep -rln "off_roster\|offRoster\|callEligib\|call_eligib" app/` run to confirm zero hits before
+writing "MR-04 is unbuilt" as fact anywhere. The one piece of Task 12's own Step 6 that did not
+yet exist was built rather than merely described: `RotaAccessTest::test_nothing_in_the_rota_
+infers_on_call_eligibility` (the plan's own supplied code, verified to pass on the first run,
+`1145 → 1146`) — the design doc's new §14 item 18 cites this test by name, and citing a test that
+did not exist would itself have been exactly the kind of false claim this task warns against.
+`docs/spec/08-foundation.md` was deliberately left untouched: it is not in Task 12's Files list,
+and `RotaAccessTest`'s existing assertions against it (added in Task 1) already cover its content.
 
 Verified against the tree; these are not preferences.
 

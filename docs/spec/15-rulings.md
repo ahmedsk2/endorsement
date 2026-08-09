@@ -33,3 +33,13 @@
 |---|---|---|
 | 20 | Annual promotion target | Chosen by the operator, explicit, every time — never inferred. There is no `levels.terminal` column and no `Level::nextAfter()` method; P1b Owner Decision A restated as the screen it was written for |
 | 21 | Contact visibility | `phone` behind a two-valued department setting (`institutions.contact_visibility`: `admins` default, `members`); `notes` behind neither value — always `people.manage`-only |
+
+## P1d-1 rulings (2026-08-10)
+
+| # | Decision | Ruling |
+|---|---|---|
+| 22 | Master-rota assignment shape | One table, one row shape: `starts_on`/`ends_on` NOT NULL on every row, both bounds inclusive. No nullable "whole period" range, no parent/child span pair. Overlaps for one person in one period are refused by the model; gaps are allowed and counted, never silently invisible |
+| 23 | `vacations` keying | Own table, keyed on `person_id` plus a date range — deliberately NO `period_id`. A vacation is an overlay, crosses period boundaries, and must survive a department regenerating or switching its period system |
+| 24 | Soft delete on rota tables | Neither `master_rota_assignments` nor `vacations` soft-deletes. Both are schedule structure, not clinical rows; the hash-chained `audit_log` is the history. A mistaken clear has no UI undo in P1d-1 |
+| 25 | MR-04 on-call eligibility | Stage 2, not P1d. Nothing in the rota infers eligibility — no `off_roster` flag, no call-roster derivation, no per-person include/exclude override. P1d ships the rota's data and screens and records the hook only |
+| 26 | Master-rota publish state | None, by decision (Decision D). Munawib's own `masterRota` document carries no `status` field, unlike `schedules`; MR-05's read view (P1d-2) is a `cap:rota.view` screen showing the current rota, not a draft/publish state machine. Revisit if the owner wants an explicit gate — additive, not a rework |

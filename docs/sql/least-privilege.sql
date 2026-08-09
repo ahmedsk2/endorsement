@@ -17,12 +17,61 @@
 -- runtime credential holding ALL PRIVILEGES — including DROP, and including UPDATE/DELETE on
 -- audit_log. The placeholders below make an unsubstituted run a syntax error instead.
 --
+-- TWO placeholders name the database, not one, and that is deliberate, not redundancy:
+--
+--   {{DATABASE}}          the literal name — comments, and the schema-scoped WHERE clause
+--                         in section 3, where a byte-for-byte string comparison is correct.
+--   {{DATABASE_ESCAPED}}  the same name with `_` and `%` backslash-escaped — the GRANT/REVOKE
+--                         identifier positions (`ON \`...\`.*`), where it is NOT correct.
+--
+-- Reproduced empirically against a real MySQL 8.4 container, database+user named
+-- `endorse_live` (an underscore, same as this project's own provisioning convention of
+-- `<slug>_live`/`<slug>` — this is not a hypothetical customer): the mysql image's own
+-- auto-provisioning grant stores the pattern with the underscore ESCAPED
+-- (`mysql.db.Db = 'endorse\_live'`, confirmed via direct SELECT) — `_`/`%` are wildcard
+-- characters in that column, so an unescaped grant would silently authorise every
+-- single-character variant of the name too, and the image's own entrypoint escapes it
+-- correctly for exactly that reason. `REVOKE ... ON \`endorse_live\`.*` — the literal name,
+-- unescaped — matches NO stored grant byte-for-byte and dies `ERROR 1141 (42000): There is
+-- no such grant defined for user 'endorse_live' on host '%'`, aborting the whole batch
+-- before the triggers in section 2 are ever created: no grant reduction, no triggers,
+-- credential still holds ALL PRIVILEGES — the exact silent-looking failure this file's own
+-- header already warns about, just from underscore rather than a wrong identifier. Escaping
+-- the identifier the SAME way the auto-grant does — `ON \`endorse\_live\`.*` — matches it
+-- exactly and the REVOKE succeeds. `REVOKE IF EXISTS` (MySQL 8.0.16+) was also tried and
+-- also makes the error go away, but it does so by turning "no matching grant" into a silent
+-- no-op — precisely the failure mode section 3's verification exists to catch, so it is not
+-- used here.
+--
 -- HOW TO RUN (resolves the ONE running stack for <uuid>, or refuses — see
 -- docker/instance-env.sh; never select the database container by image ancestry):
 --
 --   eval "$(sudo bash docker/instance-env.sh <uuid>)" && \
---   sed -e "s/{{DATABASE}}/$DBNAME/g" -e "s/{{USER}}/$DBUSER/g" docs/sql/least-privilege.sql | \
---   sudo docker exec -i "$DB" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot '"$DBNAME"
+--   DBNAME_ESCAPED="${DBNAME//_/\\\\_}" && DBNAME_ESCAPED="${DBNAME_ESCAPED//%/\\\\%}" && \
+--   SQL="$(cat docs/sql/least-privilege.sql)" && \
+--   SQL="${SQL//\{\{DATABASE_ESCAPED\}\}/$DBNAME_ESCAPED}" && \
+--   SQL="${SQL//\{\{DATABASE\}\}/$DBNAME}" && \
+--   SQL="${SQL//\{\{USER\}\}/$DBUSER}" && \
+--   printf '%s\n' "$SQL" | sudo docker exec -i "$DB" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot '"$DBNAME"
+--
+-- Deliberately bash parameter substitution, not `sed`, for the placeholder rewrite —
+-- reproduced empirically: piping an already-escaped value (a real single backslash before
+-- the underscore) through `sed -e "s/{{DATABASE_ESCAPED}}/$DBNAME_ESCAPED/g"` silently EATS
+-- the backslash (sed's replacement text treats a bare `\` before a non-special character as
+-- an escape of that character, not a literal backslash — this is `sed`'s rule, not the
+-- shell's), so the REVOKE/GRANT lines came out unescaped again regardless of how carefully
+-- `$DBNAME_ESCAPED` itself was built. Bash's `${var//search/replace}` does not re-interpret
+-- backslashes already present in the replacement VALUE (only in replacement text written
+-- literally in the script), so it preserves the escape correctly — confirmed byte-for-byte
+-- with `xxd` before this recipe was written this way.
+--
+-- `{{DATABASE_ESCAPED}}` substituted FIRST: it is the longer, more specific token, and
+-- `{{DATABASE}}` is a substring of it, so substituting the plain form first would corrupt
+-- the escaped placeholder before its own rule ever ran.
+--
+-- `{{USER}}` needs no escaping — proven by the same experiment: leaving `FROM
+-- 'endorse_live'@'%'` unescaped worked once the `{{DATABASE_ESCAPED}}` fix was applied,
+-- because MySQL's grant-table wildcarding applies to the Db and Host columns, not User.
 
 -- ---------------------------------------------------------------------------
 -- 1. Drop DDL from the runtime user.
@@ -56,9 +105,9 @@
 -- runbook: the temporary migration-window grant) and must never state a different privilege
 -- list for the same operation again.
 --
-REVOKE ALL PRIVILEGES ON `{{DATABASE}}`.* FROM '{{USER}}'@'%';
+REVOKE ALL PRIVILEGES ON `{{DATABASE_ESCAPED}}`.* FROM '{{USER}}'@'%';
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON `{{DATABASE}}`.* TO '{{USER}}'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE ON `{{DATABASE_ESCAPED}}`.* TO '{{USER}}'@'%';
 
 -- Deliberately NOT granted: CREATE, ALTER, DROP, INDEX, REFERENCES, CREATE TEMPORARY
 -- TABLES, LOCK TABLES, TRIGGER, CREATE ROUTINE, ALTER ROUTINE, EXECUTE, FILE, PROCESS,
@@ -107,12 +156,21 @@ DELIMITER ;
 FLUSH PRIVILEGES;
 
 -- ---------------------------------------------------------------------------
--- 3. Verify (expect: no DDL in the grant line, and both triggers listed)
+-- 3. Verify (expect: no DDL in the grant line, and EXACTLY both triggers listed)
 -- ---------------------------------------------------------------------------
+-- Schema-scoped, not just table-scoped: `EVENT_OBJECT_TABLE = 'audit_log'` alone matches
+-- every schema's `audit_log` table, not only this customer's — reproduced empirically with a
+-- second, unrelated schema present on the same server (a scratch database left over from
+-- testing is enough): the unscoped query returned 4 rows for what were genuinely only 2
+-- triggers, doubled by the other schema's own `audit_log`. `{{DATABASE}}` here is
+-- deliberately the PLAIN name, not `{{DATABASE_ESCAPED}}` — this is a literal string
+-- comparison against information_schema, which stores schema names unescaped, so escaping it
+-- would make a correctly-hardened instance fail its own verification query.
 SHOW GRANTS FOR '{{USER}}'@'%';
 SELECT TRIGGER_NAME, EVENT_MANIPULATION
   FROM information_schema.TRIGGERS
- WHERE EVENT_OBJECT_TABLE = 'audit_log';
+ WHERE EVENT_OBJECT_TABLE = 'audit_log'
+   AND EVENT_OBJECT_SCHEMA = '{{DATABASE}}';
 
 -- Then prove it, on the live system — both of these MUST fail:
 --   UPDATE audit_log SET action = 'tampered' WHERE id = 1;

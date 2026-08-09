@@ -195,6 +195,10 @@ const navClass = (active) => [
                           :class="navClass(isActive('/admin/structure/levels'))">
                         Levels
                     </Link>
+                    <Link v-if="can('structure.manage')" href="/admin/structure/calendar"
+                          :class="navClass(isActive('/admin/structure/calendar'))">
+                        Calendar
+                    </Link>
                     <Link v-if="can('settings.manage')" href="/admin/settings"
                           :class="navClass(isActive('/admin/settings'))">
                         Settings

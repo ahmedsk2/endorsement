@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AccessControlController;
+use App\Http\Controllers\Admin\CalendarSettingsController;
 use App\Http\Controllers\Admin\LevelController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UnitController;
@@ -161,6 +162,12 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
         Route::post('/levels', [LevelController::class, 'store'])->name('levels.store');
         Route::patch('/levels/{level}', [LevelController::class, 'update'])->name('levels.update');
         Route::patch('/levels/{level}/active', [LevelController::class, 'setActive'])->name('levels.active');
+
+        // Munawib ST-02. Declared BEFORE {unit}/{level}? Not applicable here — 'calendar' is
+        // not a route parameter on either sibling group, so ordering is not load-bearing, but
+        // the GET/PUT pair mirrors admin/settings' own shape.
+        Route::get('/calendar', [CalendarSettingsController::class, 'index'])->name('calendar');
+        Route::put('/calendar', [CalendarSettingsController::class, 'update'])->name('calendar.update');
     });
 
 /*

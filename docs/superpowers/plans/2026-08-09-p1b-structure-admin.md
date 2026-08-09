@@ -2785,6 +2785,61 @@ git commit -m "docs: the sidebar stopped hardcoding four units two tasks ago"
 
 ---
 
+**2026-08-09, Task 10 — the Step 6 guard's own needle list, taken literally, both under- and
+over-fires against the real tree; widened and allow-listed empirically rather than shipped as
+written.** Two real gaps, both found by doing what the plan's own Step 6 text instructs
+("prove it empirically… a guard never observed failing is a guard that might not work"), not by
+inspection:
+
+1. **Scope.** The plan's skeleton says "walk app/", but its own `ALLOW_LIST` names a
+   `database/seeders/` file — which "walk app/" would never reach, so the entry could never be
+   exercised either way. Widened the scan to `app/`, `database/`, `routes/`, matching the
+   established sibling guards this file's own docblock cites (`CalendarIsTheOnlyConverterTest`,
+   `InstitutionProvenanceTest`) — both scan the same three roots for the identical reason
+   (`InstitutionProvenanceTest`'s own docblock: "a migration or route closure is a live
+   conversion surface too… P1a Task 4 and Task 7 each nearly shipped one").
+2. **The needle set.** `'Institution::current()'` is not writer-specific — a plain grep across
+   `app/`+`database/`+`routes/` before writing the guard (not guessed) found it also appearing
+   as a pure READ in `App\Support\Calendar` itself (`Calendar::settings()`, building the very
+   memo the guard protects), and in two unrelated console commands
+   (`app/Console/Commands/CreateAdmin.php`, `app/Console/Commands/InstanceShow.php`) that only
+   print or attach an id. The same grep showed `ReferenceSeeder.php` writes
+   `hijri_offset_days` (Line 189-190) through `Institution::firstOrNew()->save()`, a DIFFERENT
+   call shape than `Institution::current()` — so the plan's own three-needle list would never
+   have matched the one file its `ALLOW_LIST` names, making that entry inert either way. Added
+   `'Institution::firstOrNew('` as a fourth needle so the allow-listed reason ("the seeder runs
+   as its own process and exits") is actually exercised, and added
+   `app/Support/Calendar.php`, `app/Console/Commands/CreateAdmin.php`,
+   `app/Console/Commands/InstanceShow.php` and `app/Http/Requests/Admin/CalendarSettingsRequest.php`
+   (which itself reads `Institution::current()` only, to compare against the submitted payload
+   for Decision D's lock — it never saves) to `ALLOW_LIST`, each with the reason stated at its
+   site, per this project's own convention (`STRTOTIME_ALLOW_LIST`, "each with the reason stated
+   at its site"). `test_the_allow_list_is_not_stale` was written to the STRONGER form both
+   sibling guards already use (each entry must still match a needle, not merely still exist) —
+   the plan's own weaker skeleton text ("assert each path exists") would not have caught the
+   `ReferenceSeeder.php` mismatch above.
+
+The empirical-failure step itself (Step 6) also caught a self-inflicted false negative: a
+first throwaway probe file's own comment — "// Deliberately NO Calendar::flush() here." —
+contained the literal substring `Calendar::flush()`, so the coarse text-scan guard read it as
+compliant. Rewritten to describe the omission without naming the method, confirmed the guard
+then failed and named the exact file, deleted the probe, `git status` clean. Recorded because it
+is the same class of trap `CalendarIsTheOnlyConverterTest`'s own carve-out for `Calendar.php`
+already document ("a mention, not a call") — worth remembering for any future guard of this
+shape, in this codebase or another.
+
+`php artisan test`: 819 → 848 (29 new: 27 in `CalendarSettingsTest`, 2 in
+`CalendarWritersFlushTest`). `npm test`: 111 (unchanged — Task 8's structure.manage-alone case
+widened again to assert a "Calendar" link, not a new case). `npm run build` and the full suite
+green.
+
+```bash
+git add app/Http/Controllers/Admin/CalendarSettingsController.php app/Http/Requests/Admin/CalendarSettingsRequest.php app/Support/PeriodGenerator.php resources/js/Layouts/AppLayout.vue resources/js/Pages/Admin/CalendarSettings.vue routes/web.php tests/Feature/Admin/CalendarSettingsTest.php tests/Feature/Build/CalendarWritersFlushTest.php tests/js/AppLayout.test.js
+git commit -m "feat: the calendar is editable, and the module notices when it changes"
+```
+
+---
+
 ### Task 10: The calendar settings screen (ST-02), and the flush that must follow every save
 
 **Files:**
@@ -2801,7 +2856,7 @@ plan's findings all land in this one task**: the missing `Calendar::flush()` (fi
 unenforced `HIJRI_OFFSET_BOUNDS` (finding 2), and the month-alignment guard (finding 3 /
 Decision C). Decision D's hard-lock is here too.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/Admin/CalendarSettingsTest.php`. Cover, in this order:
 
@@ -2897,14 +2952,14 @@ Create `tests/Feature/Admin/CalendarSettingsTest.php`. Cover, in this order:
   `config('app.timezone')`. Owner decision 3 and P1 finding 5: adding one would make it one fact
   in two places.
 
-- [ ] **Step 2: Run it and watch it go red**
+- [x] **Step 2: Run it and watch it go red**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
 php artisan test --filter CalendarSettingsTest 2>&1 | tail -15
 ```
 
-- [ ] **Step 3: The month-alignment guard, defined once**
+- [x] **Step 3: The month-alignment guard, defined once**
 
 In `app/Support/PeriodGenerator.php`, add above `months()` and call it as the method's first
 statement:
@@ -2941,7 +2996,7 @@ statement:
     }
 ```
 
-- [ ] **Step 4: The FormRequest**
+- [x] **Step 4: The FormRequest**
 
 `app/Http/Requests/Admin/CalendarSettingsRequest.php`. Points that matter:
 
@@ -3010,7 +3065,7 @@ statement:
     }
 ```
 
-- [ ] **Step 5: The controller**
+- [x] **Step 5: The controller**
 
 `index()` renders `Admin/CalendarSettings` with the institution's six calendar values, a
 `locked` boolean (`Period::query()->exists()`), the weekday and period-type option lists, and
@@ -3063,7 +3118,7 @@ Route (inside the `admin/structure` group):
         Route::put('/calendar', [CalendarSettingsController::class, 'update'])->name('calendar.update');
 ```
 
-- [ ] **Step 6: The source-level guard**
+- [x] **Step 6: The source-level guard**
 
 Create `tests/Feature/Build/CalendarWritersFlushTest.php`, in the family of
 `CalendarIsTheOnlyConverterTest` and `InstitutionProvenanceTest`:
@@ -3111,7 +3166,7 @@ writes `Institution::current()->save()` without a flush into `app/`, watch this 
 exact file, delete it, confirm `git status` clean. A guard never observed failing is a guard
 that might not work.
 
-- [ ] **Step 7: The screen**
+- [x] **Step 7: The screen**
 
 `resources/js/Pages/Admin/CalendarSettings.vue`, following `Settings.vue` section-by-section:
 
@@ -3130,7 +3185,7 @@ that might not work.
 
 Nav link "Calendar" beside "Units" and "Levels".
 
-- [ ] **Step 8: Verify and commit**
+- [x] **Step 8: Verify and commit**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"

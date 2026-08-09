@@ -1087,6 +1087,65 @@ suite green throughout.
 git commit -am "feat: a cohort moves up when a human says where to"
 ```
 
+Commit `420c451`. A follow-up commit, `e2c045d` ("test: prove the set-aware admin guard at N=3,
+the literal case this task named"), added two more `PeopleBulkTest` cases before Task 11 began —
+`php artisan test` stood at **999 passed, 1 skipped** (the Task 8 pairing test) at Task 11's
+starting point, not the 998 the Task 10 amendment above records or the 986 Task 11's own Step 4
+text computes from. Verified by running the suite before touching anything, per
+`superpowers:verification-before-completion` — evidence before arithmetic.
+
+**2026-08-09, Task 11 — the plan's own expected-count arithmetic was already stale before the
+task began (a baseline drift, not a task error), and two real bugs in the reader surfaced only by
+running it against a real file, not by inspection.**
+
+1. **Task 11's own Step 4 ("999 passed (986 + 13)") computes from a baseline the tree had already
+   moved past.** The actual starting point (see above) was 999 passed / 1 skipped. `CsvInjectionTest`
+   contributes 6 existing methods (the skip lifts, it does not add a method), and
+   `CsvRosterReaderTest` adds 11 new ones — so the correct arithmetic is **999 + 11 = 1010 passed,
+   0 skipped**, not 999. Confirmed by running the full suite both before and after.
+2. **`SplFileObject`'s own end-of-file iteration is not `null` and is not `[null]` — it is the
+   boolean `false`, and a naive skip check misses it entirely.** The first version of `rows()`
+   guarded `$cells === null || $cells === [null]`, copied from a mental model of `fgetcsv()`'s own
+   return value at EOF (which IS `false`, but `SplFileObject::current()` under `READ_CSV` was
+   assumed to normalise that to `null`). Run against the real `clean.csv` fixture (nine physical
+   lines: one header, eight data rows), `test_clean_csv_yields_eight_rows_keyed_by_header_text`
+   failed with "actual size 9 matches expected size 8" — a phantom ninth row of empty strings,
+   built from indexing a `false` value with `?? ''`, which PHP allows silently rather than
+   throwing. Diagnosed by running `SplFileObject` directly against the fixture outside PHPUnit
+   (`php -r '...'`) and printing every iteration's raw value: iteration 10 (past the last real
+   line) prints `false`, not `null`. Fixed by adding `$cells === false` to the skip condition,
+   with a comment naming what it is (the phantom EOF read) so a future reader does not delete it
+   as dead code.
+3. **`CsvInjectionTest::test_a_neutralised_cell_round_trips_through_the_reader` (Task 8, already
+   committed and out of this task's scope to rewrite beyond lifting its skip) asserts
+   `iterator_to_array($reader->rows())[0]['Formula']` — a plain 0-indexed access — which fixes
+   `rows()`'s key contract as sequential integers, not file line numbers.** The plan's own
+   interface docblock (`@return iterable<int, array<string, string>>`) says only `int`, and the
+   first draft of `CsvRosterReader::rows()` read "int" as license to yield file LINE numbers (2,
+   3, 4, ... for the first, second, third data row — useful-looking for a future "line N" error
+   message). Run verbatim, `CsvInjectionTest`'s fixed assertion failed with "Undefined array key
+   0", because `iterator_to_array()` with its default `$preserve_keys = true` keeps whatever key
+   the generator yields, and line-number keys start at 2. Fixed by yielding rows with PHP's
+   default auto-incrementing generator keys (0, 1, 2, ...) instead — `App\Support\Roster\
+   RosterImport` (Task 12) is what turns a row's POSITION into a human-facing line number, which
+   it can do with a running counter of its own; the reader's contract is order, not line identity.
+
+Everything else matches the plan's own text: `RosterReader`'s two-method shape, `CsvRosterReader`
+built on `SplFileObject` alone, the UTF-8-whole-file check before any row parses, the BOM stripped
+from the first header only, delimiter sniffing across `,` / `\t` / `;`, the `Csv::neutralise()`
+pairing (an apostrophe stripped only ahead of one of the six dangerous prefixes, left alone
+otherwise), and the 2000-row cap. The seven committed fixtures match the plan's own table; the
+eighth (`latin1.csv`) is generated at test time via `iconv()` rather than committed, exactly as
+Decision E's text specifies, so no non-UTF-8 binary ever enters the repository.
+
+`php artisan test`: 999 → 1010 (11 new `CsvRosterReaderTest`; `CsvInjectionTest` stays at 6
+methods, 0 now skipped). `npm test`: 113 (unchanged — Task 11's Files list names no JS file).
+`npm run build` and the full suite green.
+
+```bash
+git commit -am "feat: a roster file the system can read without guessing at it"
+```
+
 ---
 
 ## Conventions every task follows
@@ -3255,7 +3314,7 @@ document:
 Decision E is why the reader is a port: there is no spreadsheet package in `composer.lock`, and
 adding one to a system holding children's PHI is the owner's supply-chain decision.
 
-- [ ] **Step 1: The fixtures**
+- [x] **Step 1: The fixtures**
 
 Create `tests/fixtures/roster/` with seven files. Every name is invented; every address is on
 `example.test`, which is reserved and cannot resolve.
@@ -3274,7 +3333,7 @@ Add an eighth, `latin1.csv`, written in ISO-8859-1 with an accented name, to pro
 refusal — see Step 3. It is generated by the test rather than committed as a binary blob, so a
 future editor's UTF-8-normalising IDE cannot silently repair it.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `tests/Feature/Roster/CsvRosterReaderTest.php`:
 
@@ -3297,7 +3356,7 @@ future editor's UTF-8-normalising IDE cannot silently repair it.
 
 Then remove the `markTestSkipped` from `CsvInjectionTest`'s pairing case (Task 8, Step 1).
 
-- [ ] **Step 3: The port and the adapter**
+- [x] **Step 3: The port and the adapter**
 
 ```php
 <?php
@@ -3341,10 +3400,11 @@ interface RosterReader
   thousand is a paste accident or a wrong file, and streaming it into a preview table is a
   browser hang rather than an error message.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
-Expected: full suite **999 passed** (986 + 13), **0 skipped** — the Task 8 skip is now gone, and
-a non-zero skip count means something else went quiet.
+Expected (per the Amendments entry above, correcting this task's own stale arithmetic): full
+suite **1010 passed**, **0 skipped** — the Task 8 skip is now gone, and a non-zero skip count
+means something else went quiet.
 
 ```bash
 git commit -am "feat: a roster file the system can read without guessing at it"

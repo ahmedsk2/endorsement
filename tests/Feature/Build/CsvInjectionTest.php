@@ -85,10 +85,6 @@ class CsvInjectionTest extends TestCase
      */
     public function test_a_neutralised_cell_round_trips_through_the_reader(): void
     {
-        if (! class_exists(\App\Support\Roster\CsvRosterReader::class)) {
-            $this->markTestSkipped('CsvRosterReader lands in Task 11 — this is the pairing contract it must satisfy.');
-        }
-
         $response = Csv::stream('roster.csv', ['Formula'], [['=SUM(A1)']]);
         $content = $this->captureStream($response);
 

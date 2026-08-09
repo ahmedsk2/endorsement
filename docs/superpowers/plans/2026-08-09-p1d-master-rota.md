@@ -1,3 +1,25 @@
+> ## OWNER DECISIONS, 2026-08-09 — binding, and one of them changes sequencing
+>
+> **1. `rota.manage` defaults to Administrator AND Chief Resident.** Chief Resident is
+> Munawib's Scheduler persona and owns the master rota. Seed the default for **both** positions,
+> and update `AccessControlParityTest`'s expected sets accordingly — that test hardcodes each
+> role's effective capabilities and will go red, which is the correct kind of red.
+>
+> **2. `rota.view` is seeded for every authenticated member**, not Administrator-only. MR-05's
+> point is that a resident can see which unit they rotate through next.
+>
+> **THIS MAKES TASK 7 A HARD PREREQUISITE OF TASK 8, NOT A TIDY-UP.** `PersonPresenter::one()`
+> currently emits `email` unconditionally; its own docblock names this grid as the case where
+> that stops being a no-op. With `rota.view` held by every member, shipping the grid before the
+> projection is fixed hands **every resident every colleague's email address**. Task 7 lands
+> first, and no task may render a person on a rota surface until it has. If you find yourself
+> building the grid and Task 7 is not done, stop.
+>
+> **3. A `week`-granularity vacation whose dates are not week-aligned SNAPS** to the full
+> department week containing them — exactly as the on-screen week picker does — and the import
+> preview **reports the adjustment**. One rule for typing and importing, never silent. (P1d-2
+> scope; recorded here so it is not re-litigated there.)
+
 > ## OWNER DECISIONS, 2026-08-09 — READER'S INDEX ONLY
 >
 > **Every decision below is already folded into the task text it governs.** This block is an index,

@@ -1242,6 +1242,121 @@ git commit -am "feat: a roster import that shows its work before it does any"
 
 ---
 
+**2026-08-09, post-merge review — 6 numbered findings and 8 minor ones against `111f854`, all
+reproduced empirically by the reviewer, all fixed. Not a plan gap in the usual sense (nothing
+here was unspecified); every one is a case where the code shipped and the tests passed while
+missing something the review caught by exercising the actual failure path rather than reading
+the diff.**
+
+1. **Finding 1 (important): `RosterImport::analyseRow()` matched a row by ONE field (email or
+   short_name) and never checked the row's OTHER field against a DIFFERENT existing person.** A
+   row whose email matched person A but whose short_name already belonged to person B previewed
+   as a clean `update` with `errors: []`, then `commit()` threw a raw
+   `UniqueConstraintViolationException` on `people.short_name` — nothing written, but the preview
+   (the controller's own docblock: "the only thing standing between a malformed file and a
+   corrupted roster") reported no problem. Worse: Laravel's `QueryException::formatMessage()`
+   interpolates the failed query's BOUND VALUES into the exception message — confirmed
+   empirically by constructing one directly (`tests/Feature/Admin/RosterImportTest.php::
+   test_an_unanticipated_db_conflict_during_commit_never_leaks_contact_data_into_the_exception`),
+   which is what a logger records, breaching the standing no-PHI-in-logs rule. Fixed with a new
+   `crossMatchErrors()` check (email/short_name against every OTHER person, excluding whoever
+   matched) run before any outcome is decided, plus a `UniqueConstraintViolationException` catch
+   around the commit loop that rethrows a sanitised, line-only message as defence in depth.
+2. **Finding 2 (important): values went from CSV to the database with only `trim()`, against
+   `varchar(255)/50/255/32`, and `email` was never format-checked.** SQLite ignores VARCHAR
+   length outright — confirmed by writing the length tests first and watching them fail for the
+   right reason (a `create` outcome, not a validation error) before adding
+   `checkLength()`/`FILTER_VALIDATE_EMAIL` to `analyseRow()`, mirroring `PersonRequest`'s limits
+   rather than re-typing them.
+3. **Finding 3 (important): `PromotionController` validated `reason` as `max:500` against a
+   `varchar(255)` column.** Tightened to `max:255`; the new test asserts the validation refusal
+   (a 422), never anything MySQL-only.
+4. **Finding 4 (important, the most serious of the six): three writers of `people.active`, only
+   one (`PersonController::applySetActive()`) kept the linked account's `users.active` in step.**
+   `PersonController::update()` and `Promotion::commit()`'s retire path each wrote `active`
+   directly — a person deactivated through either screen kept the ability to log in. Fixed with
+   `App\Support\PersonStatus::apply()`, `PositionChange`'s shape, called from all three sites; it
+   also picked up `PositionChange::isLastActiveAdministrator()`'s guard (not explicitly named by
+   the finding, but the same guard `UserManagementController::setActive()` already applies from
+   the account side — added for consistency, called out here rather than left silent).
+   **Scope decision, recorded rather than acted on silently:** `UserManagementController::
+   setActive()` already correctly paired both flags from the account side and was not one of the
+   finding's three named sites; folding it into `PersonStatus::apply()` too would need that
+   method to accept a `User` with a possibly-null linked `Person`, a different shape from every
+   other call site, and the finding did not ask for it. Left as is and allow-listed on the new
+   `PersonActiveHasOneWriterTest` guard with that reasoning recorded inline.
+5. **Finding 5 (important): `PersonBulkRequest`'s `level_id` validated with `Rule::exists('levels',
+   'id')` outright (accepts a retired level) while `PersonController::rosterProps()` offered only
+   active ones** — the 2026-07-26 audit's "a picker's write-side validation must match what it
+   offers" invariant, restated. Fixed with `App\Support\LevelPickers::bulkAssignable()`, one
+   predicate feeding both.
+6. **Finding 6 (important): `RosterImport::commit()` called `PositionChange::apply()` (which
+   audits internally) from inside its per-row loop, itself inside one `DB::transaction` —
+   `AuditLog::record()` opens its own transaction and locks the chain tail, serialising the whole
+   chain for the import's duration for no benefit (a failed import rolls everything back
+   regardless of when inside it an audit row was written). Secondary, and the more visible bug in
+   practice: every row audited unconditionally, including rows whose position never changed, and
+   `user_role_change` is on `AuditAnomalies`' single-occurrence watch list — a routine re-import
+   (mostly contact-field touches) paged a critical OpsAlert every time. Fixed with
+   `PositionChange::applyWithoutAudit()` (the write/guard/flush alone) plus a `position_changed`
+   flag `RosterImport` leaves on each row; `commit()` now audits AFTER the transaction returns,
+   one row per GENUINELY changed position, matching `Promotion::commit()`/`PersonController::
+   bulk()`'s existing ordering (Decision H). Proven with four tests, not just asserted: an
+   unchanged-position update writes no audit row, a create always writes one (a brand-new
+   person's position has no "before" to compare against), a forced mid-import failure leaves
+   neither the position write nor its audit behind, and `audit:anomalies` sends no mail for a
+   genuinely no-op re-import.
+7. **Minor 7: `RosterNeverMintsCredentialsTest`'s needle list had `->users()->create(`, but
+   `Person::user()` is singular — that needle could never match anything.** The reviewer's own
+   mutation test proved the guard stayed green with a live mint in `applyCreate()`. Fixed by
+   adding `->user()->create(`, `User::forceCreate(`, `User::updateOrCreate(`,
+   `User::firstOrCreate(`, `DB::table("users")` and `->save()`, and reproducing the reviewer's
+   mutation locally (a temporary `$person->user()->create([...])->save()` in `applyCreate()`) to
+   confirm the guard now goes red, then reverting it.
+8. **Minors 8-10: two guard entries said something false about themselves, and one presenter
+   field's gating was undocumented rather than wrong.** `ContactFieldsAreProjectedOnceTest`'s
+   allow-list reason for `RosterImport.php` ("builds no Inertia props at all") is false —
+   `analyseRow()`'s `values['phone']` and `diff()`'s `changes['phone']` ARE flashed via
+   `roster_preview`; reworded to say what actually keeps it safe. The same guard's `NEEDLES`
+   omitted `->constraints`/`'constraints'`, though `PersonPresenter` gates `constraints` behind
+   `viewNotes` alongside `notes` — added (every file already matching it was already
+   allow-listed for the phone/notes reason, so no new allow-list entries were needed).
+   `PersonPresenter::one()` projects `email` unconditionally while gating `phone`/`notes` —
+   documented as a deliberate, currently-safe (every caller sits behind `cap:people.manage`
+   already) decision that P1d's rota grid will need to revisit, rather than changed.
+9. **Minors 11-14: CSV/promotion edge cases.** PHP 8.4 deprecates the implicit `\` escape default
+   on `fputcsv`/`str_getcsv`/`setCsvControl`, and that default is not merely deprecated but
+   ACTIVELY corrupts a cell ending in a backslash (confirmed empirically: a trailing-backslash
+   cell round-tripped as a 9-character string carrying a stray newline and swallowing the next
+   column, before the fix) — `escape: ''` passed throughout `Csv.php`/`CsvRosterReader.php`.
+   Added `CsvIsTheOnlyReaderWriterTest`, the fifth source-level one-definition guard in this
+   codebase. Documented (not fixed — not an execution risk) that `neutralise()`/`unNeutralise()`
+   are not a true inverse for a value genuinely starting with an apostrophe before a dangerous
+   character, with a pinned test. Corrected the `2026_08_14_120002` migration's docblock, which
+   claimed `promotion_batch_id` answers "show me everything that promotion did" — it answers
+   "which spans did this batch OPEN"; `LevelAssignment::close()`'s own docblock already explains
+   why the prior/closed span is deliberately never re-stamped (misattribution risk), so the
+   docblock was corrected rather than the behaviour changed.
+
+`php artisan test`: 1029 → 1052 (23 new, across `RosterImportTest` ×8, `PromotionTest` ×1,
+`PeopleBulkTest` ×2, `CsvInjectionTest` ×2, and three new files —
+`tests/Feature/Admin/PersonStatusTest.php` ×6, `tests/Feature/Build/
+PersonActiveHasOneWriterTest.php` ×2, `tests/Feature/Build/CsvIsTheOnlyReaderWriterTest.php`
+×2 — two more new files, `tests/fixtures/roster/{cross-field-conflict,oversized-fields}.csv`,
+contribute fixtures, not test methods). `npm test`: 113, unchanged (no frontend file touched by
+any of these nine findings). `npm run build` and the full suite green throughout; verified
+again at the final commit, not only after each individual fix.
+
+```bash
+git log --oneline -4
+# 7b96efb fix: three ways to deactivate a person and only one revoked the login
+# c19dc8e fix: promotion validated wider than its column, and its own docblock oversold a query
+# 003ddd1 docs: two guard entries claimed things about themselves that were not true
+# 6549fe6 fix: the importer's preview lied, and its own audits paged an operator every time
+```
+
+---
+
 ## Conventions every task follows
 
 Stated once, not repeated per task.

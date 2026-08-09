@@ -105,8 +105,17 @@ same by-hand cleanup once a current-slug archive has restored successfully; neve
 *prune* glob to reach them.
 
 ```bash
-mysql --ssl-verify-server-cert=0 -h db -u <user> -p <database> < restore.sql
+mysql --ssl-verify-server-cert=0 -h db -u root -p <database> < restore.sql
 ```
+
+**`root`, not the app's own database user.** This used to say `-u <user>` with no name
+filled in, which read as "substitute the app's runtime credential" — and since
+`docs/sql/least-privilege.sql` was applied, that credential no longer can: a restore is
+`CREATE TABLE`/`DROP TABLE`/DDL from a dump that starts with `DROP TABLE IF EXISTS`, and the
+app's credential deliberately holds none of that (`SELECT, INSERT, UPDATE, DELETE` only —
+see least-privilege.sql §1). Restoring is root's job, same as running `least-privilege.sql`
+itself or `php artisan migrate --force`; `$MYSQL_ROOT_PASSWORD` comes from the same place the
+deploy/migrate runbooks already read it from (`docker/instance-env.sh`).
 
 `--ssl-verify-server-cert=0` is needed **inside the app container**, whose `mysql-client`
 package is MariaDB's client: MariaDB 11 verifies the server certificate by default and
@@ -114,6 +123,18 @@ MySQL 8.4 generates a self-signed one, so without it the client refuses to conne
 (`error 2026`). Drop the flag if you restore with Oracle's client — it does not accept that
 spelling; use `--ssl-mode=PREFERRED` there instead. This same mismatch silently broke the
 nightly dump once; `backup:run` now selects the right flag by detecting the client.
+
+**The restored database has NO append-only triggers, even from a healthy archive — this is
+expected, not a defect in the restore.** The dump was taken by the app's own least-privilege
+credential, which cannot see trigger definitions at all (2026-08-09 ops rehearsal, finding
+2 — proven empirically: neither `information_schema.TRIGGERS` nor a real `mariadb-dump`
+returns anything for a trigger it lacks the `TRIGGER` privilege to see, regardless of
+whether the source database is hardened). A dump under least privilege therefore NEVER
+carries `CREATE TRIGGER`, by construction, hardened or not. **Re-run
+`docs/sql/least-privilege.sql` against the restored database before returning it to
+service** — this is a MANDATORY step of every restore, not an optional hardening pass: until
+it runs, the restored database's audit log is writable/deletable by the app's own
+credential, exactly as if `least-privilege.sql` had never been applied to it at all.
 
 ### The signature archive
 
@@ -198,7 +219,58 @@ archive's `.meta.json` sidecar.
 |---|---|---|---|
 | `qch` | 2026-07-25 | (record here) | (record here) |
 
-## 4. What is deliberately NOT automated
+## 4. `audit:verify` reports BROKEN, but nothing was tampered with
+
+Every other section of this document assumes a BROKEN chain means an attack. It can also
+mean a bad hand-`INSERT` — a botched manual data-fix, a partial dump loaded by hand, a
+migration or import script that wrote a row outside `AuditLog::record()` — landed in
+`audit_log` without a correctly computed `prev_hash`/`hash`. The append-only triggers
+(`docs/sql/least-privilege.sql`) do not stop this: they block `UPDATE` and `DELETE` on
+`audit_log`, never `INSERT`, so a malformed row gets in cleanly and only `audit:verify`
+ever notices, reporting BROKEN starting at that row's id.
+
+**This is not repairable by the application's own credential, and that is by design, not a
+gap.** `SELECT, INSERT, UPDATE, DELETE` is what least-privilege.sql grants the app — but the
+triggers block `UPDATE`/`DELETE` on `audit_log` regardless of grant, for EVERY credential
+except root (the only way to bypass a `SIGNAL`-raising `BEFORE` trigger is to drop it, act,
+then recreate it — there is no per-session "suspend triggers" switch in MySQL). Repair is
+therefore root-only, on purpose: the same barrier that stops an attacker from erasing their
+tracks also stops a `backup:run`/`audit:verify` schedule (running as the app credential)
+from quietly "fixing" a chain by itself.
+
+**What repair can and cannot do.** Deleting the bad row does NOT make `audit:verify` pass
+again from that point forward, and no legitimate procedure can make it: the row written
+immediately AFTER the bad insert has its `prev_hash` set to the bad row's `hash` — a value
+that existed at the moment the app wrote it, however illegitimate its origin. Removing the
+bad row leaves that next row (and, transitively, the rest of the chain by the running-hash
+check) pointing at a `prev_hash` that no longer matches anything. Recomputing every
+subsequent row's `prev_hash`/`hash` to re-splice the chain would make `audit:verify` pass
+again, but doing that is itself indistinguishable from the exact tampering this control
+exists to catch — it is not offered as a step here, and should not be improvised.
+
+**The procedure, root only:**
+
+1. Identify the offending row(s) by id (`audit:verify`'s own output names the first broken
+   id) and confirm, OUT OF BAND — from separate records, the person who ran the manual
+   fix, timestamps, or the restored dump's own provenance — exactly what happened and why.
+   Never rely on the chain itself to explain a break it is reporting.
+2. If the row is actively causing further corruption (for example, a script is still
+   inserting malformed rows), stop that first.
+3. Drop both triggers, remove or correct the offending row(s), recreate both triggers —
+   the same `DROP TRIGGER IF EXISTS` / `CREATE TRIGGER` statements `docs/sql/least-privilege.sql`
+   §2 already uses, run by hand rather than the whole file (no need to touch the grant in
+   §1, which is unaffected by this).
+4. **`audit:verify` will still report BROKEN, permanently, and this is expected — do not
+   chase it further.** Verified empirically: deleting the bad row does not move the break
+   back to "intact" — it moves the reported id forward, to the first row written AFTER the
+   bad insert (whose `prev_hash` pointed at the now-gone row's hash, a value that no longer
+   resolves to anything). Record the incident wherever this instance's security/audit
+   incidents are tracked: date, id range affected, root cause, who performed the fix, and
+   this note's reasoning for why the chain reports broken from here on. A documented,
+   explained break is a materially different finding from an undocumented one —
+   `audit:verify`'s job is to make tampering IMPOSSIBLE TO MISS, not to stay green.
+
+## 5. What is deliberately NOT automated
 
 `data:retention` prunes only expired operational rows (abandoned registration requests,
 dead one-time codes, idle sessions). It never touches handovers, sign-offs or the audit

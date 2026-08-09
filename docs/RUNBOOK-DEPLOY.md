@@ -828,3 +828,45 @@ So, once a deploy carrying that fix ships:
    gets the un-derived fallback name.
 6. Update the identifiers table row above once confirmed: replace "not yet confirmed set in
    Coolify" with the confirmation date.
+
+---
+
+## OWNER ACTION — schedule `2026_08_15_120001_widen_rich_text_handover_columns`; it write-locks `handovers`
+
+2026-08-09 ops rehearsal, measured against real MySQL 8.4: this migration (`disease`,
+`details`, `plan`, `nevent`: `TEXT` → `MEDIUMTEXT`) is NOT an instant metadata-only change on
+MySQL, even though widening a text-family column sounds like one. MySQL 8.4 refuses both
+`ALGORITHM=INSTANT` and `ALGORITHM=INPLACE` for a `TEXT`→`MEDIUMTEXT` change specifically —
+the on-disk length-prefix width itself changes (2 bytes → 3), which neither fast path can
+apply in place — so it silently falls back to `ALGORITHM=COPY`: MySQL rebuilds the entire
+`handovers` table row by row into a new one and swaps it in.
+
+**Reads continue throughout** (COPY keeps the old table serving `SELECT`s until the swap),
+but **writes to `handovers` block for the full duration** — any endorsement save queues
+behind the migration rather than failing, so this reads as "the app got slow," not an error,
+unless someone is watching for it.
+
+**Measured throughput: ~26 MB/s.** 20,000 rows / 157 MB took ≈ 6 seconds. That scales
+linearly with table size, not row count alone — a department with a small `handovers` table
+(most of this system's clinical fields are `TEXT`, and PHI columns are already off in their
+own encrypted/widened set) sees this finish in low single-digit seconds; a long-lived
+instance with years of retained clinical text should expect proportionally longer and should
+measure its own `handovers` table size before treating "a few seconds" as a given:
+
+```bash
+eval "$(sudo bash docker/instance-env.sh <uuid>)" && \
+PW=$(sudo docker exec "$DB" printenv MYSQL_ROOT_PASSWORD) && \
+sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e \
+  "SELECT ROUND((data_length + index_length) / 1024 / 1024, 1) AS mb
+     FROM information_schema.TABLES
+    WHERE table_schema = DATABASE() AND table_name = 'handovers';"
+```
+
+**Schedule it**, the same way `2026_08_10_120003_move_name_and_position_off_users` (below)
+is flagged "TAKE A DUMP FIRST" — outside a shift-change window, with charge nurses aware that
+saves may pause briefly. This is not a data-loss risk (COPY is atomic: either the whole
+rebuild lands or the original table is untouched) and does not need `least-privilege.sql`'s
+temporary grant dance to be reverted any differently — it is an ordinary migration, run the
+ordinary way (`docs/sql/least-privilege.sql`'s temporary `ALTER, CREATE, REFERENCES` grant,
+`php artisan migrate --force`, revoke). The only thing that is unusual is the WAIT, and that
+is what needs scheduling, not the privilege.

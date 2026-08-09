@@ -145,6 +145,23 @@ describe('AppLayout — role-gated navigation', () => {
         expect(text).not.toContain('Promotion');
     });
 
+    // P1d: a user holding ONLY rota.manage must still see the Administration section, with a
+    // Master Rota link and no other admin-surface link — the same recon-frontend risk P1b's
+    // Decision A and P1c's people.manage case both named.
+    it('shows the admin section with rota.manage alone, with a Master Rota link only', () => {
+        store.page.props.auth.can = ['rota.manage'];
+        store.page.props.auth.user = { id: 8, member_name: 'rm', full_name: 'Rota Manager', position: 0 };
+
+        const text = navText(mountLayout());
+        expect(text).toContain('Administration');
+        expect(text).toContain('Master Rota');
+        // rota.manage alone does not grant the other admin links.
+        expect(text).not.toContain('Access Control');
+        expect(text).not.toContain('Units');
+        expect(text).not.toContain('Settings');
+        expect(text).not.toContain('People');
+    });
+
     it('shows the signed-in user name and logs out via router.post', async () => {
         store.page.props.auth.can = ['profile.manage'];
         store.page.props.auth.user = { id: 1, member_name: 'jdoe', full_name: 'Jane Doe', position: 1 };

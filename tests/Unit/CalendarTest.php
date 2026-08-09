@@ -202,4 +202,78 @@ class CalendarTest extends TestCase
             Calendar::label('2026-08-08')
         );
     }
+
+    // --- P1d Task 2: the department's week ------------------------------------------------
+
+    public function test_the_week_starts_the_day_after_the_last_configured_weekend_day(): void
+    {
+        // QCH: weekend is Friday(5) and Saturday(6) ISO, so the week starts Sunday(7).
+        $this->institution(['weekend_days' => [5, 6]]);
+        $this->assertSame(7, Calendar::weekStartIsoDay());
+
+        // A Saturday–Sunday weekend (6, 7) starts the week on Monday.
+        $this->institution(['weekend_days' => [6, 7]]);
+        $this->assertSame(1, Calendar::weekStartIsoDay());
+
+        // A one-day weekend still has an unambiguous answer.
+        $this->institution(['weekend_days' => [5]]);
+        $this->assertSame(6, Calendar::weekStartIsoDay());
+
+        // No weekend configured at all falls back to Monday rather than dividing by zero.
+        $this->institution(['weekend_days' => []]);
+        $this->assertSame(1, Calendar::weekStartIsoDay());
+    }
+
+    public function test_week_of_returns_the_containing_week_both_bounds_inclusive(): void
+    {
+        $this->institution(['weekend_days' => [5, 6]]);            // week runs Sunday .. Saturday
+
+        // 2026-08-12 is a Wednesday.
+        $week = Calendar::weekOf('2026-08-12');
+
+        $this->assertSame('2026-08-09', $week['starts_on']);   // the Sunday
+        $this->assertSame('2026-08-15', $week['ends_on']);     // the Saturday
+
+        // The boundary days belong to their own week, not the neighbouring one.
+        $this->assertSame('2026-08-09', Calendar::weekOf('2026-08-09')['starts_on']);
+        $this->assertSame('2026-08-09', Calendar::weekOf('2026-08-15')['starts_on']);
+        $this->assertSame('2026-08-16', Calendar::weekOf('2026-08-16')['starts_on']);
+    }
+
+    public function test_week_of_carries_dual_dated_labels_so_the_client_never_formats_one(): void
+    {
+        $this->institution(['weekend_days' => [5, 6]]);
+
+        $week = Calendar::weekOf('2026-08-12');
+
+        $this->assertSame('2026-08-09', $week['starts_label']['date']);
+        $this->assertNotSame('', $week['starts_label']['hijri']);
+        $this->assertSame('2026-08-15', $week['ends_label']['date']);
+    }
+
+    public function test_weeks_in_covers_every_week_touching_the_range_and_clips_to_it(): void
+    {
+        $this->institution(['weekend_days' => [5, 6]]);
+
+        // A four-week block that does NOT start on a Sunday: 2026-08-12 (Wed) .. 2026-09-08 (Tue).
+        $weeks = Calendar::weeksIn('2026-08-12', '2026-09-08');
+
+        $this->assertCount(5, $weeks);                              // partial + 3 whole + partial
+
+        $this->assertSame('2026-08-09', $weeks[0]['starts_on']);    // the TRUE week start
+        $this->assertSame('2026-08-12', $weeks[0]['clipped_starts_on']);   // clipped to the range
+        $this->assertSame('2026-08-15', $weeks[0]['clipped_ends_on']);
+
+        $this->assertSame('2026-09-06', $weeks[4]['starts_on']);
+        $this->assertSame('2026-09-08', $weeks[4]['clipped_ends_on']);
+    }
+
+    public function test_weeks_in_refuses_a_range_longer_than_a_year_and_a_half(): void
+    {
+        $this->institution(['weekend_days' => [5, 6]]);
+
+        $this->expectException(InvalidArgumentException::class);
+
+        Calendar::weeksIn('2026-01-01', '2028-01-01');
+    }
 }

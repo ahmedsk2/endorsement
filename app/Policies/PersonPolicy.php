@@ -24,12 +24,18 @@ use App\Support\ContactVisibility;
 class PersonPolicy
 {
     /**
-     * A phone number. Roster managers always; any signed-in account holder only when the
-     * department has opted in.
+     * BOTH contact fields — the email address and the phone number, released together or not at
+     * all. Roster managers always; any signed-in account holder only when the department has
+     * opted in (`institutions.contact_visibility`).
+     *
+     * `email` joined `phone` here in P1d Task 7, when the rota grid became the first consumer
+     * holding a capability narrower than `people.manage` (`rota.view`, seeded for every position),
+     * which is the moment the distinction stopped being a no-op. This docblock said "a phone
+     * number" until pre-merge finding 2; so did ruling 21.
      */
     public function viewContact(User $user, Person $person): bool
     {
-        return AccessControl::allows($user, 'people.manage') || ContactVisibility::membersMaySeePhone();
+        return AccessControl::allows($user, 'people.manage') || ContactVisibility::membersMaySeeContact();
     }
 
     /**

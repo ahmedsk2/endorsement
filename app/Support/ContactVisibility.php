@@ -29,7 +29,13 @@ final class ContactVisibility
             : Institution::CONTACT_ADMINS;
     }
 
-    public static function membersMaySeePhone(): bool
+    /**
+     * BOTH contact fields, not just the phone number — `membersMaySeePhone()` until pre-merge
+     * finding 2 renamed it. `PersonPresenter` releases `email` and `phone` from ONE branch, and it
+     * has done since P1d Task 7 made the gate real; a predicate named for half of what it decides
+     * is how ruling 21 came to describe half of it too.
+     */
+    public static function membersMaySeeContact(): bool
     {
         return self::current() === Institution::CONTACT_MEMBERS;
     }

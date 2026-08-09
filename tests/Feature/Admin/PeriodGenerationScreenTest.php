@@ -4,7 +4,10 @@ namespace Tests\Feature\Admin;
 
 use App\Models\AuditLog;
 use App\Models\Institution;
+use App\Models\MasterRotaAssignment;
 use App\Models\Period;
+use App\Models\Person;
+use App\Models\Unit;
 use App\Models\User;
 use App\Support\Calendar;
 use App\Support\PeriodGenerator;
@@ -307,16 +310,41 @@ class PeriodGenerationScreenTest extends TestCase
     }
 
     /**
-     * The hook: no `master_rota_assignments` table exists yet (P1d builds it), so there is
-     * nothing to check today — delete succeeds. A later plan turns this into a real refusal.
+     * P1d Task 4 closes the hook this test used to pin as open: `master_rota_assignments` now
+     * exists, so a year with a rota assignment against it is refused outright — never a partial
+     * delete of the periods an assignment does NOT reference.
      */
-    public function test_delete_succeeds_today_with_no_assignment_table_to_check(): void
+    public function test_deleting_a_year_is_refused_while_a_rota_assignment_references_it(): void
+    {
+        $this->generateOneYear();
+
+        $period = Period::query()->where('academic_year', '2026-2027')->orderBy('starts_on')->first();
+
+        MasterRotaAssignment::create([
+            'person_id' => Person::factory()->create()->getKey(),
+            'period_id' => $period->getKey(),
+            'unit_id' => Unit::create(['code' => 'RTA', 'name' => 'Rota Test A', 'active' => true])->getKey(),
+            'starts_on' => $period->starts_on->format('Y-m-d'),
+            'ends_on' => $period->ends_on->format('Y-m-d'),
+        ]);
+
+        $this->actingAs($this->admin)
+            ->delete('/admin/structure/periods/2026-2027', ['confirm_academic_year' => '2026-2027'])
+            ->assertSessionHasErrors('confirm_academic_year');
+
+        // Not one period gone — the refusal is total, never partial.
+        $this->assertSame(13, Period::query()->where('academic_year', '2026-2027')->count());
+    }
+
+    public function test_deleting_a_year_still_succeeds_once_nothing_references_it(): void
     {
         $this->generateOneYear();
 
         $this->actingAs($this->admin)
             ->delete('/admin/structure/periods/2026-2027', ['confirm_academic_year' => '2026-2027'])
             ->assertSessionHasNoErrors();
+
+        $this->assertSame(0, Period::query()->where('academic_year', '2026-2027')->count());
     }
 
     /** Decision D's unlock, proven end to end: delete the year, and the calendar screen unlocks. */

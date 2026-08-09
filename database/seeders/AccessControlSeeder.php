@@ -75,6 +75,17 @@ class AccessControlSeeder extends Seeder
             .'the only way one is made. It DOES govern who can read staff phone numbers and '
             .'notes, subject to the department\'s contact-visibility setting. Default: '
             .'Administrator only; grantable per role or per named user like any capability.',
+
+        'rota.view' => 'View the master rota: which unit each person is assigned to, in each '
+            .'period of the academic year. Read-only — the whole point of this capability (Munawib '
+            .'MR-05) is that a resident can see which unit they rotate through next. Default: '
+            .'every seeded position.',
+
+        'rota.manage' => 'Create and edit master rota assignments and vacations: assign a person '
+            .'to a unit for a period or a date-bounded split of one, and book or cancel a leave '
+            .'span. Default: Administrator and Chief Resident — Chief Resident is Munawib\'s '
+            .'Scheduler persona and owns the master rota; grantable per role or per named user '
+            .'like any capability.',
     ];
 
     /**
@@ -103,6 +114,10 @@ class AccessControlSeeder extends Seeder
 
         // Departmental structure (Munawib UN-*, LV-01, ST-02, ST-06).
         'structure.manage' => 'Manage units, training levels, the calendar, periods and holidays',
+
+        // Master rota (Munawib MR-02/MR-03/MR-05, P1d).
+        'rota.view' => 'View the master rota',
+        'rota.manage' => 'Create and edit master rota assignments and vacations',
     ];
 
     /**
@@ -113,32 +128,35 @@ class AccessControlSeeder extends Seeder
     private const ROLE_DEFAULTS = [
         // Administrator (0): every capability.
         0 => [
-            'profile.manage',
+            'profile.manage', 'rota.view',
             'endorsement.view', 'endorsement.edit', 'endorsement.reopen', 'endorsement.compliance',
             'users.manage', 'users.manage_residents', 'access.manage', 'settings.manage',
-            'structure.manage', 'people.manage',
+            'structure.manage', 'people.manage', 'rota.manage',
         ],
         // Position 1 (Nurse) is RETIRED — no defaults exist for it.
-        // Charge Nurse (2): endorsement.
+        // Charge Nurse (2): endorsement + read the master rota (owner decision 2, P1d).
         2 => [
-            'profile.manage',
+            'profile.manage', 'rota.view',
             'endorsement.view', 'endorsement.edit',
         ],
-        // Consultant (3): endorsement.
+        // Consultant (3): endorsement + read the master rota.
         3 => [
-            'profile.manage',
+            'profile.manage', 'rota.view',
             'endorsement.view', 'endorsement.edit',
         ],
-        // Resident (4): endorsement.
+        // Resident (4): endorsement + read the master rota — MR-05's point is that a resident
+        // can see which unit they rotate through next.
         4 => [
-            'profile.manage',
+            'profile.manage', 'rota.view',
             'endorsement.view', 'endorsement.edit',
         ],
-        // Chief Resident (5): a Resident clinically, plus the ONE scoped admin power.
+        // Chief Resident (5): a Resident clinically, plus the scoped admin powers. Owner
+        // decision 1 (P1d, 2026-08-09): rota.manage defaults here too — Chief Resident is
+        // Munawib's Scheduler persona and owns the master rota.
         5 => [
-            'profile.manage',
+            'profile.manage', 'rota.view',
             'endorsement.view', 'endorsement.edit',
-            'users.manage_residents',
+            'users.manage_residents', 'rota.manage',
         ],
     ];
 

@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AccessControlController;
 use App\Http\Controllers\Admin\CalendarSettingsController;
 use App\Http\Controllers\Admin\HolidayController;
 use App\Http\Controllers\Admin\LevelController;
+use App\Http\Controllers\Admin\MasterRotaController;
 use App\Http\Controllers\Admin\PeriodController;
 use App\Http\Controllers\Admin\PersonController;
 use App\Http\Controllers\Admin\PromotionController;
@@ -253,6 +254,35 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:people.manage'])
         Route::get('/roster-import', [RosterImportController::class, 'index'])->name('roster-import');
         Route::post('/roster-import/preview', [RosterImportController::class, 'preview'])->name('roster-import.preview');
         Route::post('/roster-import/commit', [RosterImportController::class, 'commit'])->name('roster-import.commit');
+    });
+
+/*
+ * Admin → Master Rota (Munawib MR-02/MR-03). `cap:rota.manage` — editing the rota is a
+ * scheduling act, not a roster one. The READ view MR-05 requires is a separate route behind
+ * `cap:rota.view` and is built in P1d-2; it deliberately does not live under `/admin`, because a
+ * resident reading the rota is not doing administration.
+ *
+ * Deliberately NOT under `/endorsement`, so Unit::RESERVED_CODES is untouched
+ * (ReservedUnitCodesTest asserts that list against the router bidirectionally).
+ */
+Route::middleware(['auth', 'throttle:clinical', 'cap:rota.manage'])
+    ->prefix('admin')
+    ->name('admin.')
+    ->group(function () {
+        Route::get('/rota', [MasterRotaController::class, 'index'])->name('rota');
+
+        // Per-cell save (Task 8), splits (Task 9) and vacations (Task 10) — declared together so
+        // the URL space is settled in one commit; `RotaAssignment`/`VacationBooking` (Decision F)
+        // remain the only writers of the tables these delegate to.
+        Route::patch('/rota/cell', [MasterRotaController::class, 'setCell'])->name('rota.cell');
+        Route::post('/rota/cell/split', [MasterRotaController::class, 'splitCell'])->name('rota.cell.split');
+        Route::delete('/rota/cell', [MasterRotaController::class, 'clearCell'])->name('rota.cell.clear');
+        Route::post('/rota/vacations', [MasterRotaController::class, 'bookVacation'])->name('rota.vacations.store');
+        // {vacation} takes the DEFAULT binding — Vacation has no SoftDeletes (Decision E), so
+        // there is no trashed row for the binding to exclude and no ->withTrashed() to add
+        // (P1c Task 7's follow-up discipline: state this explicitly rather than leave a reader
+        // to work it out).
+        Route::delete('/rota/vacations/{vacation}', [MasterRotaController::class, 'cancelVacation'])->name('rota.vacations.destroy');
     });
 
 /*

@@ -98,6 +98,57 @@ class ContactVisibilityTest extends TestCase
         $this->assertArrayNotHasKey('notes', $props);
     }
 
+    /**
+     * Pre-merge finding 2. P1d Task 7 put `email` behind the same gate as `phone` —
+     * `PersonPresenter` releases the pair in one branch, because the rota grid gave
+     * `viewContact` its first holder of a capability narrower than `people.manage`. Nothing
+     * pinned that, and ruling 21 still described the setting as governing `phone` alone. The
+     * predicate is named for what it actually decides (`membersMaySeeContact`), and both fields
+     * are asserted on both sides of the toggle.
+     */
+    public function test_the_members_setting_releases_email_as_well_as_phone(): void
+    {
+        Institution::current()->update(['contact_visibility' => Institution::CONTACT_MEMBERS]);
+
+        $this->assertTrue(\App\Support\ContactVisibility::membersMaySeeContact());
+
+        $member = User::factory()->create(['position' => 4]);
+        $this->grant($member, 'people.manage', 'deny');
+
+        $person = Person::factory()->create([
+            'full_name' => 'Has Contact',
+            'phone' => '0500000000',
+            'email' => 'has.contact@example.test',
+        ]);
+
+        $props = \App\Support\PersonPresenter::one($person, $member);
+
+        $this->assertSame('0500000000', $props['phone']);
+        $this->assertSame('has.contact@example.test', $props['email']);
+    }
+
+    public function test_the_admins_setting_withholds_email_as_well_as_phone(): void
+    {
+        Institution::current()->update(['contact_visibility' => Institution::CONTACT_ADMINS]);
+
+        $this->assertFalse(\App\Support\ContactVisibility::membersMaySeeContact());
+
+        $member = User::factory()->create(['position' => 4]);
+        $this->grant($member, 'people.manage', 'deny');
+
+        $person = Person::factory()->create([
+            'full_name' => 'Has Contact',
+            'phone' => '0500000000',
+            'email' => 'has.contact@example.test',
+        ]);
+
+        $props = \App\Support\PersonPresenter::one($person, $member);
+
+        // Absent, not null — both of them, for the same reason.
+        $this->assertArrayNotHasKey('phone', $props);
+        $this->assertArrayNotHasKey('email', $props);
+    }
+
     public function test_notes_is_never_exposed_by_the_setting(): void
     {
         $this->assertArrayNotHasKey('members', array_filter(

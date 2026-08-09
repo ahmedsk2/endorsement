@@ -127,6 +127,28 @@ SCBU and WARD are seed data for the QCH institution.
   server- and client-side, the moment any `periods` row exists (Decision D) — the refusal names
   the unlock ("delete this academic year's periods first"), and P1b Task 11 is what makes that
   unlock actually work.
+- **A master-rota assignment is always a date-bounded span** (`master_rota_assignments`, one row
+  per span, `starts_on`/`ends_on` NOT NULL on every row — no nullable range meaning "the whole
+  period", no parent/child span pair). Overlaps for one person in one period are refused by the
+  model; gaps are allowed and counted, never silently invisible. `App\Support\Rota\RotaAssignment`
+  is the only writer, `RotaWritersAreSingularTest` proves it.
+- **`vacations` carries no `period_id`, deliberately.** A vacation crosses period boundaries and
+  is not a rotation — it overlays whatever unit the master rota already has a person on, and it
+  must survive a department regenerating or switching its period system. Which period(s) it
+  touches is a range intersection computed at read time, never a foreign key.
+  `App\Support\Rota\VacationBooking` is the only writer, same guard.
+- **Deleting an academic year's periods is refused while any `master_rota_assignments` row
+  references it** (`PeriodController::destroy()`). Neither rota table soft-deletes — this is
+  schedule structure, not a clinical row, and the hash-chained `audit_log` is the history; a
+  mistaken clear is a real delete with no undo in the UI.
+- **`PersonPresenter` gates BOTH `email` and `phone` behind `viewContact`.** `email` shipped
+  ungated until P1d's rota grid became the first consumer holding a narrower capability
+  (`rota.view`, every seeded position) than every prior caller (`people.manage`, which also grants
+  `viewContact`) — a rota surface reaches a person only through the presenter, never a second
+  projection.
+- **MR-04 — the rota driving on-call eligibility — is Stage 2.** Nothing in the rota infers
+  eligibility: no `off_roster` flag, no call-roster derivation, no per-person include/exclude
+  override. P1d ships the rota's data and screens and records the hook only.
 - **An index or unique key led by `institution_id` is a recurring mistake, not a one-off.**
   D11 keeps `institution_id` as provenance/in-instance grouping, never a query filter — but a
   plan-supplied migration snippet has twice proposed one anyway (P1a Task 4's `periods` unique

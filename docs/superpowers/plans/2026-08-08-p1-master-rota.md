@@ -646,6 +646,16 @@ migrations (CLAUDE.md); Task 9 supplies the verification queries for
 Later sub-plans continue the sequence: P1b `2026_08_13_*`, P1c `2026_08_14_*`,
 P1d `2026_08_15_*`, P1e `2026_08_16_*`.
 
+**Corrected, 2026-08-09 (P1d-1 finding 4): the `2026_08_15_*` allocation above was wrong by the
+time P1d-1 started.** `2026_08_15_120001_widen_rich_text_handover_columns` and
+`2026_08_15_120002_correct_ward_clinic_owner` landed first, from the unrelated
+ops-rehearsal-defects/MySQL-defects branch — both slots this line assumed were free were not.
+P1d-1 continues the sequence at `2026_08_15_120003_create_master_rota_assignments_table` and
+`2026_08_15_120004_create_vacations_table`, which still sorts strictly after P1c's `2026_08_14_*`
+and leaves P1e's `2026_08_16_*` untouched. See `docs/superpowers/plans/2026-08-09-p1d-master-rota.md`'s
+own "Migration ordering" section, which states the corrected allocation as fact rather than as a
+correction.
+
 ---
 
 # P1a — tasks
@@ -2200,6 +2210,38 @@ source level — and every date the People, Promotion and History screens show g
 7. MR-07 per-period availability summaries by level and unit, including who is on vacation each
    week — this is the Stage 1 acceptance criterion (*"availability summaries match reality"*).
 8. The e2e persistence test asserts after **reload**, never the save indicator alone.
+
+**2026-08-10 — superseded by `docs/superpowers/plans/2026-08-09-p1d-master-rota.md`, written
+when P1c-1 merged, and split before it started into P1d-1 (executable) and P1d-2 (scoped).** This
+scoping is left as written above (the P0a–P0d convention: amend, do not silently rewrite), but the
+sub-plan's own reconnaissance found this list covering two different security postures — data and
+editing versus resident-facing reading and bulk mutation — and split at that seam: **P1d-1**
+(items 1–4 above, and the security-relevant half of item 8: both capabilities, the department's
+own week, `master_rota_assignments` with its one writer and its overlaps-refused/gaps-allowed
+invariant, `vacations` with no `period_id` and its one writer, the `PersonPresenter` `email`
+gating this list never named, the `PeriodController::destroy()` hardening the first table makes
+necessary, the editor grid with per-cell save/splits/vacations, and the e2e reload-persistence
+journey covering all three) **shipped 2026-08-10**; **P1d-2** (item 5's fill-down/across/copy-period
+plus CSV export/import, item 6's read view, item 7's availability summaries — **the Stage 1
+acceptance criterion**) is scoped but not yet built, planned once P1d-1 merges, per the sub-plan's
+own "P1d-2" section.
+
+- **This list never named the `PersonPresenter` `email` gating at all.** `email` shipped
+  ungated from P1c onward because every caller then held `people.manage`, which also grants
+  `viewContact()` — a no-op distinction. P1d-1's rota grid is the first consumer holding a
+  narrower capability (`rota.view`, every seeded position), and shipping it unchanged would have
+  handed every resident every colleague's email address; the sub-plan's Task 7 closed this before
+  Task 8 built any grid prop, and its own binding OWNER DECISIONS block made Task 7 a hard
+  prerequisite of Task 8, not a tidy-up.
+- **Item 1's "date-bounded sub-assignments" undersold the actual shape decided: there is no
+  parent/child span table and no nullable "means the whole period" row — one shape, always
+  bounded** (P1d Decision B). A parent row for a split period has no single correct `unit_id`,
+  which the sub-plan treats as disqualifying rather than a detail to work around later.
+- **Item 6's publish view assumption goes further than this list states: `masterRota` in
+  Munawib's own data model carries no `status` field at all**, unlike `schedules`. P1d-1 therefore
+  ships no draft/publish state machine for the rota (design doc §9.1, Decision D) — MR-05's read
+  view (P1d-2) is a `cap:rota.view` screen showing the current rota, not a state machine with a
+  publish action.
 
 ### P1e — Clinics, setup wizard, demo department *(CL-01…02, CL-04…05, ST-01, ST-03 subset, ST-05)*
 

@@ -54,6 +54,9 @@ authorized change:
 | §17 solver contract | Generate-only JSON contract | **Extended** — an evaluation mode with reified hard constraints is required (§4.2) |
 | §33 FL-05 | Migrate the prototype's live data; accept when it "renders identically to the prototype" | **Overridden on premise** — the prototype is not a data source (D14). Rewritten in §11.1. |
 | §ST-04 roster import | "xlsx/csv with column mapping, validation report, dry-run preview" | **Overridden, CSV/TSV only (P1c Decision E, 2026-08-09).** No spreadsheet package exists in `composer.lock`, and adding one to a system holding children's PHI is an owner supply-chain decision, not a developer's. Column mapping, the validation report and the dry-run preview all ship as specified — only the file format narrows. The reader is a port (`App\Support\Roster\RosterReader`), so xlsx is one adapter class away the day the owner decides (§14 item 16, `docs/OPEN-DECISIONS.md` item F). |
+| AR-05 vacation `granularity: 'week'` | Spec never defines what a week is | **Resolved, P1d-1, 2026-08-10.** `Calendar::weekStartIsoDay()` derives the week start from `institutions.weekend_days` (ST-01) rather than assuming a fixed Sunday or Monday; `weekOf()`/`weeksIn()` share the definition with the screen and, once P1d-2 lands, the importer. See §7. |
+| PersonPresenter contact projection | `email` shipped ungated in P1c (every caller then held `people.manage`, a no-op distinction from `viewContact()`) | **Hardened, P1d-1, 2026-08-10.** `email` now sits behind the same `viewContact()` gate `phone` already used, because the rota grid is the first consumer holding a narrower capability (`rota.view`) than every prior caller. Not a Munawib-clause override — recorded here as the security finding that closed before any grid prop existed (P1d-1 finding 1, Task 7). |
+| MR-06 CSV-only export/import for the rota | Same dependency question as ST-04 | **Carried forward, P1c Decision E.** P1d-2 (scoped, not yet built) exports/imports the rota through `App\Support\Csv` exactly as the roster importer does — no spreadsheet package, two files (`rota.csv`, `vacations.csv`), person identified by `short_name` never email. |
 
 Everything else in Munawib Spec v1.0 stands. Requirement IDs (MR-03, CG-07, AU-06…) remain
 the binding vocabulary.
@@ -602,8 +605,8 @@ Munawib §AR-05's collections become Eloquent tables. Semantics binding, names a
 | Table | Munawib origin |
 |---|---|
 | `periods` | months or week-blocks (MR-01) |
-| `master_rota_assignments` | person × period × unit, date-bounded splits (MR-02) |
-| `vacations` | week or exact-date granularity (MR-03) |
+| `master_rota_assignments` | person × period × unit, date-bounded splits (MR-02). **SHIPPED, P1d-1, 2026-08-10.** One row shape only: `starts_on`/`ends_on` NOT NULL on every row, both bounds inclusive — a whole-period assignment is the degenerate split (one row whose bounds equal its period's), not a second, nullable representation. Overlaps for one (person, period) are refused by the model; gaps are allowed and counted (owner decision, P1d). `App\Support\Rota\RotaAssignment` is the only writer (Decision F). No soft delete — the hash-chained `audit_log` is the history. |
+| `vacations` | week or exact-date granularity (MR-03). **SHIPPED, P1d-1, 2026-08-10.** Deliberately carries **no `period_id`** — a vacation overlays whatever unit the master rota already has a person on, crosses period boundaries, and must survive a department regenerating or switching its period system; which period(s) it touches is a range intersection computed at read time (P1d Decision C). `App\Support\Rota\VacationBooking` is the only writer. |
 | `clinics`, `clinic_attendees` | CL-01, CL-02 |
 | `slots` | SL-01 (kind, window, cadence, days, unit, counts_hours, tally_key) |
 | `coverage_templates` | SL-03 (slot × day type → ordered level requirements, min/target/composition) |
@@ -655,6 +658,18 @@ period-generation systems including the week-block run's variable final block) t
 P2's mirror asserts the same file against itself; a change to one side that is not matched on
 the other is exactly the drift §4.3's cross-validation job exists to catch, applied here a
 stage early.
+
+**The department's own week (P1d-1, 2026-08-10) resolves a genuine gap in Munawib's own spec.**
+AR-05 gives a vacation a `granularity: 'week'` and MR-07 asks for availability *"each week"*, but
+nowhere does Munawib's spec say what a week **is** — while §8 ST-01 makes the weekend
+(`institutions.weekend_days`) department configuration, so two departments with different
+weekends would otherwise snap the same leave to different dates. `App\Support\Calendar` gained
+`weekStartIsoDay()` (the ISO weekday a week begins on, derived from the LAST configured weekend
+day, wrapping — Friday+Saturday off gives a Sunday start), `weekOf()` (the week containing a date,
+both bounds inclusive) and `weeksIn()` (every week intersecting a range, clipped). One
+implementation, shared by the on-screen week picker and — when P1d-2's importer lands — CSV
+import: a `week`-granularity booking is never snapped one way when typed and another when
+imported.
 
 **Timezone stays per-INSTANCE, not per-department** (owner decision 3, 2026-08-08, overriding
 this section's earlier implication of a per-institution timezone): `APP_TIMEZONE`
@@ -722,6 +737,19 @@ repo's own non-negotiable.
   account with a view-only capability.
 - **Consequence:** the `feeds` table and token semantics move from P5 to **P3** — the share
   link is how the rota gets used from day one.
+
+**MR-05's read view is `cap:rota.view`, not a token link (P1d-1, 2026-08-10).** Every seeded
+position holds `rota.view` by default — a resident reading which unit they rotate through next is
+the whole point of MR-05 — while `rota.manage` (editing) defaults Administrator-only. Tokenized
+share links remain **P3** as stated above; by the time P1d-1 shipped, Stage 1's own acceptance
+criterion ("residents claimed accounts") means every reader already has a login, so a share link
+would solve a problem the platform has already solved differently. Separately, and settled by
+Munawib's own data model rather than by this project's preference: `masterRota/{periodId}` carries
+**no `status` field at all**, unlike `schedules/{periodId}` (`'draft'|'published'|'archived'` plus
+a `version`). P1d therefore ships **no** draft/publish state machine for the rota — §18's
+publish/version/archive machinery (PU-01…03) is Stage 2 and is written entirely about the call
+schedule, once, for both surfaces together. An explicit "not visible until I say so" gate remains
+a real, if unbuilt, product option (§14 open item), additive if the owner wants it later.
 
 ### 9.2 PHI stays put
 
@@ -848,7 +876,7 @@ person/account seam into P1c-1 (this) and **P1c-2** (AC-02's configurable lifeti
 status, AC-03 unbinding, AC-04 per-person roles — open item 13), planned once P1c-1 merged. Two
 claims this plan's own P1c item made turned out false and are corrected at their own sections:
 PE-02's projection is `PersonPresenter`, not `$hidden` (§5.1); LV-02's "resend invitations" is an
-account action, not a roster one, and ships in P1c-2. **P1d** the master rota grid itself — periods × people, split assignments, vacations, fill-down/copy, import/export, the publish view; **P1e** clinics, the weekly clinic map, and the setup wizard threading every step above, plus the removable demo department seed. Each sub-plan is written when its predecessor merges, per the P0a–P0d convention. |
+account action, not a roster one, and ships in P1c-2. **P1d-1 — SHIPPED, 2026-08-10.** The master rota's data and its editor: `rota.view` (every seeded position) and `rota.manage` (Administrator-only) capabilities; the department's own week inside `Calendar` (§7); `master_rota_assignments` (one row per span, overlaps refused, gaps allowed and counted, §6.3) and its one writer `App\Support\Rota\RotaAssignment`; `vacations` (no `period_id`) and its one writer `App\Support\Rota\VacationBooking`; the `PeriodController::destroy()` hardening the first table makes necessary; the `PersonPresenter` `email` gating; `/admin/rota`'s grid — rows by level, columns by period, per-cell save, splits, vacations — at a measured, bounded query count. **P1d-2** (scoped, not yet built, planned once P1d-1 merged) is MR-05's resident-facing read view (`/rota`, `cap:rota.view`, search, level filter, per-person period strip), MR-07's per-period availability summaries by level and unit including who is on vacation each week — **the Stage 1 acceptance criterion** — and MR-06's fill-down/fill-across/copy-period plus CSV export/import. **P1e** clinics, the weekly clinic map, and the setup wizard threading every step above, plus the removable demo department seed. Each sub-plan is written when its predecessor merges, per the P0a–P0d convention. |
 | **P2 — Engine** | `packages/engine` with **all 21 CG-07 types** (D13), golden fixtures, plain-language previews, severity/rank model; `services/engine`; the CI cross-validation job. |
 | **P3 — Munawib Stage 2** | Slots, call windows, coverage templates, conditions gate with drag ranking, draft workbench with live hints, trackers, undo ≥30, unfilled lens, publish + archive, morning coverage, who's-on-call board, personal pages, tallies, exports. **L1 and the §9.1 share-token feed land here.** |
 | **P4 — Munawib Stage 3** | *Prerequisite: host scaled to 4 OCPU / 24 GB.* Solver service, §4.2 evaluation mode, ranked-sacrifice report, per-placement explanations, partial modes, infeasibility reporting, AU-06 against §11.2's fixture; requests with deadlines and reminders; approval queue with coverage impact; versioned change log; ICS feeds. **L4 lands here.** |
@@ -973,6 +1001,21 @@ None block starting P0.
     `Str::lower(trim($email))` — equivalent for ASCII, not mb-safe, and it cannot produce `null`.
     Collapsing the second onto the first is a small, safe tidy, deferred to **P1c-2**, which owns
     `Invitation` anyway (finding 10, P1c plan).
+18. **MR-04's eligibility derivation is unbuilt, and its hook is recorded rather than built.**
+    *"The master rota drives on-call eligibility automatically"* is Stage 2 (§35, owner decision
+    1, P1d): slots, call rosters, an `off_roster` unit flag and per-person include/exclude
+    overrides do not exist anywhere in this codebase, and P1d-1 adds none of them —
+    `tests/Feature/Rota/RotaAccessTest.php::test_nothing_in_the_rota_infers_on_call_eligibility`
+    scans for the shape and fails the build if a future plan reaches for "the rota already knows
+    who is eligible" before P3 actually builds the derivation.
+19. **The master rota has no publish state, by decision — revisit if the owner wants a gate.**
+    §9.1's Decision D: Munawib's own `masterRota/{periodId}` document carries no `status` field
+    (unlike `schedules/{periodId}`), so P1d ships no draft/publish machinery and MR-05's read view
+    is satisfied by a logged-in, `cap:rota.view`-gated screen showing the current rota. An
+    explicit "not visible until I say so" gate is a real, reasonable product requirement a future
+    owner might still want — it is additive (one nullable column, one controller branch), not a
+    rework, if raised. Listed as an open owner decision, default "no gate", in
+    `docs/superpowers/plans/2026-08-09-p1d-master-rota.md`'s own "Owner decisions needed" section.
 
 ---
 

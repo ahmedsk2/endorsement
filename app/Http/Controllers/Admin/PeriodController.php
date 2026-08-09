@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Institution;
+use App\Models\MasterRotaAssignment;
 use App\Models\Period;
 use App\Support\Calendar;
 use App\Support\PeriodGenerator;
@@ -39,10 +40,14 @@ use RuntimeException;
  * model guard stays as the last line, still wrapped in a transaction/try-catch here so a
  * same-year race (two admins generating at once) cannot reach the user as a raw 500 either.
  *
- * `periods` are pure schedule STRUCTURE — no PHI, nothing clinical points at a row until P1d —
- * so `destroy()` is a genuine hard delete, unlike every clinical/identity table in this system.
- * That is exactly what unlocks `period_type`/`academic_year_start` on the calendar screen
- * (Decision D): "delete this academic year's periods first" is a real, working instruction.
+ * `periods` are pure schedule STRUCTURE — no PHI — so `destroy()` is a genuine hard delete, unlike
+ * every clinical/identity table in this system. P1d's `master_rota_assignments` is the first row
+ * that DOES point at a period; it is schedule structure too (Decision E — no soft delete there
+ * either), so the hard delete stays genuine, but it is now refused outright while any assignment
+ * references the year rather than silently taking a planned rota with it. That refusal is exactly
+ * what keeps `period_type`/`academic_year_start`'s unlock on the calendar screen (Decision D)
+ * honest: "delete this academic year's periods first — which is itself refused while the master
+ * rota references them" is a real, working instruction, not a trap.
  */
 class PeriodController extends Controller
 {
@@ -149,10 +154,16 @@ class PeriodController extends Controller
      * path that unlocks `period_type`/`academic_year_start` on the calendar screen, so it must
      * not be one accidental click away.
      *
-     * P1d: refuse when `master_rota_assignments` references any of these periods. No such table
-     * exists yet — this is the hook a later plan fills in, not a check that can run today
-     * (`PeriodGenerationScreenTest::test_delete_succeeds_today_with_no_assignment_table_to_check`
-     * pins that it succeeds NOW and will need a new red test the day that table lands).
+     * P1d Task 4 closes the hook this docblock used to name as open: `master_rota_assignments`
+     * now exists, and the delete is refused outright while any row references one of this
+     * year's periods — never a partial delete of the periods an assignment does NOT reference.
+     * `AssignmentIntegrityTest` and `PeriodGenerationScreenTest::
+     * test_deleting_a_year_is_refused_while_a_rota_assignment_references_it` /
+     * `test_deleting_a_year_still_succeeds_once_nothing_references_it` are what pin this now,
+     * replacing the old `test_delete_succeeds_today_with_no_assignment_table_to_check` pin.
+     *
+     * `vacations` (Task 6) is deliberately NOT checked here — it carries no `period_id`
+     * (Decision C), so deleting periods cannot orphan one.
      */
     public function destroy(Request $request, string $academicYear): RedirectResponse
     {
@@ -169,6 +180,19 @@ class PeriodController extends Controller
         if ($count === 0) {
             throw ValidationException::withMessages([
                 'confirm_academic_year' => "No periods found for academic year \"{$academicYear}\".",
+            ]);
+        }
+
+        $blocking = MasterRotaAssignment::query()
+            ->whereIn('period_id', Period::query()->where('academic_year', $academicYear)->select('id'))
+            ->count();
+
+        if ($blocking > 0) {
+            throw ValidationException::withMessages([
+                'confirm_academic_year' => "This academic year has {$blocking} master rota assignment(s) "
+                    .'against it. Deleting its periods would delete the rota with them, and there is no '
+                    .'soft delete to recover from. Clear the rota for this year first (Master Rota), then '
+                    .'delete the periods.',
             ]);
         }
 

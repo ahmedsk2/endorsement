@@ -169,6 +169,28 @@ class PersonCrudTest extends TestCase
         $this->assertFalse($person->hasAccount());
     }
 
+    /**
+     * P1c Task 7's route-binding audit: the roster's own Edit button is offered on every row
+     * index() lists, retired or not (index() already uses `withTrashed()`), so a retired
+     * person's record must be reachable through the same PATCH the active-person edit form
+     * posts to — matching the fix already applied to people.history. Before the route carried
+     * `->withTrashed()`, this 404'd, exactly the gap Task 7 found and this test now guards.
+     */
+    public function test_a_retired_persons_record_is_still_editable(): void
+    {
+        $person = Person::factory()->create(['full_name' => 'Departed Rotator']);
+        $person->delete();
+
+        $this->actingAs($this->admin)
+            ->patch('/admin/people/'.$person->id, $this->payload(['full_name' => 'Departed Rotator, Corrected']))
+            ->assertRedirect()
+            ->assertSessionDoesntHaveErrors();
+
+        $updated = Person::withTrashed()->findOrFail($person->id);
+        $this->assertSame('Departed Rotator, Corrected', $updated->full_name);
+        $this->assertNotNull($updated->deleted_at, 'editing a retired person must not un-retire them');
+    }
+
     public function test_there_is_no_delete_endpoint(): void
     {
         $person = Person::factory()->create();

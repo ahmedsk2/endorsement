@@ -81,6 +81,9 @@ Route::get('/registration/verify/{pending}/{hash}', [EmailVerificationController
     ->middleware(['signed', 'throttle:12,1'])
     ->name('registration.verify');
 
+// {user} stays on the DEFAULT (trashed-excluding) binding (P1c Task 7's route-binding audit):
+// `auth` is required to reach this at all, and an authenticated session can only ever resolve
+// to a non-trashed user, so {user} can never legitimately be a retired account here.
 Route::get('/profile/email/verify/{user}/{hash}', [EmailVerificationController::class, 'verifyAccount'])
     ->middleware(['auth', 'signed', 'throttle:12,1'])
     ->name('profile.email.verify');

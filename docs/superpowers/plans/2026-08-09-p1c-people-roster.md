@@ -828,6 +828,64 @@ history endpoint reads no contact field and the panel performs no client-side da
 (`h.from.date`/`h.from.hijri` are server-formatted strings, interpolated verbatim). `npm test`:
 112 (unchanged — Task 7's Files list names no JS test). `npm run build` and the full suite green.
 
+**2026-08-09, Task 7 follow-up — the route-binding audit flagged above, done. One route fixed
+(`people.update`, the known instance); every other soft-deletable-model route binding audited
+and decided, per route, rather than a blanket `withTrashed()`.**
+
+Every route in `routes/web.php`/`routes/auth.php` binding a model that uses `SoftDeletes`
+(`Person`, `User`, `Handover`; `HandoverSignoff` also uses it but binds no route — see point 3):
+
+1. **`people.update` (`PersonController::update`) — FIXED, `->withTrashed()` added.** Same
+   reasoning as `people.history`'s existing fix: `index()` already lists retired people
+   (`withTrashed()`), and `People.vue`'s Edit button is offered on every row it lists —
+   `startEdit()`/`submitEdit()` never check `person.retired` — so a retired person's own edit
+   form posts to a route that, until now, 404'd. `withTrashed()` does not un-delete the row
+   (`->update()` on a trashed model leaves `deleted_at` set); restoring one is the invitation /
+   re-approval flow's job (`Person::matchByEmail()` clears `deleted_at` there on reactivation),
+   confirmed by inspection — there is no restore action anywhere in this codebase, admin-UI or
+   otherwise. Proven by a new test (`PersonCrudTest::test_a_retired_persons_record_is_still_editable`)
+   that fails with a 404 before the route's `->withTrashed()` and asserts the row is still
+   `trashed()` afterwards — editing must not double as an accidental restore.
+2. **`rows.update`/`rows.delete` (`EndorsementController::updateRow`/`deleteRow`, `{handover}`) —
+   left on the default binding, deliberately.** `deleteRow()` IS the soft delete, so an
+   already-deleted row 404ing on a second PATCH or DELETE is exactly the case this task's own
+   brief names as correct ("you should not be able to edit a soft-deleted clinical row through a
+   normal edit route"). There is no restore action for a handover row either. Locked in with two
+   new regression tests (`test_update_row_404s_for_an_already_deleted_row`,
+   `test_delete_row_404s_for_an_already_deleted_row`).
+3. **`handover_signoffs` — not a route-binding gap at all.** `updateSignoff`/`reopenSignoff` take
+   `{unit}/{date}` as plain strings and resolve the signoff row with their own query; there is no
+   `HandoverSignoff $x` typed route parameter anywhere for Laravel's implicit binding to exclude
+   trashed rows from. Out of scope by construction, noted inline in `routes/web.php` so a future
+   reader doesn't go looking for one.
+4. **`users.active`/`users.position`/`users.profile` (`{user}`, admin console) — left on the
+   default binding, deliberately.** Unlike `Person`, nothing in this codebase writes
+   `users.deleted_at` any more: `UserManagementController`'s own docblock records that account
+   deletion was withdrawn as a capability outright (2026-07-19 ruling) and the endpoint removed
+   with it (`test_the_user_delete_endpoint_no_longer_exists` guards the route itself staying
+   gone), and `index()`'s user list carries no `withTrashed()` either, so an admin has no path to
+   even see a trashed account's id, let alone act on one. Reaching one anyway through these
+   mutating routes would let an activate/role/profile write bypass the audited
+   deactivate-never-delete path the ruling exists to enforce — the 404 is correct. Locked in with
+   three new regression tests, one per route
+   (`test_set_active_404s_for_a_soft_deleted_user`, `test_set_position_404s_for_a_soft_deleted_user`,
+   `test_update_profile_404s_for_a_soft_deleted_user`).
+5. **`signatures.show` (`{user}`) and `profile.email.verify` (`{user}`) — left on the default
+   binding, no test added.** Both routes only ever act on the *authenticated* user (`show()`
+   403s unless `$viewer->getKey() === $user->getKey()`; `verifyAccount()` requires `auth`), and an
+   authenticated session can only ever resolve to a non-trashed account in the first place, so
+   `{user}` can never legitimately be a retired row at either route. A test here would only
+   exercise `actingAs()`'s ability to bypass the auth guard's own query, not real app behaviour,
+   so none was added — noted inline in both route files instead.
+
+No larger issue turned up: nothing found reaches or hides an already-soft-deleted row in a way
+that matters clinically — point 2 is the one clinical-data model in this list (`Handover`), and
+its finding is that the existing 404 is *already* correct, not a gap.
+
+`php artisan test`: 954 → 960 (6 new tests: 1 `PersonCrudTest`, 2 `EndorsementTest`, 3
+`UserManagementTest`). `npm test`: 112 (unchanged — no client code touched). `npm run build`
+green.
+
 ---
 
 ## Conventions every task follows

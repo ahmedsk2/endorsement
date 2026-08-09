@@ -20,7 +20,8 @@ use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 /**
- * Munawib MR-02. Decision G's seven-query grid: rows by level (held at the academic year's
+ * Munawib MR-02. Decision G's bounded-query grid — seven queries as Task 8 shipped it, eight since
+ * pre-merge finding 1 added the stale-row union: rows by level (held at the academic year's
  * start), columns by period, one cell per (person, period) carrying its spans, its uncovered
  * days, the level held AT THAT PERIOD, and any vacation overlay.
  *
@@ -160,9 +161,77 @@ class RotaGridTest extends TestCase
         $this->assertCount(1, $row['cells'][$periods[1]->getKey()]['vacations']);
     }
 
+    /**
+     * Pre-merge finding 3: this test used to seed 60 people and 13 periods and then measure an
+     * ENTIRELY EMPTY grid — no assignment, no vacation, no promotion, no stale row — so
+     * `assertLessThan(20)` only ever proved the empty case. Every N+1 the class docblock names is
+     * per-SPAN, per-VACATION or per-CELL-WITH-DATA; none of them can fire on a grid with nothing
+     * in it. The year is now populated before the measurement: 1170 assignment rows (30 people
+     * whole-period, 30 people split in two, across all 13 periods), 120 vacations, 30 mid-year
+     * promotions, and finding 1's deactivated person, whose row arrives through the stale-row
+     * union rather than the active roster.
+     */
     public function test_the_whole_grid_is_a_bounded_number_of_queries(): void
     {
-        $this->seedYear(periods: 13, people: 60);
+        [$periods, $people, $unitA, $level] = $this->seedYear(periods: 13, people: 60);
+
+        $unitB = Unit::create(['code' => 'XGQ', 'name' => 'Rota Grid Unit Q', 'active' => true]);
+        $promoted = Level::factory()->create(['code' => 'XGQ2', 'display_order' => 20]);
+
+        foreach ($people as $index => $person) {
+            foreach ($periods as $period) {
+                $from = $period->starts_on->format('Y-m-d');
+                $to = $period->ends_on->format('Y-m-d');
+
+                if ($index % 2 === 0) {
+                    RotaAssignment::set($person, $period, $unitA);
+
+                    continue;
+                }
+
+                // A split cell with a deliberate gap — the shape a per-span N+1 would feed on.
+                $mid = $period->starts_on->addDays(9)->format('Y-m-d');
+                $resume = $period->starts_on->addDays(13)->format('Y-m-d');
+
+                RotaAssignment::split($person, $period, [
+                    ['unit_id' => $unitA->getKey(), 'starts_on' => $from, 'ends_on' => $mid],
+                    ['unit_id' => $unitB->getKey(), 'starts_on' => $resume, 'ends_on' => $to],
+                ]);
+            }
+
+            // Two vacations each, in different periods — 120 rows across the year.
+            VacationBooking::book(
+                $person,
+                $periods[2]->starts_on->addDay()->format('Y-m-d'),
+                $periods[2]->starts_on->addDays(3)->format('Y-m-d'),
+                Vacation::GRANULARITY_DATE,
+            );
+            VacationBooking::book(
+                $person,
+                $periods[8]->starts_on->addDay()->format('Y-m-d'),
+                $periods[8]->starts_on->addDays(3)->format('Y-m-d'),
+                Vacation::GRANULARITY_DATE,
+            );
+
+            // Half the roster is promoted mid-year, so half the rows carry a second level span
+            // and every cell's level must be resolved from a MULTI-span history in memory.
+            if ($index % 2 === 0) {
+                LevelAssignment::assign($person, $promoted, $periods[6]->starts_on->format('Y-m-d'));
+            }
+        }
+
+        // Finding 1's stale rows: assigned, then deactivated. They reach the grid through the
+        // union, not the active roster. TEN of them, not one — a union written as one query per
+        // stale person costs exactly one query when there is exactly one stale person, so a
+        // single fixture could never tell the two implementations apart. At ten, the N+1 shape
+        // lands on 25 queries against this bound of 20 (verified by writing that N+1 and watching
+        // this test go red before restoring the union).
+        for ($i = 0; $i < 10; $i++) {
+            $departed = Person::factory()->create();
+            LevelAssignment::assign($departed, $level, $periods[0]->starts_on->format('Y-m-d'));
+            RotaAssignment::set($departed, $periods[0], $unitA);
+            $departed->forceFill(['active' => false])->save();
+        }
 
         $admin = User::factory()->create(['position' => 0]);
 
@@ -174,12 +243,14 @@ class RotaGridTest extends TestCase
         $count = count(DB::getQueryLog());
 
         // Measured, not assumed (this plan's own "evidence before arithmetic" instruction):
-        // Decision G's seven data queries plus the framework's own session/auth/capability
-        // reads and Person::levelSpansBetween()'s eager-loaded 'level' relation currently total
-        // 15 for this exact request. The bound is set just above that, so what matters — that
-        // the count does NOT grow with 60 people or 13 periods — is what actually gets caught. A
-        // per-cell Person::levelAt() would be 780 queries on its own, and a per-cell
-        // $assignment->unit another 780; both would blow well past this bound.
+        // Decision G's eight data queries (seven, plus finding 1's stale-row union) plus the
+        // framework's own session/auth/capability reads and Person::levelSpansBetween()'s
+        // eager-loaded 'level' relation currently total 16 for this exact request — the same
+        // figure this request produced with an EMPTY year before the seeding above was added,
+        // which is the whole point: the count does not grow with 60 people, 13 periods, 1170
+        // spans, 120 vacations, 30 promotions or a stale row. A per-cell Person::levelAt() would
+        // be 780 queries on its own, a per-cell $assignment->unit another 1170, and a per-stale-
+        // person union one more each; all would blow well past this bound.
         $this->assertLessThan(20, $count, "the grid ran {$count} queries for 780 cells");
     }
 

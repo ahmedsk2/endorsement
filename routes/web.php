@@ -145,6 +145,9 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
     ->name('admin.structure.')
     ->group(function () {
         Route::get('/units', [UnitController::class, 'index'])->name('units');
+        Route::post('/units', [UnitController::class, 'store'])->name('units.store');
+        Route::patch('/units/{unit}', [UnitController::class, 'update'])->name('units.update');
+        Route::patch('/units/{unit}/active', [UnitController::class, 'setActive'])->name('units.active');
     });
 
 /*

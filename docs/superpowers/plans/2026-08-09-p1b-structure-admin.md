@@ -405,6 +405,22 @@ case for a fifth unit appearing with no frontend change — one more than the pl
 "fix the existing fixture" scope). `npm run build`, `CompiledCssIsLightOnlyTest` and
 `TextContrastMeetsAaTest` green.
 
+**2026-08-09, Task 4 — one test added beyond the plan's list, no schema or contract surprises.**
+The FormRequest, controller writes and routes matched the plan's code verbatim. Added
+`test_a_reserved_code_is_refused_with_an_http_422_not_a_500`, which repeats the reserved-code
+case with an `X-Inertia`/JSON `Accept` header and asserts the response status is literally
+**422** (`assertJsonValidationErrors`), rather than only the redirect-plus-session-errors shape
+`assertSessionHasErrors` exercises. Finding 8 and `Unit::booted()`'s own docblock are both about
+the wire-level status code (a 500 vs a validation response), and `assertSessionHasErrors` alone
+would pass equally for a 302 *or* a 200 — it does not pin the status. The Task 4 plan text names
+"a 422 with a named field" as the assertion goal; this test is what actually pins the 422.
+`Units.vue`'s create form and per-row inline edit form both follow `Settings.vue`'s
+`useForm`/`inputClass`/`recentlySuccessful` shape; aliases are a comma-separated text input
+split/joined at the transform step, per the plan's Step 5 note. `php artisan test`: 772 → 785
+(13 new, one more than the plan's stated 783 total — the extra 422 test, same pattern as Task
+1's own +1). `npm test`: 111 (unchanged — Task 4's Files list names no JS test, and none was
+needed). `npm run build` and the full suite green.
+
 ---
 
 ## Conventions every task follows
@@ -1712,7 +1728,7 @@ git commit -m "feat: the sidebar reads the units table instead of remembering fo
 UN-01 (create, rename, colour, order, deactivate), UN-02 (flags), UN-03 (aliases), UN-04
 (deactivation hides forward, never deletes), UN-05 (`name2`). Merge is Task 5.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/Admin/UnitCrudTest.php`:
 
@@ -1944,7 +1960,7 @@ class UnitCrudTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it and watch it go red**
+- [x] **Step 2: Run it and watch it go red**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
@@ -1953,7 +1969,7 @@ php artisan test --filter UnitCrudTest 2>&1 | tail -15
 
 Expected: FAIL — `Expected response status code [302] but received 405` (no POST route).
 
-- [ ] **Step 3: The FormRequest**
+- [x] **Step 3: The FormRequest**
 
 Create `app/Http/Requests/Admin/UnitRequest.php`:
 
@@ -2034,7 +2050,7 @@ class UnitRequest extends FormRequest
 }
 ```
 
-- [ ] **Step 4: The write endpoints**
+- [x] **Step 4: The write endpoints**
 
 Extend `app/Http/Controllers/Admin/UnitController.php`:
 
@@ -2118,7 +2134,7 @@ Routes, inside the existing `admin/structure` group:
 
 No `DELETE`. `test_there_is_no_delete_endpoint` asserts the 405 rather than trusting the absence.
 
-- [ ] **Step 5: The forms**
+- [x] **Step 5: The forms**
 
 Extend `resources/js/Pages/Admin/Units.vue`: a "New unit" section above the table and an inline
 edit row per unit. Follow `Settings.vue` exactly — `useForm`, `inputClass`, `form.errors.*` as
@@ -2138,7 +2154,7 @@ select renders each option's label with a live swatch:
 The reserved codes are shown as help text under the code field, from the `reserved_codes` prop,
 so the refusal is visible before submit as well as enforced on it.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"

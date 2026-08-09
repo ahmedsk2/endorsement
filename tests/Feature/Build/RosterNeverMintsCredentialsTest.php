@@ -26,8 +26,18 @@ class RosterNeverMintsCredentialsTest extends TestCase
     private const NEEDLES = [
         'User::create(',
         "DB::table('users')",
+        'DB::table("users")',
+        // `Person::user()` is SINGULAR (at most one account per person, `users.person_id`
+        // UNIQUE) — `->users()->create(` can never match real code and was a dead needle;
+        // review finding (minor) 7, the reviewer's own mutation test proved it. Kept alongside
+        // the correct one rather than removed, in case the relation is ever renamed back.
         '->users()->create(',
+        '->user()->create(',
         'new User(',
+        'User::forceCreate(',
+        'User::updateOrCreate(',
+        'User::firstOrCreate(',
+        '->save()',
     ];
 
     public function test_none_of_the_four_files_writes_to_users(): void

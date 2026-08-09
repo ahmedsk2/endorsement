@@ -249,6 +249,135 @@ class RosterImportTest extends TestCase
         $this->assertSame(2, Person::count());
     }
 
+    // --- cross-field-conflict.csv: matches one person, collides with another ----------------
+
+    /**
+     * Review finding 1: a row whose EMAIL matches person A but whose SHORT NAME already belongs
+     * to a DIFFERENT person B previously previewed as a clean `update` with `errors: []`, then
+     * `commit()` threw a raw `UniqueConstraintViolationException` on `people.short_name` —
+     * nothing was written, but the preview reported no problem, and Laravel's own exception
+     * formatting interpolates the failed query's BOUND VALUES (this row's name, email, phone)
+     * into the exception message, which a log line then carries. `analyseRow()` now checks the
+     * matched person's OTHER identifying field against every other person before ever reporting
+     * `update`.
+     */
+    public function test_a_row_matching_one_person_but_colliding_with_another_is_a_row_level_error(): void
+    {
+        $a = Person::factory()->create(['full_name' => 'Person A', 'short_name' => 'A. Cross', 'email' => 'a.cross@example.test']);
+        $b = Person::factory()->create(['full_name' => 'Person B', 'short_name' => 'B. Cross', 'email' => 'b.cross@example.test']);
+
+        $preview = RosterImport::preview($this->reader('cross-field-conflict.csv'), $this->mapping);
+
+        $this->assertSame([], $preview['file_errors'], 'This is a ROW-level problem, not a file-level one.');
+        $this->assertSame(['create' => 0, 'update' => 0, 'skip' => 0, 'error' => 1], $preview['summary']);
+
+        $row = $preview['rows'][0];
+        $this->assertSame(RosterImport::ERROR, $row['outcome']);
+        $this->assertNotEmpty($row['errors']);
+        // Never the value — CLAUDE.md's own rule, restated for this report.
+        foreach ($row['errors'] as $error) {
+            $this->assertStringNotContainsString('B. Cross', $error);
+            $this->assertStringContainsString('Line 2', $error);
+        }
+
+        $result = RosterImport::commit($this->reader('cross-field-conflict.csv'), $this->mapping, [], $this->fakeRequest());
+
+        $this->assertSame(['created' => 0, 'updated' => 0, 'skipped' => 1], $result['summary']);
+        $this->assertSame('Person A', $a->fresh()->full_name, 'the row must never be silently applied to A');
+        $this->assertSame('Person B', $b->fresh()->full_name);
+        $this->assertSame('A. Cross', $a->fresh()->short_name);
+        $this->assertSame('B. Cross', $b->fresh()->short_name);
+    }
+
+    /**
+     * Defence in depth for the SAME finding: even an unanticipated race (a conflicting value
+     * appearing between preview and commit, from some path the row-level check above does not
+     * anticipate) must never let a raw `UniqueConstraintViolationException` — whose own message
+     * carries the failed query's bound values — reach a caller un-sanitised.
+     */
+    public function test_an_unanticipated_db_conflict_during_commit_never_leaks_contact_data_into_the_exception(): void
+    {
+        Person::saving(function (Person $model): void {
+            if ($model->full_name === 'Sara Al-Harbi') {
+                throw new \Illuminate\Database\UniqueConstraintViolationException(
+                    'sqlite',
+                    'insert into "people" ("full_name", "email", "phone") values (?, ?, ?)',
+                    ['Sara Al-Harbi', 'sara.harbi@example.test', '0502222222'],
+                    new RuntimeException('UNIQUE constraint failed: people.short_name'),
+                );
+            }
+        });
+
+        try {
+            RosterImport::commit($this->reader('clean.csv'), $this->mapping, [], $this->fakeRequest());
+            $this->fail('Expected the sanitised exception to propagate.');
+        } catch (\Throwable $e) {
+            $this->assertStringNotContainsString('Sara Al-Harbi', $e->getMessage());
+            $this->assertStringNotContainsString('sara.harbi@example.test', $e->getMessage());
+            $this->assertStringNotContainsString('0502222222', $e->getMessage());
+        }
+
+        $this->assertSame(1, Person::count(), 'Only the admin — the transaction must still roll back.');
+    }
+
+    // --- oversized-fields.csv: length + email format (finding 2) ---------------------------
+
+    /**
+     * Review finding 2: the importer wrote CSV values straight to the database with only
+     * `trim()`, against `varchar(255)/50/255/32` — on MySQL 8.4 strict mode an over-length cell
+     * is an uncaught `SQLSTATE[22001] … 1406 Data too long`, a 500 with the value in the log.
+     * SQLite ignores VARCHAR length outright, so this asserts the VALIDATION REFUSAL (a row-level
+     * error) rather than anything a `varchar` column would enforce — a test that only passed
+     * because SQLite shrugged would prove nothing. Limits mirror `PersonRequest`'s exactly:
+     * full_name 255, short_name 50, email 255, phone 32.
+     */
+    public function test_a_field_over_its_column_length_is_a_row_level_error(): void
+    {
+        $preview = RosterImport::preview($this->reader('oversized-fields.csv'), $this->mapping);
+
+        $this->assertSame([], $preview['file_errors']);
+
+        $byShortName = collect($preview['rows'])->keyBy(fn ($r) => $r['values']['short_name'] ?? '');
+
+        $longName = $byShortName['L. Name'];
+        $this->assertSame(RosterImport::ERROR, $longName['outcome']);
+        $this->assertTrue(collect($longName['errors'])->contains(fn ($e) => str_contains($e, 'Full Name')));
+
+        $longShort = collect($preview['rows'])->first(fn ($r) => str_starts_with((string) ($r['values']['short_name'] ?? ''), 'SSS'));
+        $this->assertSame(RosterImport::ERROR, $longShort['outcome']);
+        $this->assertTrue(collect($longShort['errors'])->contains(fn ($e) => str_contains($e, 'Short Name')));
+
+        $longEmail = $byShortName['L. Email'];
+        $this->assertSame(RosterImport::ERROR, $longEmail['outcome']);
+        $this->assertTrue(collect($longEmail['errors'])->contains(fn ($e) => str_contains($e, 'Email')));
+
+        $longPhone = $byShortName['L. Phone'];
+        $this->assertSame(RosterImport::ERROR, $longPhone['outcome']);
+        $this->assertTrue(collect($longPhone['errors'])->contains(fn ($e) => str_contains($e, 'Phone')));
+
+        $result = RosterImport::commit($this->reader('oversized-fields.csv'), $this->mapping, [], $this->fakeRequest());
+        $this->assertSame(['created' => 0, 'updated' => 0, 'skipped' => 5], $result['summary']);
+        $this->assertSame(1, Person::count(), 'Only the admin — nothing over-length ever reaches the database.');
+    }
+
+    /**
+     * `Person::normalizeEmail()` only lowercases and trims — `not an address` would otherwise
+     * land in `people.email`, the address `Person::matchByEmail()` uses for invitation claiming.
+     */
+    public function test_a_malformed_email_is_a_row_level_error(): void
+    {
+        $preview = RosterImport::preview($this->reader('oversized-fields.csv'), $this->mapping);
+
+        $byShortName = collect($preview['rows'])->keyBy(fn ($r) => $r['values']['short_name'] ?? '');
+        $badEmail = $byShortName['B. Email'];
+
+        $this->assertSame(RosterImport::ERROR, $badEmail['outcome']);
+        $this->assertTrue(collect($badEmail['errors'])->contains(fn ($e) => str_contains($e, 'not-an-address')));
+
+        RosterImport::commit($this->reader('oversized-fields.csv'), $this->mapping, [], $this->fakeRequest());
+        $this->assertSame(0, Person::where('email', 'not-an-address')->count());
+    }
+
     // --- broken.csv: file-level AND row-level problems, reported together -------------------
 
     public function test_broken_csv_reports_the_missing_column_as_file_level_and_everything_else_as_row_level(): void
@@ -403,6 +532,112 @@ class RosterImportTest extends TestCase
         $this->assertMatchesRegularExpression('/^created=\d+;updated=\d+;skipped=\d+$/', $log->detail);
         $this->assertStringNotContainsString('@', $log->detail);
         $this->assertStringNotContainsString('clean.csv', $log->detail);
+    }
+
+    // --- review finding 6: audit AFTER the transaction, and only a REAL role change ---------
+
+    /**
+     * `already-on-roster.csv`'s three existing people are all seeded at position 4 (Resident);
+     * two rows in the fixture also say "Resident" (no change) and the third says "Chief
+     * Resident" (a real change, 4 -> 5). Before this fix, `PositionChange::apply()` audited
+     * EVERY row unconditionally — three `user_role_change` rows for one genuine change, and
+     * `user_role_change` is on `AuditAnomalies`' single-occurrence watch list, so a routine
+     * re-import (the common case: most rows touch contact fields, not position) raised a
+     * critical OpsAlert every time. Only the one row whose position actually changed may audit.
+     */
+    public function test_only_a_genuine_position_change_writes_a_role_change_audit_row(): void
+    {
+        $existing = [
+            Person::factory()->create(['full_name' => 'H. Mutairi (old)', 'short_name' => null, 'email' => 'existing1@example.test', 'position' => 4]),
+            Person::factory()->create(['full_name' => 'Y. Shahri (old)', 'short_name' => null, 'email' => 'existing2@example.test', 'position' => 4]),
+            Person::factory()->create(['full_name' => 'N. Subaie (old)', 'short_name' => null, 'email' => 'existing3@example.test', 'position' => 4]),
+        ];
+
+        RosterImport::commit($this->reader('already-on-roster.csv'), $this->mapping, [], $this->fakeRequest());
+
+        $this->assertSame(1, AuditLog::where('action', 'user_role_change')->count(),
+            'Two of the three rows kept the SAME position — only the third (Chief Resident) genuinely changed.');
+
+        $changed = Person::findOrFail($existing[2]->id); // Norah -> Chief Resident (5)
+        $this->assertSame(5, $changed->position);
+        $this->assertDatabaseHas('audit_log', [
+            'action' => 'user_role_change',
+            'detail' => 'person='.$changed->id.';user=none;position=5',
+        ]);
+
+        // The unchanged two must carry NO row-level role-change audit at all.
+        $this->assertDatabaseMissing('audit_log', ['action' => 'user_role_change', 'detail' => 'like', 'person='.$existing[0]->id.';%']);
+        $this->assertDatabaseMissing('audit_log', ['action' => 'user_role_change', 'detail' => 'like', 'person='.$existing[1]->id.';%']);
+    }
+
+    /** A brand-new person's position is always a genuine assignment, never "unchanged". */
+    public function test_a_newly_created_person_always_writes_a_role_change_audit_row(): void
+    {
+        $before = AuditLog::where('action', 'user_role_change')->count();
+
+        $preview = RosterImport::preview($this->reader('clean.csv'), $this->mapping);
+        $position = collect($preview['rows'])->search(fn ($r) => $r['full_name'] === 'Maha Al-Qahtani');
+
+        $result = RosterImport::commit($this->reader('clean.csv'), $this->mapping, [$position => true], $this->fakeRequest());
+
+        $this->assertSame(8, $result['summary']['created']);
+        $this->assertSame($before + 8, AuditLog::where('action', 'user_role_change')->count());
+    }
+
+    /**
+     * The transaction-ordering half of the same finding: `AuditLog::record()` opens its own
+     * transaction and locks the chain tail, so nesting N of them inside RosterImport's own
+     * per-row loop serialises the whole chain for the import's duration — `Promotion::commit()`
+     * and `PersonController::bulk()` both audit AFTER their transaction commits (Decision H) and
+     * this importer must match them. Proven here rather than merely asserted: a forced failure
+     * partway through must leave NO `user_role_change` row behind either, exactly as the OTHER
+     * writes are rolled back — auditing outside the transaction does not change WHAT is atomic,
+     * only WHEN inside a successful run the chain is touched.
+     */
+    public function test_a_forced_failure_leaves_no_role_change_audit_row_either(): void
+    {
+        $existing = Person::factory()->create(['full_name' => 'Y. Shahri (old)', 'short_name' => null, 'email' => 'existing2@example.test', 'position' => 4]);
+        $before = AuditLog::where('action', 'user_role_change')->count();
+
+        Person::saving(function (Person $model) use ($existing): void {
+            if ((int) $model->getKey() === (int) $existing->getKey() && $model->full_name === 'Yousef Al-Shahri') {
+                throw new RuntimeException('Simulated mid-import failure.');
+            }
+        });
+
+        try {
+            RosterImport::commit($this->reader('already-on-roster.csv'), $this->mapping, [], $this->fakeRequest());
+            $this->fail('Expected the forced failure to propagate.');
+        } catch (RuntimeException $e) {
+            $this->assertSame('Simulated mid-import failure.', $e->getMessage());
+        }
+
+        $this->assertSame($before, AuditLog::where('action', 'user_role_change')->count());
+        $this->assertSame(4, $existing->fresh()->position, 'The whole row must roll back, including the position it never committed.');
+    }
+
+    /**
+     * The observable consequence, end to end: a routine re-import that touches no positions
+     * must not page an operator. `AuditAnomalies` watches `user_role_change` on a
+     * single-occurrence basis specifically because it usually means an interactive admin
+     * console changed one account's role — this asserts the false alarm this finding named is
+     * actually gone, not just that the audit row count looks right in isolation.
+     */
+    public function test_a_no_op_reimport_does_not_trip_the_audit_anomaly_sweep(): void
+    {
+        \Illuminate\Support\Facades\Mail::fake();
+        \App\Support\AppSettings::set('alert_email', 'oncall@example.org');
+        config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => 'smtp.example.org']);
+
+        Person::factory()->create(['full_name' => 'H. Mutairi (old)', 'short_name' => null, 'email' => 'existing1@example.test', 'position' => 4]);
+        Person::factory()->create(['full_name' => 'Y. Shahri (old)', 'short_name' => null, 'email' => 'existing2@example.test', 'position' => 4]);
+        Person::factory()->create(['full_name' => 'N. Subaie (old)', 'short_name' => null, 'email' => 'existing3@example.test', 'position' => 5]);
+
+        RosterImport::commit($this->reader('already-on-roster.csv'), $this->mapping, [], $this->fakeRequest());
+
+        $this->artisan('audit:anomalies')->assertExitCode(0);
+
+        \Illuminate\Support\Facades\Mail::assertNothingSent();
     }
 
     public function test_the_import_never_creates_an_account(): void

@@ -60,9 +60,13 @@ final class CsvRosterReader implements RosterReader
         }
 
         $this->delimiter = self::sniffDelimiter($headerLine);
+        // `escape: ''` (review minor 11, paired with `App\Support\Csv`'s own fix): PHP 8.4
+        // deprecates the implicit `\` escape default, and that default actively corrupts a cell
+        // ending in a backslash by reading past the field's closing quote. RFC 4180 has no escape
+        // character at all — only doubled enclosures — which this reader relies on regardless.
         $this->headers = array_map(
             fn (string $h): string => self::unNeutralise(trim($h)),
-            str_getcsv($headerLine, $this->delimiter),
+            str_getcsv($headerLine, $this->delimiter, escape: ''),
         );
     }
 
@@ -81,7 +85,8 @@ final class CsvRosterReader implements RosterReader
     {
         $file = new SplFileObject($this->path, 'r');
         $file->setFlags(SplFileObject::READ_CSV | SplFileObject::SKIP_EMPTY);
-        $file->setCsvControl($this->delimiter);
+        // `escape: ''` — see the constructor's own comment on this same fix (review minor 11).
+        $file->setCsvControl($this->delimiter, escape: '');
 
         $lineNumber = 0;
         $dataRows = 0;
@@ -122,7 +127,7 @@ final class CsvRosterReader implements RosterReader
         $bestCount = -1;
 
         foreach (self::DELIMITER_CANDIDATES as $candidate) {
-            $count = count(str_getcsv($headerLine, $candidate));
+            $count = count(str_getcsv($headerLine, $candidate, escape: ''));
 
             if ($count > $bestCount) {
                 $bestCount = $count;
@@ -133,7 +138,16 @@ final class CsvRosterReader implements RosterReader
         return $best;
     }
 
-    /** Decision F's pairing: strip exactly one leading apostrophe ahead of a dangerous prefix. */
+    /**
+     * Decision F's pairing: strip exactly one leading apostrophe ahead of a dangerous prefix.
+     *
+     * NOT a true inverse of `App\Support\Csv::neutralise()` (review minor 13): a value that was
+     * GENUINELY typed starting with an apostrophe then a dangerous character (`'=90kg`) is
+     * indistinguishable here from one this system's own export added, so it is stripped either
+     * way. Not an execution risk — see `Csv`'s own docblock for the full reasoning and
+     * `CsvInjectionTest` for the pinned case — but a re-import is not perfectly lossless for
+     * this one genuine shape.
+     */
     private static function unNeutralise(string $value): string
     {
         if ($value === '' || $value[0] !== "'") {

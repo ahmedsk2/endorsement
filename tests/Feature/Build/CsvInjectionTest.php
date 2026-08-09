@@ -99,6 +99,68 @@ class CsvInjectionTest extends TestCase
         $this->assertSame('=SUM(A1)', $rows[0]['Formula']);
     }
 
+    /**
+     * Review minor 11: PHP 8.4 deprecates the implicit `\` escape parameter on
+     * `fputcsv`/`str_getcsv`/`setCsvControl`, and that default is not merely deprecated but
+     * ACTIVELY WRONG for a cell ending in a backslash — PHP's escape mechanism treats the
+     * backslash immediately before the closing quote as escaping the quote itself, so the parser
+     * reads PAST the intended field boundary into whatever follows (here, the next column; in a
+     * multi-row file, potentially the next row). `escape: ''` (RFC 4180 has no escape character
+     * at all — only doubled enclosures) is what `Csv::stream()` and `CsvRosterReader` must both
+     * pass for a value ending in `\` to round-trip intact.
+     */
+    public function test_a_cell_ending_in_a_backslash_round_trips_through_the_reader(): void
+    {
+        $response = Csv::stream('roster.csv', ['Name', 'Next'], [['Ward A\\', 'Second']]);
+        $content = $this->captureStream($response);
+
+        $tmp = tempnam(sys_get_temp_dir(), 'csv');
+        file_put_contents($tmp, $content);
+
+        $reader = new \App\Support\Roster\CsvRosterReader($tmp);
+        $rows = iterator_to_array($reader->rows());
+
+        @unlink($tmp);
+
+        $this->assertSame('Ward A\\', $rows[0]['Name']);
+        $this->assertSame('Second', $rows[0]['Next'], 'A corrupted escape must not swallow the next column.');
+    }
+
+    /**
+     * Review minor 13: `neutralise()`/`unNeutralise()` are NOT a true inverse pair for one
+     * genuine value — a cell that already starts with an apostrophe immediately followed by a
+     * dangerous character. `neutralise()` leaves it alone (its first character is `'`, not
+     * itself dangerous, so the FILE this system produces is Excel-safe either way); the reader
+     * cannot tell that apostrophe apart from one this class added, so a re-import strips it,
+     * losing the original apostrophe permanently. Not an execution risk (see `Csv`'s own
+     * docblock) — pinned here so the behaviour is a documented, intentional trade-off rather than
+     * a surprise for whoever notices the data drift later.
+     */
+    public function test_a_genuine_leading_apostrophe_before_a_dangerous_character_is_not_a_true_inverse(): void
+    {
+        $genuine = "'=90kg approx";
+
+        // The export leaves it untouched — Excel-safe on its own terms (a leading apostrophe is
+        // Excel's own "treat as text" marker), not because this class recognised it.
+        $this->assertSame($genuine, Csv::neutralise($genuine));
+
+        $response = Csv::stream('roster.csv', ['Note'], [[$genuine]]);
+        $content = $this->captureStream($response);
+
+        $tmp = tempnam(sys_get_temp_dir(), 'csv');
+        file_put_contents($tmp, $content);
+
+        $reader = new \App\Support\Roster\CsvRosterReader($tmp);
+        $rows = iterator_to_array($reader->rows());
+
+        @unlink($tmp);
+
+        // The KNOWN limitation: the apostrophe is gone. Genuinely lossy, genuinely not a
+        // security risk — see the comment above and Csv's own docblock for why.
+        $this->assertSame('=90kg approx', $rows[0]['Note']);
+        $this->assertNotSame($genuine, $rows[0]['Note']);
+    }
+
     public function test_embedded_newlines_and_quotes_survive(): void
     {
         $cell = "line one\nline two \"quoted\"";

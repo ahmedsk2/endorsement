@@ -270,6 +270,19 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:rota.manage'])
     ->name('admin.')
     ->group(function () {
         Route::get('/rota', [MasterRotaController::class, 'index'])->name('rota');
+
+        // Per-cell save (Task 8), splits (Task 9) and vacations (Task 10) — declared together so
+        // the URL space is settled in one commit; `RotaAssignment`/`VacationBooking` (Decision F)
+        // remain the only writers of the tables these delegate to.
+        Route::patch('/rota/cell', [MasterRotaController::class, 'setCell'])->name('rota.cell');
+        Route::post('/rota/cell/split', [MasterRotaController::class, 'splitCell'])->name('rota.cell.split');
+        Route::delete('/rota/cell', [MasterRotaController::class, 'clearCell'])->name('rota.cell.clear');
+        Route::post('/rota/vacations', [MasterRotaController::class, 'bookVacation'])->name('rota.vacations.store');
+        // {vacation} takes the DEFAULT binding — Vacation has no SoftDeletes (Decision E), so
+        // there is no trashed row for the binding to exclude and no ->withTrashed() to add
+        // (P1c Task 7's follow-up discipline: state this explicitly rather than leave a reader
+        // to work it out).
+        Route::delete('/rota/vacations/{vacation}', [MasterRotaController::class, 'cancelVacation'])->name('rota.vacations.destroy');
     });
 
 /*

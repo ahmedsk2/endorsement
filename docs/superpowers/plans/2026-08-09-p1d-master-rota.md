@@ -593,6 +593,46 @@ column), or fixture-seeding (`DemoSeeder`/`E2eSeeder`, the same carve-out alread
 was not asked about. Recorded so the next reader does not mistake "the allow-list grew by 21" for
 "the guard went slack" — it is the guard doing exactly its job against a much more overloaded word.
 
+**2026-08-10, Task 8 — three empirical findings, none a plan defect.**
+
+1. **`CalendarIsTheOnlyConverterTest::test_strtotime_appears_only_on_the_allow_list` is a bare
+   substring scan, and `RotaCellRequest.php`'s own docblock tripped it.** The docblock explained the
+   `date_format:Y-m-d` choice by referencing "P1 finding 3" and wrote `` `strtotime()` `` (empty
+   parens) in prose — which contains the literal substring `strtotime(` the guard scans for,
+   identically to finding 8's recorded `'phone'`/`'notes'` false-positive class for
+   `ContactFieldsAreProjectedOnceTest`. `Calendar.php` itself carries the same historical
+   explanation without tripping the guard only because it is the one file the test excludes by
+   name (`CALENDAR_FILE`) — a newly-created file gets no such exemption. Resolved by rewording the
+   comment to describe the old behaviour without the literal call-shaped substring, not by
+   allow-listing the file: the file calls no date-conversion function at all, so an allow-list
+   entry would misstate what it is for.
+2. **The measured query count for the 60-person/13-period grid is 15, not the plan's illustrative
+   "seven data queries plus framework overhead."** Per this plan's own "evidence before arithmetic"
+   instruction, `RotaGridTest::test_the_whole_grid_is_a_bounded_number_of_queries` was first run
+   with a deliberately unreachable bound to read the real count, then pinned at
+   `assertLessThan(20, $count)` — comfortably above the measured 15 (Decision G's seven data
+   queries, one of which — `Person::levelSpansBetween()` — is itself two physical queries per its
+   own docblock and `LevelResolverParityTest`, plus session/auth/capability reads) and comfortably
+   below the ~780+ a per-cell `levelAt()` or `$assignment->unit` regression would produce.
+3. **`RotaGridTest`'s own `fetchGrid()` helper creates an admin `User`, and `UserFactory` always
+   creates a linked, active `Person` (P0c) alongside it** — so a naive "N people seeded means N
+   rows" assertion is off by one. Not a defect in `RotaGrid` (the extra row is a real, correctly
+   active person who legitimately belongs on the grid); the test asserts row **membership** for the
+   people it seeded rather than an exact total, which stays honest about the fixture rather than
+   special-casing the admin actor out of the roster query.
+
+**Deviation from the Files list, recorded rather than silently taken:** Task 8's Step 3 registers
+all five `/admin/rota/*` write routes (cell, cell/split, cell/vacations…) in one commit, including
+`bookVacation`/`cancelVacation`, whose dedicated `VacationRequest` and Vue affordance are Task 10's
+own Files list. Since Laravel routes are resolved lazily, registering a route against a controller
+method that does not yet exist would not fail until first hit — but leaving it that way for two
+whole commits was judged a worse risk than a small one. `MasterRotaController::bookVacation()`/
+`cancelVacation()` are therefore implemented in Task 8 with inline `$request->validate()` (the
+writer they delegate to, `App\Support\Rota\VacationBooking`, already exists from Task 6), and
+Task 10 replaces the inline validation with the dedicated `VacationRequest` FormRequest its own
+Files list names — a refactor of an already-working, already-audited pair of actions, not new
+capability. Nothing in Task 8's own tests exercises these two actions.
+
 ---
 
 ## Conventions every task follows

@@ -29,3 +29,7 @@ Thumbs.db
 # Claude Code personal overrides (this machine only)
 .claude/settings.local.json
 storage/backups/
+
+# Playwright e2e run artefacts (churn every `npm run test:e2e`; config uses the
+# default outputDir and the `list` reporter, so this is the only output path)
+/test-results/

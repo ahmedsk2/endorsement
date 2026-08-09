@@ -2743,6 +2743,46 @@ git status --short
 Expected: all green, working tree clean. If the plan has to stop, it stops here — not mid-task
 and not between Tasks 10 and 11.
 
+**2026-08-09, Task 9 — checkpoint confirmed, one pre-existing doc contradiction found and
+closed.** `php artisan test`: 819 passed (0 failures). `npm test`: 111 passed. `npm run
+test:e2e`: 17 passed. `npm run build` green, run before the PHP suite. Working tree clean before
+this note's own two doc edits.
+
+One coherence problem, not introduced by Tasks 6–8 but live in the tree they landed on:
+CLAUDE.md's units paragraph still read *"Two known exceptions, pending: `AppLayout.vue` …
+and `app.css` … still hardcode the four units — a fifth department gets no nav entry or hue
+until those move to configuration."* Task 3 (before this session) closed that exception weeks
+of plan-time ago; CLAUDE.md was never updated to say so, and this plan's own Task 13 has a step
+that fixes exactly this sentence — but Task 13 is Tasks 10–13's work, out of scope for this
+seam, and CLAUDE.md is project instructions read at the start of every session in the meantime.
+Left uncorrected, the checkpoint would hand P1c a CLAUDE.md actively describing units as less
+configurable than they now are. Fixed narrowly: the sentence is replaced with what Task 3 built
+(`Unit::navList()` via the shared `nav.units` prop, `Unit::BAR_CLASSES`'s eight-entry
+offer-and-validate list, `Unit::DEFAULT_BAR_CLASS` as the fallback), and nothing else in
+CLAUDE.md was touched — Task 13's other five documents and its other two CLAUDE.md edits (the
+`Calendar::flush()` paragraph, the levels vocabulary line) depend on Tasks 10–12 features that
+do not exist yet and were correctly left alone.
+
+Also corrected in this plan's own **Definition of done — P1b** section (below): its `levels`
+and "level with history" bullets still asserted `terminal` and `Level::nextAfter()` as shipped
+requirements, written before Owner Decision A was folded in — the same class of drift Task 1's
+own Step 1 test text had (see that amendment). Marked AMENDED in place rather than silently
+rewritten, so a reader comparing the plan's original intent against what actually shipped can
+still see both.
+
+No other half-finished item was found: `structure.manage` is in the catalog
+(`AccessControlSeeder::CATALOG`/`DESCRIPTIONS`/`ROLE_DEFAULTS[0]`), the spec catalog
+(`docs/spec/08-foundation.md` lines 36/38, verified present and correct — Task 2's edit held),
+and `AppLayout.vue`'s `canAdmin`; both migrations are additive and defaulted; `UnitScopeTest`,
+`MissedDaysTest`, `ReferenceSeederTest` and `ReservedUnitCodesTest`'s four/five-unit assertions
+are all green untouched. P1c depends on exactly Tasks 1–9 and nothing in Tasks 10–13, and that
+holds.
+
+```bash
+git add CLAUDE.md docs/superpowers/plans/2026-08-09-p1b-structure-admin.md
+git commit -m "docs: the sidebar stopped hardcoding four units two tasks ago"
+```
+
 ---
 
 ### Task 10: The calendar settings screen (ST-02), and the flush that must follow every save
@@ -3444,12 +3484,17 @@ git commit -m "docs: five documents described a department nobody could configur
   shared Inertia prop built by `Unit::navList()`; a fifth unit appears in the sidebar with its
   own hue and no frontend change; `Unit::BAR_CLASSES` and `resources/css/app.css` are asserted to
   agree **in both directions**.
-- `levels` carries `external` and `terminal`; `R1 R2 R3 R4 EXT` are seeded with explicit
-  `display_order` 10/20/30/40/90 (never the `1000` default), `institution_id` set, `EXT` external
-  and last, `R4` terminal; `Level::nextAfter()` is the single definition of "advance one level"
-  and returns null for terminal and external levels. A rename survives `db:seed --force`.
-- A level with history cannot be deleted and the screen says why; the last active
-  non-terminal non-external level cannot be deactivated.
+- `levels` carries `external` only — **AMENDED, Owner Decision A (2026-08-09):** the plan's
+  original `terminal` column and `Level::nextAfter()` "advance one level" inference were
+  dropped outright (see the Task 6/7/8 amendment notes above). `R1 R2 R3 R4 EXT` are seeded
+  with explicit `display_order` 10/20/30/40/90 (never the `1000` default), `institution_id`
+  set, `EXT` external and last, and **no level marked terminal — there is no such column.** A
+  rename survives `db:seed --force`.
+- A level with history cannot be deleted: there is no destroy route to refuse it through, so a
+  DELETE attempt is a 405 by construction, never a 500. There is **no** "last active level"
+  guard — the plan's original text justified one solely by `Level::nextAfter()` returning null
+  for everyone, and that justification is void once Decision A removes `nextAfter()` (see the
+  Task 8 amendment note).
 - **Saving any calendar setting or any holiday flushes `Calendar`'s memo**, proven by a test that
   calls no `flush()` of its own, and enforced at source level by
   `CalendarWritersFlushTest` — which has been **observed failing** against a deliberately

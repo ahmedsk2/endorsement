@@ -165,10 +165,15 @@ SCBU and WARD are seed data for the QCH institution.
   object that shape travels in (`$unit->profile()`); it holds no per-unit values. Never
   reintroduce a hardcoded unit list — `Unit::codes()` is the only source, and every lookup
   built from user input goes through `Unit::findByCode()` (the `code` mutator normalizes
-  writes, not a query's WHERE value). Units are opt-in `active`. Two known exceptions, pending:
-  `resources/js/Layouts/AppLayout.vue` (sidebar nav) and `resources/css/app.css` (hue classes)
-  still hardcode the four units — a fifth department gets no nav entry or hue until those move
-  to configuration.
+  writes, not a query's WHERE value). Units are opt-in `active`, and are administrator-creatable
+  from Admin → Structure → Units (P1b Task 4). The two exceptions this file used to flag as
+  pending — `resources/js/Layouts/AppLayout.vue`'s hardcoded sidebar array and
+  `resources/css/app.css`'s four-hue palette — were closed by P1b Task 3: the sidebar renders
+  the shared `nav.units` Inertia prop (`Unit::navList()`), and `Unit::BAR_CLASSES` is an
+  eight-entry allow-list (the original four plus four hue-named additions) that both offers the
+  colour choice on the units screen and validates it, with `Unit::DEFAULT_BAR_CLASS`
+  (`channel-bar-slate`) as the fallback for a unit with none chosen. A fifth department now gets
+  a nav entry and a colour with no frontend change.
 
 ## Invariants the 2026-07-26 audit had to restore (don't regress these)
 

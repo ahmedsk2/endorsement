@@ -126,7 +126,11 @@ class PromotionController extends Controller
             'effective_from' => ['required', 'date_format:Y-m-d'],
             'ids' => ['required', 'array', 'min:1'],
             'ids.*' => ['integer'],
-            'reason' => ['nullable', 'string', 'max:500'],
+            // `person_levels.reason` is varchar(255) (migration 2026_08_14_120002) — this must
+            // match the column, not guess wider than it. Review finding 3: MySQL 8.4 strict mode
+            // throws an uncaught 1406 past 255 bytes; SQLite ignores the column length outright
+            // and would let a 500-byte value through the test suite unnoticed.
+            'reason' => ['nullable', 'string', 'max:255'],
         ]);
 
         if ($data['action'] === 'retire') {

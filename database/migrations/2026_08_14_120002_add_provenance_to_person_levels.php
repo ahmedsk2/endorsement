@@ -20,8 +20,22 @@ use Illuminate\Support\Facades\Schema;
  * `users.person_id`.
  *
  * `promotion_batch_id` is a UUID string, not an FK: a batch is not a row anywhere. It is
- * indexed because "show me everything that promotion did" is the query LV-03's undo would need,
- * and because it is how a reader groups the per-person audit rows back into one act.
+ * indexed because it is how a reader groups the per-person `person_level_change` audit rows
+ * (`PromotionController::commit()`) back into one act.
+ *
+ * CORRECTED (review minor 14): this column does NOT, on its own, answer "show me everything
+ * that promotion did" — it answers "show me the spans this batch OPENED". `App\Support\
+ * LevelAssignment::assign()` stamps it only on the NEW span it creates, never on the PRIOR span
+ * it closes (that row keeps whatever batch id — or none — opened IT); and `Promotion::commit()`'s
+ * retire path (Decision D, no target level) stamps nothing at all, because `LevelAssignment::
+ * close()` only closes a span, and closing is not opening. Both are deliberate, not oversights —
+ * `LevelAssignment::close()`'s own docblock explains why: overwriting a closed span's
+ * `promotion_batch_id`/`reason`/`created_by` would misattribute whoever ORIGINALLY opened it to
+ * whoever is retiring the cohort today. The query this column DOES answer completely is "which
+ * spans did this batch open" (`where promotion_batch_id = ?`); "everything this batch did",
+ * including every closure and every retirement, is what the per-person `person_level_change`
+ * audit rows exist for (Decision H) — join through their own `detail`'s `batch=` value, not this
+ * column, for the full picture.
  *
  * NO overlap constraint is added at the database level. SQLite cannot express it, and a partial
  * unique index on MySQL 8.4 would not either. The guarantee lives in App\Support\LevelAssignment,

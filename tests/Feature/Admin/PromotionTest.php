@@ -290,6 +290,30 @@ class PromotionTest extends TestCase
         $this->assertArrayNotHasKey($movedAlready->id, $result['outcomes']);
     }
 
+    /**
+     * Review finding 3: `person_levels.reason` is `varchar(255)` (migration
+     * 2026_08_14_120002:41-42), but this controller validated `max:500` — MySQL 8.4 strict mode
+     * refuses an over-length insert with an uncaught 1406 on the annual promotion; SQLite ignores
+     * the column length outright and would let this pass silently, which is exactly why this
+     * asserts the VALIDATION REFUSAL (a 422 naming the field) rather than anything DB-visible.
+     */
+    public function test_a_reason_over_the_column_length_is_refused_by_validation(): void
+    {
+        $r1 = $this->level('R1');
+        $person = Person::factory()->create();
+        LevelAssignment::assign($person, $r1, '2026-01-01');
+
+        $this->actingAs($this->admin)->post('/admin/promotion/commit', [
+            'action' => 'retire',
+            'from_level_id' => $r1->id,
+            'effective_from' => '2026-07-01',
+            'ids' => [$person->id],
+            'reason' => str_repeat('x', 256),
+        ])->assertSessionHasErrors('reason');
+
+        $this->assertTrue($person->fresh()->active, 'A refused submission must write nothing.');
+    }
+
     public function test_every_written_span_carries_the_batch_id_reason_and_actor(): void
     {
         $r1 = $this->level('R1');

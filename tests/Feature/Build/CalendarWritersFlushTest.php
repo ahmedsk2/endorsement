@@ -49,6 +49,11 @@ class CalendarWritersFlushTest extends TestCase
         // Never saves the row — CalendarSettingsController::update() is the writer, and it does
         // flush.
         'app/Http/Requests/Admin/CalendarSettingsRequest.php',
+        // Reads and writes `institutions.contact_visibility` — a PE-02 policy column, not a
+        // calendar one. Calendar::settings() memoises the six calendar values as an array, not
+        // the model, so there is nothing stale here for flush() to clear. Matched only because
+        // WRITE_NEEDLES includes `Institution::current()`, which any reader of that row calls.
+        'app/Support/ContactVisibility.php',
     ];
 
     /** Tokens that mean "this file reads or writes calendar configuration". */

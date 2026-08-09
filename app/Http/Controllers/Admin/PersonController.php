@@ -3,8 +3,15 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
+use App\Models\Institution;
 use App\Models\Person;
 use App\Models\Position;
+use App\Support\ContactVisibility;
+use App\Support\PersonPresenter;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -26,7 +33,7 @@ use Inertia\Response;
  */
 class PersonController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $people = Person::withTrashed()
             ->withExists(['user as has_account'])
@@ -34,20 +41,35 @@ class PersonController extends Controller
             ->get();
 
         return Inertia::render('Admin/People', [
-            // Task 2 replaces this map with App\Support\PersonPresenter, which is where the
-            // contact-visibility policy is enforced. Until then this screen carries NO contact
-            // field at all — `phone` and `notes` are absent, not null.
-            'people' => $people->map(fn (Person $p): array => [
-                'id' => (int) $p->getKey(),
-                'full_name' => (string) $p->full_name,
-                'short_name' => $p->short_name,
-                'position' => (int) $p->position,
-                'external' => (bool) $p->external,
-                'active' => (bool) $p->active,
-                'has_account' => (bool) $p->has_account,
-                'retired' => $p->trashed(),
-            ])->values()->all(),
+            'people' => PersonPresenter::many($people, $request->user()),
             'positions' => Position::orderBy('id')->get(['id', 'name']),
+            'contact_visibility' => ContactVisibility::current(),
+            'contact_visibilities' => Institution::CONTACT_VISIBILITIES,
         ]);
+    }
+
+    /**
+     * PE-02's department setting. Offered and validated from the SAME list
+     * (`Institution::CONTACT_VISIBILITIES`) — the SignoffPickers discipline, applied here too.
+     * Audited by KEY only, never by value: which setting a department chose is itself a fact
+     * about how visible staff phone numbers are, and the audit trail's own rule (CLAUDE.md) is
+     * ids/field-names/counts only.
+     */
+    public function updateVisibility(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'contact_visibility' => ['required', 'string', Rule::in(array_keys(Institution::CONTACT_VISIBILITIES))],
+        ]);
+
+        ContactVisibility::set($data['contact_visibility']);
+
+        AuditLog::record(
+            'contact_visibility_update',
+            'key=contact_visibility',
+            $request->user()->getKey(),
+            $request->ip(),
+        );
+
+        return back()->with('status', 'Contact visibility updated.');
     }
 }

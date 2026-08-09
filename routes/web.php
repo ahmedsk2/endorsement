@@ -200,6 +200,9 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:people.manage'])
     ->name('admin.')
     ->group(function () {
         Route::get('/people', [PersonController::class, 'index'])->name('people');
+        // Declared BEFORE any /people/{person} route (Task 4) so `visibility` never binds as a
+        // person id — the same discipline routes/web.php already applies to `units/merge`.
+        Route::patch('/people/visibility', [PersonController::class, 'updateVisibility'])->name('people.visibility');
     });
 
 /*

@@ -568,6 +568,47 @@ somewhere too.)*
 (1 new `AppLayout.test.js` case, matching the plan's own stated `people.manage`-alone shape).
 `npm run build` and the full suite green throughout.
 
+**2026-08-09, Task 2 — the plan's own `ContactFieldsAreProjectedOnceTest` allow-list is one
+entry short, caught by running the guard rather than by inspection.** The plan's Step 1 text
+says the allow-list "carries only the first two entries" at this stage
+(`app/Support/PersonPresenter.php`, `app/Models/Person.php`) until Tasks 4 and 12 add their own.
+Running the guard for real against the actual tree turned up a THIRD legitimate match neither
+the plan's allow-list nor its own finding 2 prose accounted for by name:
+`database/migrations/2026_08_10_120001_create_people_and_link_users.php` — the migration that
+declares `$table->string('phone', 32)` and `$table->text('notes')`. The needle list
+(`'phone'`, `'notes'`, `->phone`, `->notes`) is a plain substring scan and cannot distinguish "the
+column is declared here" from "the value is read here", so the migration trips it exactly like
+`Person.php`'s own `$fillable`/`$hidden` array entries do. Finding 2's prose already names "the
+migration" as one of the pre-existing zero-read matches ("only the model's own
+`$fillable`/`$hidden` entries and the migration") — the allow-list itself simply never listed it.
+Confirmed with a plain `grep -rln` for the four needles across `app/`+`database/`+`routes/`
+before writing the fix: exactly two files matched, `Person.php` (already allow-listed) and this
+migration (not). Added the migration to `ALLOW_LIST` with the reason stated above; no other
+allow-list entry from the plan's eventual Task 4/12 shape was pulled forward early.
+
+Also: `test_the_setting_is_validated_against_an_allow_list` and
+`test_the_setting_write_is_audited_by_key_never_by_value` use `assertSessionHasErrors()` /
+`assertDatabaseHas()` rather than the plan's own prose ("a 422 naming the field") verbatim — the
+codebase's existing convention for every other admin PATCH endpoint
+(`CalendarSettingsTest`, `AccessControlPageTest`, etc.) asserts the redirect-plus-session-errors
+shape, not a raw status code, and `PersonController::updateVisibility()` follows the same
+`back()->withErrors()` pattern as every sibling controller. `test_phone_is_ABSENT_not_null_when_
+the_policy_refuses` and `test_setting_members_exposes_phone_to_any_account_holder_but_never_notes`
+call `App\Support\PersonPresenter::one()` directly rather than asserting through the `/admin/people`
+Inertia response as the plan's prose implies: that route is gated `cap:people.manage` (Task 1), so
+`$request->user()` reaching the controller always already holds `people.manage` and
+`viewContact()`'s first branch is always true there — the "policy refuses" and "setting-driven,
+non-manager" branches can only be exercised by calling the presenter with a viewer who never
+passed that route gate, which is precisely what `PersonPresenter` is FOR (Decision B: "the
+enforcement is the projection, not the model" — it is meant to serve callers beyond this one
+capability-gated screen). Testing the presenter directly is therefore not a workaround but the
+correct unit boundary; noted here because the plan's prose reads as if it goes through the page.
+
+`php artisan test`: 897 → 908 (11 new: 9 `ContactVisibilityTest` + 2
+`ContactFieldsAreProjectedOnceTest`; `CalendarWritersFlushTest`'s existing 2 stayed green with
+its new allow-list entry). `npm test`: 112 (unchanged — Task 2's Files list names no JS test, and
+none was needed). `npm run build` and the full suite green.
+
 ---
 
 ## Conventions every task follows
@@ -1050,7 +1091,7 @@ not protect an explicitly-built props array, every admin screen in this codebase
 `grep` confirms **zero** current readers of `->phone`/`->notes`. That clean slate is worth one
 task and one source-level guard.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/Feature/Admin/ContactVisibilityTest.php` covering:
 
@@ -1186,7 +1227,7 @@ Note the allow-list names two files that do not exist until Tasks 4 and 12. Unti
 carries only the first two entries**, and Tasks 4 and 12 each add their own line as part of their
 own commit. Stated here so the implementer does not copy the final shape into the first commit.
 
-- [ ] **Step 2: Run and watch both go red**
+- [x] **Step 2: Run and watch both go red**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
@@ -1197,7 +1238,7 @@ Expected: `ContactVisibilityTest` fails with `SQLSTATE[HY000]: General error: 1 
 contact_visibility`; `ContactFieldsAreProjectedOnceTest` fails on the missing
 `app/Support/PersonPresenter.php`.
 
-- [ ] **Step 3: The migration**
+- [x] **Step 3: The migration**
 
 Create `database/migrations/2026_08_14_120001_add_contact_visibility_to_institutions.php`:
 
@@ -1266,7 +1307,7 @@ institution reports `null` until re-fetched), and add the constants:
     ];
 ```
 
-- [ ] **Step 4: The setting reader/writer**
+- [x] **Step 4: The setting reader/writer**
 
 Create `app/Support/ContactVisibility.php` — a tiny class whose only job is to be the one place
 that reads and writes the column, so the `CalendarWritersFlushTest` allow-list has exactly one
@@ -1333,7 +1374,7 @@ Add to `CalendarWritersFlushTest::ALLOW_LIST`:
         'app/Support/ContactVisibility.php',
 ```
 
-- [ ] **Step 5: The policy**
+- [x] **Step 5: The policy**
 
 Create `app/Policies/PersonPolicy.php` (this creates the directory):
 
@@ -1383,7 +1424,7 @@ class PersonPolicy
 }
 ```
 
-- [ ] **Step 6: The projection**
+- [x] **Step 6: The projection**
 
 Create `app/Support/PersonPresenter.php`:
 
@@ -1467,7 +1508,7 @@ visible on Admin → Users for every account holder (`UserManagementController::
 `member_email`), and PE-02's own wording puts *contacts* — phone — behind the toggle. Stated here
 so a reviewer sees it as a decision rather than an omission.
 
-- [ ] **Step 7: Wire the screen, and add the setting control**
+- [x] **Step 7: Wire the screen, and add the setting control**
 
 `PersonController::index()` replaces its inline map with
 `PersonPresenter::many($people, $request->user())`, gains
@@ -1492,7 +1533,7 @@ rendered only when the key is present:
 `'phone' in p`, not `p.phone`, because absent and empty are different and the header must not
 appear for a viewer who cannot see the column.
 
-- [ ] **Step 8: Correct `docs/COMPLIANCE.md`**
+- [x] **Step 8: Correct `docs/COMPLIANCE.md`**
 
 The "Staff roster data" section (`:103-131`) says `notes` and `phone` are `$hidden` "so neither
 reaches an Inertia prop". After this task that sentence is *incomplete*, not wrong, and an
@@ -1501,7 +1542,7 @@ with the accurate one: `$hidden` prevents accidental whole-model serialisation; 
 control is `App\Support\PersonPresenter` plus `App\Policies\PersonPolicy`, backed by a
 source-level guard; the department setting governs `phone` only and never `notes`.
 
-- [ ] **Step 9: Verify and commit**
+- [x] **Step 9: Verify and commit**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"

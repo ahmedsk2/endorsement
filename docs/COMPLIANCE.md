@@ -117,10 +117,18 @@ structured JSON the scheduling solver must query directly, so encrypting it woul
 SQL-side querying for a column with no PHI in it (Rota holds no PHI — design §9.2). `notes` is
 free text about a named staff member and **is legible in a raw database read and therefore in
 every backup** — stated here explicitly so that fact is visible to an auditor rather than
-discovered. The compensating control is narrower: `notes` (and `phone`) are `$hidden` on the
-`Person` model, so neither reaches an Inertia prop, an API response, or any other serialised
-output; and both remain covered by the same rule as PHI — never in `audit_log.detail`,
-exception messages, URLs or push payloads.
+discovered. `notes` (and `phone`) are `$hidden` on the `Person` model, but that is defence in
+depth ONLY — `$hidden` bites on `toArray()`/`toJson()`, and every admin screen in this codebase
+builds its Inertia props from an explicit map that never calls either, so it would not by itself
+have stopped a phone number reaching a screen (P1c finding 2). **The enforced control is
+`App\Support\PersonPresenter`** — the one place a `Person` becomes props — gated by
+`App\Policies\PersonPolicy` and, for `phone` only, the department's `contact_visibility` setting
+(`admins`, the default: roster managers only; `members`: any signed-in account holder).
+`notes` is never governed by that setting under either value — it stays `people.manage`-only
+regardless, because it is free text written ABOUT a colleague, a different kind of fact from a
+phone number on an on-call list. `tests/Feature/Build/ContactFieldsAreProjectedOnceTest.php`
+asserts at source level that no other file reads either field. Both remain covered by the same
+rule as PHI — never in `audit_log.detail`, exception messages, URLs or push payloads.
 
 Accounts are deactivated, never deleted; **people are deactivated, never deleted** either — the
 four named roles on `handover_signoffs` (`endorsed_by`, `endorsed_to`, `consultant_by`,

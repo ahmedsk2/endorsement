@@ -522,6 +522,80 @@ class EndorsementTest extends TestCase
         $this->assertStringContainsString('<b>a</b>', $saved);
     }
 
+    /**
+     * SPC-RPT-058 — the validator used to bound these fields at `max:20000` CHARACTERS of
+     * the RAW value, while MySQL's `TEXT` column enforced a limit in BYTES of the SANITIZED,
+     * ENCRYPTED value. Those two disagree for anything wider than ASCII: 20,000 Arabic
+     * characters (2 bytes each) is 40,000 sanitized bytes, comfortably under the old
+     * validator's stated 20,000-character allowance, yet the reported ceiling on the old
+     * `TEXT` column was only 18,375 Arabic characters — this exact amount used to pass
+     * validation and then fail at the database with `SQLSTATE[22001] 1406 Data too long`,
+     * invisible to this suite because SQLite has no such limit. It must now succeed
+     * end-to-end: `2026_08_15_120001_widen_rich_text_handover_columns` removes the physical
+     * ceiling (MEDIUMTEXT), and `MaxSanitizedBytes` (100,000-byte ceiling, well over 40,000)
+     * offers what it actually enforces.
+     */
+    public function test_arabic_rich_text_that_used_to_silently_fail_now_saves(): void
+    {
+        $row = $this->handover('PICU', '2026-07-10');
+        $arabic = str_repeat('ب', 20_000); // 40,000 UTF-8 bytes, not entity-expanded by the sanitizer.
+
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['disease' => $arabic])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame($arabic, $row->fresh()->disease);
+    }
+
+    /**
+     * The refusal half of the same fix: content that WOULD overflow even the widened
+     * MEDIUMTEXT-plus-encryption budget by a wide margin must be caught by VALIDATION — a
+     * friendly 422 / redirect-with-errors — never surface as a database error. Chosen well
+     * past `SanitizedHtml::MAX_PLAINTEXT_BYTES` (100,000 sanitized bytes) so the assertion
+     * does not depend on the sanitizer's exact byte-for-byte output.
+     */
+    public function test_arabic_rich_text_over_the_byte_ceiling_is_refused_by_validation(): void
+    {
+        $row = $this->handover('PICU', '2026-07-10');
+        $arabic = str_repeat('ب', 60_000); // 120,000 UTF-8 bytes — over the 100,000-byte ceiling.
+
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['disease' => $arabic])
+            ->assertSessionHasErrors('disease');
+
+        $this->assertNull($row->fresh()->disease);
+    }
+
+    /**
+     * The same refusal for plain ASCII, at the exact byte boundary rather than a comfortable
+     * margin — proves the rule is byte-exact, not just "roughly the right order of
+     * magnitude". `RichTextSanitizer::clean()` passes bare ASCII text through unchanged
+     * (no entity-expansion, no added wrapper markup for content with no tags at all), so raw
+     * length and sanitized length agree here and the boundary lands exactly on
+     * `MAX_PLAINTEXT_BYTES`.
+     */
+    public function test_ascii_rich_text_is_accepted_at_the_byte_ceiling_and_refused_one_byte_over(): void
+    {
+        $row = $this->handover('PICU', '2026-07-10');
+        $atCeiling = str_repeat('A', \App\Casts\SanitizedHtml::MAX_PLAINTEXT_BYTES);
+        $overCeiling = $atCeiling.'A';
+
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['disease' => $atCeiling])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame($atCeiling, $row->fresh()->disease);
+
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['disease' => $overCeiling])
+            ->assertSessionHasErrors('disease');
+
+        // The previously-saved value is untouched by the refused write.
+        $this->assertSame($atCeiling, $row->fresh()->disease);
+    }
+
     /** G3 — the legacy day index filtered by start/end date (`PICU-Endorsement.php:120-131`). */
     public function test_the_day_index_can_be_filtered_by_a_date_range(): void
     {

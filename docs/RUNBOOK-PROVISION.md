@@ -105,12 +105,23 @@ MySQL image** — with the live instance's stack also running, that is an arbitr
 between two customers' databases (P0d Task 6, finding 1). `docker/instance-env.sh` resolves
 the one stack matching this instance's Coolify app UUID, or refuses:
 
+**The grant is `ALTER, CREATE, REFERENCES` — not `ALTER` alone.** A first-ever bring-up runs
+the FULL migration chain, including several `Schema::create()` calls with a foreign key —
+MySQL compiles the foreign key as a separate `ALTER TABLE ... ADD CONSTRAINT ... REFERENCES`
+statement, needing its own privilege, and `ALTER` alone gets a bring-up only as far as the
+first such table before failing with `1142 CREATE command denied` (or, one grant later,
+`1142 REFERENCES command denied`, since MySQL has no transactional DDL and the base table has
+already committed by then). `INDEX` is not needed. See `docs/RUNBOOK-DEPLOY.md`'s "Migrations
+need a privilege the app does not have" for the full empirical detail and — if `migrate
+exit=` below comes back non-zero — the recovery procedure for a mid-chain failure (MySQL will
+have left a partially-created object behind that needs a manual `DROP` before you retry).
+
 ```bash
 eval "$(sudo bash docker/instance-env.sh <this-instance's-uuid>)" && \
 PW=$(sudo docker exec "$DB" printenv MYSQL_ROOT_PASSWORD) && \
-sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "GRANT ALTER ON \`$DBNAME\`.* TO '$DBUSER'@'%'; FLUSH PRIVILEGES;" && {
+sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "GRANT ALTER, CREATE, REFERENCES ON \`$DBNAME\`.* TO '$DBUSER'@'%'; FLUSH PRIVILEGES;" && {
   sudo docker exec -u app "$APP" php artisan migrate --force; rc=$?
-  sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "REVOKE ALTER ON \`$DBNAME\`.* FROM '$DBUSER'@'%'; FLUSH PRIVILEGES;"
+  sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "REVOKE ALTER, CREATE, REFERENCES ON \`$DBNAME\`.* FROM '$DBUSER'@'%'; FLUSH PRIVILEGES;"
   echo "migrate exit=$rc"
 }
 ```
@@ -118,12 +129,13 @@ sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "GRANT ALTER ON \`$DBN
 `&&` up to and including the `GRANT` is load-bearing — `instance-env.sh` prints `false` on
 refusal, so nothing downstream runs at all. Past that point the brace group runs the `REVOKE`
 **unconditionally**, whatever `migrate` did: a failed migration on a first-ever bring-up is
-exactly the moment `ALTER` must not linger on the runtime credential while you stop to debug
-it. `rc` captures the migration's real exit code and `migrate exit=$rc` prints it back —
-anything but `0` means stop and investigate before continuing, but the schema privilege is
-already gone either way. **Read the stderr line `instance-env.sh` prints and confirm the
-database name is the customer you meant** before typing anything else. **Verify the revoke
-landed** — `SHOW GRANTS FOR '$DBUSER'@'%';` should show no ALTER.
+exactly the moment the elevated privileges must not linger on the runtime credential while
+you stop to debug it. `rc` captures the migration's real exit code and `migrate exit=$rc`
+prints it back — anything but `0` means stop and investigate before continuing (per the
+recovery procedure referenced above), but the schema privilege is already gone either way.
+**Read the stderr line `instance-env.sh` prints and confirm the database name is the customer
+you meant** before typing anything else. **Verify the revoke landed** — `SHOW GRANTS FOR
+'$DBUSER'@'%';` should show none of `ALTER, CREATE, REFERENCES`.
 
 ```bash
 sudo docker exec -u app "$APP" php artisan db:seed --force

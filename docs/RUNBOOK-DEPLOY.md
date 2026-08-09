@@ -222,44 +222,130 @@ SQLSTATE[42000]: 1142 ALTER command denied to user 'endorse'@'...'
 ```
 
 The application's database user holds `SELECT, INSERT, UPDATE, DELETE` and nothing else —
-no `ALTER`, no `DROP`, no `CREATE`. A compromised application therefore cannot reshape or
-drop the clinical schema, which is worth keeping. It does mean a schema change is a
-deliberate, privileged act rather than something the app can do to itself.
+no `ALTER`, no `DROP`, no `CREATE`, no `REFERENCES`. A compromised application therefore
+cannot reshape or drop the clinical schema, which is worth keeping. It does mean a schema
+change is a deliberate, privileged act rather than something the app can do to itself.
 
 Setting `-e DB_USERNAME=root` on the exec does **not** work either: the config is cached at
-boot, so `env()` is not consulted at runtime.
+boot, so `env()` is not consulted at runtime. (`docs/sql/least-privilege.sql` used to suggest
+this as an alternative — it does not work for the same reason, and no longer suggests it.)
 
 So: grant, migrate, revoke. Run from the HOST (not inside the app container), so the root
 credential is read from the database container's own environment and never typed or logged.
 
-**Never select the database container by matching the shared MySQL image name** — with two
-customer stacks on one host that picks an arbitrary one, and the `GRANT ALTER` / `migrate` /
-`REVOKE` sequence below then lands coherently on the **wrong customer's clinical database**.
-`docker/instance-env.sh` resolves the one stack matching a Coolify app UUID, or refuses:
+**The grant is `ALTER, CREATE, REFERENCES` — not `ALTER` alone.** Verified empirically against
+real MySQL 8.4 (`sql_mode` including `STRICT_TRANS_TABLES`): with `ALTER` only, the migration
+chain gets through every migration that merely alters an existing table, then dies on the
+first one that **creates** a table with a foreign key —
+`2026_08_09_120001_create_unit_field_definitions_table` in the current chain, but the same
+failure recurs at the next `Schema::create` with a `constrained()` column, so this is not a
+one-time exception to special-case:
+
+```
+SQLSTATE[42000]: 1142 CREATE command denied to user 'endorse'@'...' for table 'unit_field_definitions'
+```
+
+Granting `CREATE` too gets further, then dies one statement later — MySQL compiles a foreign
+key on a `Schema::create()` table as a **separate** `ALTER TABLE ... ADD CONSTRAINT ...
+FOREIGN KEY ... REFERENCES` statement, not part of the `CREATE TABLE` itself, and that
+statement needs `REFERENCES` on the table it points at:
+
+```
+SQLSTATE[42000]: 1142 REFERENCES command denied to user 'endorse'@'...' for table 'units'
+```
+
+**This is the dangerous part.** MySQL has no transactional DDL: the `CREATE TABLE` statement
+already committed before the `ADD CONSTRAINT` statement failed. The migration as a whole
+still threw, so `unit_field_definitions` was never recorded in the `migrations` table — but
+the table itself now exists, partially built (columns, no foreign key, no indexes). Retrying
+`php artisan migrate --force` immediately fails again, on the **same** migration, with a
+**different, more confusing** error that gives no hint a privilege was ever the problem:
+
+```
+SQLSTATE[42S01]: Base table or view already exists: 1050 Table 'unit_field_definitions' already exists
+```
+
+`INDEX` is **not** needed — verified across the full chain, including tables with `unique()`
+and `index()` columns.
 
 ```bash
 eval "$(sudo bash docker/instance-env.sh oo7d7si62yhyi7fx10hrck6q)" && \
 PW=$(sudo docker exec "$DB" printenv MYSQL_ROOT_PASSWORD) && \
-sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "GRANT ALTER ON \`$DBNAME\`.* TO '$DBUSER'@'%'; FLUSH PRIVILEGES;" && {
+sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "GRANT ALTER, CREATE, REFERENCES ON \`$DBNAME\`.* TO '$DBUSER'@'%'; FLUSH PRIVILEGES;" && {
   sudo docker exec -u app "$APP" php artisan migrate --force; rc=$?
-  sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "REVOKE ALTER ON \`$DBNAME\`.* FROM '$DBUSER'@'%'; FLUSH PRIVILEGES;"
+  sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "REVOKE ALTER, CREATE, REFERENCES ON \`$DBNAME\`.* FROM '$DBUSER'@'%'; FLUSH PRIVILEGES;"
   echo "migrate exit=$rc"
 }
 ```
+
+**Never select the database container by matching the shared MySQL image name** — with two
+customer stacks on one host that picks an arbitrary one, and the grant / `migrate` / revoke
+sequence above then lands coherently on the **wrong customer's clinical database**.
+`docker/instance-env.sh` resolves the one stack matching a Coolify app UUID, or refuses.
 
 Two different jobs are chained here, and they are meant to fail differently. Up to and
 including the `GRANT`, `&&` is load-bearing: `instance-env.sh` prints `false` on refusal, so
 nothing downstream runs at all — that refusal must abort everything. Past the `GRANT`, the
 brace group runs the `REVOKE` **unconditionally**, whatever `migrate` did: a failed migration
-is exactly the moment `ALTER` must not linger on the runtime credential while you stop to
-debug it. `rc` captures the migration's real exit code and `migrate exit=$rc` prints it back —
-anything but `0` means stop and investigate the migration before doing anything else, but the
-schema privilege is already gone either way. **Read the stderr line `instance-env.sh` prints
-and confirm the database name is the customer you meant** before typing anything else.
+is exactly the moment the elevated privileges must not linger on the runtime credential while
+you stop to debug it. `rc` captures the migration's real exit code and `migrate exit=$rc`
+prints it back — anything but `0` means stop and investigate the migration before doing
+anything else, but the schema privilege is already gone either way. **Read the stderr line
+`instance-env.sh` prints and confirm the database name is the customer you meant** before
+typing anything else.
 
 `MYSQL_PWD` rather than `-p"$PW"` keeps the credential out of the container's process list.
 `-u app` keeps the artisan process unprivileged inside the container. **Verify the revoke
-landed** — `SHOW GRANTS FOR '$DBUSER'@'%';` should show no ALTER.
+landed** — `SHOW GRANTS FOR '$DBUSER'@'%';` should show none of `ALTER, CREATE, REFERENCES`.
+
+#### If `migrate exit=` is non-zero: recovery before you retry
+
+**Do not just re-run `migrate --force`.** MySQL's error will not name a migration — only a
+table, column, or constraint — and by the time you see the error, the failed migration may
+have already left a partially-built object behind (see the worked example above: a `CREATE
+TABLE` with a foreign key can commit the table and then fail adding the constraint, in two
+separate statements). Retrying against that residue produces a **different** error (`1050
+Table already exists`, or the column/index/constraint equivalents) that reads like a new
+problem and is not.
+
+1. `php artisan migrate:status` — the first row still showing "Pending" is the migration that
+   failed (everything above it committed and is correctly recorded; nothing below it ran).
+2. Open that migration file and read its `up()`. Every table, column, index, and foreign key
+   it creates is a candidate for having been partially applied.
+3. Check the database directly for each: `SHOW TABLES LIKE '<name>';`,
+   `SHOW COLUMNS FROM <table> LIKE '<name>';`, `SHOW CREATE TABLE <table>;` (to see whether a
+   constraint landed). Whatever exists that should not yet exist is residue from the failed
+   attempt.
+4. If nothing exists, the failure was clean (nothing partially applied, e.g. a straightforward
+   missing-privilege refusal on the very first statement) — fix the underlying cause (usually:
+   the grant above didn't take, or was typed against the wrong database) and retry directly.
+5. If something exists, it must be dropped by hand before retrying — `DROP TABLE
+   <name>;` or `ALTER TABLE <table> DROP COLUMN <name>;` as appropriate, run as root (this is
+   exactly the `DROP` privilege the routine grant above deliberately does not include — see
+   below). Only then re-run `php artisan migrate --force`.
+
+#### `migrate:rollback` needs `DROP` too — grant it only for that
+
+`ALTER, CREATE, REFERENCES` is enough for `migrate`, but several `down()` methods drop a
+whole table (`dropIfExists`), which needs `DROP` and is refused the same way as everything
+above:
+
+```
+SQLSTATE[42000]: 1142 DROP command denied to user 'endorse'@'...' for table 'holidays'
+```
+
+Do **not** fold `DROP` into the routine deploy grant — `migrate:rollback` is an exceptional,
+manual operation (see "Rollback" below), not something every deploy needs, and the runtime
+credential should hold the smallest privilege set that gets the operation in front of you
+done. Grant it in the same shape, for the one rollback, then revoke it immediately after:
+
+```bash
+sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "GRANT ALTER, CREATE, REFERENCES, DROP ON \`$DBNAME\`.* TO '$DBUSER'@'%'; FLUSH PRIVILEGES;" && {
+  sudo docker exec -u app "$APP" php artisan migrate:rollback --step=1 --force; rc=$?
+  sudo docker exec -e MYSQL_PWD="$PW" "$DB" mysql -uroot -e "REVOKE ALTER, CREATE, REFERENCES, DROP ON \`$DBNAME\`.* FROM '$DBUSER'@'%'; FLUSH PRIVILEGES;"
+  echo "rollback exit=$rc"
+}
+```
 
 ```bash
 php artisan db:seed --force
@@ -496,6 +582,15 @@ To roll back, roll back in THIS order and no other:
 
 Rolling 120001 back before 120003 loses every name and role. Restore from the dump instead.
 
+120002 and 120001 each `dropIfExists()` a table, so the runtime credential needs `DROP` for
+this sequence — see "`migrate:rollback` needs `DROP` too" above; grant it before step 1,
+revoke it after step 5. Verified against real MySQL 8.4: this exact 5-step order, with `DROP`
+granted, runs clean end to end — `people` is gone, `users.person_id` is gone, and
+`users.full_name` is intact, restored by 120003's own `down()`. (120001's `down()` used to
+order `dropUnique` before `dropConstrainedForeignId`, which fails on MySQL/InnoDB — see the
+migration file's own comment — but that ordering bug is fixed and this is no longer a
+concern for the sequence above.)
+
 After migrating, confirm the copy is complete:
 
     SELECT COUNT(*) FROM people WHERE full_name IS NULL OR full_name = '';   -- must be 0
@@ -587,10 +682,17 @@ UPDATE institutions SET hijri_offset_days = -1 WHERE code = 'QCH';
 Two additive migrations: `2026_08_13_120001_add_munawib_configuration_to_units` (backfills the
 four seeded units), `2026_08_13_120002_add_external_to_levels` (schema only — `levels` was
 empty until `db:seed --force` runs `ReferenceSeeder`'s ladder seed). Neither retypes or drops
-anything.
+anything. `2026_08_15_120002_correct_ward_clinic_owner` (P1 defect fix) additionally
+corrects `clinic_owner` for any database where this backfill ran before that fix landed —
+see that migration's docblock; `db:seed --force` alone cannot fix a `units` row that already
+exists, since unit profile columns are written on CREATE only.
 
 ```sql
--- Expect four rows, all training_rotation=1, call_target=1, clinic_owner=0, name2=NULL.
+-- Expect four rows: all training_rotation=1, call_target=1, name2=NULL — and clinic_owner=1
+-- for WARD ONLY (Owner Decision B, 2026-08-09: WARD is the sole clinic owner), 0 for the
+-- other three. A previous version of this runbook said "clinic_owner=0" for all four, which
+-- was true only for a cold start seeded BEFORE Owner Decision B existed and is a FALSE
+-- FAILURE on any current install.
 SELECT code, training_rotation, call_target, clinic_owner, name2 FROM units ORDER BY display_order;
 
 -- Expect five rows: R1 R2 R3 R4 EXT at display_order 10/20/30/40/90, EXT.external=1, the rest

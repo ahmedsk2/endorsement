@@ -9,6 +9,7 @@ use App\Models\Person;
 use App\Models\Unit;
 use App\Models\UnitFieldDefinition;
 use App\Models\User;
+use App\Rules\MaxSanitizedBytes;
 use App\Support\AccessControl;
 use App\Support\Calendar;
 use App\Support\MissedDays;
@@ -878,6 +879,12 @@ class EndorsementController extends Controller
      * NICU/SCBU; age + ward_unit are WARD) are simply not validated for this unit, so a client
      * that submits them has them dropped rather than persisted.
      *
+     * The four rich-text fields are bounded by `MaxSanitizedBytes` rather than a plain
+     * `max:N`, which counts CHARACTERS of the raw value — the database (and the model's
+     * `SanitizedHtml` cast) cares about BYTES of the SANITIZED value, and those two disagree
+     * for anything wider than ASCII. See `SanitizedHtml::MAX_PLAINTEXT_BYTES`'s docblock
+     * (SPC-RPT-058) for the full derivation.
+     *
      * @return array<string, mixed>
      */
     private function validateRow(Request $request, Unit $unit): array
@@ -888,10 +895,10 @@ class EndorsementController extends Controller
             'bed' => ['sometimes', 'nullable', 'string', 'max:100'],
             'mrn' => ['sometimes', 'nullable', 'string', 'max:100'],
             'patient_name' => ['sometimes', 'nullable', 'string', 'max:255'],
-            'disease' => ['sometimes', 'nullable', 'string', 'max:20000'],
-            'details' => ['sometimes', 'nullable', 'string', 'max:20000'],
-            'plan' => ['sometimes', 'nullable', 'string', 'max:20000'],
-            'nevent' => ['sometimes', 'nullable', 'string', 'max:20000'],
+            'disease' => ['sometimes', 'nullable', 'string', new MaxSanitizedBytes()],
+            'details' => ['sometimes', 'nullable', 'string', new MaxSanitizedBytes()],
+            'plan' => ['sometimes', 'nullable', 'string', new MaxSanitizedBytes()],
+            'nevent' => ['sometimes', 'nullable', 'string', new MaxSanitizedBytes()],
         ];
 
         foreach ($profile->extraRowFields as $field) {

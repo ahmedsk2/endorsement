@@ -4,6 +4,7 @@ namespace Tests\Feature\Units;
 
 use App\Models\Unit;
 use Database\Seeders\ReferenceSeeder;
+use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -171,5 +172,61 @@ class UnitCapabilityFlagsTest extends TestCase
         $ward = Unit::findByCode('WARD');
         $this->assertFalse($ward->call_target);
         $this->assertTrue($ward->clinic_owner);
+    }
+
+    private function correctWardClinicOwnerMigration(): Migration
+    {
+        /** @var Migration $migration */
+        $migration = require database_path('migrations/2026_08_15_120002_correct_ward_clinic_owner.php');
+
+        return $migration;
+    }
+
+    /**
+     * The bug this migration exists to fix: an UPGRADE, where a `units` row already existed
+     * (created before Owner Decision B, or by `2026_08_13_120001`'s own backfill, which left
+     * `clinic_owner` false — see that migration's corrected docblock). `ReferenceSeeder`
+     * cannot repair this afterwards — unit profile columns are CREATE-only by design — so
+     * `db:seed --force` is proven here NOT to be a remedy, and the corrective migration is.
+     */
+    public function test_it_corrects_an_existing_ward_row_left_wrong_by_the_old_backfill(): void
+    {
+        // Simulate the pre-fix upgrade state directly: a WARD row that exists with
+        // clinic_owner=false, exactly what 2026_08_13_120001's old backfill produced.
+        $this->seed(ReferenceSeeder::class);
+        Unit::findByCode('WARD')->update(['clinic_owner' => false]);
+        $this->assertFalse(Unit::findByCode('WARD')->clinic_owner);
+
+        // db:seed --force alone is NOT a remedy: the row already exists, so ReferenceSeeder's
+        // CREATE-only guard skips it.
+        $this->seed(ReferenceSeeder::class);
+        $this->assertFalse(Unit::findByCode('WARD')->fresh()->clinic_owner, 'db:seed --force must not fix this');
+
+        $this->correctWardClinicOwnerMigration()->up();
+
+        $this->assertTrue(Unit::findByCode('WARD')->fresh()->clinic_owner);
+        // The other three units are untouched.
+        foreach (['PICU', 'NICU', 'SCBU'] as $code) {
+            $this->assertFalse(Unit::findByCode($code)->clinic_owner, $code);
+        }
+    }
+
+    /** A cold-start database (WARD already correct via ReferenceSeeder) sees no change. */
+    public function test_it_is_a_no_op_when_ward_is_already_correct(): void
+    {
+        $this->seed(ReferenceSeeder::class);
+        $this->assertTrue(Unit::findByCode('WARD')->clinic_owner);
+
+        $this->correctWardClinicOwnerMigration()->up();
+
+        $this->assertTrue(Unit::findByCode('WARD')->fresh()->clinic_owner);
+    }
+
+    /** No WARD row at all (a fresh schema with nothing seeded yet) must not error. */
+    public function test_it_does_nothing_when_no_units_exist_yet(): void
+    {
+        $this->correctWardClinicOwnerMigration()->up();
+
+        $this->assertSame(0, Unit::count());
     }
 }

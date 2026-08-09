@@ -70,8 +70,25 @@ return new class extends Migration
 
         // Backfill the four paediatric units so an EXISTING production database is correct
         // without waiting for `db:seed --force`. They are where residents rotate and where
-        // on-call is counted; no clinics exist anywhere until P1e, so clinic_owner stays false.
+        // on-call is counted.
         // DB::table, not Eloquent: a migration must not depend on a model's current shape.
+        //
+        // NOTE (correcting this docblock, not the statement below): an earlier version of
+        // this comment said "no clinics exist anywhere until P1e, so clinic_owner stays
+        // false" for all four units. That was already wrong the day this migration was
+        // written — Owner Decision B (2026-08-09, predates this file) makes WARD the sole
+        // clinic owner, and `ReferenceSeeder` has always reflected that on a COLD START. This
+        // migration's own backfill disagreed for an UPGRADE (an existing `units` row that
+        // predates the decision, or that was created before the seeder picked it up): it left
+        // `clinic_owner` false here for every seeded code including WARD, and because unit
+        // profile columns are written on CREATE only (by design — a re-seed must never
+        // silently revert an administrator's configuration), `db:seed --force` could never
+        // correct that afterwards. Deliberately NOT fixed by editing the statement below —
+        // this migration has already shipped and may have already run with the old, wrong
+        // behaviour on some database (including the MySQL rehearsal stack that found this).
+        // See `2026_08_15_120002_correct_ward_clinic_owner`, which corrects the data
+        // directly and unconditionally, and is what actually fixes this for every database
+        // regardless of whether it hit this bug or not.
         DB::table('units')
             ->whereIn('code', self::SEEDED_CODES)
             ->update(['training_rotation' => true, 'call_target' => true]);

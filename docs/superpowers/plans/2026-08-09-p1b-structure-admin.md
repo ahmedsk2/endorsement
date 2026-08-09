@@ -488,6 +488,15 @@ Decision A itself so it cannot silently regress if a later plan reaches for the 
 `php artisan test`: 798 → 803 (5 new). `npm test`: unchanged (Task 6 touches no JS). `npm run
 build` and the full suite green.
 
+**2026-08-09, Task 7 — no `terminal` assertion, per the same Owner Decision A.** The plan's own
+Step 1 text (written before Decision A landed) asks for `R4` seeded `terminal = true` and
+`nextAfter(R4)` asserted null. Neither is built: `R1…R4` are seeded `external => false` only,
+with no `terminal` key at all (the column does not exist — Task 6), and `EXT` is seeded
+`external => true`. `display_order` is 10/20/30/40/90 exactly as the plan specifies — that part
+of the plan's reasoning (gaps of ten so an `R5` or `R2.5` can be inserted without renumbering)
+is unaffected by Decision A and was kept verbatim. `php artisan test`: 803 → 807 (4 new). `npm
+test`: unchanged. `npm run build` and the full suite green.
+
 ---
 
 ## Conventions every task follows
@@ -2542,7 +2551,8 @@ git commit -m "test: a level knows external from internal, and stops there"
 Owner decision 1, binding: *"The level ladder is `R1`, `R2`, `R3`, `R4`, `EXT` (External) — seed
 it… Do not treat the empty `levels` table as still-undecided."*
 
-- [ ] **Step 1: Extend the failing test**
+- [x] **Step 1: Extend the failing test** — AMENDED per Owner Decision A: no `terminal`/
+  `nextAfter()` assertions (see execution note below).
 
 Add to `tests/Feature/ReferenceSeederTest.php`:
 
@@ -2563,14 +2573,14 @@ Add to `tests/Feature/ReferenceSeederTest.php`:
   cosmetic and editable (LV-01), and `db:seed --force` runs on every deploy. Same `firstOrNew`
   + `if (! $unit->exists)` shape the units and the institution already use.
 
-- [ ] **Step 2: Run it and watch it go red**
+- [x] **Step 2: Run it and watch it go red**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
 php artisan test --filter ReferenceSeederTest 2>&1 | tail -15
 ```
 
-- [ ] **Step 3: Seed**
+- [x] **Step 3: Seed**
 
 In `ReferenceSeeder::run()`, after the institution block (so `$institution->id` is available):
 
@@ -2609,7 +2619,7 @@ In `ReferenceSeeder::run()`, after the institution block (so `$institution->id` 
 
 with `use App\Models\Level;` added.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"

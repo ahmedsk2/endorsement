@@ -178,6 +178,35 @@ services:
       # in the data volume outside the encrypted-backup control and surviving the deletions
       # data:retention performs. This is a single server with no replication to feed.
       - --skip-log-bin
+      # 2026-08-09 ops rehearsal, finding 3. `audit_log.created_at` is a MySQL TIMESTAMP:
+      # stored as UTC internally, but RE-RENDERED per the SESSION `time_zone` on every read
+      # — and `AuditChain::canonical()` v3 hashes that rendered string verbatim (deliberately,
+      # so an APP_TIMEZONE change can never invalidate history again). Nothing here pinned the
+      # database's own session zone, so it silently tracked `SYSTEM` — whatever the
+      # container's OS reports, which can change across a redeploy, a base-image bump, or a
+      # host migration, with no code change or deploy log entry to explain why
+      # `audit:verify` suddenly calls the entire trail broken. Reproduced empirically: an
+      # intact 20-row chain on this exact image, with no TZ env set (SYSTEM already resolves
+      # to UTC here — confirmed via `SELECT NOW(), UTC_TIMESTAMP()` returning identical
+      # values), verified clean; `SET GLOBAL time_zone='+03:00'` against the SAME unchanged
+      # rows broke verification at row 1; reverting to `SYSTEM` made it intact again — the
+      # rows never changed, only how MySQL rendered them on read.
+      #
+      # This pins TODAY's already-correct, already-self-consistent behaviour (UTC) so it
+      # cannot drift out from under the chain by accident — it changes nothing about what is
+      # stored or how existing rows read back. A numeric offset, not a named zone, so there
+      # is no dependency on the `mysql.time_zone*` lookup tables being loaded (the official
+      # image's entrypoint does populate them from the container's own zoneinfo on first
+      # init, but a fixed offset needs no lookup at all and is simpler to reason about).
+      #
+      # This does NOT stop a superuser from running `SET GLOBAL time_zone` at runtime — that
+      # is a privileged, deliberate operator action (the app's own credential cannot reach
+      # it) and is out of scope for a startup flag; the rule is simply: never run it against
+      # this database. A real fix — a `hash_version` bump that pins the render zone
+      # per-row, or a one-time re-render of history — needs the owner's live data in front of
+      # whoever does it, and is deliberately NOT attempted here; see
+      # docs/superpowers/plans/2026-08-09-ops-rehearsal-defects.md.
+      - --default-time-zone=+00:00
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}

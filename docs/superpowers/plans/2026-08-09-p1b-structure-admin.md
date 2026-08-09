@@ -353,6 +353,21 @@ what was found and how it was resolved. Findings caught empirically rather than 
 are the ones worth writing down. P1a recorded nine such amendments across nine tasks; assume
 this plan is wrong somewhere too.)*
 
+**2026-08-09, Task 1 — the task's own Step 1 test text contradicts the plan's binding OWNER
+DECISIONS block, and the owner decision wins.** `test_the_four_seeded_units_are_rotations_and_
+call_targets` (Task 1's Step 1 draft) asserted `assertFalse($unit->clinic_owner, $code)` for
+all four seeded units, including WARD, with the comment "No clinics exist until P1e; claiming
+otherwise would be a clinical guess." That reasoning predates Owner Decision B, added to the
+plan's own OWNER DECISIONS block the same day: *"WARD is the only clinic owner. Seed
+`clinic_owner = true` on WARD alone; PICU, NICU and SCBU stay false. Affects nothing before
+P1e, but settles CL-01's first screen."* The task text was written (or left unedited) before
+that decision was folded in. Resolved in favour of the binding decision: `ReferenceSeeder`
+seeds `WARD` with `clinic_owner => true` and the other three with `false`; the draft assertion
+was split into `test_the_four_seeded_units_are_rotations_and_call_targets` (rotation/call-target
+only now) plus a new `test_ward_alone_is_seeded_as_a_clinic_owner` pinning the owner-decision
+shape. `php artisan test`: 746 → 759 (13 new, one more than the plan's stated 758 — the split
+test adds one case). `npm run build` and the full suite green.
+
 ---
 
 ## Conventions every task follows

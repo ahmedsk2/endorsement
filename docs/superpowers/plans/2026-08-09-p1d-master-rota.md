@@ -562,6 +562,37 @@ is what the measured run produced. Consistent with P1c's four recorded instances
 staleness — trusting the measured baseline over the document's arithmetic, per this section's own
 standing instruction.
 
+**2026-08-09/10, Tasks 5–7 — arithmetic held, no task-text/binding-block contradiction found, but
+Task 7's own Files list under-scopes the security fix it describes.** Tasks 5 and 6 matched the plan
+and the binding decisions block exactly (Decision F's single guard file covering both writers;
+Decision C's no-`period_id` vacations table) — no plan errors. Task 7's Files list names only
+`app/Support/PersonPresenter.php` and a new `ContactProjectionNarrowsTest`, but does **not** list
+`tests/Feature/Build/ContactFieldsAreProjectedOnceTest.php` — despite that file being the
+source-level guard whose entire purpose (per its own docblock) is to stop a second, ungated
+projection of a Person's contact fields from appearing anywhere outside `PersonPresenter`. Task 7
+un-gates `email` from `$base` into the `viewContact` branch, which is precisely the kind of change
+that guard exists to police, so leaving its needle list at `phone`/`notes`/`constraints` would ship
+the fix with a hole in its own regression coverage: nothing would stop a future PR from reading
+`$person->email` directly outside the presenter, the same way `phone` and `notes` are already
+covered. This was corrected: `->email`/`'email'` added to the guard's `NEEDLES`.
+
+Doing so surfaced a genuinely different problem from `phone`/`notes`/`constraints`'s handful of false
+positives: **21 files**, not ~5, matched — because Laravel's own built-in validation rule is named
+`email` (`['required', 'email']`, used throughout every login/reset/settings form in this app), and
+this app authenticates BY email (login-method choice, OTP challenge, verification, password reset) —
+none of which has a `phone`-shaped equivalent. Every match was read in full rather than pattern-added
+to the allow-list; each is one of: a write-only site (`Person::create()`/`update()` naming `email` as
+a field, never rendering it back), a self-service read of the SIGNED-IN account's own address
+(`ProfileController`, `SetupController`, `User::memberEmail()`'s read-through accessor — none of
+which `PersonPolicy::viewContact()` governs, since a person always sees their own data), an
+authentication mechanic with no relation to a Person's contact field (the `'email'` 2FA method
+string, Laravel's format-validator rule name, an error-bag key), a substring collision with
+`email_verified_at`/`member_email`/`password_reset_tokens.email` (an unrelated `users`-table
+column), or fixture-seeding (`DemoSeeder`/`E2eSeeder`, the same carve-out already made for
+`database/factories/`). None of the 21 is a render of a Person's email to a viewer `PersonPolicy`
+was not asked about. Recorded so the next reader does not mistake "the allow-list grew by 21" for
+"the guard went slack" — it is the guard doing exactly its job against a much more overloaded word.
+
 ---
 
 ## Conventions every task follows

@@ -32,11 +32,29 @@
 -- a clinical schema. There is therefore no reason for its credential to be able to.
 --
 -- CONSEQUENCE, and it is deliberate: `php artisan migrate` will no longer work with the
--- app's credential. Run migrations with the root credential instead, which keeps schema
--- change an explicit, privileged, human act:
+-- app's credential, which keeps schema change an explicit, privileged, human act.
 --
---   docker exec -e DB_USERNAME=root -e DB_PASSWORD="$MYSQL_ROOT_PASSWORD" \
---       <app-container> php artisan migrate --force
+-- `docker exec -e DB_USERNAME=root -e DB_PASSWORD=... <app-container> php artisan migrate
+-- --force` does NOT work as the way to do that — this was documented here once and
+-- contradicted docs/RUNBOOK-DEPLOY.md, which already correctly explained why: this
+-- application's config is cached at boot (`php artisan config:cache`), so an already-running
+-- PHP-FPM worker never re-consults `env()`, and a runtime `-e` override on `docker exec`
+-- against that already-running container has no effect.
+--
+-- The actual procedure — grant the migration privileges to the APP's own credential
+-- TEMPORARILY, run `migrate`, revoke immediately after — is docs/RUNBOOK-DEPLOY.md's
+-- "Migrations need a privilege the app does not have", which also carries the recovery
+-- procedure for a mid-chain failure (MySQL has no transactional DDL, so a failed migration
+-- can leave a partially-created object behind that needs a manual DROP before retrying).
+-- The exact grant, verified empirically against the full migration chain on real MySQL 8.4:
+--
+--   ALTER, CREATE, REFERENCES   -- for `php artisan migrate --force`
+--   + DROP                      -- additionally, only for the occasional `migrate:rollback`
+--
+-- `INDEX` is needed for neither. Keep this file and the runbook's grant in agreement — they
+-- describe the same two credentials (this file: the permanent runtime grant, below; the
+-- runbook: the temporary migration-window grant) and must never state a different privilege
+-- list for the same operation again.
 --
 REVOKE ALL PRIVILEGES ON `{{DATABASE}}`.* FROM '{{USER}}'@'%';
 

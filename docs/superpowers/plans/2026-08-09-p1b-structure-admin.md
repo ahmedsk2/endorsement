@@ -464,7 +464,7 @@ Design §6.1 claimed these shipped with P0a. They did not — P0a added nine *pr
 columns and nothing else (P1a Task 9 corrected the section). This task is the schema half; the
 screen that edits it is Task 4.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/Units/UnitCapabilityFlagsTest.php`:
 
@@ -633,7 +633,7 @@ class UnitCapabilityFlagsTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it and watch it go red**
+- [x] **Step 2: Run it and watch it go red**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
@@ -642,7 +642,7 @@ php artisan test --filter UnitCapabilityFlagsTest 2>&1 | tail -15
 
 Expected: FAIL — `SQLSTATE[HY000]: General error: 1 table units has no column named training_rotation`.
 
-- [ ] **Step 3: The migration**
+- [x] **Step 3: The migration**
 
 Create `database/migrations/2026_08_13_120001_add_munawib_configuration_to_units.php`:
 
@@ -735,7 +735,7 @@ return new class extends Migration
 };
 ```
 
-- [ ] **Step 4: The aliases cast**
+- [x] **Step 4: The aliases cast**
 
 Create `app/Casts/UnitAliases.php`:
 
@@ -848,7 +848,7 @@ class UnitAliases implements CastsAttributes
 }
 ```
 
-- [ ] **Step 5: Teach the model its new shape**
+- [x] **Step 5: Teach the model its new shape**
 
 In `app/Models/Unit.php`, add `use App\Casts\UnitAliases;` beside the existing
 `use App\Casts\ExtraRowFields;`, then extend `$fillable` and `casts()`:
@@ -926,7 +926,7 @@ and add the matcher below `findByCode()`:
     }
 ```
 
-- [ ] **Step 6: Seed the four units' flags**
+- [x] **Step 6: Seed the four units' flags**
 
 In `database/seeders/ReferenceSeeder.php`, add three keys to each of the four unit arrays. PICU,
 NICU, SCBU and WARD are all training rotations and all on-call targets; nothing owns a clinic
@@ -949,7 +949,7 @@ guard already means these are written on CREATE only, so a re-seed cannot revert
 administrator's change — that is what `test_reseeding_preserves_administrator_flag_changes`
 asserts.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
@@ -989,7 +989,7 @@ P0a plan's amendment 1 records what splitting a mutually-dependent pair costs.
 This task ships the units screen **read-only**. Writes are Task 4, after Task 3 has made the nav
 capable of showing a fifth unit.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/Admin/StructureAccessTest.php`:
 
@@ -1094,7 +1094,7 @@ class StructureAccessTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it and watch it go red**
+- [x] **Step 2: Run it and watch it go red**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
@@ -1104,7 +1104,7 @@ php artisan test --filter StructureAccessTest 2>&1 | tail -15
 Expected: FAIL — `Failed asserting that a row in the table [capabilities] matches the attributes
 {"key":"structure.manage"}`.
 
-- [ ] **Step 3: Seed the capability**
+- [x] **Step 3: Seed the capability**
 
 In `database/seeders/AccessControlSeeder.php`, add to `DESCRIPTIONS`:
 
@@ -1141,7 +1141,7 @@ No other role gains it. The `applied_role_defaults` marker is per `(position, ca
 pair, so a brand-new key has never been marked and lands on the next `db:seed --force` even on
 an existing deployment (the P1 plan's correction to the reconnaissance).
 
-- [ ] **Step 4: The spec catalog**
+- [x] **Step 4: The spec catalog**
 
 `docs/spec/08-foundation.md` line 36 — append the key:
 
@@ -1158,7 +1158,7 @@ and line 38 — append to the role-defaults sentence, immediately after the
 This catalog has been found stale twice. It is correct as of `9598aa5`; this step is what keeps
 it that way.
 
-- [ ] **Step 5: The route group and the controller**
+- [x] **Step 5: The route group and the controller**
 
 In `routes/web.php`, after the Settings group, add:
 
@@ -1264,7 +1264,7 @@ existing entries only, and let Task 3 widen it:
     ];
 ```
 
-- [ ] **Step 6: The screen**
+- [x] **Step 6: The screen**
 
 Create `resources/js/Pages/Admin/Units.vue`. Read-only in this task; Task 4 adds the forms.
 
@@ -1361,7 +1361,7 @@ const flags = (unit) => [
 </template>
 ```
 
-- [ ] **Step 7: The nav entry**
+- [x] **Step 7: The nav entry**
 
 In `resources/js/Layouts/AppLayout.vue`, extend `canAdmin` (line 72-73) and add the link inside
 the `<template v-if="canAdmin">` block, above the Settings entry:
@@ -1382,7 +1382,7 @@ Add to `tests/js/AppLayout.test.js` a case asserting that a user whose `auth.can
 **only** `structure.manage` sees the Administration heading and the Units link — the exact
 failure mode the recon frontend risk describes. Follow the file's existing mount helper.
 
-- [ ] **Step 8: Verify and commit**
+- [x] **Step 8: Verify and commit**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
@@ -1419,7 +1419,7 @@ configuration."* Task 4 is the moment a fifth department becomes creatable. Ship
 first would mean the first unit an administrator makes is invisible and colourless: a defect
 introduced by this plan rather than inherited from P0a.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/Units/NavUnitsAreConfigurationTest.php`:
 
@@ -1551,7 +1551,7 @@ class NavUnitsAreConfigurationTest extends TestCase
 }
 ```
 
-- [ ] **Step 2: Run it and watch it go red**
+- [x] **Step 2: Run it and watch it go red**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
@@ -1560,7 +1560,7 @@ php artisan test --filter NavUnitsAreConfigurationTest 2>&1 | tail -15
 
 Expected: FAIL — `Property [nav] does not exist.`
 
-- [ ] **Step 3: Widen the palette in `resources/css/app.css`**
+- [x] **Step 3: Widen the palette in `resources/css/app.css`**
 
 After `--color-unit-ward` (line 74) inside the `@theme` block, add four hue-named tokens. These
 are border colours only — outside `TextContrastMeetsAaTest`'s token set (finding 12) — but kept
@@ -1586,7 +1586,7 @@ and after `.channel-bar-ward` (line 121), the matching rules:
 No `dark:` variant, no second definition. The existing four are untouched, so no stored
 `bar_class` value migrates and no rendered pixel moves.
 
-- [ ] **Step 4: Widen `Unit::BAR_CLASSES` and add the fallback**
+- [x] **Step 4: Widen `Unit::BAR_CLASSES` and add the fallback**
 
 In `app/Models/Unit.php`, replace the constant Task 2 added:
 
@@ -1638,7 +1638,7 @@ and add the nav projection below `codes()`:
 predates this palette, and changing it would move a rendered colour on the endorsement surface —
 outside this plan's scope. Recorded here so the difference is a decision, not an oversight.
 
-- [ ] **Step 5: Share it**
+- [x] **Step 5: Share it**
 
 In `app/Http/Middleware/HandleInertiaRequests.php`, add a `nav` key to `share()`, after `auth`:
 
@@ -1656,7 +1656,7 @@ One extra query per authenticated request against a table of four rows. If that 
 belongs behind the same generation-counter cache `AccessControl` uses — noted, not built, because
 premature caching of a four-row table is how a stale sidebar happens.
 
-- [ ] **Step 6: Consume it**
+- [x] **Step 6: Consume it**
 
 In `resources/js/Layouts/AppLayout.vue`, delete the hardcoded array (lines 62-67) and replace it
 with a computed over the shared prop:
@@ -1676,7 +1676,7 @@ that `{{ unit.label }} Endorsement` now renders a full unit name; change it to
 `{{ unit.label }}` alone, since "Pediatric Intensive Care Unit Endorsement" does not fit a
 16rem sidebar. Verify visually with `npm run test:e2e`.
 
-- [ ] **Step 7: Verify and commit**
+- [x] **Step 7: Verify and commit**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"

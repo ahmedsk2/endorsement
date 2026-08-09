@@ -14,7 +14,9 @@ use App\Support\Calendar;
 use App\Support\ContactVisibility;
 use App\Support\Csv;
 use App\Support\LevelAssignment;
+use App\Support\LevelPickers;
 use App\Support\PersonPresenter;
+use App\Support\PersonStatus;
 use App\Support\PositionChange;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -95,11 +97,13 @@ class PersonController extends Controller
                 ]],
             ))->values()->all(),
             'positions' => Position::orderBy('id')->get(['id', 'name']),
-            // LV-02's bulk "set level" picker. Every ACTIVE level, EXT included — unlike Task
-            // 10's promotion (which moves the internal training ladder specifically and excludes
-            // EXT by Owner Decision 2), this is a general correction tool and a person may
+            // LV-02's bulk "set level" picker. `App\Support\LevelPickers::bulkAssignable()` is
+            // the ONE predicate this offer and `PersonBulkRequest`'s write-side rule both read
+            // from (review finding 5) — every ACTIVE level, EXT included — unlike Task 10's
+            // promotion (which moves the internal training ladder specifically and excludes EXT
+            // by Owner Decision 2), this is a general correction tool and a person may
             // legitimately be marked at the external level through it.
-            'levels' => Level::query()->active()->ordered()->get(['id', 'code', 'name']),
+            'levels' => LevelPickers::bulkAssignable()->get(['id', 'code', 'name']),
             'contact_visibility' => ContactVisibility::current(),
             'contact_visibilities' => Institution::CONTACT_VISIBILITIES,
         ];
@@ -164,21 +168,28 @@ class PersonController extends Controller
     }
 
     /**
-     * PE-01 update. Every field except `position` is written directly; `position` goes through
-     * `PositionChange::apply()` inside the SAME transaction, so a refusal (the last active
-     * Administrator) rolls the whole edit back rather than leaving other fields half-saved.
+     * PE-01 update. Every field except `position` and `active` is written directly; those two go
+     * through `PositionChange::apply()` and `App\Support\PersonStatus::apply()` inside the SAME
+     * transaction, so a refusal (the last active Administrator, demoted OR deactivated) rolls
+     * the whole edit back rather than leaving other fields half-saved.
+     *
+     * Review finding 4: before `PersonStatus::apply()` existed, `active` travelled inside the
+     * plain `$person->update($data)` call below and never touched the linked account — a person
+     * deactivated through this screen stayed able to log in.
      */
     public function update(PersonRequest $request, Person $person): RedirectResponse
     {
         $data = $request->validated();
         $position = (int) $data['position'];
+        $active = (bool) $data['active'];
         $fields = array_keys($data);
-        unset($data['position']);
+        unset($data['position'], $data['active']);
 
-        DB::transaction(function () use ($data, $position, $person, $request): void {
+        DB::transaction(function () use ($data, $position, $active, $person, $request): void {
             $person->update($data);
 
             PositionChange::apply($person, $position, $request);
+            PersonStatus::apply($person, $active);
         });
 
         AuditLog::record(
@@ -284,15 +295,15 @@ class PersonController extends Controller
     }
 
     /**
-     * `people.active` and the linked account's `users.active` are kept in step here — the same
-     * pairing `UserManagementController::setActive()` keeps from the account side ("the admin
-     * screen offers one control, so this is where they are kept in step"). Whichever console the
-     * control is on, a leaver stops being NAMED as well as stops being able to log in.
+     * `App\Support\PersonStatus::apply()` keeps `people.active` and the linked account's
+     * `users.active` in step — the same pairing `UserManagementController::setActive()` keeps
+     * from the account side ("the admin screen offers one control, so this is where they are
+     * kept in step"). Whichever console the control is on, a leaver stops being NAMED as well as
+     * stops being able to log in.
      */
     private function applySetActive(Person $person, bool $active): string
     {
-        $person->update(['active' => $active]);
-        $person->user?->update(['active' => $active]);
+        PersonStatus::apply($person, $active);
 
         return $active ? 'activated' : 'deactivated';
     }

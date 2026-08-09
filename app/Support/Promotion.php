@@ -68,9 +68,12 @@ final class Promotion
      * silently swept in and one removed does not fail the whole run — the same discipline
      * `UnitMerge::commit()` established for signoff collisions (P1b Task 5).
      *
-     * Writes nothing but `person_levels` (through `LevelAssignment`, the one writer, Decision G)
-     * and `people.active` (the retire-cohort path only). NEVER touches `users` — see
-     * `RosterNeverMintsCredentialsTest`.
+     * Writes nothing but `person_levels` (through `LevelAssignment`, the one writer, Decision G),
+     * `people.active` and the linked account's `users.active` (both through
+     * `App\Support\PersonStatus::apply()`, review finding 4 — the retire-cohort path only).
+     * NEVER CREATES an account — see `RosterNeverMintsCredentialsTest` (Decision I is about
+     * minting a credential, not about every write to `users`; deactivating one that already
+     * exists is not that).
      *
      * Audits NOTHING itself. The caller writes one summary row plus one row per person AFTER this
      * returns and the transaction has committed (Decision H): `AuditLog::record()` opens its own
@@ -101,8 +104,11 @@ final class Promotion
                     // Decision D's graduation path: deactivate AND close the open span. Two
                     // separate writes because they answer two separate questions (naming vs
                     // level history) — the same separation P0c drew between `people.active` and
-                    // `users.active`.
-                    $person->update(['active' => false]);
+                    // `users.active`. `PersonStatus::apply()` (review finding 4) is what actually
+                    // draws that line: before it existed this wrote the person's flag directly,
+                    // in one Eloquent call, and never touched the linked account — so a person
+                    // retired through this path stayed named as gone but able to log in.
+                    PersonStatus::apply($person, false);
                     $outcomes[$id] = LevelAssignment::close($person, $on);
                 } else {
                     $outcomes[$id] = LevelAssignment::assign($person, $to, $on, [

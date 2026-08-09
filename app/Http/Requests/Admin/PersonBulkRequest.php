@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin;
 
+use App\Support\LevelPickers;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -36,7 +37,11 @@ class PersonBulkRequest extends FormRequest
             // hospital-wide directory.
             'ids' => ['required', 'array', 'min:1', 'max:500'],
             'ids.*' => ['integer', Rule::exists('people', 'id')],
-            'level_id' => ['required_if:action,set_level', 'integer', Rule::exists('levels', 'id')],
+            // Review finding 5: `Rule::exists('levels', 'id')` accepted a RETIRED level, which
+            // `PersonController::rosterProps()` never offers — the 2026-07-26 audit's "a
+            // picker's write-side validation must match what it offers" invariant, restated.
+            // `App\Support\LevelPickers::bulkAssignable()` is the one predicate both read from.
+            'level_id' => ['required_if:action,set_level', 'integer', Rule::in(LevelPickers::bulkAssignable()->pluck('id'))],
             'active' => ['required_if:action,set_active', 'boolean'],
         ];
     }

@@ -165,6 +165,41 @@ class PeopleBulkTest extends TestCase
         ]);
     }
 
+    /**
+     * Review finding 5: the picker's write-side validation must match what it OFFERS (the
+     * 2026-07-26 audit's invariant, restated for LV-02's bulk level picker). `PersonBulkRequest`
+     * used `Rule::exists('levels', 'id')` outright, which accepts a RETIRED level, while
+     * `PersonController::rosterProps()` offers only active ones — the exact shape
+     * `PromotionController`'s own docblock documents avoiding. Both now read
+     * `App\Support\LevelPickers::bulkAssignable()`.
+     */
+    public function test_a_retired_level_cannot_be_set_through_the_bulk_picker(): void
+    {
+        $retired = Level::factory()->inactive()->create(['code' => 'BULKRET']);
+        $person = Person::factory()->create();
+
+        $this->actingAs($this->admin)->post('/admin/people/bulk', [
+            'action' => 'set_level',
+            'level_id' => $retired->id,
+            'ids' => [$person->id],
+        ])->assertSessionHasErrors('level_id');
+
+        $this->assertSame(0, PersonLevel::where('person_id', $person->id)->count());
+    }
+
+    /** The write-side refusal above only means something if the screen never offered it either. */
+    public function test_a_retired_level_is_not_offered_on_the_people_screen(): void
+    {
+        $activeCount = Level::query()->active()->count();
+
+        Level::factory()->inactive()->create(['code' => 'BULKRET2']);
+
+        $this->actingAs($this->admin)->get('/admin/people')
+            ->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+                ->has('levels', $activeCount)
+            );
+    }
+
     public function test_an_unknown_person_id_in_the_selection_is_a_422_not_a_silent_skip(): void
     {
         $a = Person::factory()->create(['active' => true]);

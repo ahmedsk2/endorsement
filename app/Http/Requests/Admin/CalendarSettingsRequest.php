@@ -106,9 +106,10 @@ class CalendarSettingsRequest extends FormRequest
 
                 if (array_key_exists($locked, $data) && (string) $data[$locked] !== (string) $current) {
                     $v->errors()->add($locked, 'Periods have already been generated against this '
-                        ."setting. Delete this academic year's periods first (Structure → Periods), "
-                        .'then change it — otherwise every generated period is orphaned against a '
-                        .'year that no longer starts where they do.');
+                        ."setting. Delete this academic year's periods first (Structure → Periods) "
+                        .'— which is itself refused while the master rota references them — then '
+                        .'change it. Otherwise every generated period is orphaned against a year '
+                        .'that no longer starts where they do.');
                 }
             }
         });

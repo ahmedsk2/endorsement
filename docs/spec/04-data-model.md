@@ -96,6 +96,26 @@ string (`months` | `week_blocks`), `block_weeks` json, `academic_year_start` dat
 `MissedDays` — the compliance denominator counts every calendar day exactly as it always has
 (owner decision 6, round 2; §14 item 14).
 
+### People operational layer addendum (P1c-1, 2026-08-09)
+
+This slice predates the whole operational layer above identity — P1c-1 gave it two additive
+migrations.
+
+- `institutions` gains `contact_visibility` string, default `admins` — the only other value is
+  `members`. `admins` restricts `phone` (and `notes`, unconditionally, on either setting) to
+  holders of `people.manage`; `members` exposes `phone` to any authenticated account holder.
+  Enforced by the projection, not the column: `App\Support\PersonPresenter` is the ONE place a
+  `Person` becomes Inertia props, gated by `App\Policies\PersonPolicy` (this codebase's first
+  policy) — `Person::$hidden = ['phone', 'notes']` is defence in depth against an accidental
+  whole-model serialisation, never the control itself (design doc §5.1's own correction).
+- `person_levels` gains three nullable columns: `promotion_batch_id` (UUID, groups the rows one
+  bulk promotion produced), `reason` (free text), `created_by` (FK to `users`). Landed before the
+  first production promotion ever ran, which is the only point at which this is additive rather
+  than a backfill of facts nobody recorded. `App\Support\LevelAssignment` is the table's ONE
+  writer; it never upserts — a same-date collision is skipped and reported, never rewritten.
+- No new `people`/`users` columns. PE-01's "status" (Active/Retired × Account/Roster-only) is
+  derived on the read path from `people.active` × `Person::hasAccount()`, never stored.
+
 ### Schema governance
 
 Additive, nullable migrations; soft deletes everywhere clinical; no destructive change to a column holding real data; clinical rows never hard-deleted; accounts deactivated, never deleted.

@@ -140,6 +140,18 @@ holding the personal data may or may not be the account making the request. The 
 `docs/PDPL-PACK.md` §3 was signed (`bb7e1d7`) against a one-table identity model and needs
 re-signing by the system owner to cover this addition — see `docs/PDPL-PACK.md`'s own note.
 
+**A new personal-data ingress point, P1c-1 (2026-08-09): the roster import.** Admin → People →
+Import accepts a CSV/TSV file the operator uploads containing full names, short names, email
+addresses, phone numbers and level codes for the whole department at once — a bulk arrival of
+personal data the system had no equivalent of before this shipped (`App\Support\
+Roster\RosterImport`, `App\Support\Roster\CsvRosterReader`). It writes only to `people`, never to
+`users` (`tests/Feature/Build/RosterNeverMintsCredentialsTest.php`), the uploaded file is never
+persisted to disk beyond the request, and every commit is audited by ids and counts only
+(`created=<n>;updated=<n>;skipped=<n>`) — never a name, an email or the filename. The bulk CSV
+export (`Admin → People`, LV-02) is the corresponding egress point: personal data leaving the
+system in a file, subject to the same `contact_visibility` projection as the screen itself, so an
+export never carries a field the exporting operator could not already see on screen.
+
 ## As deployed (2026-07-25)
 
 Verified on the live system, not inferred from config:

@@ -65,6 +65,31 @@ which is the one place a 35-day (not the department's real) final block is the r
 answer; regenerate that year once the following year's start is confirmed (Admin → Structure →
 Periods → delete the year → generate again).
 
+### F. xlsx roster import — add `openspout/openspout`, or stay CSV-only?
+
+P1c-1 (2026-08-09) ships the roster importer (ST-04) as a port,
+`App\Support\Roster\RosterReader`, with one adapter, `CsvRosterReader`, built on PHP core. There
+is no spreadsheet package in `composer.lock` at all, and adding one to a system holding
+children's PHI is a supply-chain decision the owner takes, not a developer's. *Cost of yes:* one
+MIT, zero-runtime-dependency package (`openspout/openspout`), one `composer.json` line, one
+explicit `"ext-zip": "*"` (zip is already installed in the image, in CI and locally), and one new
+class, `XlsxRosterReader`, implementing the same interface — nothing in the preview, the
+validation report or the commit path changes either way. *Cost of no:* the department exports
+from Excel with File → Save As → CSV UTF-8 before each import, and the import screen states this
+plainly rather than rejecting an `.xlsx` with "invalid file". *Blocks:* nothing in P1c-1; it is a
+follow-on task either way. *Default if unanswered:* CSV-only, as shipped.
+
+### G. Where does the configurable invitation lifetime live — `settings.manage` or `users.manage`?
+
+Owner decision 5 (round 2, 2026-08-08, below) settled the *value* — 7 days stays the default,
+becomes admin-configurable, validated — it did not settle who turns the knob. `settings.manage`
+matches every other runtime setting and the existing write precedent (SMTP, VAPID, the
+operational-alert address all live there); `users.manage` matches who actually thinks about
+invitations day to day. *Blocks:* P1c-2 task 1 (`docs/superpowers/plans/
+2026-08-09-p1c-people-roster.md`'s own scoping). *Default if unanswered:* `settings.manage`,
+because the write path already exists there and a second settings surface is a second place for
+a validated write to go wrong.
+
 ---
 
 ## DECIDED — 2026-07-27
@@ -225,6 +250,50 @@ figure. `MissedDays` never consults `Calendar::dayType()`/`isHoliday()`/`isWeeke
 accident. *Blocks:* nothing — this was a standing question with no P1 task waiting on it.
 *If ever revisited:* it must be a deliberate, dated change with the old figures preserved
 alongside the new definition, never an in-place redefinition.
+
+---
+
+## DECIDED — 2026-08-09 (P1c-1, the people/roster plan)
+
+Nine decisions, folded into `docs/superpowers/plans/2026-08-09-p1c-people-roster.md`'s own
+Decisions A–I with their full reasoning; recorded here so they are findable from this index too,
+not repeated in full. Do **not** re-open any of these — that is P1a Task 9's own recorded
+mistake, made once already in this programme.
+
+- **A. New capability `people.manage`, distinct from `users.manage` and `structure.manage`.**
+  The roster (who exists, contact fields, training level) is a different object from the
+  account console and the department's shape, with a different blast radius — a roster-only
+  person is invisible to `users.manage`'s screen by construction. Administrator-only by default.
+- **B. Contact visibility is a two-valued department setting, and the projection is the
+  enforcement, not the model.** `institutions.contact_visibility` (`admins` default, `members`)
+  governs `phone` only; `App\Support\PersonPresenter` — the one place a `Person` becomes Inertia
+  props, gated by `App\Policies\PersonPolicy` — is what actually enforces it. `notes` is never
+  governed by the setting, on either value.
+- **C. One definition of a role/position change, `App\Support\PositionChange`.** Closes a
+  stale-capability-cache window (up to ten minutes of retained privilege after a demotion) and a
+  bypassable last-administrator guard that a People screen written without it would have
+  reopened.
+- **D. Promotion takes an explicit target level; nothing infers one.** Restates P1b Owner
+  Decision A as the screen it was written for — no `terminal` column, no `Level::nextAfter()`,
+  ever, anywhere in this codebase.
+- **E. Roster import ships CSV/TSV only, behind a reader port
+  (`App\Support\Roster\RosterReader`).** No spreadsheet package is added without an owner
+  decision — see STILL OPEN item F, above — a supply-chain choice on a system holding children's
+  PHI, not a developer's call to make alone.
+- **The plan's own Decision F — a different F from the "STILL OPEN" item F above, the two
+  lettering schemes belong to different documents. `App\Support\Csv` is the one CSV writer, and
+  it neutralises formula injection on write and un-neutralises it on read.** The first CSV
+  writer this codebase has ever had, so this is a greenfield choice, not a retrofit.
+- **G. `person_levels` has exactly one writer, `App\Support\LevelAssignment`, and it skips a
+  same-date collision rather than upserting it.** An upsert on `unique(person_id,
+  effective_from)` would silently rewrite what level someone held on a date that may already be
+  rendered beside a signed handover.
+- **H. The promotion audits one summary row plus one row per person; only the summary joins the
+  anomaly watch list.** A forty-person cohort promotion is one finding for a human to read, not
+  forty pages for the same routine annual act.
+- **I. Nothing in P1c-1 creates an account.** `tests/Feature/Build/
+  RosterNeverMintsCredentialsTest.php` asserts it at source level; the invitation flow remains
+  the only path from a roster entry to a credential.
 
 ---
 

@@ -26,3 +26,10 @@
 | 17 | Chief Resident (position 5) | Registers as Resident, promoted by an Administrator; holds `users.manage_residents` (approve/activate/deactivate RESIDENT accounts only — no role changes, no profiles, no non-residents); remains in the endorser pickers |
 | 18 | Runtime settings | Admin → Settings (`settings.manage`, Admin-only default): SMTP, VAPID, reminder times stored in `app_settings`, secrets encrypted + write-only, changes audited by key name only, values override .env at boot |
 | 19 | Registration password policy | `Password::min(8)->mixedCase()->numbers()->symbols()`, mirrored 1:1 by the page's live checklist |
+
+## P1c-1 rulings (2026-08-09)
+
+| # | Decision | Ruling |
+|---|---|---|
+| 20 | Annual promotion target | Chosen by the operator, explicit, every time — never inferred. There is no `levels.terminal` column and no `Level::nextAfter()` method; P1b Owner Decision A restated as the screen it was written for |
+| 21 | Contact visibility | `phone` behind a two-valued department setting (`institutions.contact_visibility`: `admins` default, `members`); `notes` behind neither value — always `people.manage`-only |

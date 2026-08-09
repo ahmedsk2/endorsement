@@ -2147,6 +2147,40 @@ every P1b task — no screen formats a date except through `Calendar::label()`/`
     cell beginning `=`, `+`, `-`, `@`, tab or CR, and a hospital spreadsheet imported and
     re-exported is exactly the round trip that weaponises it.
 
+**2026-08-09 — superseded by `docs/superpowers/plans/2026-08-09-p1c-people-roster.md`, written
+when P1b merged the same day.** This scoping is left as written above (the P0a–P0d convention:
+amend, do not silently rewrite), but the sub-plan's own reconnaissance found this list covering
+two objects with two different security stories, and split at the person/account seam: **P1c-1**
+(items 1–9, 13 and 14 above: the People screen, PE-01…03, `Person::levelsAt()`, `person_levels`
+provenance, LV-02's roster-side bulk operations, LV-03 promotion, LV-04 history, and ST-04
+roster import including its CSV-only dependency answer) **shipped 2026-08-09**; **P1c-2** (items
+10–12 above: AC-02's configurable lifetime/resend/claim status, AC-03 unbinding, AC-04
+per-person roles, plus LV-02's bulk resend) is scoped but not yet built, planned once P1c-1
+merges, per `docs/superpowers/plans/2026-08-09-p1c-people-roster.md`'s own "P1c-2" section.
+
+- **Item 3's claim is false, and was corrected at the source rather than repeated here
+  uncorrected: `Person::$hidden = ['phone','notes']` was never "the only thing keeping staff
+  phone numbers out of Inertia props."** It bites on `toArray()`/`toJson()` only; every admin
+  screen in this codebase — including the one this item itself specifies — builds its props
+  from an explicit map that bypasses `$hidden` entirely. The actual control is
+  `App\Support\PersonPresenter`, the projection the sub-plan's Task 2 built; `$hidden` remains
+  in place as defence in depth, now correctly described rather than treated as the control
+  (also corrected in the design doc §5.1 and `docs/COMPLIANCE.md`).
+- **The design doc's own P1c row for Munawib LV-02 ("bulk resend invitations") is also false as
+  a roster claim: resend is an ACCOUNT action, not a roster one**, and it depends on AC-02's
+  resend endpoint, which does not exist yet. It ships in P1c-2 with the rest of AC-02, not in
+  the roster bulk-operations task this list's item 7 describes; P1c-1 offers the control on
+  screen, visibly disabled, naming AC-02.
+- **Item 13's dependency question was answered, not left open: ST-04 ships CSV/TSV only**,
+  behind a reader port (`App\Support\Roster\RosterReader`) so xlsx remains one adapter class
+  away rather than a redesign. Adding `openspout/openspout` is recorded as a live, costed owner
+  decision (`docs/OPEN-DECISIONS.md` item F) rather than a blocker.
+
+Confirmed honoured throughout P1c-1: it never touches `users`, `invitations` or
+`user_capabilities` — `tests/Feature/Build/RosterNeverMintsCredentialsTest.php` asserts this at
+source level — and every date the People, Promotion and History screens show goes through
+`Calendar::label()`/`::ymd()`, never client-side arithmetic.
+
 ### P1d — Master rota *(MR-01…03, MR-05…07)*
 
 1. `master_rota_assignments`: person × period × unit, one unit per person per period.

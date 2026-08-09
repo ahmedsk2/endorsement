@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AccessControlController;
 use App\Http\Controllers\Admin\CalendarSettingsController;
 use App\Http\Controllers\Admin\LevelController;
+use App\Http\Controllers\Admin\PeriodController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UnitController;
 use App\Http\Controllers\Admin\UnitMergeController;
@@ -168,6 +169,13 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
         // the GET/PUT pair mirrors admin/settings' own shape.
         Route::get('/calendar', [CalendarSettingsController::class, 'index'])->name('calendar');
         Route::put('/calendar', [CalendarSettingsController::class, 'update'])->name('calendar.update');
+
+        // Munawib MR-01. {academicYear} is regex-pinned — periods.academic_year is free text
+        // (finding 15's own docblock) but the URI segment stays narrow on purpose.
+        Route::get('/periods', [PeriodController::class, 'index'])->name('periods');
+        Route::post('/periods', [PeriodController::class, 'store'])->name('periods.store');
+        Route::delete('/periods/{academicYear}', [PeriodController::class, 'destroy'])
+            ->where('academicYear', '[A-Za-z0-9\- ]{1,20}')->name('periods.destroy');
     });
 
 /*

@@ -3222,7 +3222,7 @@ populated.** The P1 plan's P1b item 8 asks only for a preview. A preview alone l
 no grid columns. This task ships preview **and** commit **and** the delete path Decision D's
 hard-lock names as its unlock.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/Admin/PeriodGenerationScreenTest.php`. Cover:
 
@@ -3271,14 +3271,14 @@ Create `tests/Feature/Admin/PeriodGenerationScreenTest.php`. Cover:
   actually unlocks. **Assert that end to end** — a lock whose unlock does not work is a lock with
   no way out.
 
-- [ ] **Step 2: Run it and watch it go red**
+- [x] **Step 2: Run it and watch it go red**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
 php artisan test --filter PeriodGenerationScreenTest 2>&1 | tail -15
 ```
 
-- [ ] **Step 3: The controller**
+- [x] **Step 3: The controller**
 
 `PeriodController` with `index` (list persisted years + the preview for the configured
 settings), `store` (generate) and `destroy` (delete a year). The preview and the commit both go
@@ -3297,14 +3297,14 @@ Routes:
             ->where('academicYear', '[A-Za-z0-9\- ]{1,20}')->name('periods.destroy');
 ```
 
-- [ ] **Step 4: The screen**
+- [x] **Step 4: The screen**
 
 `Admin/Periods.vue`: the configured settings echoed read-only with a link to the calendar
 screen, a next-year-start input, the preview table (position, label, Gregorian span, Hijri span,
 day count), the warnings block (`channel-bar-caution bg-caution-soft text-caution`), the
 Generate button, and a per-year list with a type-the-year delete confirmation.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
@@ -3318,6 +3318,61 @@ php artisan test 2>&1 | tail -3
 git add app/ resources/ routes/ tests/
 git commit -m "feat: the periods table finally has something that writes to it"
 ```
+
+**2026-08-09, Task 11 — one real plan gap in the commit path's error shape, one interpretive
+call the plan states as two bullets that read like a contradiction until reconciled, and two
+small deviations from the plan's literal text, all found or made while writing the code.**
+
+1. **`back()->withErrors()` never negotiates 422 JSON — only a thrown `ValidationException`
+   does.** Finding 14's own commit bullet says "Assert the status is 422", mirroring Task 4's
+   `test_a_reserved_code_is_refused_with_an_http_422_not_a_500` shape (an `X-Inertia`/
+   `Accept: application/json` request). That case works there because `Rule::notIn` fails
+   inside a `FormRequest`, and Laravel's validator throws `ValidationException` itself, which
+   negotiates content type automatically. `PeriodController::store()`'s business-rule refusals
+   (duplicate year, real adjacent-year overlap, the transaction's `RuntimeException` backstop)
+   are NOT FormRequest rules — they are checks inside the controller body — so the first
+   implementation used `Settings`/`CalendarSettingsController`'s own `back()->withErrors()`
+   shape and got a 302 HTML redirect even under JSON headers, which the test then discovered
+   the hard way: `TestResponse::json()` on that HTML body returned something whose `->all()`
+   call fataled, reported by PHPUnit as an *error*, not an assertion *failure* — worth noting
+   as its own small lesson, since the wrong diagnosis (test bug) cost more time than the real
+   one (controller bug) once traced. Fixed by throwing `Illuminate\Validation\ValidationException::withMessages()`
+   at all four of `store()`'s business-rule refusal points and both of `destroy()`'s — the
+   *same* class Laravel's own validator throws, so it redirects-with-session-errors for a
+   classic Inertia post and returns 422 JSON for an XHR one, without a controller having to
+   duplicate that negotiation itself.
+2. **The preview bullet ("a gap or overlap against an adjacent persisted year renders and the
+   generate button stays enabled") and the commit bullet ("an overlap... is caught... and
+   returned as a 422") are not a contradiction once the two are read as covering different
+   moments, but the plan does not say so explicitly.** Resolved as: the PREVIEW never disables
+   the button for either warning type — the department is always allowed to attempt (finding
+   7's "the department sets its own start dates" holds at preview time regardless of what kind
+   of warning it is). The COMMIT, when actually attempted, blocks ONLY a genuine day-collision
+   (`$firstStart <= $prevEnd` / `$nextStart <= $lastEnd`, the same conditions
+   `PeriodGenerator::warningsAgainstNeighbours()` already tests internally, recomputed in
+   `PeriodController::overlapAgainstNeighbours()` rather than parsed from its message strings,
+   so the two can never drift on what counts as "real") — a pure gap still commits successfully.
+   `test_a_gap_against_the_previous_year_does_not_block_generation` and
+   `test_a_real_overlap_against_the_previous_years_persisted_periods_is_a_422_not_a_500` pin
+   both halves of this reading.
+3. **`institution_id` is set from `$request->user()?->institution_id`, not
+   `Institution::current()`** as the plan's Step 3 prose literally says. Matches
+   `LevelController::store()`'s own established precedent (`app/Http/Controllers/Admin/LevelController.php:44`)
+   rather than introducing a second convention for one controller; also avoids adding
+   `PeriodController.php` to `CalendarWritersFlushTest::ALLOW_LIST` for a read that carries no
+   calendar-configuration meaning at all (periods are not part of `Calendar::settings()`'s
+   memoised keys — `Calendar::periodFor()`/`::periodsForYear()` query fresh every call, never
+   memoized — so nothing in this controller needed a flush either).
+4. **`PeriodGenerator::deriveAcademicYear()` is a new public method the plan's Task 11 file list
+   does not name**, needed for finding 15's "derived deterministically from the start date"
+   requirement. Derives from the ACTUAL generated run's first start and last end (not a
+   month-number heuristic), so it is correct for both period systems without knowing in advance
+   which one produced the run: `test_the_derived_academic_year_label_is_two_years_for_a_july_start`
+   and `test_the_derived_academic_year_label_is_one_year_for_a_january_start_under_months` pin
+   both the two-year and one-year cases the plan's own finding 15 text names.
+
+`php artisan test`: 848 → 867 (19 new). `npm test`: 111 (unchanged — Task 8's structure.manage
+nav case widened again to assert a "Periods" link). `npm run build` and the full suite green.
 
 ---
 

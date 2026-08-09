@@ -145,6 +145,24 @@ final class PeriodGenerator
     }
 
     /**
+     * P1b finding 15: `academic_year` is the overlap-scope key and half of the unique index
+     * (`periods_year_position_unique`), so it must be derived DETERMINISTICALLY from the start
+     * date rather than typed by an operator — two spellings of one year ("2026-2027" vs
+     * "2026-27") would otherwise become two non-overlapping year-sets both claiming the same
+     * days. Derived from the ACTUAL generated run (its first start, its last end) rather than a
+     * month-number heuristic, so it is correct for any period system: a run that stays within
+     * one calendar year (a January `months` start) is labelled with that year alone; a run that
+     * crosses into the next calendar year (QCH's July start) is labelled "start-end".
+     */
+    public static function deriveAcademicYear(CarbonImmutable $firstStart, CarbonImmutable $lastEnd): string
+    {
+        $startYear = (int) $firstStart->format('Y');
+        $endYear = (int) $lastEnd->format('Y');
+
+        return $startYear === $endYear ? (string) $startYear : "{$startYear}-{$endYear}";
+    }
+
+    /**
      * @param  list<array{starts_on:string,ends_on:string}>  $generated
      * @return list<string> human-readable warnings; EMPTY is the good case
      *

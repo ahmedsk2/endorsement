@@ -38,6 +38,34 @@ class PersonController extends Controller
 {
     public function index(Request $request): Response
     {
+        return Inertia::render('Admin/People', $this->rosterProps($request));
+    }
+
+    /**
+     * LV-04: a per-row expandable history panel, fetched on open rather than carried on every
+     * roster load — Task 3's `Person::levelsAt()` already answers "current level" for all 60
+     * rows in one query; a per-row SPAN LIST is a different, much larger shape that only the
+     * expanded row needs. Same page component as `index()` (`preserveState` on the client keeps
+     * the rest of the screen exactly as it was), with the roster re-sent alongside it because an
+     * Inertia partial reload (`only: ['history']`) trims the RESPONSE to just the requested keys
+     * regardless of what this method builds.
+     *
+     * `->withTrashed()` on the route (routes/web.php) is what lets this resolve for a retired
+     * person at all — see that route's own comment.
+     */
+    public function history(Request $request, Person $person): Response
+    {
+        return Inertia::render('Admin/People', $this->rosterProps($request) + [
+            'history' => [
+                'person_id' => (int) $person->getKey(),
+                'spans' => PersonPresenter::history($person),
+            ],
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function rosterProps(Request $request): array
+    {
         $people = Person::withTrashed()
             ->withExists(['user as has_account'])
             ->orderBy('people.full_name')
@@ -48,7 +76,7 @@ class PersonController extends Controller
         // promotion preview, P1d's rota grid) never invent a second copy.
         $levels = Person::levelsAt($people);
 
-        return Inertia::render('Admin/People', [
+        return [
             'people' => $people->map(fn (Person $p): array => PersonPresenter::one(
                 $p,
                 $request->user(),
@@ -61,7 +89,7 @@ class PersonController extends Controller
             'positions' => Position::orderBy('id')->get(['id', 'name']),
             'contact_visibility' => ContactVisibility::current(),
             'contact_visibilities' => Institution::CONTACT_VISIBILITIES,
-        ]);
+        ];
     }
 
     /**

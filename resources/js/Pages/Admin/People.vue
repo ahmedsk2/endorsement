@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { useForm } from '@inertiajs/vue3';
+import { router, useForm } from '@inertiajs/vue3';
 import AppLayout from '../../Layouts/AppLayout.vue';
 
 /**
@@ -32,6 +32,11 @@ const props = defineProps({
     positions: { type: Array, default: () => [] },
     contact_visibility: { type: String, default: 'admins' },
     contact_visibilities: { type: Object, default: () => ({}) },
+    // LV-04. Only the currently-open row's spans — `PersonController::history()` is a dedicated,
+    // fetched-on-open endpoint, not part of every roster load (Task 3's levelsAt() already
+    // answers "current level" for all 60 rows in one query; a full span LIST per row is a much
+    // larger shape only the expanded row needs).
+    history: { type: Object, default: null },
 });
 
 const inputClass = 'w-full rounded-md border border-line bg-panel px-3 py-2 text-sm text-ink focus:border-channel focus:outline-none';
@@ -51,6 +56,41 @@ const filteredPeople = computed(() => {
     return props.people.filter((p) =>
         [p.full_name, p.short_name].some((v) => (v || '').toLowerCase().includes(q)));
 });
+
+// --- Level history (LV-04): one row's panel open at a time, fetched on open -------------------
+//
+// `only: ['history']` trims the partial-reload RESPONSE to just that key (the server still
+// builds the full roster props, matching PersonController::rosterProps() — Inertia's `only`
+// controls what comes BACK over the wire, not what the controller computes). `preserveState` is
+// what keeps every other row's in-progress edit intact rather than remounting the whole page
+// component — Sheet.vue's own G3 finding, the same fix applied here.
+//
+// Every date below is a `Calendar::label()` shape the server already formatted — `h.from.date`,
+// `h.from.hijri` — never a client-side date computation.
+const openHistoryId = ref(null);
+const historyLoading = ref(false);
+
+const toggleHistory = (person) => {
+    if (openHistoryId.value === person.id) {
+        openHistoryId.value = null;
+
+        return;
+    }
+
+    openHistoryId.value = person.id;
+    historyLoading.value = true;
+
+    router.get(`/admin/people/${person.id}/history`, {}, {
+        only: ['history'],
+        preserveState: true,
+        preserveScroll: true,
+        onFinish: () => { historyLoading.value = false; },
+    });
+};
+
+const historySpans = computed(() => (
+    props.history && props.history.person_id === openHistoryId.value ? props.history.spans : null
+));
 
 // --- Contact visibility (PE-02's department setting) ------------------------------------
 
@@ -309,6 +349,33 @@ const submitEdit = (person) => {
                         </div>
                         <div class="mt-3 flex gap-3">
                             <button type="button" class="text-xs font-semibold text-channel-ink" @click="startEdit(person)">Edit</button>
+                            <button type="button" class="text-xs font-semibold text-channel-ink" @click="toggleHistory(person)">
+                                {{ openHistoryId === person.id ? 'Hide history' : 'History' }}
+                            </button>
+                        </div>
+                        <div v-if="openHistoryId === person.id" class="mt-3 border-t border-line-soft pt-3">
+                            <p v-if="historyLoading && !historySpans" class="text-xs text-muted">Loading…</p>
+                            <p v-else-if="historySpans && historySpans.length === 0" class="text-xs text-muted">
+                                No level history recorded.
+                            </p>
+                            <ul v-else-if="historySpans" class="space-y-2">
+                                <li v-for="(h, i) in historySpans" :key="i" class="text-xs text-body">
+                                    <div class="flex items-baseline gap-2">
+                                        <span class="channel-tag">{{ h.level.code }}</span>
+                                        <span class="text-muted">{{ h.level.name }}</span>
+                                    </div>
+                                    <p class="readout text-body">
+                                        {{ h.from.date }} <span class="text-muted">({{ h.from.hijri }})</span>
+                                        &rarr;
+                                        <span v-if="h.to">{{ h.to.date }} <span class="text-muted">({{ h.to.hijri }})</span></span>
+                                        <span v-else class="channel-tag">current</span>
+                                    </p>
+                                    <p v-if="h.reason || h.by" class="text-muted">
+                                        <span v-if="h.reason">{{ h.reason }}</span>
+                                        <span v-if="h.by"> — recorded by {{ h.by }}</span>
+                                    </p>
+                                </li>
+                            </ul>
                         </div>
                     </div>
                     <p v-else class="text-xs text-muted">Editing below — use the desktop table for the full form, or resize the window.</p>
@@ -347,7 +414,10 @@ const submitEdit = (person) => {
                                     </div>
                                 </td>
                                 <td class="px-4 py-2 text-right">
-                                    <button type="button" class="text-xs font-semibold text-channel-ink" @click="startEdit(person)">Edit</button>
+                                    <button type="button" class="mr-3 text-xs font-semibold text-channel-ink" @click="startEdit(person)">Edit</button>
+                                    <button type="button" class="text-xs font-semibold text-channel-ink" @click="toggleHistory(person)">
+                                        {{ openHistoryId === person.id ? 'Hide history' : 'History' }}
+                                    </button>
                                 </td>
                             </tr>
                             <tr v-else class="border-t border-line bg-ground-deep">
@@ -418,6 +488,43 @@ const submitEdit = (person) => {
                                             <span v-if="editForm.recentlySuccessful" class="text-sm text-ok" role="status">Saved.</span>
                                         </div>
                                     </form>
+                                </td>
+                            </tr>
+                            <tr v-if="editingId !== person.id && openHistoryId === person.id" class="border-t border-line bg-ground-deep">
+                                <td :colspan="showsPhone ? 7 : 6" class="px-4 py-3">
+                                    <p v-if="historyLoading && !historySpans" class="text-xs text-muted">Loading…</p>
+                                    <p v-else-if="historySpans && historySpans.length === 0" class="text-xs text-muted">
+                                        No level history recorded.
+                                    </p>
+                                    <table v-else-if="historySpans" class="w-full text-left text-xs">
+                                        <thead>
+                                            <tr>
+                                                <th scope="col" class="channel-tag pb-1 pr-4">Level</th>
+                                                <th scope="col" class="channel-tag pb-1 pr-4">From</th>
+                                                <th scope="col" class="channel-tag pb-1 pr-4">To</th>
+                                                <th scope="col" class="channel-tag pb-1 pr-4">Reason</th>
+                                                <th scope="col" class="channel-tag pb-1">Recorded by</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-for="(h, i) in historySpans" :key="i" class="border-t border-line-soft">
+                                                <td class="readout py-1 pr-4 text-body">{{ h.level.code }} <span class="text-muted">{{ h.level.name }}</span></td>
+                                                <td class="readout py-1 pr-4 text-body">
+                                                    {{ h.from.date }}
+                                                    <span class="block text-muted">{{ h.from.hijri }}</span>
+                                                </td>
+                                                <td class="readout py-1 pr-4 text-body">
+                                                    <span v-if="h.to">
+                                                        {{ h.to.date }}
+                                                        <span class="block text-muted">{{ h.to.hijri }}</span>
+                                                    </span>
+                                                    <span v-else class="channel-tag">current</span>
+                                                </td>
+                                                <td class="py-1 pr-4 text-body">{{ h.reason || '—' }}</td>
+                                                <td class="py-1 text-body">{{ h.by || '—' }}</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
                                 </td>
                             </tr>
                         </template>

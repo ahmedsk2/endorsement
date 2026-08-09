@@ -774,6 +774,60 @@ directly rather than assumed). `LevelHistoryTest`'s existing 9 cases — which w
 by `person_levels` gaining three nullable columns. `npm test`: 112 (unchanged — Task 6's Files
 list names no JS test). `npm run build` and the full suite green.
 
+**2026-08-09, Task 7 — one genuine design gap in the plan's own text (Step 3 vs Step 4
+disagreeing on the transport), and one real, previously-latent bug found and fixed along the
+way; neither is a clinical-evidence risk.**
+
+1. **Step 3 says the endpoint "returns the spans as JSON for a detail panel"; Step 4 says the
+   panel fetches it with `router.get(..., { only: ['history'] })`.** Taken literally, Step 3
+   describes a plain JSON response outside Inertia's page-object envelope — but Inertia's client
+   router only recognises a response carrying the `X-Inertia` page-object shape
+   (`{component, props, url, version}`); a bare JSON array returned from `router.get()` is not
+   that shape and would not resolve as a partial reload at all. This codebase has no `axios`/
+   `fetch` usage anywhere (`grep -rn "axios\|fetch("` across `resources/js` returns nothing —
+   verified before writing any client code) — every request in the app goes through Inertia's
+   own router, so a genuinely separate JSON endpoint would have been the FIRST of its kind and a
+   second transport mechanism to maintain. Implemented `PersonController::history()` returning
+   `Inertia::render('Admin/People', …)` — the SAME component `index()` renders, with the SAME
+   base props (`people`, `positions`, `contact_visibility`, `contact_visibilities`, extracted
+   into a shared `rosterProps(Request $request): array` so `index()` and `history()` cannot
+   drift) plus a `history` key. `only: ['history']` still does real work here: it trims the
+   partial-reload RESPONSE to just that key, even though the controller computes the full prop
+   set regardless — matching how `AccessControl.vue`/`AccessControlController` already do a
+   "detail panel via query param on the current page" in this codebase, generalised to a
+   dedicated URL because Step 3 explicitly named one.
+2. **A previously-latent bug: default Eloquent route-model binding excludes soft-deleted rows,
+   so a route typed `Person $person` 404s for a retired person unless the route opts in.**
+   `grep -rn "resolveRouteBinding\|withTrashed" app/Models/Person.php app/Providers/*.php` found
+   no override anywhere — meaning `PersonController::update()`'s existing `Person $person`
+   binding has *always* 404'd for a soft-deleted person (nothing in Tasks 1–6 exercises editing
+   a retired person, so nothing caught it before now). Task 7's own new route would have
+   inherited the same defect the moment a retired person's history was opened — directly
+   undermining LV-04's point (a retired person's history is exactly the case someone needs to
+   verify). Fixed narrowly, in scope: `Route::get('/people/{person}/history', …)->withTrashed()`
+   (Laravel's per-route opt-in, `Illuminate\Routing\Route::withTrashed()`), covering only the
+   new route. `PersonController::update()`'s own binding is UNCHANGED and the same defect
+   likely still lives there — out of scope for Tasks 5–7, flagged as a separate follow-up rather
+   than fixed here.
+3. **`LevelHistoryScreenTest` ships seven test methods against the plan's five explicitly named
+   cases** (newest-first dual-dated; open span → `to: null`; level held at the time, not current;
+   empty history → `[]` not a missing key; the `createdBy:id,person_id` actor-name case). Added
+   `test_history_is_gated_by_people_manage` (every other new route in this plan gets a capability
+   gate test — Task 1's `PeopleAccessTest` set that convention) and
+   `test_a_retired_persons_history_is_still_reachable` (written specifically to prove point 2's
+   fix; it failed with a 404 before the route's `->withTrashed()` was added, confirming the bug
+   was real and not hypothetical).
+4. `Level::factory()->create(['code' => 'R1'])` in this test file's early drafts collided with
+   `ReferenceSeeder`'s own seeded `R1`/`R2` codes (`levels.code` is unique) — the same trap
+   Task 3's amendment already recorded. Fixed by using non-colliding codes (`H1`/`H2`).
+
+`php artisan test`: 947 → 954 (7 new `LevelHistoryScreenTest`, matching the count once written
+rather than the plan's own unstated total). `PersonLevelsHaveOneWriterTest`,
+`ContactFieldsAreProjectedOnceTest` and `CalendarIsTheOnlyConverterTest` all stayed green — the
+history endpoint reads no contact field and the panel performs no client-side date arithmetic
+(`h.from.date`/`h.from.hijri` are server-formatted strings, interpolated verbatim). `npm test`:
+112 (unchanged — Task 7's Files list names no JS test). `npm run build` and the full suite green.
+
 ---
 
 ## Conventions every task follows
@@ -2464,7 +2518,7 @@ git commit -am "feat: a level change remembers who made it and why"
 
 LV-04: *"Level changes are effective-dated; history renders with the level held at the time."*
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Cases: the history renders newest-first with `from`/`to` as `Calendar::label()` shapes (Gregorian
 **and** Hijri); an open span renders with `to: null` and the screen shows "current"; the level
@@ -2479,9 +2533,9 @@ shows *who* made the change, which resolves `$user->full_name` through the perso
 eager load must be `with('createdBy:id,person_id')`, never `with('createdBy:id,full_name')`, or
 the name silently returns null (the P0c defect that broke four live sites).
 
-- [ ] **Step 2: Run and watch it go red**
+- [x] **Step 2: Run and watch it go red**
 
-- [ ] **Step 3: The endpoint**
+- [x] **Step 3: The endpoint**
 
 `PersonController::history(Person $person)` returns the spans as JSON for a detail panel, behind
 the same `cap:people.manage` group:
@@ -2495,14 +2549,14 @@ Each row: `level` (id/code/name from the joined row), `from` and `to` as `Calend
 arrays, `reason`, `batch` (the uuid, so a reader can see two rows came from one act), and
 `by` (the actor's `full_name`, resolved through the correctly-loaded relation).
 
-- [ ] **Step 4: The panel**
+- [x] **Step 4: The panel**
 
 `People.vue` gains an expandable per-row history panel fetched on open (`router.get` with
 `only: ['history']`, `preserveState: true` — without `preserveState` Inertia remounts and the
 open row collapses). Dates render `{{ h.from.date }}` with `{{ h.from.hijri }}` beneath in
 `text-muted`; **no date arithmetic in the component**.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Expected: full suite **951 passed** (945 + 6).
 

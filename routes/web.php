@@ -203,6 +203,11 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:people.manage'])
         // Declared BEFORE any /people/{person} route so `visibility` never binds as a person id
         // — the same discipline routes/web.php already applies to `units/merge`.
         Route::patch('/people/visibility', [PersonController::class, 'updateVisibility'])->name('people.visibility');
+        // LV-04. ->withTrashed() so a retired person's history stays reachable — index() already
+        // lists retired people (UN-04's reasoning: an administrator who cannot SEE a retired
+        // person cannot bring them back), and this route must not 404 the moment one is.
+        Route::get('/people/{person}/history', [PersonController::class, 'history'])
+            ->name('people.history')->withTrashed();
         Route::post('/people', [PersonController::class, 'store'])->name('people.store');
         Route::patch('/people/{person}', [PersonController::class, 'update'])->name('people.update');
         // No destroy — people are deactivated, never deleted (owner ruling). PersonController

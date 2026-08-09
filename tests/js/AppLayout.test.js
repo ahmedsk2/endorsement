@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // A mutable page store so each test can drive `auth.can` / `auth.user` before mounting — mirrors
 // the mock pattern in tests/js/AccessControl.test.js (mock @inertiajs/vue3, read a hoisted store).
 const store = vi.hoisted(() => ({
-    page: { props: { auth: { can: [], user: null }, flash: {} }, url: '/dashboard' },
+    page: { props: { auth: { can: [], user: null }, nav: { units: [] }, flash: {} }, url: '/dashboard' },
     routerPost: vi.fn(),
 }));
 
@@ -21,7 +21,7 @@ import { useCan } from '../../resources/js/Composables/useCan.js';
 const mountLayout = () => mount(AppLayout, { slots: { default: '<p>page body here</p>' } });
 
 const resetPage = () => {
-    store.page.props = { auth: { can: [], user: null }, flash: {} };
+    store.page.props = { auth: { can: [], user: null }, nav: { units: [] }, flash: {} };
     store.page.url = '/dashboard';
 };
 
@@ -50,16 +50,38 @@ describe('AppLayout — role-gated navigation', () => {
     it('renders the chooser, all four unit entries and admin nav when the caps are present', () => {
         store.page.props.auth.can = ['endorsement.view', 'access.manage'];
         store.page.props.auth.user = { id: 2, member_name: 'admin', full_name: 'The Admin', position: 0 };
+        // The unit list comes from the server (Unit::navList()) rather than a hardcoded array —
+        // P1b closed CLAUDE.md's "a fifth department gets no nav entry or hue" exception.
+        store.page.props.nav.units = [
+            { code: 'picu', label: 'Pediatric Intensive Care Unit', bar: 'channel-bar-picu' },
+            { code: 'nicu', label: 'Neonatal Intensive Care Unit', bar: 'channel-bar-nicu' },
+            { code: 'scbu', label: 'Special Care Baby Unit', bar: 'channel-bar-scbu' },
+            { code: 'ward', label: 'Pediatric Ward', bar: 'channel-bar-ward' },
+        ];
 
         const text = navText(mountLayout());
         expect(text).toContain('All units');
-        expect(text).toContain('PICU Endorsement');
-        expect(text).toContain('NICU Endorsement');
-        expect(text).toContain('SCBU Endorsement');
-        expect(text).toContain('Ward Endorsement');
+        expect(text).toContain('Pediatric Intensive Care Unit');
+        expect(text).toContain('Neonatal Intensive Care Unit');
+        expect(text).toContain('Special Care Baby Unit');
+        expect(text).toContain('Pediatric Ward');
         expect(text).toContain('Access Control');
         // users.manage is absent, so the Users entry is too.
         expect(text).not.toContain('Users');
+    });
+
+    // The exact defect CLAUDE.md named as a pending exception: a fifth department created
+    // through Admin -> Structure -> Units must appear in the sidebar without a frontend change.
+    it('renders a fifth unit the server sends, with no frontend change', () => {
+        store.page.props.auth.can = ['endorsement.view'];
+        store.page.props.auth.user = { id: 5, member_name: 'r', full_name: 'A Resident', position: 4 };
+        store.page.props.nav.units = [
+            { code: 'picu', label: 'PICU', bar: 'channel-bar-picu' },
+            { code: 'rgh1', label: 'Riyadh General Ward 1', bar: 'channel-bar-amber' },
+        ];
+
+        const text = navText(mountLayout());
+        expect(text).toContain('Riyadh General Ward 1');
     });
 
     it('shows the admin section with users.manage alone, without Access Control', () => {

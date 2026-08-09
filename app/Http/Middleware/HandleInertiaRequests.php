@@ -52,6 +52,13 @@ class HandleInertiaRequests extends Middleware
                 ] : null,
                 'can' => $user ? AccessControl::capabilitiesFor($user) : [],
             ],
+            // The sidebar's unit list, from the `units` table rather than a hardcoded array in
+            // AppLayout.vue (CLAUDE.md's pending exception, closed P1b). Codes and display names
+            // only — no clinical data, and nothing a guest may not see, which is why an
+            // unauthenticated request gets an empty list rather than the seeded four.
+            'nav' => [
+                'units' => $user ? \App\Models\Unit::navList() : [],
+            ],
             // Which handover the visitor is arriving for. Server-side and in the app's
             // timezone on purpose: the browser clock is whatever the device says, and a
             // ward system should agree with the ward. No PHI — a greeting and a time that

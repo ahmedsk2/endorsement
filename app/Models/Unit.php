@@ -40,7 +40,14 @@ class Unit extends Model
         'channel-bar-nicu' => 'Indigo',
         'channel-bar-scbu' => 'Violet',
         'channel-bar-ward' => 'Plum',
+        'channel-bar-amber' => 'Amber',
+        'channel-bar-moss' => 'Moss',
+        'channel-bar-clay' => 'Clay',
+        'channel-bar-slate' => 'Slate',
     ];
+
+    /** What a unit with no colour chosen renders as. Never an empty class attribute. */
+    public const DEFAULT_BAR_CLASS = 'channel-bar-slate';
 
     /**
      * @var list<string>
@@ -191,6 +198,29 @@ class Unit extends Model
     public static function codes(): array
     {
         return static::query()->active()->ordered()->pluck('code')->all();
+    }
+
+    /**
+     * The sidebar's unit list — active units, in display order, as the shape AppLayout renders.
+     *
+     * CLAUDE.md recorded `AppLayout.vue`'s hardcoded four-entry array as a pending exception:
+     * "a fifth department gets no nav entry or hue until those move to configuration". This is
+     * that move. `code` is lower-cased because the sidebar builds `/endorsement/{code}` URLs and
+     * every existing link in the app is lower-case; routing itself is case-insensitive through
+     * `findByCode()`.
+     *
+     * @return list<array{code:string, label:string, bar:string}>
+     */
+    public static function navList(): array
+    {
+        return static::query()->active()->ordered()->get()
+            ->map(fn (self $unit): array => [
+                'code' => strtolower((string) $unit->code),
+                'label' => (string) $unit->name,
+                'bar' => $unit->bar_class ?: self::DEFAULT_BAR_CLASS,
+            ])
+            ->values()
+            ->all();
     }
 
     /** The value object every surface reads (sheet columns, sign-off, print, hue). */

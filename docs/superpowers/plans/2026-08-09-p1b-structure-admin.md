@@ -385,6 +385,26 @@ time — Task 1's own +1 offset carries forward unchanged). `npm test`: 110 (109
 `AppLayout.test.js`'s new structure.manage-alone case). `npm run build` and the full suite
 green.
 
+**2026-08-09, Task 3 — the plan's own CSS snippet for Step 3 breaks the guard test it is
+paired with, by double-spacing two of the four alignment columns.** The plan's Step 3 text
+lines up `.channel-bar-amber`/`.channel-bar-moss`/`.channel-bar-clay`/`.channel-bar-slate` with
+extra spaces before `{` so the `border-left-color:` values visually align — but
+`test_the_palette_and_the_stylesheet_agree`'s regex (`/\.(channel-bar-[a-z0-9]+) \{/`) matches
+exactly ONE space before the brace. `.channel-bar-moss  {` and `.channel-bar-clay  {` (two
+spaces, copied verbatim from the plan) silently fell out of the matched set — proved by running
+the extraction regex directly against the file with `php -r`, which returned only 9 of the 11
+expected classes (picu/nicu/scbu/ward/amber/slate/ok/critical/caution — moss and clay missing).
+Not a chosen exception: the test's own docblock says every declared class must round-trip, and
+a silently-missing declaration is exactly the drift class of bug this guard exists to catch.
+Fixed by writing all four new rules with a single space before `{`, matching the test's
+contract rather than the plan's cosmetic alignment; the `@theme` token declarations above them
+(which the regex does not scan) were left double-space-aligned since nothing depends on their
+formatting. `php artisan test`: 766 → 772 (6 new, matching the plan's stated count). `npm test`:
+111 (110 + 2 new AppLayout.test.js cases — one updated fixture for the four-unit render, one new
+case for a fifth unit appearing with no frontend change — one more than the plan's implied
+"fix the existing fixture" scope). `npm run build`, `CompiledCssIsLightOnlyTest` and
+`TextContrastMeetsAaTest` green.
+
 ---
 
 ## Conventions every task follows

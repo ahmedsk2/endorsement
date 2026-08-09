@@ -1,3 +1,25 @@
+> ## OWNER DECISIONS, 2026-08-09 — READ BEFORE ANY TASK
+>
+> **A. There is NO terminal level. Do not build `levels.terminal`.**
+>
+> Task 6 must drop that column and Task 7 must not mark `R4` (or anything else) terminal.
+> Nobody is auto-promoted: LV-03's annual promotion stays a **one-action, previewed,
+> single-transaction, audited** operation per Munawib LV-03, but the operator **chooses the
+> target level explicitly** rather than the system inferring "one step up" and stopping at a
+> marker.
+>
+> The reasoning is worth keeping: a wrong terminal marker fails in two directions that are both
+> silent — an unmarked top level advances a cohort into a level that does not exist, and a
+> wrongly-marked middle level graduates a cohort a year early. Removing the inference removes
+> the whole failure class. `Level::nextAfter()` is therefore **not** the one definition of
+> "advance one level"; it should not be built as such. Whatever P1c's promotion screen needs, it
+> takes the target level as input.
+>
+> `EXT` remains outside the ladder and is never promoted.
+>
+> **B. WARD is the only clinic owner.** Seed `clinic_owner = true` on WARD alone; PICU, NICU and
+> SCBU stay false. Affects nothing before P1e, but settles CL-01's first screen.
+
 # P1b — Structure Administration
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development

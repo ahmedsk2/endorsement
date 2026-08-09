@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AccessControlController;
+use App\Http\Controllers\Admin\LevelController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UnitController;
 use App\Http\Controllers\Admin\UnitMergeController;
@@ -153,6 +154,13 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
         Route::post('/units/merge', [UnitMergeController::class, 'store'])->name('units.merge.store');
         Route::patch('/units/{unit}', [UnitController::class, 'update'])->name('units.update');
         Route::patch('/units/{unit}/active', [UnitController::class, 'setActive'])->name('units.active');
+
+        // Munawib LV-01. No DELETE — person_levels.level_id is restrictOnDelete, and
+        // LevelController deliberately exposes no destroy() to refuse (see its own docblock).
+        Route::get('/levels', [LevelController::class, 'index'])->name('levels');
+        Route::post('/levels', [LevelController::class, 'store'])->name('levels.store');
+        Route::patch('/levels/{level}', [LevelController::class, 'update'])->name('levels.update');
+        Route::patch('/levels/{level}/active', [LevelController::class, 'setActive'])->name('levels.active');
     });
 
 /*

@@ -497,6 +497,33 @@ of the plan's reasoning (gaps of ten so an `R5` or `R2.5` can be inserted withou
 is unaffected by Decision A and was kept verbatim. `php artisan test`: 803 → 807 (4 new). `npm
 test`: unchanged. `npm run build` and the full suite green.
 
+**2026-08-09, Task 8 — narrower than the plan's own text in two respects, both traced to Owner
+Decision A.** First, the screen offers no `terminal` toggle (the column does not exist — Task
+6). Second, and not explicitly named by Decision A but a direct consequence of it: the plan's
+own bullet list asks for "the last active non-terminal, non-external level cannot be
+deactivated," justified in the plan's own words as protection against "`Level::nextAfter()`
+returning null for everyone." Neither `terminal` nor `nextAfter()` exists, so that justification
+is void, and the guard was not built. This was a judgement call rather than something Decision A
+states outright, made on two grounds: (1) `UnitCrudTest` has no equivalent "last active unit"
+guard, so omitting it here keeps Level's CRUD consistent with Unit's own precedent rather than
+inventing a rule Units doesn't have to follow; (2) Decision A's stated intent is "the operator
+chooses the target level explicitly" — a floor that blocks deactivating the last internal level
+would be exactly the kind of system-side inference the decision rejects, applied one level up
+the stack. If a future plan (P1c) finds it needs a non-empty-picker guard, that is P1c's call to
+make with full knowledge of what the promotion screen actually requires, not a guess made here
+against a promotion feature that does not exist yet. Everything else matches the plan's Steps
+2-5 exactly: FormRequest → controller (`index`/`store`/`update`/`setActive`, no `destroy`) →
+routes in the `admin/structure` group → `Levels.vue` mirroring `Units.vue`'s
+cards-plus-table layout → a `Levels` nav link beside `Units` behind `structure.manage` →
+`tests/js/AppLayout.test.js`'s existing structure.manage-alone case extended to assert both
+links (not a new case — the plan's phrase "beside Units" read most naturally as one enlarged
+assertion rather than a duplicate test with the same setup). `php artisan test`: 807 → 819 (12
+new, matching the plan's own list of cases with `terminal`/`nextAfter` cases removed and
+`test_an_out_of_range_display_order_is_refused` / `test_there_is_no_delete_endpoint` /
+`test_a_retired_level_can_be_brought_back` added — mirroring `UnitCrudTest`'s coverage
+one-for-one). `npm test`: 111 (unchanged — one existing case widened, not a new one added).
+`npm run build`, `CompiledCssIsLightOnlyTest` and the full suite green.
+
 ---
 
 ## Conventions every task follows
@@ -2645,9 +2672,11 @@ git commit -m "feat: the ladder the department already climbs, written down"
 - Test: `tests/Feature/Admin/LevelCrudTest.php`
 
 LV-01: *"names cosmetic and editable"*. The screen offers create, rename, reorder, toggle
-`external`, toggle `terminal`, and **deactivate — never delete**.
+`external`, and **deactivate — never delete**. (The plan's own text also names a `terminal`
+toggle here — dropped per Owner Decision A; see the execution note below.)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test** — AMENDED per Owner Decision A: no `terminal` toggle
+  and no "last active non-terminal level" guard (see execution note below).
 
 Create `tests/Feature/Admin/LevelCrudTest.php`. Cover:
 
@@ -2662,12 +2691,9 @@ Create `tests/Feature/Admin/LevelCrudTest.php`. Cover:
   is never deleted once anyone has held it — past history still resolves through it"*;
 - deactivating a level removes it from the pickers P1c will build but leaves `person_levels`
   untouched — assert the count;
-- the last active **non-terminal, non-external** level cannot be deactivated. This is
-  finding 12's set-blind-guard shape applied here: without it, an administrator can retire every
-  rung and leave LV-03's `nextAfter()` returning null for everyone. Assert the refusal names why;
 - an out-of-range `display_order` is refused.
 
-- [ ] **Steps 2-5**
+- [x] **Steps 2-5**
 
 Mirror Task 4's shape exactly: FormRequest → controller (`index`, `store`, `update`,
 `setActive`) → routes inside the `admin/structure` group → `Levels.vue` following `Units.vue`'s

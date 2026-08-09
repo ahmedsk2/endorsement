@@ -28,16 +28,19 @@ class AccessControlParityTest extends TestCase
      */
     private function expectedByPosition(): array
     {
-        $anyAuth = ['profile.manage'];
+        // rota.view (P1d) defaults to EVERY seeded position — MR-05's point is that a resident
+        // can see which unit they rotate through next.
+        $anyAuth = ['profile.manage', 'rota.view'];
         $endorsement = ['endorsement.view', 'endorsement.edit'];
         // Reopen reverses a signed attestation (medico-legal); compliance exposes the
         // missed-days page; settings edits runtime config; structure.manage (P1b) edits the
         // department's shape (units/levels/calendar/periods/holidays); people.manage (P1c)
-        // edits the roster (people, levels, promotion, roster import). Administrator-only
-        // defaults.
+        // edits the roster (people, levels, promotion, roster import); rota.manage (P1d) edits
+        // master rota assignments and vacations. Administrator-only defaults.
         $adminOnly = [
             'users.manage', 'users.manage_residents', 'access.manage', 'settings.manage',
             'endorsement.reopen', 'endorsement.compliance', 'structure.manage', 'people.manage',
+            'rota.manage',
         ];
 
         return [
@@ -46,8 +49,11 @@ class AccessControlParityTest extends TestCase
             2 => array_merge($anyAuth, $endorsement),             // Charge Nurse
             3 => array_merge($anyAuth, $endorsement),             // Consultant
             4 => array_merge($anyAuth, $endorsement),             // Resident
-            // Chief Resident (5): a resident clinically + the ONE scoped admin power.
-            5 => array_merge($anyAuth, $endorsement, ['users.manage_residents']),
+            // Chief Resident (5): a resident clinically + the two scoped admin powers.
+            // Owner decision 1 (P1d, 2026-08-09): rota.manage defaults to Administrator AND
+            // Chief Resident — Chief Resident is Munawib's Scheduler persona and owns the
+            // master rota.
+            5 => array_merge($anyAuth, $endorsement, ['users.manage_residents', 'rota.manage']),
         ];
     }
 

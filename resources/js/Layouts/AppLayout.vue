@@ -69,7 +69,7 @@ const units = computed(() => page.props.nav?.units ?? []);
 // numbers — only capability keys.
 const canAdmin = computed(() => can('access.manage') || can('users.manage')
     || can('users.manage_residents') || can('settings.manage') || can('structure.manage')
-    || can('people.manage'));
+    || can('people.manage') || can('rota.manage'));
 
 const initials = computed(() => (user.value?.full_name || user.value?.member_name || '')
     .split(' ')
@@ -219,6 +219,10 @@ const navClass = (active) => [
                     <Link v-if="can('structure.manage')" href="/admin/structure/holidays"
                           :class="navClass(isActive('/admin/structure/holidays'))">
                         Holidays
+                    </Link>
+                    <Link v-if="can('rota.manage')" href="/admin/rota"
+                          :class="navClass(isActive('/admin/rota'))">
+                        Master Rota
                     </Link>
                     <Link v-if="can('settings.manage')" href="/admin/settings"
                           :class="navClass(isActive('/admin/settings'))">

@@ -86,6 +86,19 @@ class PickerParityTest extends TestCase
         $trashedAccount->delete();
         $cases['p4, account trashed'] = [$trashedAccount->person, false, false];
 
+        // PE-03 (Task 5): `external` is a LABEL, not a permission. An external consultant and an
+        // external claimed resident must offer/accept exactly as their internal twins do — this is
+        // the assertion that surfacing the flag did not become a second, drifted predicate.
+        $externalConsultant = Person::factory()->create([
+            'position' => 3, 'external' => true, 'full_name' => 'External Consultant',
+        ]);
+        $cases['roster-only p3, external'] = [$externalConsultant, false, true];
+
+        $externalResident = User::factory()->create([
+            'position' => 4, 'external' => true, 'full_name' => 'External Resident',
+        ]);
+        $cases['claimed p4, external'] = [$externalResident->person, true, false];
+
         return $cases;
     }
 

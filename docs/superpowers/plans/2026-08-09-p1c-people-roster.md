@@ -699,6 +699,38 @@ Step 4 text names) — `ChiefResidentTest` and `AccessControlPageTest` needed no
 green throughout. `npm test`: 112 (unchanged — Task 4's Files list names no JS test). `npm run
 build` and the full suite green.
 
+**2026-08-09, Task 5 — the plan's own running total was already wrong by the time this task
+started, and the task text under-counts its own test coverage; neither is a security issue.**
+
+1. **The plan's Step 5 arithmetic (`929 + 6 = 935`) assumes a baseline the tree never had.**
+   Task 4's own amendment recorded the actual post-Task-4 baseline as **932**, not 929 — the
+   plan's Task 5 prose was written before that number was corrected and never updated to match.
+   Verified by running the real suite before touching any file: `php artisan test` reported
+   **932** passed, matching Task 4's amendment exactly.
+2. **`ExternalPeopleTest` ships six test methods, not the plan's stated four.** The plan's Step 1
+   bullets list four cases but Step 3's own code changes the retired-but-kept branch too
+   (`'external' => true` resolved from `Person::withTrashed()->find($id)`), and that branch had
+   no test anywhere in the plan's four. Added `test_a_retired_but_kept_external_person_still_
+   carries_the_flag` to cover it, plus `test_an_external_endorser_with_a_claimed_account_is_
+   offered_and_flagged` (a claimed-account external endorser is the one D9 branch the plan's
+   fourth case, "external endorser refused *without* an account", does not exercise from the
+   other side). Both are within PE-03's stated scope ("flagged everywhere"), not scope creep.
+3. **`People.vue` already renders the External `.channel-tag`.** Task 4's own build shows it
+   landed with the create/edit forms (`external` checkbox) — the plan's Task 1 prose says the slot
+   was "reserved" for Task 5, but by the time Task 4 built the full field set it filled the slot
+   too, ahead of schedule. Verified by reading the file before writing anything: both the mobile
+   card and the desktop table already carry
+   `<span v-if="person.external" class="channel-tag">External</span>`. No change made to this
+   file in this task — it was already correct.
+
+`php artisan test`: 932 → 938 (6 new `ExternalPeopleTest`; `PickerParityTest`'s existing single
+test method absorbed 2 new matrix fixtures with no new test COUNT, +33 assertions). `PickerParityTest`
+green throughout — the two external fixtures (`roster-only p3, external`, `claimed p4, external`)
+offer/accept identically to their internal twins, proving Decision A's "label, not a permission"
+held. `npm test`: 112 (unchanged — `staffLabel()`'s retired-branch string is unchanged, so
+`EndorsementSignoff.test.js`'s existing `'Dr Gone (no longer offered)'` assertion needed no edit).
+`npm run build` and the full suite green.
+
 ---
 
 ## Conventions every task follows
@@ -2136,7 +2168,7 @@ git commit -am "feat: the roster is editable, and one place decides what a role 
 Finding 3: the column exists and no writer has ever set it true. Task 4 gave it a writer. This
 task makes *"flagged everywhere"* (PE-03) true, and does it without disturbing D9's parity matrix.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/Feature/Identity/ExternalPeopleTest.php`:
 
@@ -2156,9 +2188,9 @@ external roster-only consultant and an external claimed resident — with the **
 offer/accept outcomes as their internal twins. That is the assertion that matters: the matrix
 proves adding a display flag did not move a write-side boundary.
 
-- [ ] **Step 2: Run and watch them go red**
+- [x] **Step 2: Run and watch them go red**
 
-- [ ] **Step 3: Surface the flag in the offer**
+- [x] **Step 3: Surface the flag in the offer**
 
 In `SignoffPickers::offer()`, select `people.external` alongside the two existing columns and add
 the key only when true:
@@ -2185,7 +2217,7 @@ and set `'external' => true` on the retired-but-kept branch too, resolved from t
 is position + account + `active`; `external` is orthogonal and adding it to `rosteredIn()` would
 be a silent write-side boundary change dressed as a display fix.
 
-- [ ] **Step 4: Render it**
+- [x] **Step 4: Render it**
 
 `Sheet.vue`, all four `<option>` sites (`:358`, `:368`, `:395`, `:405`) — one shared label helper
 in the `<script setup>` rather than four inline ternaries, since four copies of a label rule is
@@ -2201,7 +2233,7 @@ const staffLabel = (s) => {
 `People.vue` renders a `.channel-tag` reading "External" in the Status column. Task 1 already
 reserved the slot.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Expected: full suite **935 passed** (929 + 6 — four `ExternalPeopleTest` cases and two new
 `PickerParityTest` matrix fixtures). **`PickerParityTest` green is the gate on this task**; a red

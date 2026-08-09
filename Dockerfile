@@ -44,8 +44,48 @@ COPY public ./public
 RUN npm run build
 
 # ---------- stage 2: PHP dependencies ----------
+#
+# composer.json has required ext-intl since commit 2108c39, and composer.lock's own
+# "platform" block repeats it — so `composer install`'s platform check is unavoidable, and
+# this image's PHP (see below) does not have it compiled in by default. Two ways to satisfy
+# that check were considered:
+#
+#   (a) `composer install --ignore-platform-req=ext-intl` — makes the build pass by telling
+#       composer to stop checking, without the check ever becoming true. It genuinely IS
+#       satisfied at runtime (intl is installed in stage 3 below), so the waiver is not
+#       lying about the eventual image — but it is lying about what THIS command verified,
+#       and a real gap (a package resolved here that turns out to need an intl SYMBOL, not
+#       just the extension present, would sail through unnoticed).
+#   (b) install intl for real, here, for the duration of this RUN — chosen. The platform
+#       check then means what it says: composer actually has the extension loaded while it
+#       resolves and autoloads, identically to every other declared requirement. It costs
+#       one extra `apk add`/`docker-php-ext-install`/`apk del` in a stage whose only output
+#       is vendor/ (nothing else from this stage reaches the final image), so there is no
+#       runtime cost to the trade.
+#
+# Separately: this base image's own PHP (8.5.8, as of the pinned digest below) is NOT the
+# PHP that executes the code (stage 3 pins 8.4.23) — composer.json's root constraint
+# ("php": "^8.3") is satisfied by both, so today's lock resolves identically either way
+# (verified: regenerating the lock under this fix changed only content-hash and
+# platform-overrides, no package versions moved), but that is not a fact this Dockerfile
+# guaranteed on its own. `composer.json`'s `config.platform.php` now pins dependency
+# RESOLUTION to 8.4.23 explicitly, so a future `composer update` is decided against the
+# runtime version regardless of which PHP the composer binary itself happens to run
+# under — closing the gap precisely, without needing this stage's base image to match
+# stage 3's (which would be the larger, not-requested change: swapping composer's own image
+# for one built on php:8.4-fpm-alpine, carrying its own dependency-availability questions
+# for zip/unzip extraction that were not evaluated here).
 FROM composer:2@sha256:5946476338742b200bb9ff88f8be56275ddae4b3949c72305cb0dbf10cfcb760 AS vendor
 WORKDIR /build
+# icu-libs stays (the compiled intl.so dlopen()s it at runtime); icu-dev and the compiler
+# toolchain are virtual and removed once the extension is built, same split stage 3 uses
+# below — `apk del` on a virtual group that ALSO held icu-libs would cascade-remove it as a
+# now-unneeded transitive dependency and leave intl.so unloadable (proven: the first attempt
+# at this fix did exactly that — "Error loading shared library libicuio.so.78").
+RUN apk add --no-cache icu-libs \
+    && apk add --no-cache --virtual .intl-build-deps $PHPIZE_DEPS icu-dev \
+    && docker-php-ext-install intl \
+    && apk del .intl-build-deps
 COPY composer.json composer.lock ./
 # Scripts are skipped here: artisan is not present yet and must not run at build time.
 RUN composer install --no-dev --no-interaction --prefer-dist --no-scripts --optimize-autoloader

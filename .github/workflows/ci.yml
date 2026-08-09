@@ -92,3 +92,27 @@ jobs:
 
       - name: npm security audit
         run: npm audit --omit=dev --audit-level=high
+
+  docker-build:
+    runs-on: ubuntu-latest
+
+    # 2026-08-09 ops rehearsal, finding 1: neither `test` nor `audit` above runs `composer
+    # install` inside the Dockerfile's own vendor stage — they resolve dependencies on the
+    # RUNNER's own PHP, a completely separate resolution from the one the production image
+    # performs in its `composer:2` stage. That stage's platform check for `ext-intl` had
+    # been failing since composer.json first required the extension (commit 2108c39) and
+    # every push since was green, because nothing in CI had ever actually built the image —
+    # a Coolify deploy was the first thing to try, and it failed. This job exists so a
+    # broken production build shows up here, on every push, not on a deploy.
+    #
+    # Deliberately a bare `docker build`, not the full `docker/smoke.sh` rehearsal: smoke.sh
+    # brings up the whole `docker-compose.production.yml` stack (real MySQL 8.4, generated
+    # credentials, migrations, `/up`) and is owner-run, by design, against a throwaway copy
+    # of the real stack — a heavier, slower, credential-bearing drill that belongs outside
+    # CI. This job answers a narrower, cheaper question — "does the image build at all" —
+    # which is exactly the class of defect this finding was.
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Build production image
+        run: docker build --progress=plain -t endorsement-ci-build:${{ github.sha }} .

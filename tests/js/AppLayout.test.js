@@ -116,6 +116,35 @@ describe('AppLayout — role-gated navigation', () => {
         expect(text).not.toContain('Settings');
     });
 
+    // P1c: a user holding ONLY the new people.manage capability must still see the
+    // Administration section with People AND Promotion links — the same recon-frontend risk
+    // P1b's Decision A named, now proven for the roster capability too. Task 10 adds Promotion
+    // beside People, both gated on the same capability.
+    it('shows the admin section with people.manage alone, with People and Promotion links only', () => {
+        store.page.props.auth.can = ['people.manage'];
+        store.page.props.auth.user = { id: 6, member_name: 'pm', full_name: 'People Manager', position: 0 };
+
+        const text = navText(mountLayout());
+        expect(text).toContain('Administration');
+        expect(text).toContain('People');
+        expect(text).toContain('Promotion');
+        // people.manage alone does not grant the other admin links.
+        expect(text).not.toContain('Access Control');
+        expect(text).not.toContain('Units');
+        expect(text).not.toContain('Settings');
+        expect(text).not.toContain('Users');
+    });
+
+    // The negative symmetric case: a capability that grants neither People nor Promotion must
+    // show neither — Promotion is not accidentally reachable through some OTHER admin key.
+    it('does not show Promotion without people.manage', () => {
+        store.page.props.auth.can = ['structure.manage'];
+        store.page.props.auth.user = { id: 7, member_name: 'sm', full_name: 'Structure Manager', position: 0 };
+
+        const text = navText(mountLayout());
+        expect(text).not.toContain('Promotion');
+    });
+
     it('shows the signed-in user name and logs out via router.post', async () => {
         store.page.props.auth.can = ['profile.manage'];
         store.page.props.auth.user = { id: 1, member_name: 'jdoe', full_name: 'Jane Doe', position: 1 };

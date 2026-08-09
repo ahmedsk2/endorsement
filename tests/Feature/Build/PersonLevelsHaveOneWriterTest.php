@@ -1,0 +1,80 @@
+<?php
+
+namespace Tests\Feature\Build;
+
+use Illuminate\Support\Facades\File;
+use Tests\TestCase;
+
+/**
+ * P1c Decision G: `App\Support\LevelAssignment` is the ONLY writer of `person_levels`. Finding 4:
+ * before it existed, the table had no overlap constraint, no batch identity, no reason and no
+ * author, and two open-ended spans for one person coexisted happily — `Person::levelAt()` (and
+ * its set-wise sibling) silently resolved whichever sorted last, no error, no warning. A second
+ * writer anywhere defeats the audit trail LV-04 exists to provide.
+ *
+ * Same species as `ContactFieldsAreProjectedOnceTest` and `CalendarWritersFlushTest`: a plain
+ * substring scan over app/ + database/ + routes/, deliberately coarse rather than a static
+ * analyser, because the point is a stop-sign a future PR trips over, not perfect precision.
+ *
+ * `tests/` is NOT scanned: `LevelHistoryTest`'s own fixtures call `PersonLevel::create()`
+ * directly to seed history for `levelAt()`'s tests (it predates this guard, and asserting
+ * `levelAt()`'s read semantics is exactly what that file is for) — a test fixture is not the
+ * production integrity surface this guard exists to close.
+ */
+class PersonLevelsHaveOneWriterTest extends TestCase
+{
+    /** Every file allowed to write `person_levels`, with why. */
+    private const ALLOW_LIST = [
+        // The one writer. This is the control.
+        'app/Support/LevelAssignment.php',
+        // A factory populating fixture history for OTHER tests is not a production writer —
+        // same reasoning ContactFieldsAreProjectedOnceTest applies to database/factories/.
+        'database/factories/PersonLevelFactory.php',
+    ];
+
+    private const NEEDLES = [
+        'PersonLevel::create(',
+        'PersonLevel::insert(',
+        '->levels()->create(',
+        "DB::table('person_levels')",
+    ];
+
+    public function test_only_level_assignment_writes_person_levels(): void
+    {
+        $offenders = [];
+
+        foreach ([app_path(), base_path('database'), base_path('routes')] as $dir) {
+            foreach (File::allFiles($dir) as $file) {
+                if ($file->getExtension() !== 'php') {
+                    continue;
+                }
+
+                $relative = str_replace('\\', '/', str_replace(base_path().DIRECTORY_SEPARATOR, '', $file->getPathname()));
+
+                if (in_array($relative, self::ALLOW_LIST, true)) {
+                    continue;
+                }
+
+                $contents = (string) File::get($file->getPathname());
+
+                foreach (self::NEEDLES as $needle) {
+                    if (str_contains($contents, $needle)) {
+                        $offenders[] = $relative.' contains '.$needle;
+                    }
+                }
+            }
+        }
+
+        $this->assertSame([], $offenders,
+            "person_levels must be written only by App\\Support\\LevelAssignment (P1c Decision G).\n"
+            .implode("\n", $offenders));
+    }
+
+    /** A stale allow-list is a silently disabled guard. */
+    public function test_every_allow_listed_file_still_exists(): void
+    {
+        foreach (self::ALLOW_LIST as $relative) {
+            $this->assertFileExists(base_path($relative), "Allow-listed file {$relative} is gone — prune the list.");
+        }
+    }
+}

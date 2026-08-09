@@ -114,6 +114,28 @@ class Person extends Model
     }
 
     /**
+     * The ONE definition of "this span is in force on `$on`". BOTH BOUNDS INCLUSIVE: a level that
+     * runs to 30 June is still in force on 30 June, and its successor starts on 1 July.
+     *
+     * Written once and applied to both the per-person and the set-wise resolver, because a
+     * predicate written twice is two predicates that drift — the failure `AuditChain::canonical()`
+     * carries a docblock about and the one that made the live system announce its whole audit
+     * trail as tampered.
+     *
+     * Columns are TABLE-QUALIFIED. `person_levels`, `people` and `levels` all appear in the
+     * set-wise query, and `levels` also carries `active` — an unqualified predicate is an
+     * ambiguous-column error waiting for the first caller that joins them (P1c finding 7).
+     *
+     * @param  Builder<PersonLevel>  $query
+     */
+    private static function inForceOn(Builder $query, string $on): void
+    {
+        $query->whereDate('person_levels.effective_from', '<=', $on)
+            ->where(fn ($q) => $q->whereNull('person_levels.effective_to')
+                ->orWhereDate('person_levels.effective_to', '>=', $on));
+    }
+
+    /**
      * The level in force on a given date. Both bounds are INCLUSIVE: a level that runs to 30 June
      * is still in force on 30 June, and its successor starts on 1 July.
      */
@@ -122,11 +144,56 @@ class Person extends Model
         $on = $date === null ? Calendar::todayYmd() : Calendar::ymd($date);
 
         return $this->levels()
-            ->whereDate('effective_from', '<=', $on)
-            ->where(fn ($q) => $q->whereNull('effective_to')->orWhereDate('effective_to', '>=', $on))
-            ->orderByDesc('effective_from')
+            ->tap(fn (Builder $q) => self::inForceOn($q, $on))
+            ->orderByDesc('person_levels.effective_from')
             ->with('level')
             ->first()?->level;
+    }
+
+    /**
+     * The set-wise sibling (P1 finding 10). One query for the whole collection instead of one per
+     * person: the People screen, LV-03's cohort preview and P1d's rota grid are each N+1 by
+     * construction without it.
+     *
+     * Returns a map keyed by person id with an entry for EVERY person passed in — null where
+     * there is no history — so a caller iterating it never hits an undefined index.
+     *
+     * `orderBy(effective_from)` ascending plus overwrite-on-assign resolves the same span
+     * `levelAt()` would: the LAST row written for a person id is the one with the greatest
+     * `effective_from`, which is exactly `levelAt()`'s `orderByDesc(...)->first()`.
+     *
+     * @param  \Illuminate\Support\Collection<int, Person>|array<int, Person>  $people
+     * @return array<int, Level|null>
+     */
+    public static function levelsAt(iterable $people, Carbon|string|null $date = null): array
+    {
+        $on = $date === null ? Calendar::todayYmd() : Calendar::ymd($date);
+
+        $out = [];
+        $ids = [];
+
+        foreach ($people as $person) {
+            $id = (int) $person->getKey();
+            $out[$id] = null;
+            $ids[] = $id;
+        }
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $spans = PersonLevel::query()
+            ->whereIn('person_levels.person_id', $ids)
+            ->tap(fn (Builder $q) => self::inForceOn($q, $on))
+            ->orderBy('person_levels.effective_from')
+            ->with('level')
+            ->get();
+
+        foreach ($spans as $span) {
+            $out[(int) $span->person_id] = $span->level;
+        }
+
+        return $out;
     }
 
     public function currentLevel(): ?Level

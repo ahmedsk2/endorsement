@@ -85,6 +85,11 @@ class AuditAnomalies extends Command
             'user_role_change' => 'an account role was changed',
             'admin_bootstrapped' => 'an administrator was created from the console',
             'user_approve_denied_unverified' => 'an unverified registration approval was refused',
+            // P1c Decision H: only the SUMMARY row below is watched. The per-person companion
+            // action is deliberately absent from this array — a routine annual promotion of
+            // forty people would otherwise page an operator forty times for one act, and an
+            // alert channel that cries wolf forty times is one nobody reads on the forty-first.
+            'person_promotion' => 'a training-level cohort was promoted',
         ] as $action => $meaning) {
             $n = AuditLog::where('action', $action)->where('created_at', '>=', $since)->count();
 

@@ -203,6 +203,17 @@ const signForm = ref({
  * time input for everything else. The server normalizes a non-legacy entry to 24-hour HH:MM and
  * stores the unambiguous minutes alongside it.
  */
+/**
+ * PE-03: an external rotator is flagged wherever they are named. One helper for all four
+ * `<option>` sites below rather than four inline ternaries — four copies of a label rule is how
+ * three of them end up stale (the pattern `retired`'s own inline ternary already fell into).
+ */
+const staffLabel = (s) => {
+    if (s.retired) return `${s.name} (no longer offered)`;
+
+    return s.external ? `${s.name} (external)` : s.name;
+};
+
 const CUSTOM_TIME = '__custom__';
 const isLegacyLabel = (v) => props.timeOptions.includes(v);
 const initialTime = props.signoff?.endorsement_time ?? '';
@@ -356,7 +367,7 @@ const submitReopen = () => {
                             class="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm text-ink focus:border-channel focus:outline-none">
                         <option value="">Select</option>
                         <option v-for="s in staff.endorsers" :key="s.id" :value="s.id" :disabled="s.retired">
-                            {{ s.retired ? `${s.name} (no longer offered)` : s.name }}
+                            {{ staffLabel(s) }}
                         </option>
                     </select>
                 </div>
@@ -366,7 +377,7 @@ const submitReopen = () => {
                             class="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm text-ink focus:border-channel focus:outline-none">
                         <option value="">Select</option>
                         <option v-for="s in staff.endorsers" :key="s.id" :value="s.id" :disabled="s.retired">
-                            {{ s.retired ? `${s.name} (no longer offered)` : s.name }}
+                            {{ staffLabel(s) }}
                         </option>
                     </select>
                 </div>
@@ -393,7 +404,7 @@ const submitReopen = () => {
                             class="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm text-ink focus:border-channel focus:outline-none">
                         <option value="">Select</option>
                         <option v-for="s in staff.consultants" :key="s.id" :value="s.id" :disabled="s.retired">
-                            {{ s.retired ? `${s.name} (no longer offered)` : s.name }}
+                            {{ staffLabel(s) }}
                         </option>
                     </select>
                 </div>
@@ -403,7 +414,7 @@ const submitReopen = () => {
                             class="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm text-ink focus:border-channel focus:outline-none">
                         <option value="">Select</option>
                         <option v-for="s in staff.consultants" :key="s.id" :value="s.id" :disabled="s.retired">
-                            {{ s.retired ? `${s.name} (no longer offered)` : s.name }}
+                            {{ staffLabel(s) }}
                         </option>
                     </select>
                 </div>

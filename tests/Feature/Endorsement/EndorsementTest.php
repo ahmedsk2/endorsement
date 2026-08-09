@@ -357,6 +357,32 @@ class EndorsementTest extends TestCase
         $this->assertNull(Handover::find($row->id));
     }
 
+    /**
+     * P1c Task 7's route-binding audit: unlike {person}, {handover} deliberately stays on the
+     * DEFAULT (trashed-excluding) binding, because deleteRow() below IS the soft delete — a
+     * row that has already been removed must not be reachable through the same edit route a
+     * still-present row uses. This is the audit's own "the 404 is right" case.
+     */
+    public function test_update_row_404s_for_an_already_deleted_row(): void
+    {
+        $row = $this->handover('PICU', '2026-07-10', ['plan' => 'original']);
+        $row->delete();
+
+        $this->actingAs($this->editor())
+            ->patch('/endorsement/rows/'.$row->id, ['plan' => 'should not land'])
+            ->assertNotFound();
+    }
+
+    public function test_delete_row_404s_for_an_already_deleted_row(): void
+    {
+        $row = $this->handover('PICU', '2026-07-10');
+        $row->delete();
+
+        $this->actingAs($this->editor())
+            ->delete('/endorsement/rows/'.$row->id)
+            ->assertNotFound();
+    }
+
     public function test_a_nurse_cannot_edit_rows(): void
     {
         $nurse = User::factory()->create(['position' => 1]);

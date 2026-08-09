@@ -7,7 +7,7 @@ use App\Models\AuditLog;
 use App\Models\PendingRegistration;
 use App\Models\Position;
 use App\Models\User;
-use App\Support\AccessControl;
+use App\Support\PositionChange;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -249,7 +249,7 @@ class UserManagementController extends Controller
 
         $active = (bool) $data['active'];
 
-        if (! $active && $this->isLastActiveAdministrator($user)) {
+        if (! $active && PositionChange::isLastActiveAdministrator($user)) {
             throw ValidationException::withMessages([
                 'active' => 'This is the last active Administrator account — it cannot be deactivated.',
             ]);
@@ -275,6 +275,10 @@ class UserManagementController extends Controller
     /**
      * Change an account's role. This is the ONLY place position 0 (Administrator) can be
      * granted. Demoting the last remaining active Administrator is refused (422).
+     *
+     * Delegates to `App\Support\PositionChange::apply()` — the one definition of a position
+     * change (P1c Decision C) — so this console and the People screen cannot drift apart on the
+     * cache-flush or the last-admin guard.
      */
     public function setPosition(Request $request, User $user): RedirectResponse
     {
@@ -282,25 +286,13 @@ class UserManagementController extends Controller
             'position' => ['required', 'integer', Rule::in(self::POSITIONS)],
         ]);
 
-        $position = (int) $data['position'];
-
-        if ($position !== 0 && $this->isLastActiveAdministrator($user)) {
+        if ($user->person === null) {
             throw ValidationException::withMessages([
-                'position' => 'This is the last active Administrator — grant another account the Administrator role first.',
+                'position' => 'This account is not linked to a person on the roster.',
             ]);
         }
 
-        $user->person?->update(['position' => $position]);
-
-        // The role drives the capability set — bust this user's cached resolution at once.
-        AccessControl::flush((int) $user->getKey());
-
-        AuditLog::record(
-            'user_role_change',
-            'user='.$user->id.';position='.$position,
-            $request->user()->getKey(),
-            $request->ip(),
-        );
+        PositionChange::apply($user->person, (int) $data['position'], $request);
 
         return back()->with('status', 'Role updated.');
     }
@@ -431,25 +423,5 @@ class UserManagementController extends Controller
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
         }
-    }
-
-    /**
-     * True when the user is an ACTIVE Administrator and no OTHER active Administrator
-     * exists — deactivating or demoting them would lock every admin surface forever.
-     */
-    private function isLastActiveAdministrator(User $user): bool
-    {
-        if ((int) $user->position !== 0 || ! $user->active) {
-            return false;
-        }
-
-        // `whereKeyNot` is avoided here: it filters on the unqualified `id` column, which is
-        // ambiguous once `people` is joined (both tables have one). `users.id` explicitly.
-        return ! User::query()
-            ->join('people', 'people.id', '=', 'users.person_id')
-            ->where('users.id', '!=', $user->getKey())
-            ->where('people.position', 0)
-            ->where('users.active', true)
-            ->exists();
     }
 }

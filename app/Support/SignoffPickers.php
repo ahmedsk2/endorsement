@@ -107,8 +107,20 @@ final class SignoffPickers
         $query = Person::query()->orderBy('people.full_name');
         $predicate($query->getQuery());
 
-        $list = $query->get(['people.id', 'people.full_name'])
-            ->map(fn (Person $p): array => ['id' => (int) $p->id, 'name' => (string) $p->full_name])
+        $list = $query->get(['people.id', 'people.full_name', 'people.external'])
+            ->map(function (Person $p): array {
+                $row = ['id' => (int) $p->id, 'name' => (string) $p->full_name];
+
+                // PE-03: "flagged everywhere". Added only when TRUE, matching how `retired`
+                // behaves below — an absent key keeps every existing client truthiness check
+                // working with no change. NOT a predicate: external is a label, not a permission,
+                // and D9's write-side boundary (position + account + active) is untouched.
+                if ($p->external) {
+                    $row['external'] = true;
+                }
+
+                return $row;
+            })
             ->all();
 
         $offeredIds = array_column($list, 'id');
@@ -124,7 +136,13 @@ final class SignoffPickers
                 continue;
             }
 
-            $list[] = ['id' => (int) $person->id, 'name' => (string) $person->full_name, 'retired' => true];
+            $row = ['id' => (int) $person->id, 'name' => (string) $person->full_name, 'retired' => true];
+
+            if ($person->external) {
+                $row['external'] = true;
+            }
+
+            $list[] = $row;
             $offeredIds[] = (int) $person->id;
         }
 

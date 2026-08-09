@@ -5,6 +5,9 @@ use App\Http\Controllers\Admin\CalendarSettingsController;
 use App\Http\Controllers\Admin\HolidayController;
 use App\Http\Controllers\Admin\LevelController;
 use App\Http\Controllers\Admin\PeriodController;
+use App\Http\Controllers\Admin\PersonController;
+use App\Http\Controllers\Admin\PromotionController;
+use App\Http\Controllers\Admin\RosterImportController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UnitController;
 use App\Http\Controllers\Admin\UnitMergeController;
@@ -42,6 +45,11 @@ Route::middleware(['auth', 'throttle:clinical'])->prefix('endorsement')->name('e
 
     // Row edits (edit) — declared before the {unit}/{date} reads so `rows` never binds a unit.
     Route::middleware('cap:endorsement.edit')->group(function () {
+        // {handover} deliberately stays on the DEFAULT (trashed-excluding) binding — P1c Task 7's
+        // audit of every soft-deletable route binding. `deleteRow()` below IS the soft delete, so
+        // an already-deleted row 404ing here is the correct case that audit's own example names:
+        // you should not be able to edit (or re-delete) a soft-deleted clinical row through the
+        // normal edit route. There is no restore action for a handover row.
         Route::patch('/rows/{handover}', [EndorsementController::class, 'updateRow'])->name('rows.update');
         Route::delete('/rows/{handover}', [EndorsementController::class, 'deleteRow'])->name('rows.delete');
         Route::post('/{unit}/new-day', [EndorsementController::class, 'newDay'])->name('new-day');
@@ -51,7 +59,10 @@ Route::middleware(['auth', 'throttle:clinical'])->prefix('endorsement')->name('e
         // The per-day shift attestation (legacy `validate-endorsement.php`). The reopen
         // sub-route is declared first so `reopen` never binds as part of the signoff path.
         // Reopen additionally requires `endorsement.reopen`, checked IN-CONTROLLER so the
-        // 403 can name the actual active holders.
+        // 403 can name the actual active holders. Neither route below binds a HandoverSignoff
+        // by route-model-binding at all — both params are plain strings ({unit}/{date}), and the
+        // controller resolves the signoff row itself — so P1c Task 7's route-binding audit (the
+        // gap Laravel's default binding leaves for every soft-deletable model) does not apply here.
         Route::post('/{unit}/{date}/signoff/reopen', [EndorsementController::class, 'reopenSignoff'])
             ->where('date', '\d{4}-\d{2}-\d{2}')->name('signoff.reopen');
         Route::patch('/{unit}/{date}/signoff', [EndorsementController::class, 'updateSignoff'])
@@ -101,6 +112,14 @@ Route::middleware('auth')
         Route::get('/users', [UserManagementController::class, 'index'])->name('users.index');
         Route::post('/users/pending/{pending}/approve', [UserManagementController::class, 'approve'])->name('users.approve');
         Route::delete('/users/pending/{pending}', [UserManagementController::class, 'reject'])->name('users.reject');
+        // {user} deliberately stays on the DEFAULT (trashed-excluding) binding here — P1c Task 7's
+        // audit of every soft-deletable route binding, unlike {person} in admin/structure below.
+        // UserManagementController's own docblock: user deletion was WITHDRAWN as a capability
+        // (2026-07-19) and the route removed with it, so nothing in this codebase ever sets
+        // `users.deleted_at`; index() above never lists a trashed account either, so there is no
+        // legitimate path onto one through this screen at all. Reaching one anyway here would let
+        // an activate/role/profile write bypass the audited deactivate-never-delete path the
+        // ruling exists to enforce. Same reasoning covers users.position/users.profile below.
         Route::patch('/users/{user}/active', [UserManagementController::class, 'setActive'])->name('users.active');
 
         // Invitations are the only way an account is created. Same two-tier rule, applied
@@ -187,6 +206,56 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
     });
 
 /*
+ * Admin → People: the departmental ROSTER (Munawib PE-01…03, LV-02…04, ST-04). Its own
+ * capability, `people.manage`, deliberately separate from `users.manage` (the ACCOUNT console)
+ * and from `structure.manage` (the department's shape) — see the P1c plan's Decision A.
+ *
+ * Nothing in this group creates an account. The invitation flow under `admin/invitations`
+ * remains the only path from a roster entry to a credential.
+ */
+Route::middleware(['auth', 'throttle:clinical', 'cap:people.manage'])
+    ->prefix('admin')
+    ->name('admin.')
+    ->group(function () {
+        Route::get('/people', [PersonController::class, 'index'])->name('people');
+        // Declared BEFORE any /people/{person} route so `visibility` never binds as a person id
+        // — the same discipline routes/web.php already applies to `units/merge`.
+        Route::patch('/people/visibility', [PersonController::class, 'updateVisibility'])->name('people.visibility');
+        // LV-04. ->withTrashed() so a retired person's history stays reachable — index() already
+        // lists retired people (UN-04's reasoning: an administrator who cannot SEE a retired
+        // person cannot bring them back), and this route must not 404 the moment one is.
+        Route::get('/people/{person}/history', [PersonController::class, 'history'])
+            ->name('people.history')->withTrashed();
+        Route::post('/people', [PersonController::class, 'store'])->name('people.store');
+        // LV-02's bulk operations (set level, set status, export). A distinct URI, not a
+        // `{person}`-shaped one, so it never collides with the PATCH route below.
+        Route::post('/people/bulk', [PersonController::class, 'bulk'])->name('people.bulk');
+        // ->withTrashed() for the same reason as people.history above (P1c Task 7's audit): the
+        // roster's own Edit button is offered on every row index() lists, retired or not
+        // (People.vue never conditions it on `retired`), so PATCHing a retired person's record
+        // must not 404 either. This does not un-delete the row — restoring is the invitation /
+        // re-approval flow's job (Person::matchByEmail() clears deleted_at there) — it only lets
+        // an admin correct a retired person's fields the same way they can already view them.
+        Route::patch('/people/{person}', [PersonController::class, 'update'])->name('people.update')->withTrashed();
+        // No destroy — people are deactivated, never deleted (owner ruling). PersonController
+        // exposes no delete action at all rather than a route that refuses, matching
+        // LevelController's own precedent: DELETE against this URI is a plain 405.
+
+        // LV-03's annual promotion (P1b Owner Decision A / P1c Decision D). The operator picks
+        // BOTH ends explicitly; nothing here computes a target.
+        Route::get('/promotion', [PromotionController::class, 'index'])->name('promotion');
+        Route::post('/promotion/preview', [PromotionController::class, 'preview'])->name('promotion.preview');
+        Route::post('/promotion/commit', [PromotionController::class, 'commit'])->name('promotion.commit');
+
+        // ST-04's roster import (P1c Decision E). CSV/TSV only; the dry-run PREVIEW is the
+        // deliverable — it writes nothing (see RosterImportController's own docblock) and is the
+        // only thing standing between a malformed file and a corrupted roster.
+        Route::get('/roster-import', [RosterImportController::class, 'index'])->name('roster-import');
+        Route::post('/roster-import/preview', [RosterImportController::class, 'preview'])->name('roster-import.preview');
+        Route::post('/roster-import/commit', [RosterImportController::class, 'commit'])->name('roster-import.commit');
+    });
+
+/*
  * First-login setup. `auth` only, no `cap:` — the capability catalogue is not the question
  * here; every account, whatever its role, answers these two before reaching a ward. It is
  * also the destination RequireSetup redirects to, so gating it on anything the new account
@@ -234,6 +303,10 @@ Route::middleware('auth')->group(function () {
         ->defaults('no_history', true)->name('signatures.file');
     Route::get('/signatures/me', [SignatureController::class, 'mine'])
         ->defaults('no_history', true)->name('signatures.mine');
+    // {user} stays on the DEFAULT (trashed-excluding) binding too (P1c Task 7's audit):
+    // SignatureController::show() refuses anyone but the viewer's own account, and an
+    // authenticated session can only ever resolve to a non-trashed user in the first place —
+    // there is no legitimate way for {user} to be a retired account here.
     Route::get('/signatures/{user}', [SignatureController::class, 'show'])
         ->defaults('no_history', true)->name('signatures.show');
 });

@@ -20,6 +20,17 @@ this DPIA was signed.** §3.2 and §3.3 now carry a new accepted risk — co-ten
 system served exactly one customer then. The signature in §3.4 predates it and should be
 refreshed alongside the P0c refresh above rather than as a separate cycle.
 
+**Also needs re-signing: the P1c-1 roster screen and export, shipped 2026-08-09, also after this
+DPIA was signed.** Two things did not exist when §3 was assessed: an on-screen surface (Admin →
+People) that displays staff contact data (`phone`, and `notes` for holders of `people.manage`)
+to a logged-in viewer, gated by `App\Support\PersonPresenter`/`App\Policies\PersonPolicy` and the
+department's `contact_visibility` setting; and a bulk CSV export of the same roster, which is
+personal data leaving the system in a downloadable file for the first time. Neither changes the
+underlying lawful basis (the employment/rota relationship, unchanged since the P0c refresh
+above), but both are new exposure surfaces for the same category of personal data and belong in
+the re-signing alongside P0c and P0d rather than as a fourth separate cycle. **Flagged here for
+the owner; nothing in this pack is signed for it.**
+
 Not legal advice.
 
 Every technical claim here is drawn from the code and cross-referenced, so the parts that

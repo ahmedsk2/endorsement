@@ -47,6 +47,13 @@ SCBU and WARD are seed data for the QCH institution.
   Production migrations and live-DB changes: prepare + document, the owner runs them.
 - The legacy import is one-way, read-only against its source, idempotent (provenance
   keyed), audited — and only the owner runs it against production.
+- **`tests/fixtures/roster/` is synthetic, and stays that way.** No real staff list — names,
+  emails, phone numbers of actual QCH personnel — belongs in this repository at any time, in a
+  fixture or anywhere else. `RosterImport`/`CsvRosterReader`'s test corpus is built to exercise
+  specific failure shapes (duplicate emails, an unknown level code, Arabic names, a row that
+  collides with an existing account), not to resemble a real department. The first import
+  against a real staff list is the owner's to run, against production, having previewed it
+  first — never a fixture checked into this repo.
 - Per-unit custom field values (`handovers.extra_fields`, design §6.2 "Ceiling 2") are plain
   text and are NEVER purified server-side (unlike the four rich-text fields). Every consumer
   must escape on render — `{{ }}` interpolation / `:value` binding in Vue, never `v-html`.
@@ -55,6 +62,13 @@ SCBU and WARD are seed data for the QCH institution.
   allow-list does not apply — and an allow-list keyed on `unit_field_definitions` would
   actively delete a value from history the moment its definition is retired. A clinical value
   must survive the removal of the definition that produced it.
+- **Every CSV write goes through `App\Support\Csv::stream()`; every CSV read goes through
+  `App\Support\Roster\CsvRosterReader`** (P1c). A cell whose first character is `=`, `+`, `-`,
+  `@`, TAB or CR is executed as a formula by Excel, LibreOffice and Google Sheets on open —
+  `Csv::neutralise()` prefixes it with an apostrophe on write, and the reader strips exactly one
+  leading apostrophe back off on read, or export → re-import silently renames an affected cell
+  on every round trip. `tests/Feature/Build/CsvInjectionTest.php` asserts the pairing, not
+  just the write side.
 - **ONE DATABASE PER CUSTOMER (D11).** The isolation boundary is the database, not the row.
   `institution_id` is provenance and in-instance grouping — never a query filter; row-level
   tenancy fails open, and the schema is one-way committed against it (several UNIQUE indexes —
@@ -166,6 +180,17 @@ SCBU and WARD are seed data for the QCH institution.
   places. Never add a credential column to `people`, and never reintroduce a `person_status`
   lifecycle enum: "claimed" is a join (`Person::hasAccount()`), not a column.
   `people.id` and `users.id` are INDEPENDENT sequences — never compare or copy them positionally.
+- **`App\Support\PersonPresenter` is the ONLY path from a `Person` to Inertia props** (P1c),
+  gated by `App\Policies\PersonPolicy` (`viewContact`/`viewNotes`) and, for `phone` only,
+  `institutions.contact_visibility`. **`Person::$hidden = ['phone', 'notes']` is NOT the
+  control and never was** — it bites on `toArray()`/`toJson()` only, and every admin screen in
+  this codebase builds its props from an explicit map that never touches `$hidden`. A withheld
+  contact field is ABSENT from the props array, never `null` — the two look identical on screen
+  and a future consumer would eventually render one as the other.
+  `tests/Feature/Build/ContactFieldsAreProjectedOnceTest.php` pins the single-projection
+  property at source level; a future screen written in the house style
+  (`'phone' => $person->phone` inside a `present()` map) would leak the number regardless of
+  `$hidden`.
 - Endorsed by/to pickers: active people at position 4 or 5 WHO HAVE A CLAIMED ACCOUNT (D9 — their
   signature is the evidence). Consultant pickers: any active person at position 3, account or
   not — the on-call consultant is a name of record and frequently never logs in. Both the offer

@@ -49,10 +49,11 @@ authorized change:
 | §AR-02 listeners | Firestore listeners are the only view updaters | **Overridden** — Inertia server-state re-reads + tiered polling (§3.3) |
 | §AR-03 one engine | Pure TS engine for hints *and* server validation/reports | **Kept verbatim** — via the Node sidecar (§4) |
 | §AR-05 data model | Firestore collections | **Adapted** — relational equivalents (§6.3); semantics binding, names adjusted |
-| §PE-03 / AC-01 | `people` separate from accounts | **Overridden** — one `users` table with a `person_status` lifecycle (§5) |
+| §PE-03 / AC-01 | `people` separate from accounts | **Kept** — the override this row used to record (one `users` table with a `person_status` lifecycle) was itself **reversed by the owner on 2026-08-08 (D3)**, before any of it was built. As shipped in P0c: `people` is the roster and the name/role of record, `users` is purely the account, linked by `users.person_id` (nullable, UNIQUE). There is no `person_status` column and none is coming — "claimed" is a join (`Person::hasAccount()`), and a roster-only person has no `users` row, so it cannot authenticate *by construction* rather than by a predicate that must be repeated at twelve credential and defence sites. §5 carries the full reasoning and the as-shipped shape. |
 | §5 viewer access | "link-public or login-only per department setting" | **Overridden** — no anonymous route ever; tokenized share links (§9). This also resolves Munawib's own contradiction with §A2.4 and SC-02. |
 | §17 solver contract | Generate-only JSON contract | **Extended** — an evaluation mode with reified hard constraints is required (§4.2) |
 | §33 FL-05 | Migrate the prototype's live data; accept when it "renders identically to the prototype" | **Overridden on premise** — the prototype is not a data source (D14). Rewritten in §11.1. |
+| §ST-04 roster import | "xlsx/csv with column mapping, validation report, dry-run preview" | **Overridden, CSV/TSV only (P1c Decision E, 2026-08-09).** No spreadsheet package exists in `composer.lock`, and adding one to a system holding children's PHI is an owner supply-chain decision, not a developer's. Column mapping, the validation report and the dry-run preview all ship as specified — only the file format narrows. The reader is a port (`App\Support\Roster\RosterReader`), so xlsx is one adapter class away the day the owner decides (§14 item 16, `docs/OPEN-DECISIONS.md` item F). |
 
 Everything else in Munawib Spec v1.0 stands. Requirement IDs (MR-03, CG-07, AU-06…) remain
 the binding vocabulary.
@@ -349,6 +350,22 @@ boundaries), `holiday_equity` (multi-year lookback reduced to a per-schedule vio
 | `external` | ad-hoc external rotator flag (PE-03), NOT NULL |
 | `active` | governs whether this person may be **NAMED**. Orthogonal to `users.active` (may **AUTHENTICATE**) — never express one as the other |
 | soft deletes | people are deactivated, never deleted (owner ruling) — the four named roles on `handover_signoffs` depend on the row staying resolvable |
+| *(no `status`/`person_status` column)* | PE-01's "status" is **derived** on the READ path — Active/Retired × Account/Roster-only, from `people.active` crossed with `Person::hasAccount()` — never stored (P1c, restating deviation 3 below) |
+
+**Correction, P1c (2026-08-09): `$hidden = ['phone', 'notes']` is NOT the control that keeps
+staff contact fields out of Inertia props, and this section's earlier phrasing ("so it never
+serialises by accident") reads as if it were.** `$hidden` bites on `toArray()`/`toJson()` only;
+every admin screen in this codebase builds its props with an explicit `present()`-style map that
+reads attributes directly and never consults `$hidden` at all. The actual control is
+`App\Support\PersonPresenter` — the ONE place a `Person` becomes Inertia props — gated by
+`App\Policies\PersonPolicy` (`viewContact`/`viewNotes`, this codebase's first policy) and a
+two-valued department setting, `institutions.contact_visibility` (`admins` default, `members`
+exposes `phone` only — `notes` is never toggled, on either setting). A withheld field is ABSENT
+from the props array, never `null`: the two facts look identical on screen and a future consumer
+would eventually render one as the other. `$hidden` remains in place as defence in depth against
+an accidental whole-model serialisation, correctly described now, not as the control.
+`tests/Feature/Build/ContactFieldsAreProjectedOnceTest.php` enforces the single-projection
+property at source level.
 
 Training level is a **separate history table**, `person_levels` (Munawib LV-04): `person_id`,
 `level_id` (FK, `restrictOnDelete` — a level with history cannot simply vanish), `effective_from`,
@@ -454,7 +471,7 @@ mitigation *against* the one-table risk; it survives as ordinary roster-integrit
 | 2a | `person_status` as an extra predicate at six `active`-checking defence sites | D9 forcing roster rows `active = true` (to satisfy the consultant picker) would silently defeat all six `active`-based defences | `people.active` (naming) and `users.active` (authenticating) are columns on **different tables**. There is nothing to defeat — the six defences query `users`, and a roster-only person isn't in it |
 | 2b | A dedicated gate on each of six credential-granting paths | Privilege escalation: a roster row minting itself an account via reset/verify/OTP/etc. | Structural absence, proven per-path by `RosterOnlyCannotAuthenticateTest` (B1–B10) — zero gate code, because none of those queries can find a row that was never written |
 | 3 | An explicit password-reset-broker gate | The reset broker (keyed by email, bypasses the provider) minting an account for an uninvited roster row | The broker's credential closure joins through `users.person_id`; a roster-only person has none, so the join returns nothing (§5.1 above) |
-| 4 | Roster import matches onto existing people by email, never duplicates | Importing/inviting the same human twice | **Not withdrawn — this one shipped.** `Person::matchByEmail()` is the one definition, used by both `LegacyImport` and `InvitationController::store()`; it was never a consequence of the two-table risk, it is what any email-keyed roster needs regardless |
+| 4 | Roster import matches onto existing people by email, never duplicates | Importing/inviting the same human twice | **Not withdrawn — this one shipped, and gained a third consumer.** `Person::matchByEmail()` is the one definition, used by `LegacyImport`, `InvitationController::store()`, and — P1c Task 12, ST-04 — `App\Support\Roster\RosterImport`, which falls back to `short_name` (also UNIQUE outright) as a documented secondary key only when a row carries no email at all. It was never a consequence of the two-table risk, it is what any email-keyed roster needs regardless |
 | 5 | Reconcile three overlapping state machines (`invitations`, `pending_registrations`, `person_status`) | Three different answers to "has this person claimed an account yet?" | `person_status` was never built (§5.1). `pending_registrations` turned out to have **no writer at all** (recon report 1 §2.3) — a frozen legacy queue, not a live machine — and is left in place pending a production count of zero (design §14). `invitations` is the one live lifecycle, and "claimed" is a join, not a third state to keep in sync |
 | 6 | Capability resolution returns nothing for non-claimed rows | A roster-only person being granted a capability meant for account holders | `AccessControl::resolve()` keys off a `users` row (`app/Support/AccessControl.php:141-148`); a roster-only person has none, so there is nothing to grant to |
 
@@ -533,6 +550,16 @@ flag and a `Level::nextAfter()` "advance one level" inference; **Owner Decision 
 middle level graduates a cohort a year early), and removing the inference removes the whole
 failure class. Whatever P1c's LV-03 annual-promotion screen needs, it takes the **target level
 as explicit operator input**, not a column reading "one step up".
+
+**`person_levels` gained three provenance columns, P1c Task 6 (2026-08-09):**
+`promotion_batch_id` (nullable UUID, groups the rows one bulk act produced), `reason` (nullable
+free text), `created_by` (nullable FK to `users`). Additive and nullable, landed before the first
+production promotion ever ran — the only point at which adding them is additive rather than a
+backfill of facts nobody recorded (P1 finding 9). `App\Support\LevelAssignment` is the table's
+ONE writer (`tests/Feature/Build/PersonLevelsHaveOneWriterTest.php`); it never upserts — a
+collision on `unique(person_id, effective_from)` is skipped and reported, never rewritten, because
+an upsert there would silently change what level someone held on a date that may already be
+rendered beside a signed handover.
 
 ### 6.2 Bounded custom fields (D8, "Ceiling 2")
 
@@ -711,6 +738,17 @@ Enforced, not intended:
 5. The standing rule now covers Rota too: no PHI in URLs, query strings, logs, `audit_log`
    details, exception messages, or push payloads.
 
+### 9.3 `people.manage` (P1c Task 1, 2026-08-09)
+
+A new capability, distinct from the two it could be confused with: `users.manage` gates the
+**account** console (approve, activate, issue an invitation); `structure.manage` gates the
+department's **shape** (units, levels, the calendar); `people.manage` gates the **roster** — who
+exists, their contact fields, their training level, whether they are external. Administrator-only
+by default. A roster-only person (no `users` row) is invisible to `users.manage`'s screen by
+construction, and is frequently the on-call consultant whose name is frozen onto signed
+medico-legal evidence — a different blast radius from either of the other two, which is why it is
+its own key rather than folded into one of them.
+
 ---
 
 ## 10. Degradation
@@ -798,7 +836,19 @@ paediatrics goes live once, with both modules ready.
 | Phase | Content |
 |---|---|
 | **P0 — Platform foundation** | Save Munawib Part B as `docs/munawib/SPEC.md`. Units and `UnitProfile` become configuration; **Ceiling-2 custom fields** (definitions, encrypted JSON, dynamic validation, generic print renderer, import mapping); `levels` + `person_levels` (shipped under this name, not `user_levels` — §6.1); `users` extended with §5.1 columns and CHECK constraints; **auth lifecycle reconciled into one state machine**; the password-reset and email-collision gates; `pickerRule()` rewritten per D9; provisioning script for database-per-customer. Endorsement stays green throughout. |
-| **P1 — Munawib Stage 1** | People, invitations, roles on the merged identity; master rota (both period systems, splits, vacations, import/export, publish view); clinics; holidays. **Split into five sub-plans** (`docs/superpowers/plans/2026-08-08-p1-master-rota.md`) once reconnaissance found the operational layer above `Person`/`PersonLevel` entirely empty and P1 too large to plan as one unit: **P1a** the calendar module, per-department calendar settings, both period systems, holidays, and absorption of every existing date converter (no new route); **P1b** — **SHIPPED, 2026-08-09.** Units CRUD (UN-01…05: create/rename/recolour from an eight-entry `bar_class` allow-list — Decision B, no separate `color` column — reorder, reflag, alias, retire, merge) and the level ladder CRUD (LV-01: seeded `R1…R4, EXT`, `external` flag only — Owner Decision A dropped `terminal`/`Level::nextAfter()` outright), both behind a new `structure.manage` capability; then the three ST-02 settings surfaces — calendar settings (bounds-checked Hijri offset, month-alignment-validated period start, `period_type`/`academic_year_start` hard-locked once periods exist), periods (preview **and** generate-and-commit **and** delete-a-year — `PeriodGenerator` had zero production callers before this), and holidays CRUD — plus the production `Calendar::flush()` contract every one of those writes now honours. Adds **no** anonymous route (§9.1 holds); **P1c** the People screen, external people made real, bulk level operations, annual promotion, invitation resend/unbinding/per-person roles, roster import; **P1d** the master rota grid itself — periods × people, split assignments, vacations, fill-down/copy, import/export, the publish view; **P1e** clinics, the weekly clinic map, and the setup wizard threading every step above, plus the removable demo department seed. Each sub-plan is written when its predecessor merges, per the P0a–P0d convention. |
+| **P1 — Munawib Stage 1** | People, invitations, roles on the merged identity; master rota (both period systems, splits, vacations, import/export, publish view); clinics; holidays. **Split into five sub-plans** (`docs/superpowers/plans/2026-08-08-p1-master-rota.md`) once reconnaissance found the operational layer above `Person`/`PersonLevel` entirely empty and P1 too large to plan as one unit: **P1a** the calendar module, per-department calendar settings, both period systems, holidays, and absorption of every existing date converter (no new route); **P1b** — **SHIPPED, 2026-08-09.** Units CRUD (UN-01…05: create/rename/recolour from an eight-entry `bar_class` allow-list — Decision B, no separate `color` column — reorder, reflag, alias, retire, merge) and the level ladder CRUD (LV-01: seeded `R1…R4, EXT`, `external` flag only — Owner Decision A dropped `terminal`/`Level::nextAfter()` outright), both behind a new `structure.manage` capability; then the three ST-02 settings surfaces — calendar settings (bounds-checked Hijri offset, month-alignment-validated period start, `period_type`/`academic_year_start` hard-locked once periods exist), periods (preview **and** generate-and-commit **and** delete-a-year — `PeriodGenerator` had zero production callers before this), and holidays CRUD — plus the production `Calendar::flush()` contract every one of those writes now honours. Adds **no** anonymous route (§9.1 holds); **P1c-1 — SHIPPED, 2026-08-09.** The People screen
+(`people.manage`, §9.3) — PE-01's full field set, PE-02's contact-visibility projection
+(`PersonPresenter` + `PersonPolicy`, §5.1's correction), PE-03's `external` flag made real,
+`Person::levelsAt()`'s set-wise level resolver, LV-04's per-span history — LV-02's bulk set-level
+/ set-status / export (the safe CSV writer, §5.1-adjacent, neutralises formula injection on
+write and un-neutralises it on read), LV-03's annual promotion (operator-chosen target, never
+inferred — §6.1's Owner Decision A restated as a screen), and ST-04's roster import (CSV/TSV,
+column mapping, dry-run preview, commit — open item 16 records the xlsx question). Split at the
+person/account seam into P1c-1 (this) and **P1c-2** (AC-02's configurable lifetime/resend/claim
+status, AC-03 unbinding, AC-04 per-person roles — open item 13), planned once P1c-1 merged. Two
+claims this plan's own P1c item made turned out false and are corrected at their own sections:
+PE-02's projection is `PersonPresenter`, not `$hidden` (§5.1); LV-02's "resend invitations" is an
+account action, not a roster one, and ships in P1c-2. **P1d** the master rota grid itself — periods × people, split assignments, vacations, fill-down/copy, import/export, the publish view; **P1e** clinics, the weekly clinic map, and the setup wizard threading every step above, plus the removable demo department seed. Each sub-plan is written when its predecessor merges, per the P0a–P0d convention. |
 | **P2 — Engine** | `packages/engine` with **all 21 CG-07 types** (D13), golden fixtures, plain-language previews, severity/rank model; `services/engine`; the CI cross-validation job. |
 | **P3 — Munawib Stage 2** | Slots, call windows, coverage templates, conditions gate with drag ranking, draft workbench with live hints, trackers, undo ≥30, unfilled lens, publish + archive, morning coverage, who's-on-call board, personal pages, tallies, exports. **L1 and the §9.1 share-token feed land here.** |
 | **P4 — Munawib Stage 3** | *Prerequisite: host scaled to 4 OCPU / 24 GB.* Solver service, §4.2 evaluation mode, ranked-sacrifice report, per-placement explanations, partial modes, infeasibility reporting, AU-06 against §11.2's fixture; requests with deadlines and reminders; approval queue with coverage impact; versioned change log; ICS feeds. **L4 lands here.** |
@@ -884,7 +934,9 @@ None block starting P0.
     goes further than "keep 7": lifetime becomes **admin-configurable**, default 7, validated
     (a sane upper bound, an integer, no zero-or-negative) so the knob cannot be turned to
     something absurd. Recorded as a deliberate spec deviation from AC-02, not an oversight.
-    Building the configurable setting is P1c scope; not yet implemented as of P1a.
+    Building the configurable setting is **P1c-2** scope (the P1c plan's own split between roster
+    work and account work — this is an AC-02/account concern, not ST-04/roster) — not yet
+    implemented as of P1c-1, which shipped 2026-08-09.
 14. ~~**Does the missed-days denominator become weekend/holiday-aware?**~~ **SETTLED,
     UNCHANGED, owner decision, round 2, 2026-08-08.** Every calendar day still counts toward
     `MissedDays`' `total_days`, exactly as before P1a gave the system its first weekend and
@@ -904,6 +956,23 @@ None block starting P0.
     without flushing, because a seeder run is its own process that exits — nothing renders from
     the stale in-process memo afterward. Any future non-flushing writer needs the same kind of
     stated reason, or the guard will name it.
+16. **xlsx roster import awaits a dependency decision (P1c Decision E, 2026-08-09).** ST-04 ships
+    CSV/TSV only — `App\Support\Roster\RosterReader` is an interface with one adapter,
+    `CsvRosterReader`, built on PHP core (`SplFileObject`); there is no spreadsheet package in
+    `composer.lock`, and adding one to a system holding children's PHI is the owner's
+    supply-chain decision, not a developer's. The cost of yes, stated rather than discovered
+    later: one MIT, zero-runtime-dependency package (`openspout/openspout`), one
+    `composer.json` line, one explicit `"ext-zip": "*"` (zip is already installed in the image,
+    in CI and locally), and one new class, `XlsxRosterReader`, implementing the same interface —
+    nothing in the preview, the validation report or the commit path changes either way. Default
+    if unanswered: stay CSV-only; the screen states plainly what it accepts and how to produce it
+    from Excel (File → Save As → CSV UTF-8).
+17. **`Invitation::issue()`'s own email normalisation is a second definition of one fact.**
+    `Person::normalizeEmail()` (mb-safe lowercase, trim, `''` → `null`) is the one definition
+    P1c's roster importer uses; `Invitation::issue()` still normalises inline with
+    `Str::lower(trim($email))` — equivalent for ASCII, not mb-safe, and it cannot produce `null`.
+    Collapsing the second onto the first is a small, safe tidy, deferred to **P1c-2**, which owns
+    `Invitation` anyway (finding 10, P1c plan).
 
 ---
 

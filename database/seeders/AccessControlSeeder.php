@@ -65,6 +65,16 @@ class AccessControlSeeder extends Seeder
             .'whereas mistyping the Hijri offset silently redates every Hijri label and every '
             .'Hijri-ruled holiday in the system. Default: Administrator only; grantable per role '
             .'or per named user like any capability.',
+
+        'people.manage' => 'Manage the departmental ROSTER: who is on it, their training level '
+            .'and its history, their contact details and scheduling constraints, whether they are '
+            .'an external rotator, and the annual promotion. Distinct from “users.manage”, which '
+            .'runs the ACCOUNT console (approvals, activation, roles, invitations) — a person on '
+            .'the roster may never have had an account at all, and is invisible to that screen by '
+            .'construction. Holding this does NOT create accounts: the invitation flow remains '
+            .'the only way one is made. It DOES govern who can read staff phone numbers and '
+            .'notes, subject to the department\'s contact-visibility setting. Default: '
+            .'Administrator only; grantable per role or per named user like any capability.',
     ];
 
     /**
@@ -88,6 +98,9 @@ class AccessControlSeeder extends Seeder
         'access.manage' => 'Manage the access-control catalog and per-user overrides',
         'settings.manage' => 'Edit runtime settings (mail server, push keys, reminder times)',
 
+        // The departmental roster (Munawib PE-*, LV-02…04, ST-04).
+        'people.manage' => 'Manage the roster: people, levels, promotion and roster import',
+
         // Departmental structure (Munawib UN-*, LV-01, ST-02, ST-06).
         'structure.manage' => 'Manage units, training levels, the calendar, periods and holidays',
     ];
@@ -103,7 +116,7 @@ class AccessControlSeeder extends Seeder
             'profile.manage',
             'endorsement.view', 'endorsement.edit', 'endorsement.reopen', 'endorsement.compliance',
             'users.manage', 'users.manage_residents', 'access.manage', 'settings.manage',
-            'structure.manage',
+            'structure.manage', 'people.manage',
         ],
         // Position 1 (Nurse) is RETIRED — no defaults exist for it.
         // Charge Nurse (2): endorsement.

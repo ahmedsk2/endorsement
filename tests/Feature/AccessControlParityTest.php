@@ -32,11 +32,12 @@ class AccessControlParityTest extends TestCase
         $endorsement = ['endorsement.view', 'endorsement.edit'];
         // Reopen reverses a signed attestation (medico-legal); compliance exposes the
         // missed-days page; settings edits runtime config; structure.manage (P1b) edits the
-        // department's shape (units/levels/calendar/periods/holidays). Administrator-only
+        // department's shape (units/levels/calendar/periods/holidays); people.manage (P1c)
+        // edits the roster (people, levels, promotion, roster import). Administrator-only
         // defaults.
         $adminOnly = [
             'users.manage', 'users.manage_residents', 'access.manage', 'settings.manage',
-            'endorsement.reopen', 'endorsement.compliance', 'structure.manage',
+            'endorsement.reopen', 'endorsement.compliance', 'structure.manage', 'people.manage',
         ];
 
         return [

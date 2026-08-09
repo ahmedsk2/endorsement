@@ -4,6 +4,7 @@ namespace Tests\Feature\Identity;
 
 use App\Models\Level;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -65,10 +66,36 @@ class LevelLadderTest extends TestCase
      * Pins Owner Decision A so it cannot silently regress: no `terminal` column, and no
      * `Level::nextAfter()` inference method. Whatever P1c's promotion screen needs, it takes
      * the target level as explicit input rather than reading it off the level ladder.
+     *
+     * WIDENED in P1c Task 10 to scan `app/` as a whole, not just `Level.php` — P1c's promotion
+     * screen is the first plan with a live reason to WANT the inference, so this is the first
+     * time the guard has anything real to catch. A plain substring scan, deliberately coarse
+     * (same species as `PersonLevelsHaveOneWriterTest`/`ContactFieldsAreProjectedOnceTest`): the
+     * point is a stop-sign a future PR trips over, not perfect precision.
      */
     public function test_there_is_no_terminal_column_and_no_next_after_inference(): void
     {
         $this->assertFalse(Schema::hasColumn('levels', 'terminal'));
         $this->assertFalse(method_exists(Level::class, 'nextAfter'));
+
+        $offenders = [];
+
+        foreach (File::allFiles(app_path()) as $file) {
+            if ($file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $contents = (string) File::get($file->getPathname());
+
+            foreach (['nextAfter', "'terminal'", '->terminal'] as $needle) {
+                if (str_contains($contents, $needle)) {
+                    $offenders[] = str_replace('\\', '/', str_replace(base_path().DIRECTORY_SEPARATOR, '', $file->getPathname())).' contains '.$needle;
+                }
+            }
+        }
+
+        $this->assertSame([], $offenders,
+            "P1b Owner Decision A: no terminal marker and no next-level inference anywhere in app/.\n"
+            .implode("\n", $offenders));
     }
 }

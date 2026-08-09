@@ -68,7 +68,8 @@ const units = computed(() => page.props.nav?.units ?? []);
 // Resident's scoped users.manage_residents. Nav visibility never keys off role
 // numbers — only capability keys.
 const canAdmin = computed(() => can('access.manage') || can('users.manage')
-    || can('users.manage_residents') || can('settings.manage') || can('structure.manage'));
+    || can('users.manage_residents') || can('settings.manage') || can('structure.manage')
+    || can('people.manage'));
 
 const initials = computed(() => (user.value?.full_name || user.value?.member_name || '')
     .split(' ')
@@ -182,6 +183,18 @@ const navClass = (active) => [
                     <Link v-if="can('users.manage') || can('users.manage_residents')" href="/admin/users"
                           :class="navClass(isActive('/admin/users'))">
                         {{ can('users.manage') ? 'Users' : 'Residents' }}
+                    </Link>
+                    <Link v-if="can('people.manage')" href="/admin/people"
+                          :class="navClass(isActive('/admin/people'))">
+                        People
+                    </Link>
+                    <Link v-if="can('people.manage')" href="/admin/promotion"
+                          :class="navClass(isActive('/admin/promotion'))">
+                        Promotion
+                    </Link>
+                    <Link v-if="can('people.manage')" href="/admin/roster-import"
+                          :class="navClass(isActive('/admin/roster-import'))">
+                        Roster import
                     </Link>
                     <Link v-if="can('access.manage')" href="/admin/access-control"
                           :class="navClass(isActive('/admin/access-control'))">

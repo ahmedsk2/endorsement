@@ -14,6 +14,16 @@ class Institution extends Model
     /** The bounds a calibration may take. Beyond this it is a wrong timezone, not an offset. */
     public const HIJRI_OFFSET_BOUNDS = [-2, 2];
 
+    public const CONTACT_ADMINS = 'admins';
+
+    public const CONTACT_MEMBERS = 'members';
+
+    /** Offered and validated from ONE list — the SignoffPickers discipline, applied small. */
+    public const CONTACT_VISIBILITIES = [
+        self::CONTACT_ADMINS => 'Administrators and roster managers only',
+        self::CONTACT_MEMBERS => 'Any signed-in member',
+    ];
+
     /**
      * @var list<string>
      */
@@ -27,6 +37,7 @@ class Institution extends Model
         'period_type',
         'block_weeks',
         'academic_year_start',
+        'contact_visibility',
     ];
 
     /**
@@ -50,6 +61,7 @@ class Institution extends Model
         'weekend_days' => '[5,6]',
         'period_type' => self::PERIOD_WEEK_BLOCKS,
         'block_weeks' => '[4,4,4,4,4,4,4,4,4,4,4,4,5]',
+        'contact_visibility' => self::CONTACT_ADMINS,
     ];
 
     /**

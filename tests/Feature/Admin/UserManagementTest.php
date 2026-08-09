@@ -311,6 +311,24 @@ class UserManagementTest extends TestCase
         $this->assertTrue((bool) $victim->fresh()->active);
     }
 
+    /**
+     * P1c Task 7's route-binding audit: unlike {person}, {user} deliberately stays on the
+     * DEFAULT (trashed-excluding) binding — user deletion was withdrawn as a capability
+     * (2026-07-19) and nothing writes `users.deleted_at` any more, so a soft-deleted account
+     * reaching this route at all would mean bypassing the audited deactivate-never-delete
+     * path. A 404 here is the correct case, not a gap.
+     */
+    public function test_set_active_404s_for_a_soft_deleted_user(): void
+    {
+        $admin = $this->admin();
+        $user = User::factory()->create();
+        $user->delete();
+
+        $this->actingAs($admin)
+            ->patch('/admin/users/'.$user->id.'/active', ['active' => true])
+            ->assertNotFound();
+    }
+
     // ---------------------------------------------------------------- role change
 
     public function test_set_position_changes_the_role_flushes_the_cap_cache_and_audits(): void
@@ -330,10 +348,13 @@ class UserManagementTest extends TestCase
         // The per-user cache was flushed — the new (admin) capability set is visible at once.
         $this->assertTrue(AccessControl::allows($fresh, 'users.manage'));
 
+        // P1c Decision C: setPosition() now delegates to App\Support\PositionChange::apply(),
+        // which prefixes the detail with `person=<id>` — the roster identity, not the account
+        // — so the People screen and this console produce one shared audit shape.
         $this->assertDatabaseHas('audit_log', [
             'action' => 'user_role_change',
             'user_id' => $admin->id,
-            'detail' => 'user='.$user->id.';position=0',
+            'detail' => 'person='.$user->person_id.';user='.$user->id.';position=0',
         ]);
     }
 
@@ -386,7 +407,35 @@ class UserManagementTest extends TestCase
         $this->assertSame(4, $victim->fresh()->position);
     }
 
+    /** Same reasoning as test_set_active_404s_for_a_soft_deleted_user above. */
+    public function test_set_position_404s_for_a_soft_deleted_user(): void
+    {
+        $admin = $this->admin();
+        $user = User::factory()->create(['position' => 4]);
+        $user->delete();
+
+        $this->actingAs($admin)
+            ->patch('/admin/users/'.$user->id.'/position', ['position' => 3])
+            ->assertNotFound();
+    }
+
     // ---------------------------------------------------------------- profile edit (H / GAP 14)
+
+    /** Same reasoning as test_set_active_404s_for_a_soft_deleted_user above. */
+    public function test_update_profile_404s_for_a_soft_deleted_user(): void
+    {
+        $admin = $this->admin();
+        $user = User::factory()->create();
+        $user->delete();
+
+        $this->actingAs($admin)
+            ->patch('/admin/users/'.$user->id.'/profile', [
+                'full_name' => 'Whatever',
+                'member_name' => $user->member_name,
+                'member_email' => 'whatever@example.test',
+            ])
+            ->assertNotFound();
+    }
 
     public function test_admin_profile_edit_email_uniqueness_is_case_insensitive(): void
     {

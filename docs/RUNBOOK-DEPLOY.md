@@ -613,6 +613,43 @@ Post-deploy checklist addition:
 
 ---
 
+## Verifying the 2026-08-14 people migrations (P1c-1)
+
+Two additive migrations: `2026_08_14_120001_add_contact_visibility_to_institutions` (one
+defaulted string column), `2026_08_14_120002_add_provenance_to_person_levels` (three nullable
+columns — `promotion_batch_id`, `reason`, `created_by`). Neither retypes nor drops anything, and
+`person_levels` had never had a production write before this landed — the only point at which
+adding provenance columns to it is additive rather than a backfill of facts nobody recorded.
+
+```sql
+-- Expect one row: contact_visibility='admins' (the default — nobody has opted the department
+-- into showing phone numbers to every account holder yet).
+SELECT contact_visibility FROM institutions;
+
+-- Expect zero until the first promotion or roster import runs. App\Support\LevelAssignment is
+-- the table's only writer (PersonLevelsHaveOneWriterTest), and nothing wrote to person_levels
+-- before this migration.
+SELECT COUNT(*) FROM person_levels
+  WHERE promotion_batch_id IS NOT NULL OR reason IS NOT NULL OR created_by IS NOT NULL;
+```
+
+Post-deploy checklist addition:
+
+- **`people.manage` lands on the Administrator role automatically**, the same
+  `applied_role_defaults` mechanism `structure.manage` used above — no owner action needed, but
+  worth confirming on the Access Control page after deploy if a non-Administrator role is
+  expected to hold it too.
+- **The roster import (Admin → People → Import) is CSV/TSV only.** There is no xlsx adapter —
+  the department exports from Excel with File → Save As → CSV UTF-8 first, and the import screen
+  states this plainly. `docs/OPEN-DECISIONS.md` (item F) records the cost of adding xlsx support
+  as a live, costed owner decision, not a limitation discovered later.
+- **The first real roster import is the owner's to run, deliberately.** Nothing in P1c-1 seeds
+  or imports real staff automatically — the importer ships tested only against synthetic
+  fixtures (`tests/fixtures/roster/`), and no real staff list belongs in this repository at any
+  time. Run the dry-run preview first; it is the deliverable, not a formality.
+
+---
+
 ## OWNER ACTION — set `HIJRI_OFFSET_DAYS=-1` for QCH (P1a)
 
 QCH's Hijri calibration was established once, against the department's own published calendar

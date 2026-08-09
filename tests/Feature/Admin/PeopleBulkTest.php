@@ -80,6 +80,34 @@ class PeopleBulkTest extends TestCase
         $this->assertTrue($second->person->fresh()->active);
     }
 
+    /**
+     * The literal case named when this task was scoped: deactivating administrators ONE AT A
+     * TIME is refused only at the last one (each of the first two survives — another active
+     * admin still exists at the moment each is checked); three in ONE bulk selection must be
+     * refused too, not slip through because each looked survivable alone. Same guard as the
+     * two-administrator case above — `PositionChange::wouldLeaveNoActiveAdministrator()` is a
+     * single query over the WHOLE batch regardless of its size — proven here at N=3 rather than
+     * only argued to generalise from N=2.
+     */
+    public function test_deactivating_three_remaining_administrators_is_refused_as_a_set(): void
+    {
+        $second = User::factory()->create(['position' => 0, 'full_name' => 'BBB Admin']);
+        $third = User::factory()->create(['position' => 0, 'full_name' => 'CCC Admin']);
+
+        $this->actingAs($this->admin)->post('/admin/people/bulk', [
+            'action' => 'set_active',
+            'active' => false,
+            'ids' => [$this->admin->person->id, $second->person->id, $third->person->id],
+        ])->assertSessionHasErrors('ids');
+
+        $this->assertTrue($this->admin->fresh()->active);
+        $this->assertTrue($second->fresh()->active);
+        $this->assertTrue($third->fresh()->active);
+        $this->assertTrue($this->admin->person->fresh()->active);
+        $this->assertTrue($second->person->fresh()->active);
+        $this->assertTrue($third->person->fresh()->active);
+    }
+
     public function test_deactivating_all_but_one_administrator_is_allowed(): void
     {
         $second = User::factory()->create(['position' => 0, 'full_name' => 'BBB Admin']);

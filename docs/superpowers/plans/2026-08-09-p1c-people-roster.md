@@ -1,3 +1,13 @@
+> **Both open questions are now DECIDED (2026-08-09), not defaults — do not revisit:**
+>
+> - **Roster import is CSV-only.** No spreadsheet package is added. Deviates from ST-04's
+>   letter; record it in the design doc's override table. The reader interface must stay shaped
+>   so an xlsx adapter could slot in behind it later without rework.
+> - **The invitation-lifetime setting lives behind `settings.manage`**, beside SMTP, VAPID and
+>   the operational-alert address. It is a credential-exposure parameter and belongs with the
+>   other security parameters, on one screen an administrator can review in a single pass.
+>   (That work is P1c-2; noted here so it is not re-litigated there.)
+
 > ## OWNER DECISIONS, 2026-08-09 — READER'S INDEX ONLY
 >
 > **Every decision below is already folded into the task text it governs.** This block is a

@@ -518,6 +518,50 @@ stale before the task began. **Assume this plan is wrong somewhere too**, and in
 `php artisan test` before touching any file at the start of each task and trust the measured baseline
 over this document's arithmetic.)*
 
+**2026-08-09, Task 1 — the plan's own Task 1 text contradicts the plan's own top-of-document OWNER
+DECISIONS block.** The binding block (very top of this document, "binding, and one of them changes
+sequencing") states plainly: *"`rota.manage` defaults to Administrator AND Chief Resident."* Task 1's
+step-by-step prose (Step 2's `ROLE_DEFAULTS` instruction, Step 4's spec-doc wording, and — most
+concretely — the supplied `RotaAccessTest` snippet's `test_only_an_administrator_holds_rota_manage_by_
+default`, which asserts position 5 does NOT hold it) all still say Administrator-only, matching the
+stale "READER'S INDEX ONLY" block's decision 6, which was never updated to match the binding block
+above it. This is exactly the failure mode the reader's-index block itself warns about ("three times
+... an implementer was instructed by task text to build the thing the decision had forbidden"), just
+not caught by the block's own author this time. Resolved per the binding decision, not the task text:
+`rota.manage` seeded to positions 0 AND 5 in `AccessControlSeeder::ROLE_DEFAULTS`; `RotaAccessTest`'s
+test renamed to `test_only_an_administrator_and_chief_resident_hold_rota_manage_by_default` and its
+assertion for position 5 flipped to `assertTrue`; `AccessControlParityTest::expectedByPosition()`
+updated to add `rota.manage` to position 5's expected set as well as the `$adminOnly` array (position
+0 already picks it up from `$adminOnly`). `docs/spec/08-foundation.md`'s role-defaults sentence
+rewritten to say "Administrator and Chief Resident" rather than "Administrator-only". `rota.view` was
+already correctly specified as every-position in both the binding block and the task text — no
+conflict there.
+
+**2026-08-09, Task 2 — `Calendar::settings()`'s existing `weekend_days` fallback used `?:` (a falsy
+check), which silently rewrites an explicit empty `weekend_days` array to the `[5,6]` default before
+`weekStartIsoDay()` ever sees it.** The plan's own test (`test_the_week_starts_the_day_after_the_last_
+configured_weekend_day`'s fourth case, "no weekend configured falls back to Monday") sets
+`weekend_days => []` and expects `weekStartIsoDay()` to return `1`; running it first (per this plan's
+own convention) returned `7` instead, because `settings()` had already substituted `[5,6]` for the
+empty array before the method's own defensive `$weekend === []` branch could ever run — making that
+branch dead code unreachable through the public `weekendDays()` API. Confirmed this is unreachable in
+production through normal use (`CalendarSettingsTest::test_weekend_days_rejects_an_empty_list` already
+refuses an empty list at the form), so the fix is purely about the fallback checking the wrong
+condition: changed `$institution?->weekend_days ?: self::DEFAULT_WEEKEND` to a null check
+(`$institution?->weekend_days === null ? self::DEFAULT_WEEKEND : array_map('intval', ...)`), which
+still defaults correctly when there is no institution row or the column is genuinely `NULL`, but now
+respects an explicit `[]` as the real (if unusual) configuration it is. Full suite and every
+Calendar-adjacent test file (`CalendarSettingsTest`, `InstitutionCalendarSettingsTest`,
+`HolidayCrudTest`, `HolidayTest`, `GoldenFixtureTest`, `CalendarIsTheOnlyConverterTest`) stay green
+after the change — nothing else relied on the old (incorrect) falsy-fallback behaviour.
+
+**2026-08-09, Task 4 — the plan's stated expected total after Task 4 is arithmetically stale by
+one.** The plan says "Expected: `1083 → 1094` (9 new `AssignmentIntegrityTest` + 2 replacing 1 in
+`PeriodGenerationScreenTest`, so +1 there)." 9 + 1 = 10, not 11, so the correct total is `1093`, which
+is what the measured run produced. Consistent with P1c's four recorded instances of the same class of
+staleness — trusting the measured baseline over the document's arithmetic, per this section's own
+standing instruction.
+
 ---
 
 ## Conventions every task follows

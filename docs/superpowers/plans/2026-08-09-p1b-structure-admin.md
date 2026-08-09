@@ -471,6 +471,23 @@ text.
 no JS test). `npm run build`, `CompiledCssIsLightOnlyTest` and the client-side-date-math guards
 green.
 
+**2026-08-09, Task 6 — built narrower than the plan's own Task 6 text, per OWNER DECISION A at
+the top of this plan.** The plan's Task 6 text (written before Decision A was folded in) asks
+for a `terminal` column, `Level::nextAfter()` as "the one definition of advance one level", and
+a `LevelLadderTest` that pins both. Decision A rejects the inference outright: a wrong
+terminal marker fails silently in two directions — an unmarked top level lets a cohort advance
+into a level that does not exist, and a wrongly-marked middle level graduates a cohort a year
+early — and removing the inference removes the whole failure class. Built instead: `levels`
+gains `external` only (migration renamed from the plan's
+`2026_08_13_120002_add_external_and_terminal_to_levels` to
+`2026_08_13_120002_add_external_to_levels`, same slot in the sequence — `2026_08_13_120001` was
+already taken by Task 1), `Level::scopeInternal()` (the levels a P1c promotion picker offers),
+and no `nextAfter()` method at all. `LevelLadderTest` replaces the plan's tie-break/terminal
+cases with `test_there_is_no_terminal_column_and_no_next_after_inference`, a guard that pins
+Decision A itself so it cannot silently regress if a later plan reaches for the same inference.
+`php artisan test`: 798 → 803 (5 new). `npm test`: unchanged (Task 6 touches no JS). `npm run
+build` and the full suite green.
+
 ---
 
 ## Conventions every task follows
@@ -2377,7 +2394,7 @@ marker** — *"without one, LV-03 has no way to know who graduates"*. Both are a
 must land **before the first promotion**, which is P1c task 8. This is the last plan that can add
 them cheaply.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/Feature/Identity/LevelLadderTest.php`. Cover:
 
@@ -2393,7 +2410,7 @@ Create `tests/Feature/Identity/LevelLadderTest.php`. Cover:
 - two levels sharing a `display_order` is not a crash — `nextAfter()` breaks the tie by `id`,
   deterministically, and a test pins which one it picks.
 
-- [ ] **Step 2: Run it and watch it go red**
+- [x] **Step 2: Run it and watch it go red**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
@@ -2402,7 +2419,7 @@ php artisan test --filter LevelLadderTest 2>&1 | tail -15
 
 Expected: FAIL — `table levels has no column named external`.
 
-- [ ] **Step 3: The migration**
+- [x] **Step 3: The migration**
 
 ```php
 <?php
@@ -2452,7 +2469,7 @@ return new class extends Migration
 };
 ```
 
-- [ ] **Step 4: Model, scopes and the one promotion predicate**
+- [x] **Step 4: Model, scopes and the one promotion predicate** — AMENDED, see execution note below: only `external` and `scopeInternal()` were built. `terminal` and `Level::nextAfter()` were dropped per Owner Decision A.
 
 Extend `$fillable` with `'external', 'terminal'`, add both to `casts()` as `'boolean'`, and add:
 
@@ -2497,7 +2514,7 @@ Extend `$fillable` with `'external', 'terminal'`, add both to `casts()` as `'boo
 
 Add `external` and `terminal` (both `false`) to `LevelFactory`'s definition.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 ```bash
 export PATH="/c/Users/ahmed/AppData/Local/php84:/c/Users/ahmed/AppData/Local/composer-bin:$PATH"
@@ -2511,7 +2528,7 @@ php artisan test 2>&1 | tail -3
 
 ```bash
 git add app/ database/ tests/
-git commit -m "test: a level knows whether it is the last one"
+git commit -m "test: a level knows external from internal, and stops there"
 ```
 
 ---

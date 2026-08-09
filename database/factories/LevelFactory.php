@@ -23,6 +23,7 @@ class LevelFactory extends Factory
             'name' => fake()->words(2, true),
             'display_order' => 1000,
             'active' => true,
+            'external' => false,
         ];
     }
 

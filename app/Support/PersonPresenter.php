@@ -40,6 +40,16 @@ final class PersonPresenter
             // `has_account` is set by the caller's withExists() alias; a per-row hasAccount()
             // call would be one EXISTS query per person.
             'has_account' => (bool) ($person->has_account ?? $person->hasAccount()),
+            // UNCONDITIONAL, unlike `phone`/`notes`/`constraints` below — a deliberate decision
+            // (review minor 10), not an oversight. It is safe TODAY only because every current
+            // caller of `PersonPresenter::one()`/`many()` sits behind `cap:people.manage`
+            // (`PersonController`, `RosterImportController` — grep callers before trusting this
+            // comment), the SAME capability `PersonPolicy::viewContact()` already grants phone
+            // visibility to unconditionally, so gating `email` the same way as `phone` would be a
+            // no-op today. It stops being a no-op the day a consumer with a NARROWER capability
+            // calls this — P1d's rota grid is the named future case — at which point `email`
+            // needs `$viewer->can('viewContact', $person)` too, matching `phone` exactly, rather
+            // than being copied in ungated because "that's how it already was".
             'email' => $person->email,
             'joined_at' => $person->joined_at === null ? null : Calendar::ymd($person->joined_at),
         ];

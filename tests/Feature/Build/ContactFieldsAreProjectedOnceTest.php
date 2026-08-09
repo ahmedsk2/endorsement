@@ -18,6 +18,10 @@ use Tests\TestCase;
  * user, and this test is what stops a second one appearing. Same species as
  * CalendarIsTheOnlyConverterTest and InstitutionProvenanceTest — conventions decay, tests do not.
  *
+ * `constraints` (review minor 9) is watched alongside `phone`/`notes`: `PersonPresenter` gates it
+ * behind the SAME `viewNotes` ability as `notes` (both are content a supervisor wrote about a
+ * person, not contact detail — but the presenter is still the one place either may be read).
+ *
  * Scanned: app/ + database/ + routes/. NOT database/factories/ — a factory populating a fixture
  * phone number is not a disclosure surface.
  */
@@ -46,14 +50,20 @@ class ContactFieldsAreProjectedOnceTest extends TestCase
         // model column directly".
         'app/Http/Controllers/Admin/PersonController.php',
         // P1c Task 12 (ST-04): writes `phone` from a spreadsheet column onto the created/updated
-        // Person — a WRITE, never a render. This importer builds no Inertia props at all; the
-        // preview/result the screen shows come from its own row-report arrays, not from
-        // PersonPresenter, so contact visibility (Decision B) is not in play here the way it is
-        // for a screen that displays a roster.
+        // Person. Review minor 8 corrected this entry — it previously claimed "builds no Inertia
+        // props at all", which is false: `analyseRow()`'s `values['phone']` and `diff()`'s
+        // `changes['phone']` ARE flashed back to the operator, via `roster_preview` /
+        // `roster_result`, and Inertia turns a flash into a prop on the next render same as any
+        // other. What actually keeps this safe is narrower than "no props": the row-report is
+        // content-blind (unlike PersonPresenter, it does not consult `PersonPolicy::viewContact`)
+        // and the whole screen sits behind `cap:people.manage` — the SAME capability
+        // `PersonPolicy::viewContact()` grants phone visibility to unconditionally. No disclosure
+        // results TODAY, but a future reader relying on "no props at all" would be relying on
+        // something false; this is a different, ungated shape, not an absent one.
         'app/Support/Roster/RosterImport.php',
     ];
 
-    private const NEEDLES = ['->phone', '->notes', "'phone'", "'notes'"];
+    private const NEEDLES = ['->phone', '->notes', "'phone'", "'notes'", '->constraints', "'constraints'"];
 
     public function test_only_the_presenter_reads_a_persons_contact_fields(): void
     {

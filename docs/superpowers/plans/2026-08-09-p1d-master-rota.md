@@ -747,6 +747,45 @@ did not exist would itself have been exactly the kind of false claim this task w
 `docs/spec/08-foundation.md` was deliberately left untouched: it is not in Task 12's Files list,
 and `RotaAccessTest`'s existing assertions against it (added in Task 1) already cover its content.
 
+**2026-08-10, pre-merge review — four findings, one of them a real dead end this plan's own
+enumeration never considered.** The deactivated person was the finding that mattered: people are
+deactivated, never deleted (standing owner ruling), so "assigned, then deactivated" is a state the
+system reaches on its own, and it had no exit in EITHER direction. `RotaGrid::forYear()` built rows
+from `Person::query()->active()`, so the row vanished; `RotaCellRequest` applied the pickers'
+active-exists predicate to the DELETE route as well as the two write routes, so the span could not
+be removed by id either. The assignment then blocked `PeriodController::destroy()` permanently — and
+with it Decision D's unlock of `period_type`/`academic_year_start`, whose refusal message and
+`docs/RUNBOOK-DEPLOY.md` both tell the operator to "clear the rota for that year first (Master
+Rota)". Both documents were describing an impossible instruction, and the only remedy left was DB
+surgery, which CLAUDE.md reserves for the owner. Resolved by separating the two halves of
+offer/write parity — it governs what may be CREATED, not what may be REMOVED: set/split keep the
+strict predicate, clear takes a bare `Rule::exists('people', 'id')` (soft-deleted included, since a
+retired person's spans wedge the year identically) and `MasterRotaController::clearCell()` resolves
+that person `withTrashed()`, which the review's own prescription had missed — a bare exists accepts
+a soft-deleted id that `findOrFail()` under the SoftDeletes global scope then 404s on, so fixing
+only the FormRequest would have left the retired half of the case still wedged. `RotaGrid` unions
+in anybody holding a span in the year who is off the active roster, flags the row `stale`, and
+`MasterRota.vue` renders it read-only except for Clear in BOTH markups. One added query; the span,
+level and vacation queries all take the COMBINED person set.
+
+Two further notes worth keeping. **The query-budget test was measured on an empty grid** — 60
+people, 13 periods, zero assignments, zero vacations, zero promotions — so `assertLessThan(20)`
+only ever proved the empty case, while every N+1 the class docblock warns about is per-span,
+per-vacation or per-cell-with-data. It now seeds 1170 spans, 120 vacations, 30 mid-year promotions
+and **ten** stale people before measuring. Ten, not one, and this is the part that had to be found
+empirically: a union written as one query per stale person costs exactly one query when there is
+exactly one stale person, so the single fixture the review asked for could not have told the two
+implementations apart. Verified by writing that N+1 and watching the test go red at 25 queries
+before restoring the union, which measures **16** — the same figure the empty year produced, which
+is the whole point of the bound. And `MasterRotaAssignment::booted()` called `Calendar::ymd()` on
+both bounds with no null check: unreachable today, but a `TypeError` is neither `RuntimeException`
+nor `InvalidArgumentException`, so the controller's catches would have let it through as the raw
+500 the guard's contract says never happens. Separately, ruling 21 still said the department
+contact setting governs `phone` alone; `email` joined it in Task 7, so the ruling, both docblocks
+and the predicate's own name (`membersMaySeePhone` → `membersMaySeeContact`) were corrected, and
+the toggle gained a test asserting both fields on both sides — which is what was missing when the
+ruling went stale in the first place.
+
 Verified against the tree; these are not preferences.
 
 - **TDD, strictly.** Write the test, run it, **watch it fail for the reason you expect** (not a typo,

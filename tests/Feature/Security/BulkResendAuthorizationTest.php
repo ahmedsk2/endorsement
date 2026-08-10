@@ -210,4 +210,101 @@ class BulkResendAuthorizationTest extends TestCase
             ->assertRedirect()
             ->assertSessionHas('invitation_bulk_preview');
     }
+
+    // --- F4: the pre-authorization pass must mirror the writer's supersede set ----------------
+
+    /**
+     * THE ADDRESS-CARRY-OVER FIXTURE.
+     *
+     * `InvitationIssue::liveFor()` matches `person_id = X OR member_email = Y`, because
+     * `invitations.member_email` is frozen at send time while `people.email` can be corrected
+     * afterwards (Decision G) — and both halves are load-bearing. `positionsToAuthorize()` matched
+     * `whereIn('person_id', …)` and nothing else, so an invitation reachable only along the ADDRESS
+     * axis was never pre-authorized. The writer's own `assertMayTarget()` then fired from INSIDE
+     * `BulkResend::commit()`'s transaction, and the `user_scope_denied` row it wrote rolled back
+     * with it: the refusal happened, and the trail did not record it (P1c-1 finding 12, reached
+     * through a different door).
+     *
+     * THE SEQUENCE IS ORDINARY, and the order of its last two steps is what makes the state
+     * reachable at all: `people.email` is UNIQUE, so two people can only be associated with one
+     * address across time, and `issue()` supersedes by address, so the collision has to arise AFTER
+     * both invitations exist. A Consultant is invited, moves mailbox, a Resident is invited at
+     * their own address, and the Resident's address is then corrected onto the freed one — a
+     * correction Decision G exists for.
+     */
+    public function test_an_invitation_reached_only_by_address_refuses_before_the_transaction(): void
+    {
+        $admin = $this->admin();
+
+        // A Consultant is invited at 3, at an address they later move off. The invitation keeps the
+        // address it was sent to — `member_email` is frozen at mint time.
+        $consultant = Person::factory()->create(['position' => 3, 'email' => 'carried@example.test']);
+        InvitationIssue::issue($this->requestAs($admin), $consultant, 3);
+        $consultant->update(['email' => 'moved.on@example.test']);
+
+        // A Resident is invited at 4, at their own address. Nothing collides yet.
+        $resident = Person::factory()->create(['position' => 4, 'email' => 'resident.first@example.test']);
+        InvitationIssue::issue($this->requestAs($admin), $resident, 4);
+
+        // The Resident's address is then corrected onto the freed mailbox.
+        $resident->update(['email' => 'carried@example.test']);
+
+        $ids = [(int) $resident->getKey()];
+
+        // The Consultant's link is still live, still addressed to `carried@example.test`, and a
+        // resend for the Resident would supersede it — reached along the ADDRESS axis alone,
+        // because its `person_id` names somebody else entirely.
+        $this->actingAs($this->chief())
+            ->post('/admin/invitations/bulk-resend', [
+                'person_ids' => $ids,
+                'digest' => BulkResend::plan($ids)['digest'],
+            ])
+            ->assertForbidden();
+
+        // The refusal is IN THE TRAIL — which is the half that used to roll back.
+        $this->assertDatabaseHas('audit_log', [
+            'action' => 'user_scope_denied',
+            'detail' => 'target_position=3',
+        ]);
+
+        // And nothing was written: no fresh row, and the Consultant's link survives untouched.
+        $this->assertSame(2, Invitation::count());
+        $this->assertNull(Invitation::where('position', 3)->value('revoked_at'));
+
+        // The same fact, stated at the pass itself: the position it missed is 3.
+        $this->assertSame([3, 4], BulkResend::positionsToAuthorize($ids));
+    }
+
+    /**
+     * The divergence runs BOTH ways. `positionsToAuthorize()` had no expiry filter while the writer
+     * has always had one, so an invitation that had merely aged out — a row the writer will not
+     * touch, will not revoke and will not authorize — refused a batch the operator was entitled to.
+     */
+    public function test_an_expired_higher_position_row_does_not_refuse_the_batch(): void
+    {
+        $admin = $this->admin();
+
+        $person = Person::factory()->create(['position' => 4, 'email' => 'aged.out@example.test']);
+
+        // Invited at 3 once; that link ages out.
+        InvitationIssue::issue($this->requestAs($admin), $person, 3);
+        Invitation::query()->where('person_id', $person->getKey())
+            ->update(['expires_at' => now()->subDay()]);
+
+        // Then invited at 4. The expired row is not superseded — it expired, nobody killed it.
+        InvitationIssue::issue($this->requestAs($admin), $person, 4);
+
+        $this->assertNull(Invitation::where('position', 3)->value('revoked_at'));
+        $this->assertSame([4], BulkResend::positionsToAuthorize([(int) $person->getKey()]));
+
+        $ids = [(int) $person->getKey()];
+
+        $this->actingAs($this->chief())
+            ->post('/admin/invitations/bulk-resend', [
+                'person_ids' => $ids,
+                'digest' => BulkResend::plan($ids)['digest'],
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('invitation_bulk_report');
+    }
 }

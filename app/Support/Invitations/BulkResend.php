@@ -257,8 +257,11 @@ final class BulkResend
      * `InvitationIssue::issue()` itself authorizes against (F1), because a redeemed account resolves
      * its capabilities from the roster row and not from the invitation.
      *
-     * The second half is the SUPERSEDE set — every live invitation the operation will revoke on its
-     * way to minting a replacement, not merely the latest one per person.
+     * The second half is the SUPERSEDE set, taken from the WRITER'S OWN DEFINITION of it
+     * (`InvitationIssue::supersededBy()`) rather than from a second query shaped like it (review
+     * finding F4). The two used to diverge in both directions: this one matched `person_id` alone
+     * and had no expiry filter, while the writer matches `person_id OR member_email` AND the clock.
+     * See that method for what each half of the disagreement cost.
      *
      * WIDER THAN THE ACTED-ON SET ON PURPOSE. `issue()` asserts over every row it is about to
      * supersede, and if one of those asserts fired from inside `commit()`'s transaction the
@@ -284,14 +287,8 @@ final class BulkResend
 
         $positions = $people->map(static fn (Person $p): int => (int) $p->position)->all();
 
-        $superseded = Invitation::query()
-            ->whereIn('person_id', $ids)
-            ->whereNull('accepted_at')
-            ->whereNull('revoked_at')
-            ->pluck('position');
-
-        foreach ($superseded as $position) {
-            $positions[] = (int) $position;
+        foreach (InvitationIssue::supersededBy($people) as $invitation) {
+            $positions[] = (int) $invitation->position;
         }
 
         $positions = array_values(array_unique($positions));

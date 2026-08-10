@@ -97,7 +97,7 @@ final class InvitationIssue
         // trail (P1c-1 finding 12).
         ManagerScope::assertMayTarget($request, (int) $person->position);
 
-        $superseded = self::liveFor($person, $email);
+        $superseded = self::supersededBy([$person]);
 
         foreach ($superseded as $old) {
             ManagerScope::assertMayTarget($request, (int) $old->position);
@@ -129,7 +129,23 @@ final class InvitationIssue
     }
 
     /**
-     * Every invitation that would still redeem for this person — the set a new one must kill.
+     * Every invitation that would still redeem for these people — **the set this operation will
+     * supersede**, and therefore the set an authorization pass must approve before any of it is
+     * written.
+     *
+     * ONE DEFINITION, TWO CALLERS (review finding F4). `issue()` below uses it to know what to
+     * revoke; `BulkResend::positionsToAuthorize()` uses it to know what the controller must
+     * authorize BEFORE `commit()` opens its transaction. Those two used to be separate queries and
+     * they diverged in both directions, each way with its own failure:
+     *
+     *  - The pre-authorization pass matched `whereIn('person_id', …)` only, so an invitation
+     *    reachable along the ADDRESS axis was never authorized up front. The assertion inside this
+     *    class then fired from INSIDE the transaction, and the `user_scope_denied` row it wrote
+     *    rolled back with the abort — the refusal happened and the trail did not record it, which
+     *    is P1c-1 finding 12 reached through a different door.
+     *  - The pre-authorization pass had no expiry filter, so a row that had merely aged out — one
+     *    this method will not touch, will not revoke and does not need approving — refused a batch
+     *    the operator was entitled to run.
      *
      * MATCHED BY PERSON **OR** ADDRESS, and both halves are load-bearing.
      *
@@ -146,14 +162,43 @@ final class InvitationIssue
      * `InvitationController::revoke()`, which has always treated a spent or expired row as a no-op.
      * The three conditions here are `Invitation::isOpen()`, which is what "one live link" means.
      *
+     * SET-WISE, IN ONE QUERY, whatever the selection size — a bulk caller asking this per person
+     * would pay fifty queries for a cohort of fifty, and `BulkResend` is built around a query cost
+     * that does not move with the size of the department.
+     *
+     * @param  iterable<Person>  $people
      * @return Collection<int, Invitation>
      */
-    private static function liveFor(Person $person, string $email): Collection
+    public static function supersededBy(iterable $people): Collection
     {
+        $ids = [];
+        $emails = [];
+
+        foreach ($people as $person) {
+            $ids[] = (int) $person->getKey();
+
+            // Normalised the same way `issue()` normalises before minting, because that is the form
+            // the address was frozen into. A person with no address contributes no address axis —
+            // never a `null` in the IN list, which would match nothing and cost a bound parameter.
+            $email = Person::normalizeEmail($person->email);
+
+            if ($email !== null) {
+                $emails[] = $email;
+            }
+        }
+
+        if ($ids === []) {
+            return new Collection;
+        }
+
         return Invitation::query()
-            ->where(fn ($q) => $q
-                ->where('person_id', $person->getKey())
-                ->orWhere('member_email', $email))
+            ->where(function ($q) use ($ids, $emails) {
+                $q->whereIn('person_id', $ids);
+
+                if ($emails !== []) {
+                    $q->orWhereIn('member_email', array_values(array_unique($emails)));
+                }
+            })
             ->whereNull('accepted_at')
             ->whereNull('revoked_at')
             ->where('expires_at', '>', now())

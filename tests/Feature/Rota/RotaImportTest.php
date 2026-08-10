@@ -31,9 +31,10 @@ use Tests\TestCase;
  * this repository, in `tests/fixtures/rota/` or anywhere else. Every file there exercises a
  * FAILURE SHAPE — a handle on no roster, a person off it, a retired unit, a year with no periods,
  * a span escaping its period, two spans on one day, a blank handle, Arabic names, a neutralised
- * formula cell, a duplicated leave row, a header set that is not the export's. They are not a
- * department, and the first import against a real staff list is the owner's to run against
- * production having previewed it first.
+ * formula cell, a duplicated leave row, a header set that is not the export's, two spellings of one
+ * period position, and a mis-cased handle above a correct one. They are not a department, and the
+ * first import against a real staff list is the owner's to run against production having previewed
+ * it first.
  *
  * THE UNIT OF OUTCOME IS THE CELL, NOT THE LINE (finding 12). `RosterImport` answers one outcome
  * per line because a roster row IS a person. A rota cell is a SET of spans and
@@ -319,6 +320,69 @@ class RotaImportTest extends TestCase
         $this->assertNotSame([], $result['file_errors']);
         $this->assertSame(0, $result['applied']);
         $this->assertSame(0, MasterRotaAssignment::query()->count());
+    }
+
+    // --- one resolved cell is ONE cell -----------------------------------------------------
+
+    /**
+     * THE CELL KEY MUST BE WHAT THE CELL RESOLVES TO, not how the file spelled it.
+     *
+     * Built from raw text, two spellings of one period position — `1` and `+1`, both of which
+     * `filter_var(..., FILTER_VALIDATE_INT)` reads as 1 — made TWO cells that resolve to the SAME
+     * (person, period). Each looked clean on its own, so the whole-cell overlap check never saw
+     * them together; both were applied; and `RotaAssignment::split()` REPLACES, so the second
+     * silently deleted the first. Two rows describing one day twice is the one state the overlap
+     * check exists to refuse, and it was invisible.
+     */
+    public function test_two_spellings_of_one_period_are_one_cell_and_their_overlap_is_caught(): void
+    {
+        $analysis = $this->preview('assignments-colliding-cells.csv');
+
+        $this->assertCount(1, $analysis['outcomes'],
+            'two spellings of one (person, period) must be ONE cell, or their overlap is never compared');
+
+        $outcome = $analysis['outcomes'][0];
+
+        $this->assertSame(RotaImport::ERROR, $outcome['outcome']);
+        $this->assertSame([2, 3], $outcome['lines'], 'the cell must carry both contributing lines');
+        $this->assertStringContainsString('same day', implode(' ', $outcome['errors']));
+
+        $result = $this->commit('assignments-colliding-cells.csv');
+
+        $this->assertSame(0, $result['applied']);
+        $this->assertSame(0, MasterRotaAssignment::query()->count(),
+            'one of these two spans was written and then silently replaced by the other');
+    }
+
+    /**
+     * THE MIRROR-IMAGE DEFECT OF THE SAME ROOT CAUSE, and the reason "normalise the key" alone was
+     * not the fix: the old key FOLDED CASE on the handle while `resolvePerson()` matched the raw
+     * text, so one key could hold two rows that resolve differently — and the cell took whichever
+     * spelling came FIRST. A file whose first row mis-cased the handle dragged the correctly-spelled
+     * row below it into the same skip.
+     *
+     * NOTE THE ENGINE DIVERGENCE (SQLite here, MySQL in production). `people.short_name` is compared
+     * case-INSENSITIVELY by MySQL's default collation and case-SENSITIVELY by SQLite, so on
+     * production both rows resolve to one person and merge into one cell (and their overlap, if any,
+     * is caught by the case above); here the mis-cased row resolves to nobody and is its own skip.
+     * Both are correct, and both are only possible because the key is now built from what the row
+     * RESOLVED TO — under the old key neither engine could tell these two rows apart.
+     */
+    public function test_a_row_that_resolves_to_nobody_is_not_merged_with_one_that_resolves(): void
+    {
+        $analysis = $this->preview('assignments-case-varying-handle.csv');
+
+        $this->assertCount(2, $analysis['outcomes'],
+            'a row resolving to nobody was merged into a cell that resolves to somebody');
+
+        $skipped = $analysis['outcomes'][0];
+        $this->assertSame(RotaImport::SKIP_UNKNOWN_PERSON, $skipped['outcome']);
+        $this->assertSame('Import.One', $skipped['short_name'], 'the skip must name the spelling that failed');
+
+        $created = $analysis['outcomes'][1];
+        $this->assertSame(RotaImport::CREATE, $created['outcome'],
+            'the correctly spelled row was dragged into the other row\'s skip');
+        $this->assertSame([3], $created['lines']);
     }
 
     // --- one analysis, one pin ------------------------------------------------------------

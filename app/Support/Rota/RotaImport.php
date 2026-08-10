@@ -59,6 +59,12 @@ use InvalidArgumentException;
  *     writes that are in fact one. The contributing line numbers travel on the outcome so the row
  *     that caused an answer can still be found in the file.
  *
+ *     **The cell is keyed on what a row RESOLVES TO**, not on how the file spelled it — see the
+ *     comment in `analyseAssignments()`. A key built from raw text was wrong in both directions at
+ *     once: two spellings of one period made two cells whose overlap was never compared (and
+ *     `split()` replaces, so the second silently deleted the first), while folding case on the
+ *     handle put two rows that resolve DIFFERENTLY under one key.
+ *
  *  3. **It never rediscovers a retired person.** `RosterImport` matches `withTrashed()` on purpose;
  *     rediscovering a soft-deleted person instead of duplicating them is its whole job. Here the
  *     roster is not the importer's business: a handle resolving to a deactivated or soft-deleted
@@ -394,6 +400,9 @@ final class RotaImport
 
         $cells = [];
         $line = 1;   // line 1 is the header row the reader already consumed
+        $people = [];
+        $periods = [];
+        $units = [];
 
         foreach ($reader->rows() as $raw) {
             $line++;
@@ -413,11 +422,29 @@ final class RotaImport
                 continue;
             }
 
-            // The cell key is the FILE's own notion of a cell, built before anything is resolved,
-            // so two lines group together whether or not their person and period exist. Case is
-            // folded on the two text parts only — `\x1f` (unit separator) joins them because it
-            // cannot occur in a handle or a year.
-            $key = mb_strtolower($handle)."\x1f".mb_strtolower($year)."\x1f".$position;
+            // IDENTITY IS RESOLVED PER ROW, BEFORE THE ROW IS GROUPED, because THE CELL KEY IS WHAT
+            // THE ROW RESOLVES TO — not how the file spelled it. Built from raw text, the key was
+            // wrong in both directions at once:
+            //
+            //  - Two spellings of one period (`1` and `+1`, both of which `filter_var()` reads as 1)
+            //    made TWO cells resolving to the SAME (person, period). Each looked clean alone, so
+            //    the whole-cell overlap check never compared them, both were applied, and
+            //    `split()` REPLACES — the second silently deleted the first.
+            //  - It FOLDED CASE on the handle while `resolvePerson()` matched the raw text, so one
+            //    key could hold two rows that resolve DIFFERENTLY, and the cell took whichever
+            //    spelling came first. On SQLite a mis-cased first row dragged the correctly-spelled
+            //    row below it into the same skip; on MySQL, whose default collation compares
+            //    `short_name` case-insensitively, both resolve to one person — which is precisely
+            //    the merge the id-keyed form now performs on both engines.
+            //
+            // A row resolving to nothing falls back to the raw triple, folded, so two rows naming
+            // the same non-existent handle are still one skip. `\x1f` (unit separator) joins the
+            // parts because it cannot occur in a handle, a year or an id.
+            [$person, $personProblem] = self::resolvePerson($handle, $people);
+            $period = self::resolvePeriod($year, $position, $periods);
+
+            $key = ($person !== null ? 'p'.$person->getKey() : 'h'.mb_strtolower($handle))
+                ."\x1f".($period !== null ? 'b'.$period->getKey() : 'y'.mb_strtolower($year).':'.$position);
 
             if (! isset($cells[$key])) {
                 $cells[$key] = [
@@ -427,6 +454,9 @@ final class RotaImport
                     'academic_year' => $year,
                     'period_position' => $position,
                     'period_label' => $field('period_label'),
+                    'person' => $person,
+                    'person_problem' => $personProblem,
+                    'period' => $period,
                     'raw' => [],
                 ];
             }
@@ -437,13 +467,10 @@ final class RotaImport
             ];
         }
 
-        $people = [];
-        $periods = [];
-        $units = [];
         $resolved = [];
 
         foreach ($cells as $cell) {
-            $resolved[] = self::resolveAssignmentCell($cell, $people, $periods, $units);
+            $resolved[] = self::resolveAssignmentCell($cell, $units);
         }
 
         $current = self::currentSpans($resolved);
@@ -465,41 +492,44 @@ final class RotaImport
     }
 
     /**
-     * Resolution only — no judgement. Every lookup is memoised across the file, so a year of one
-     * department's rota costs one query per DISTINCT handle, period and unit code rather than one
-     * per line.
+     * THE PERIOD, memoised across the file — one query per DISTINCT (year, position) pair rather
+     * than one per line. Resolution is by `(academic_year, position)` (finding 6,
+     * `periods_year_position_unique`), never by `label`: labels are administrator-editable text and
+     * two years can share one.
+     *
+     * The MEMO key normalises the position the way the lookup does, so `1` and `+1` share one entry
+     * — the same normalisation the cell key now depends on, written once here rather than twice.
+     *
+     * @param  array<string, Period|null>  $cache
+     */
+    private static function resolvePeriod(string $year, string $rawPosition, array &$cache): ?Period
+    {
+        $position = filter_var($rawPosition, FILTER_VALIDATE_INT);
+        $key = mb_strtolower($year)."\x1f".($position === false ? '?'.$rawPosition : (string) $position);
+
+        if (! array_key_exists($key, $cache)) {
+            $cache[$key] = $position === false || $year === ''
+                ? null
+                : Period::query()->forYear($year)->where('position', $position)->first();
+        }
+
+        return $cache[$key];
+    }
+
+    /**
+     * The SPANS, and the judgement about them. The person and the period arrived resolved, on the
+     * cell, because the cell KEY is built from them (see `analyseAssignments()`); only the unit
+     * lookup happens here, memoised across the file the same way.
      *
      * @param  array<string, mixed>  $cell
-     * @param  array<string, Person|null>  $people
-     * @param  array<string, Period|null>  $periods
      * @param  array<string, Unit|null>  $units
      * @return array<string, mixed>
      */
-    private static function resolveAssignmentCell(array $cell, array &$people, array &$periods, array &$units): array
+    private static function resolveAssignmentCell(array $cell, array &$units): array
     {
-        $cell['person'] = null;
-        $cell['person_problem'] = null;
-        $cell['period'] = null;
         $cell['unit_problem'] = null;
         $cell['errors'] = [];
         $cell['spans'] = [];
-
-        [$cell['person'], $cell['person_problem']] = self::resolvePerson($cell['short_name'], $people);
-
-        $periodKey = mb_strtolower($cell['academic_year'])."\x1f".$cell['period_position'];
-
-        if (! array_key_exists($periodKey, $periods)) {
-            $position = filter_var($cell['period_position'], FILTER_VALIDATE_INT);
-
-            $periods[$periodKey] = $position === false || $cell['academic_year'] === ''
-                ? null
-                : Period::query()
-                    ->forYear($cell['academic_year'])
-                    ->where('position', $position)
-                    ->first();
-        }
-
-        $cell['period'] = $periods[$periodKey];
 
         foreach ($cell['raw'] as $row) {
             $line = $row['line'];

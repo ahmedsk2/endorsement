@@ -3,27 +3,39 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Mail\InvitationMail;
 use App\Models\AuditLog;
 use App\Models\Invitation;
 use App\Models\PendingRegistration;
 use App\Models\Person;
 use App\Models\User;
+use App\Support\Invitations\InvitationIssue;
 use App\Support\Invitations\InvitationStatus;
 use App\Support\ManagerScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /**
- * Issue and revoke invitations — the only way an account is now created.
+ * Issue, resend and revoke invitations — the only way an account is now created.
  *
  * The positions offered here are the ones self-registration used to offer, for the same
  * reasons: 0 (Administrator) is never granted this way, 1 (Nurse) is retired, and 5 (Chief
  * Resident) is a promotion an Administrator applies to an existing account rather than a
  * role anyone is created into. Widening this list would make an invitation a route to
  * privilege, which is exactly what it must not be.
+ *
+ * INVITE AND RESEND ARE ONE ACT REACHED BY TWO PATHS, and they share a writer for that reason:
+ * `App\Support\Invitations\InvitationIssue` mints the token and kills every live link the person
+ * holds, in one transaction, with the whole superseded set authorized first. What differs between
+ * the two endpoints is only where the person and the position come from — a validated address and
+ * a chosen role on one, a bound invitation row on the other. Nothing else, deliberately: a resend
+ * that could reach a person, an address or a role the invite path would refuse is a second, wider
+ * door onto a bearer credential.
  */
 class InvitationController extends Controller
 {
@@ -32,6 +44,11 @@ class InvitationController extends Controller
         3 => 'Consultant',
         4 => 'Resident',
     ];
+
+    /** Why an invitation was minted — audited, never stored in a column of its own. */
+    private const INVITED = 'invited';
+
+    private const RESENT = 'resent';
 
     public function store(Request $request): RedirectResponse
     {
@@ -55,7 +72,10 @@ class InvitationController extends Controller
         // Resident may invite Residents, nobody else.
         ManagerScope::assertMayTarget($request, (int) $data['position']);
 
-        $email = Str::lower(trim($data['member_email']));
+        // ONE definition of normalising an address (`Person::normalizeEmail()`), not a third
+        // inline copy of the same expression — case and whitespace differ between a hospital
+        // spreadsheet, an invitation form and a self-registration, and matching must not.
+        $email = (string) Person::normalizeEmail($data['member_email']);
 
         // Match onto the roster before creating anything (design §5.2.4). An imported/invited
         // person who is invited again must be the SAME person, not a second row with the same
@@ -70,71 +90,150 @@ class InvitationController extends Controller
             'active' => true,
         ]);
 
+        // Re-inviting someone who left is a reactivation, never a second human. This is the ONE
+        // path that restores a roster row, and it is deliberately not on the resend path.
         if ($person->trashed()) {
             $person->restore();
         }
 
-        // One open invitation per address. Without this, "resend" quietly multiplies live
-        // credentials for the same person and revoking one leaves the others working.
-        //
-        // Each superseded invitation is authorised INDIVIDUALLY and audited. A blanket
-        // update was neither: a Chief Resident inviting an address that already held a
-        // Consultant invitation would have cancelled it — an action they cannot perform
-        // through the revoke route — and nothing would have recorded that it happened.
-        $superseded = Invitation::query()
-            ->where('member_email', $email)
-            ->whereNull('accepted_at')
-            ->whereNull('revoked_at')
-            ->get();
+        $result = InvitationIssue::issue($request, $person, (int) $data['position']);
 
-        foreach ($superseded as $old) {
-            ManagerScope::assertMayTarget($request, (int) $old->position);
+        $this->auditIssue($request, $result, $person, self::INVITED);
+
+        return $this->deliver($result, $person);
+    }
+
+    /**
+     * AC-02's *"resendable singly"* — the same mint, reached from an existing row.
+     *
+     * The order below is authorize, then refuse, then write. Authorization comes FIRST because the
+     * invitation is route-bound: everything after it discloses something about a specific row
+     * (whether it was claimed, whether the person holds an account), and a viewer outside that
+     * person's tier learns none of it.
+     */
+    public function resend(Request $request, Invitation $invitation): RedirectResponse
+    {
+        // The invitation's OWN position — never a request-supplied one. A resend cannot promote.
+        ManagerScope::assertMayTarget($request, (int) $invitation->position);
+
+        $state = InvitationStatus::stateOf($invitation);
+
+        // Resend acts on a link that is live or has aged out. Anything else names the endpoint
+        // that does own it, rather than quietly doing something adjacent:
+        //
+        //  - CLAIMED: the account exists. There is nothing to resend, and minting another link to
+        //    a claimed address is a second credential for an account that already has an owner.
+        //  - REVOKED: revoking is a deliberate administrator act meaning "this link must not
+        //    work". Resending from that row would undo it through a shorter path with a different
+        //    name. Re-inviting is still available and is a different endpoint entirely
+        //    (`admin.invitations.store`), which is what the People screen offers for this state.
+        if (! in_array($state, [InvitationStatus::OPEN, InvitationStatus::EXPIRED], true)) {
+            throw ValidationException::withMessages([
+                'invitation' => $state === InvitationStatus::CLAIMED
+                    ? 'That invitation has already been claimed — there is nothing to resend.'
+                    : 'That invitation was revoked. Send a new invitation instead.',
+            ]);
         }
 
-        foreach ($superseded as $old) {
-            $old->forceFill([
-                'revoked_at' => now(),
-                'revoked_by_user_id' => $request->user()?->getKey(),
-            ])->save();
+        // `member_email` is frozen at send time and `people.email` can be corrected afterwards
+        // (Decision G), so the ROSTER row is what a resend is addressed to. The relation is tried
+        // first and the address second: a row minted before P0c carries no `person_id` at all.
+        $person = $invitation->person ?? Person::matchByEmail($invitation->member_email);
 
+        if ($person === null || $person->trashed() || Person::normalizeEmail($person->email) === null) {
+            throw ValidationException::withMessages([
+                'invitation' => 'That invitation is not linked to a current roster entry with an email address. Send a new invitation instead.',
+            ]);
+        }
+
+        // The ONE predicate for "already an account" (`Person::accountEmailRule()`), applied here
+        // exactly as the invite path applies it — not a second `hasAccount()` check written out
+        // again beside it. A person who claimed an account through some other door since this row
+        // was minted is refused with the same message and the same key, and nothing is written.
+        Validator::make(
+            ['member_email' => $person->email],
+            ['member_email' => [Person::accountEmailRule()]],
+        )->validate();
+
+        $result = InvitationIssue::issue($request, $person, (int) $invitation->position);
+
+        $this->auditIssue($request, $result, $person, self::RESENT);
+
+        return $this->deliver($result, $person);
+    }
+
+    /**
+     * The audit pair for one mint: what died, and what replaced it. Ids and counts only.
+     *
+     * AFTER the write, never inside it — `AuditLog::record()` takes `lockForUpdate` on the chain
+     * tail, and holding that inside a row transaction serialises the whole chain for its duration
+     * (P1c-1's post-merge finding 6, which cost a false ops alert).
+     *
+     * @param  array{invitation: Invitation, link: string, superseded: list<int>}  $result
+     */
+    private function auditIssue(Request $request, array $result, Person $person, string $reason): void
+    {
+        foreach ($result['superseded'] as $id) {
             AuditLog::record(
                 'invitation_revoked',
-                'invitation='.$old->id.' reason=superseded',
+                // Each row's `reason` explains that row's own end: `superseded` when a fresh
+                // invitation replaced it, `resent` when the same invitation was sent again.
+                'invitation='.$id.' reason='.($reason === self::RESENT ? self::RESENT : 'superseded'),
                 $request->user()?->getKey(),
                 $request->ip(),
             );
         }
 
-        [$invitation, $token] = Invitation::issue($email, (int) $data['position'], $request->user(), $person);
-
         AuditLog::record(
             'invitation_issued',
-            // An id, never an address — the person this invitation names.
-            'invitation='.$invitation->id.' position='.$invitation->position.' person='.$person->id,
+            // Ids, never an address — the person this invitation names.
+            'invitation='.$result['invitation']->getKey()
+                .' position='.$result['invitation']->position
+                .' person='.$person->getKey()
+                .' reason='.$reason,
             $request->user()?->getKey(),
             $request->ip(),
         );
+    }
 
-        $link = route('invitation.show', ['token' => $token]);
-
-        // Deliver it if mail is configured; otherwise the link below is the delivery. Never
-        // fail the invitation because the mailer is down — the inviter still holds a working
-        // link, and losing it silently would be worse than not sending.
+    /**
+     * Mail it if mail is configured; either way, hand the link back exactly once.
+     *
+     * NEVER FAIL THE INVITATION BECAUSE THE MAILER IS DOWN. The inviter still holds a working
+     * link, and losing it silently would be worse than not sending. That swallow is safe here and
+     * ONLY here: the single path has somewhere to surface the credential, which a bulk path
+     * mailing N people does not.
+     *
+     * The exception MESSAGE is deliberately not logged. Transport errors routinely quote the
+     * envelope recipient back ("... 550 5.1.1 <someone@hospital.example>"), and staff personal
+     * data is covered by the same rule as PHI — ids and field names in a log line, never an
+     * address. The class name plus the two ids is what a diagnosis actually needs; SMTP itself is
+     * proved by Settings → Send test email.
+     *
+     * @param  array{invitation: Invitation, link: string, superseded: list<int>}  $result
+     */
+    private function deliver(array $result, Person $person): RedirectResponse
+    {
         $mailed = false;
 
         if (config('mail.default') === 'smtp') {
             try {
-                Mail::to($email)->send(new \App\Mail\InvitationMail($link, $invitation->expires_at));
+                Mail::to((string) $person->email)
+                    ->send(new InvitationMail($result['link'], $result['invitation']->expires_at));
                 $mailed = true;
             } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('Invitation email could not be delivered: '.$e->getMessage());
+                Log::warning('Invitation email could not be delivered.', [
+                    'person' => $person->getKey(),
+                    'invitation' => $result['invitation']->getKey(),
+                    'exception' => $e::class,
+                ]);
             }
         }
 
         // The token is returned to the INVITER exactly once and is never stored in
         // plaintext, never audited, and never logged. Flashed rather than redirected into
         // the URL, because a bearer credential in a query string lands in history and logs.
-        return back()->with('invitation_link', $link)->with(
+        return back()->with('invitation_link', $result['link'])->with(
             'status',
             $mailed
                 ? 'Invitation sent. The link below works too, and it is shown only once.'

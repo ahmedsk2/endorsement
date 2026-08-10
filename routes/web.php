@@ -129,6 +129,11 @@ Route::middleware('auth')
         // in-controller via ManagerScope: a Chief Resident may invite Residents alone.
         Route::post('/invitations', [\App\Http\Controllers\Admin\InvitationController::class, 'store'])
             ->name('invitations.store');
+        // AC-02's "resendable singly". A POST, not a PATCH: it does not amend the bound row, it
+        // mints a NEW credential and revokes that one. The gate is the same in-controller
+        // ManagerScope check, applied to the bound invitation's own position.
+        Route::post('/invitations/{invitation}/resend', [\App\Http\Controllers\Admin\InvitationController::class, 'resend'])
+            ->name('invitations.resend');
         Route::delete('/invitations/{invitation}', [\App\Http\Controllers\Admin\InvitationController::class, 'revoke'])
             ->name('invitations.revoke');
     });

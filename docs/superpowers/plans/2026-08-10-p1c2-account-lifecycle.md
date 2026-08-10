@@ -851,6 +851,76 @@ table, which this task did not open.
 skipped. Vitest 187, `npm run build` green, `npm run test:e2e` 22 passed. The People screen costs
 **7 queries at any roster size**.
 
+**Task 3 (2026-08-10) — Decision C's claim that "the supersede loop only touches invitations that
+are still open" is FALSE against the tree, and the test written to pin it went red on its first
+run.** `InvitationController::store():84-88` filtered on `accepted_at` and `revoked_at` and **not on
+the clock**, so re-inviting somebody also stamped `revoked_at` and `revoked_by_user_id` onto an
+invitation that had merely aged out — rewriting *"this expired"* as *"a person killed this"* in the
+very projection Task 2 had just shipped, and disagreeing with `revoke()`, which has always treated a
+spent or expired row as a no-op. The predicate now carries `where('expires_at','>',now())`, which is
+exactly `Invitation::isOpen()`. This was caught only because
+`test_an_expired_unclaimed_invitation_does_not_block_re_inviting_the_same_person` asserts the
+expired row is **untouched**, not merely that the new invite succeeds.
+
+**Task 3 — the superseded set is matched by person OR address, not address alone.** Decision G says
+`invitations.member_email` is frozen at send time while `people.email` can be corrected afterwards;
+those two facts together mean an address-only supersede leaves a live link addressed to the OLD
+mailbox every time somebody's address is fixed and their invitation resent — which is one of the
+cases a resend is most often reaching for. `InvitationIssue::liveFor()` matches
+`person_id = X OR member_email = Y`. Strictly wider than what it replaced, and the invariant it
+enforces is per-PERSON, which is what a bearer credential to an account actually is.
+
+**Task 3 — `InvitationIssue::issue()`'s signature differs from Decision C's in three ways, each
+forced.** (a) It takes the `Request`, not a `User $actor`: `ManagerScope::assertMayTarget()` needs
+one, and the actor comes off it — two parameters collapsed into the one both uses need. (b) It has
+no `$reason` parameter. Decision C both gives it one *and* says the writer does not audit; a
+parameter declared and never read is precisely finding 4's defect (`openInvitations()`'s unused
+`?User $viewer`), so the reason stays with the caller that writes the audit. (c) `superseded` is
+returned as `list<int>`, not `?int` — the pass genuinely can revoke more than one row, and a
+singular return would silently drop the rest of them out of the trail.
+
+**Task 3 — Decision C's "the writer resolves-or-creates the person" contradicts its own signature,
+and the signature won.** A method taking `Person $person` cannot resolve one. Resolve-or-create (and
+the `trashed()` restore with it) stays in `store()`, which is the only path that can legitimately
+create a roster row from an address nobody knows. `resend()` resolves the person from the
+invitation (`person` relation, falling back to `Person::matchByEmail()` for a pre-P0c row) and
+REFUSES if it cannot, rather than inventing one — including for a soft-deleted person, so a resend
+never silently restores a roster row.
+
+**Task 3 — the Definition of Done's "`ContactFieldsAreProjectedOnceTest` green with no allow-list
+change" cannot hold, and the guard is what proved it.** The clause's reasoning is about claim status
+being `$extra`, which is Task 2's concern and still true. But the one writer of `invitations` must
+read `people.email` — it is the address the credential is frozen onto and half the predicate
+deciding which live links to kill — so `app/Support/Invitations/InvitationIssue.php` is allow-listed
+with that reason written out. The alternative was passing the address in from the caller, which
+makes "an invitation is addressed to the roster row's current address" a thing each caller can get
+wrong. `RosterNeverMintsCredentialsTest`, `PersonActiveHasOneWriterTest` and
+`InstitutionProvenanceTest` are all green **untouched**, as specified.
+
+**Task 3 — Invite and Resend PARTITION the claim states; `expired` moved.** Task 2 shipped
+`invitableStates = ['none','expired','revoked']`. Offering Resend for `open`/`expired` on top of
+that would have given an expired person two buttons doing the same thing, so `expired` moved to the
+resend list: `none`/`revoked` invite (nothing live to replace, and reviving a deliberately-revoked
+link from its own row would undo an administrator's act through a shorter path), `open`/`expired`
+resend. One affordance per person, and the write side refuses exactly what the offer withholds (D9).
+
+**Task 3 — the single path's mail-failure log no longer carries the exception message.** It was
+`Log::warning('...: '.$e->getMessage())`. SMTP transport errors routinely quote the envelope
+recipient back (*"550 5.1.1 &lt;someone@hospital.example&gt;"*), and staff personal data is covered by
+the same rule as PHI — so the line now carries the person id, the invitation id and the exception
+class, and nothing else. Decision D already requires this of the bulk path; it was true of the
+single path too and had simply not been looked at.
+
+**Task 3 — measured, not computed.** Suite left at **1338** PHPUnit tests (1320 before the task;
++14 `InvitationResendTest`, +2 `InvitationWritersAreSingularTest`, +2 `InvitationTest`), 6108
+assertions, 0 skipped. Vitest 187, `npm run build` green, `npm run test:e2e` 22 passed. Both new
+guards were watched failing against planted offences before being trusted —
+`InvitationWritersAreSingularTest` against an `Invitation::create(` / `DB::table('invitations')` /
+`'revoked_at' =>` trio and again against a bare `Invitation::issue(` in `PersonController`, and the
+router-gate test against an extra ungated route in the group. The Decision G position pin was
+mutation-tested too (writing `$person->position` on the claim path's existing-person branch turns it
+red), because a pin that passes on its first run has proved nothing about what it can detect.
+
 *(Follow the P0c/P0d/P1a/P1b/P1c/P1d convention: when a task turns up something
 this plan's enumeration missed — a site not listed, a test that goes red for a reason the plan did
 not predict, a behaviour that differs between SQLite and MySQL — record it here, dated, with what was

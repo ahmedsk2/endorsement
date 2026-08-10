@@ -11,6 +11,23 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * The plaintext token exists for exactly one moment — the response to the inviter — and is
  * never stored, logged or audited. Everything persisted here is either non-secret or a hash.
+ *
+ * `App\Support\Invitations\InvitationIssue` IS THE ONLY WRITER of this table (P1c-2 Decision C),
+ * apart from the redemption stamp and the explicit revoke endpoint. `issue()` below is the mint it
+ * calls; it is not an entry point for anybody else.
+ *
+ * `member_email` IS NOT A DUPLICATE OF `people.email` (Decision G). It is the address a credential
+ * was actually mailed to, FROZEN AT SEND TIME. The roster address can be corrected afterwards — a
+ * typo fixed, a hospital account migrated — and when it is, this column must keep saying where the
+ * link went, because that is the only record of who could have received it. Do not "tidy" the two
+ * into one column, and do not backfill this one from the roster.
+ *
+ * `position` IS AN AUTHORIZATION SUBJECT, NOT A ROLE ASSIGNMENT (Decision G). It records what
+ * `App\Support\ManagerScope` was asked to approve when the link was minted, and it is what a resend
+ * is re-authorized against. The claim path takes it only on the branch that CREATES a person; for
+ * an invitation bound to somebody the roster already knows it is never written onto `people`, so a
+ * stale link cannot demote them. `InvitationTest::test_claiming_an_invitation_never_changes_an
+ * _existing_roster_persons_position` is what keeps that true.
  */
 class Invitation extends Model
 {

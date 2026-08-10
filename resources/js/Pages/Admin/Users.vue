@@ -71,6 +71,30 @@ const revokeInvite = (i) => {
     router.delete(`/admin/invitations/${i.id}`, { preserveScroll: true });
 };
 
+/*
+ * AC-02's "resendable singly". OFFERED WHERE THE SERVER WOULD ACCEPT IT and nowhere else (D9's
+ * offer-matches-write rule): `open` because the first link was lost, `expired` because it aged
+ * out, and neither `claimed` (the account exists) nor `revoked` (somebody deliberately killed
+ * that link — re-inviting is a different act, through the form above).
+ *
+ * The confirmation says the old link dies, because it does: a resend ROTATES the token. Re-mailing
+ * the same one would extend the life of a credential that may already be in the wrong hands.
+ */
+const resendableStates = ['open', 'expired'];
+
+const canResend = (i) => resendableStates.includes(i.state);
+
+const resendInvite = (i) => {
+    if (!confirm(`Send a new invitation link to ${i.member_email}? The previous link stops working immediately.`)) return;
+
+    copied.value = false;
+
+    router.post(`/admin/invitations/${i.id}/resend`, {}, {
+        preserveScroll: true,
+        onSuccess: (page) => { invitationLink.value = page.props.flash?.invitation_link ?? null; },
+    });
+};
+
 const filteredUsers = computed(() => {
     const q = search.value.trim().toLowerCase();
     if (q === '') return props.users;
@@ -209,6 +233,10 @@ const saveProfile = (u) => {
                                     <span class="block">{{ i.expires_at.hijri }}</span>
                                 </td>
                                 <td class="px-3 py-2 text-right">
+                                    <button v-if="canResend(i)" type="button"
+                                            :data-testid="`resend-${i.id}`"
+                                            class="mr-3 text-xs font-semibold text-channel-ink hover:underline"
+                                            @click="resendInvite(i)">Resend</button>
                                     <button v-if="i.open" type="button" class="text-xs font-semibold text-critical hover:underline"
                                             @click="revokeInvite(i)">Revoke</button>
                                 </td>

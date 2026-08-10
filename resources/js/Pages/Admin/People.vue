@@ -35,10 +35,12 @@ import AppLayout from '../../Layouts/AppLayout.vue';
  * one tag would label those people "No invitation", which reads as "unclaimed" and is the opposite
  * of true.
  *
- * NOTHING HERE CREATES AN ACCOUNT — position is a JOB ROLE, not a login, and the Invite button
- * below POSTs to `admin.invitations.store` (gated in-controller by `App\Support\ManagerScope`),
- * never to any `/admin/people/*` endpoint. `RosterNeverMintsCredentialsTest` fails the build if
- * that ever changes. There is no delete control: people are deactivated (the "Retire" toggle
+ * NOTHING HERE CREATES AN ACCOUNT — position is a JOB ROLE, not a login, and the Invite and Resend
+ * buttons below POST to `admin.invitations.store` / `admin.invitations.resend` (gated
+ * in-controller by `App\Support\ManagerScope`), never to any `/admin/people/*` endpoint. The
+ * screen is shared; the authorization is not — this route needs `people.manage`, those endpoints
+ * apply their own two-tier rule. `RosterNeverMintsCredentialsTest` fails the build if that ever
+ * changes. There is no delete control: people are deactivated (the "Retire" toggle
  * below), never deleted (owner ruling).
  *
  * Mobile cards + desktop table, matching Levels.vue and Units.vue. Create/edit mirror
@@ -56,6 +58,11 @@ const props = defineProps({
     // answers "current level" for all 60 rows in one query; a full span LIST per row is a much
     // larger shape only the expanded row needs).
     history: { type: Object, default: null },
+    // Inertia's shared error bag. The only key this screen reads from it is `invitation`: the
+    // Invite/Resend controls post to `InvitationController`, which is not a `useForm()` here, so
+    // its refusals have no form object to land on. Without this the endpoint's "that invitation
+    // was revoked / has already been claimed" would be silent on a stale page.
+    errors: { type: Object, default: () => ({}) },
 });
 
 const inputClass = 'w-full rounded-md border border-line bg-panel px-3 py-2 text-sm text-ink focus:border-channel focus:outline-none';
@@ -124,7 +131,15 @@ const historySpans = computed(() => (
 // ABSENT from the props, never null, and the two must not be conflated. (On this screen the route
 // itself requires `people.manage`, so it is always present — the check is the shape, not a
 // prediction about this page.)
-const invitableStates = ['none', 'expired', 'revoked'];
+//
+// INVITE AND RESEND PARTITION THE STATES; neither person ever sees both buttons. `none` and
+// `revoked` are an INVITE, because there is nothing live to replace — and a revoked link was
+// deliberately killed by somebody, so reviving it from that row would undo their act through a
+// shorter path. `open` and `expired` are a RESEND: a row exists, and the endpoint that owns it
+// rotates its token rather than minting beside it. `expired` moved from the first list to the
+// second in P1c-2 Task 3 — the outcome is identical either way, and one affordance per person is
+// the point.
+const invitableStates = ['none', 'revoked'];
 
 const canInvite = (person) => !!person.invitation
     && person.invitation.may_invite
@@ -132,6 +147,16 @@ const canInvite = (person) => !!person.invitation
     && !person.has_account
     && 'email' in person
     && !!person.email;
+
+const resendableStates = ['open', 'expired'];
+
+// No `email` check: a resend is addressed from the ROSTER row the server resolves for itself, and
+// this screen may legitimately be withholding the address (a withheld contact field is ABSENT from
+// the props, never null). `invitation.id` is what the endpoint is bound to.
+const canResend = (person) => !!person.invitation
+    && person.invitation.may_invite
+    && resendableStates.includes(person.invitation.state)
+    && !person.has_account;
 
 const invitingId = ref(null);
 const invitationLink = ref(null);
@@ -148,6 +173,22 @@ const invite = (person) => {
         member_email: person.email,
         position: person.position,
     }, {
+        preserveScroll: true,
+        onSuccess: (page) => { invitationLink.value = page.props.flash?.invitation_link ?? null; },
+        onFinish: () => { invitingId.value = null; },
+    });
+};
+
+// AC-02's "resendable singly". The confirmation says the old link dies, because it does: a resend
+// ROTATES the token, so anyone still holding the previous link — a forwarded email, a shared
+// mailbox — cannot claim the account with it.
+const resend = (person) => {
+    if (!confirm(`Send ${person.full_name} a new invitation link? The previous link stops working immediately.`)) return;
+
+    invitingId.value = person.id;
+    invitationLink.value = null;
+
+    router.post(`/admin/invitations/${person.invitation.id}/resend`, {}, {
         preserveScroll: true,
         onSuccess: (page) => { invitationLink.value = page.props.flash?.invitation_link ?? null; },
         onFinish: () => { invitingId.value = null; },
@@ -546,6 +587,14 @@ const bulkReport = computed(() => {
                 <p v-if="bulkForm.errors.ids" class="w-full text-xs text-critical">{{ bulkForm.errors.ids }}</p>
             </div>
 
+            <!-- An Invite or Resend the server refused. The controls are offered only where the
+                 endpoint would accept them, so this is what a stale page looks like — somebody
+                 claimed, or somebody revoked, since this list was rendered. -->
+            <div v-if="errors.invitation" role="alert" data-testid="invitation-error"
+                 class="channel-bar channel-bar-critical rounded-md bg-critical-soft px-4 py-3 text-sm text-ink">
+                {{ errors.invitation }}
+            </div>
+
             <!-- Shown once, immediately after an Invite. The link is a bearer credential that
                  creates an account: it is stored hashed and can never be re-displayed, so if mail
                  is not configured this panel IS the delivery. -->
@@ -599,6 +648,12 @@ const bulkReport = computed(() => {
                                     :aria-label="`Invite ${person.full_name} to create an account`"
                                     @click="invite(person)">
                                 Invite
+                            </button>
+                            <button v-if="canResend(person)" type="button" :disabled="invitingId === person.id"
+                                    class="text-xs font-semibold text-channel-ink disabled:opacity-60"
+                                    :aria-label="`Send ${person.full_name} a new invitation link`"
+                                    @click="resend(person)">
+                                Resend
                             </button>
                         </div>
                         <div v-if="openHistoryId === person.id" class="mt-3 border-t border-line-soft pt-3">
@@ -685,6 +740,13 @@ const bulkReport = computed(() => {
                                             :aria-label="`Invite ${person.full_name} to create an account`"
                                             @click="invite(person)">
                                         Invite
+                                    </button>
+                                    <button v-if="canResend(person)" type="button" :disabled="invitingId === person.id"
+                                            :data-testid="`resend-${person.id}`"
+                                            class="text-xs font-semibold text-channel-ink disabled:opacity-60"
+                                            :aria-label="`Send ${person.full_name} a new invitation link`"
+                                            @click="resend(person)">
+                                        Resend
                                     </button>
                                 </td>
                             </tr>

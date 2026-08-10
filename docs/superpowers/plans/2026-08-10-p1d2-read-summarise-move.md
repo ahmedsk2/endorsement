@@ -1584,6 +1584,112 @@ non-existent code are two different operator problems and ship two different mes
 `RotaImportTest`). `npm test` **173** and `npm run test:e2e` **21** unchanged — this task adds no
 client file and no route; e2e was re-measured rather than assumed. `npm run build` green.
 
+**Task 12 (2026-08-10) — the plan's own needle list would have failed the build on the three
+docblocks that state MR-04's absence, and the fix is a deliberate departure from finding 14.** The
+task text says to add `'eligib'`, `'on_call'`, `'onCall'` and `'callRoster'` to the existing scan.
+`grep -rniE "eligib|on_call|onCall|callRoster" app/Support/Rota/` returns three hits before a line
+of this task is written — `AvailabilitySummary`'s *"THIS IS NOT, AND MUST NEVER BECOME, AN ON-CALL
+ELIGIBILITY COMPUTATION"*, the same file's *"the rota had quietly begun inferring eligibility"*, and
+`RotaFill`'s *"THIS IS NOT AN ON-CALL ELIGIBILITY COMPUTATION"*. `CalendarIsTheOnlyConverterTest`'s
+remedy for the same collision (finding 14: write around the call shape in prose) is unavailable
+here, because the prose IS the rule and rewording it to dodge a substring would be absurd. So the
+new scan **strips comments before matching** — PHP through `token_get_all()`, `.vue` through three
+conservative patterns — and a guard that punished the documentation of the rule it enforces became
+a guard that reads only code. Two consequences worth stating: the match is now **case-insensitive**
+(safe only because comments are gone, and it is the difference between catching `off_roster` alone
+and also catching `isEligibleForCall()`), and the stripper itself needs a test, so
+`test_the_scan_strips_comments_and_still_sees_the_code` pins both ends against real files — the
+prose is gone, the code is not. A stripper that over-reached would disable the whole guard and look
+identical to a clean tree. The original four-needle scan over the whole of `app/` is UNCHANGED and
+kept beside the new one: the two fail for different reasons and neither subsumes the other.
+
+**Task 12 (2026-08-10) — three MR-04 probes, and the third is the one that justifies the
+departure.** (1) `private static function isEligibleForCall()` planted in `RotaImport` →
+*"app/Support/Rota/RotaImport.php: eligib"*, which is also the case-insensitivity earning its
+place, since `eligib` as a fixed-case needle would have missed `isEligibleForCall` entirely.
+(2) `const onCallRoster = []` planted in `RotaImport.vue` → two needles red on the screen file.
+(3) The **same words in a comment** (`/** … never infers on_call eligibility. */`) → still GREEN,
+which is the property the stripper exists for. All three reverted.
+
+**Task 12 (2026-08-10) — the stale digest cannot be reached from the screen, and that is the
+screen working rather than a gap in the journey.** The task's "failing test to write first" asks
+the e2e to *"upload a changed file against the previous digest and assert the 422 message"*. The
+screen invalidates its analysis client-side the moment the file or the kind changes (`previewedKey`
+/`currentKey`, `RosterImport.vue`'s discipline), so the commit control is simply not offered
+against a file the server has not answered for — there is no browser gesture that posts file B
+under file A's digest. Re-writing the file on disk between the choice and the commit was rejected
+as a route to it: Chromium snapshots a `File` by path+size+mtime and a modified file fails the read
+with a network-level error rather than a 422, which would assert nothing about this feature.
+The refusal is therefore proved where it is reachable: server-side in
+`RotaImportScreenTest::test_a_file_changed_since_the_preview_is_refused_on_the_file_field` (a
+different file's bytes carrying the previous digest → errors on `file`, zero rows, zero audit
+rows), and client-side in `RotaImport.test.js` (given that 422, the screen shows the server's
+sentence, DROPS the analysis, and re-runs the PREVIEW — never the commit). The Vitest case was
+proved falsifiable by pointing the stale handler back at `commit()`: *"expected
+'/admin/rota/import/commit' to be '/admin/rota/import/preview'"*.
+
+**Task 12 (2026-08-10) — THE JOURNEY'S OWN FINAL ASSERTION COULD NOT DETECT WHAT IT NAMED, and
+planting the defect is what showed it.** The destructive half previews a file that would overwrite
+`ereader`'s deliberate Block 1 gap, deliberately does NOT confirm it, and then re-reads the rota
+from the server. That last step originally read `await expect(untouched).not.toContainText('NICU')`.
+It is worthless: an overwritten cell stops being a split and renders a plain unit `<select>` whose
+options list every unit in the department, so "NICU is not in this cell" is true of a split cell and
+false of an empty one, for reasons that have nothing to do with the import. Caught by planting
+`RotaImportController::preview()` calling `RotaImport::commit()` — the whole point of the e2e half,
+a dry run that writes — and reading which assertion fired. It now asserts the cell is still a split:
+`li.channel-bar` count 1, PICU, `2026-08-07`, `7d unassigned`, and the whole cell's `innerText`
+unchanged. Re-probed after the change: **red at `toHaveCount(1)`, received 0**, green on revert.
+
+**Task 12 (2026-08-10) — the destructive half is previewed and never committed, and that is a
+FIXTURE CONTRACT as well as the requirement.** `rota-read.spec.js` runs after this file against the
+same sqlite database and asserts E2eSeeder's exact coverage arithmetic (21 assigned days, 35 not
+assigned, one person with a gap, two unassigned). Committing the overwrite here would fail that
+spec for a reason nobody reading it could diagnose. The no-op round trip in the first half is safe
+for exactly the reason it is worth asserting: `applied === 0`, so it writes nothing at all. Both
+properties are stated in the spec's own docblock so a later edit cannot quietly commit the second
+half.
+
+**Task 12 (2026-08-10) — a handle-only preview-row locator is a strict-mode violation by
+construction.** The first shape of the spec's `previewRow()` filtered on the short name alone and
+resolved to TWO elements: the unit of outcome is the (person, period) CELL, so anybody planned
+across a year has one preview row per block. It now filters on the handle AND the block label, with
+`toHaveCount(1)` asserted before anything is read off it. Worth recording because the same trap is
+NOT finding 15's (mobile card versus desktop row) — it is the importer's own cell shape, and no
+existing rota spec demonstrates it.
+
+**Task 12 (2026-08-10) — the screen needed an affordance the task's file list does not mention,
+and P1d-1's journey is why it was added rather than assumed.** `routes/web.php` gaining
+`/admin/rota/import` makes the screen exist; nothing made it REACHABLE. An "Import a file…" control
+now sits in `MasterRota.vue`'s export section, beside the two files it reads back — an Inertia
+`<Link>`, not a plain `<a>` like the two exports beside it, because those are downloads and this is
+an ordinary page. `MasterRota.vue` gains `Link` to its `@inertiajs/vue3` import; all seven Vitest
+files that mount it already stub `Link`, checked before the edit rather than after.
+
+**Task 12 (2026-08-10) — `HandleInertiaRequests::share()` joins this task's file list too, for the
+third time in this slice.** Task 9's amendment records the mechanism (a session key no `share()`
+names is invisible to every page, with all four suites green); the lesson was applied here BEFORE
+the screen was written rather than discovered again, and
+`RotaImportScreenTest::test_the_preview_writes_nothing_and_reaches_the_screen_as_a_shared_prop`
+asserts it through a real second request, `->missing('flash.rota_import_preview.context')` included.
+
+**Task 12 (2026-08-10) — finding 9's `post_max_size` detection became a trait rather than a second
+copy.** `RotaImportRequest` needs the same "empty `$_POST` past the upload limit" detection
+`RosterImportRequest` carries, and that detection has an ordering constraint found EMPIRICALLY
+(detect before the request's own `merge()`, or the guard is silently disabled) which is invisible
+from the call site. A hand-written second copy would have been a second chance to get it backwards,
+so it is now `App\Http\Requests\Concerns\DetectsOversizedUpload`, with the ordering rule in the
+trait's own docblock and `RosterImportRequest` re-pointed at it.
+`RosterImportTest::test_an_oversized_upload_reports_the_size_not_a_missing_field` is what proves the
+extraction did not change the behaviour it moved.
+
+**Task 12 (2026-08-10) — counts, MEASURED after this task's own arithmetic was wrong by one.**
+`php artisan test` 1266 → **1281** (thirteen in the new `RotaImportScreenTest`, **two** in
+`RotaAccessTest` — the namespace scan and its stripper calibration; this paragraph first said three,
+which is the fifth instance of stale expected-test-count arithmetic across P1c/P1d and the reason
+the standing rules say to trust the measurement). `npm test` 173 → **185** (twelve in the new
+`tests/js/RotaImport.test.js`). `npm run test:e2e` 21 → **22** (one journey in the new
+`tests/e2e/rota-import.spec.js`). `npm run build` green.
+
 ---
 
 ## Standing rules for every task
@@ -2726,8 +2832,11 @@ git commit -am "docs: what reading, summarising and moving the rota changed"
       person not on the roster, a retired unit, a period from another academic year, a span outside
       its period, two spans that overlap, Arabic names, and a formula-injection cell.
 - [ ] `RotaWritersAreSingularTest` green with **no** new allow-list entry.
-- [ ] MR-04 is unbuilt and its absence is asserted over `app/Support/Rota/` in full, including the
-      three new classes.
+- [x] MR-04 is unbuilt and its absence is asserted over `app/Support/Rota/` in full, including the
+      three new classes. (Task 12. Also over the rota's controllers, its form requests and its four
+      Vue screens; case-insensitively, over CODE with comments stripped — see Amendments for why
+      the plan's literal needle list would have failed the build on the docblocks that state the
+      rule, and for the three probes that prove the scan fires.)
 - [ ] No migration was added in either half.
 - [ ] The documents in Task 13 corrected, each claim verified against the tree before it was
       written.

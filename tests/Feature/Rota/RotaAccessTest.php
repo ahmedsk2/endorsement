@@ -233,4 +233,166 @@ class RotaAccessTest extends TestCase
 
         $this->assertSame([], $offenders, 'MR-04 is Stage 2 (P1d owner decision 1) — see the plan.');
     }
+
+    /**
+     * MR-04 RESTATED OVER THE FILES THAT MAKE THE INFERENCE TEMPTING (P1d-2 Task 12).
+     *
+     * The scan above is wide and shallow: four identifier-shaped needles over the whole of `app/`.
+     * This one is narrow and deep, and P1d-2 is why it exists. An AVAILABILITY SUMMARY is
+     * precisely the shape somebody would reach for to answer *"who can take call in Block 11?"*,
+     * a BULK FILL is how they would write the answer across a year, and an IMPORTER is how they
+     * would load one from a spreadsheet. So the absence is asserted over `App\Support\Rota` in
+     * full — `AvailabilitySummary`, `RotaFill`, `RotaImport` and the rest — plus the rota's
+     * controllers, its form requests and its screens, rather than only over the files that
+     * predate the temptation.
+     *
+     * MR-04 has nothing to drive: there are no slots, no call roster, and no per-person
+     * include/exclude override. P1d-2 records the hook and builds none of it.
+     *
+     * IT SCANS CODE, NOT PROSE, AND THAT IS A DELIBERATE DEPARTURE FROM FINDING 14.
+     * `CalendarIsTheOnlyConverterTest` matches docblocks on purpose and the remedy there is to
+     * write around the call shape in prose. That remedy is unavailable here: three of these files
+     * open with a paragraph stating that they must never become an eligibility computation, which
+     * is the exact sentence a future implementer most needs to read — and `eligib` as a raw
+     * substring needle would fail the build for writing it down. A guard that punishes the
+     * documentation of the rule it enforces trains people to delete the documentation, so
+     * comments are stripped before the scan and {@see
+     * test_the_scan_strips_comments_and_still_sees_the_code} proves both halves of that.
+     */
+    public function test_nothing_in_the_rota_namespace_infers_on_call_eligibility(): void
+    {
+        $files = $this->rotaSurfaceFiles();
+
+        // Non-vacuity: a guard that iterates an empty set is green for the wrong reason, and a
+        // renamed file silently leaving the set is exactly how one gets there.
+        $this->assertGreaterThanOrEqual(15, count($files), 'the rota surface scan lost files');
+
+        $offenders = [];
+
+        foreach ($files as $path) {
+            // Lower-cased, so the match is CASE-INSENSITIVE. That is only safe because comments
+            // are gone: over raw source it would fire on every "ELIGIBILITY" in a docblock. Over
+            // code it is the difference between catching `off_roster` alone and also catching
+            // `isEligibleForCall()`, `$offRoster` and `OnCallRoster` — the shapes an actual
+            // implementation would take, none of which a fixed-case substring list would see.
+            $code = mb_strtolower(self::sourceWithoutComments($path));
+            $relative = str_replace('\\', '/', str_replace(base_path().DIRECTORY_SEPARATOR, '', $path));
+
+            foreach (['off_roster', 'offRoster', 'callEligib', 'call_eligib', 'eligib', 'on_call', 'onCall', 'callRoster'] as $needle) {
+                if (str_contains($code, mb_strtolower($needle))) {
+                    $offenders[] = "{$relative}: {$needle}";
+                }
+            }
+        }
+
+        $this->assertSame([], $offenders,
+            "MR-04 (the rota driving on-call eligibility) is Stage 2 — P1d owner decision 1.\n"
+            ."Nothing in the rota infers eligibility: no off-roster flag, no call-roster derivation,\n"
+            ."no per-person include/exclude override. P1d-2 records the hook and builds none of it.\n"
+            .implode("\n", $offenders));
+    }
+
+    /**
+     * The scan above is only as good as its stripper, in both directions, so both are asserted
+     * against a REAL file rather than a contrived string.
+     *
+     *  - It must REMOVE prose: `AvailabilitySummary`'s docblock says "eligibility" out loud, and
+     *    the scan must not fire on it.
+     *  - It must KEEP code: if the stripper over-reached and returned an empty (or comment-free
+     *    but code-free) file, every needle would miss and the guard would be silently disabled —
+     *    the same green as a clean tree.
+     */
+    public function test_the_scan_strips_comments_and_still_sees_the_code(): void
+    {
+        $path = app_path('Support/Rota/AvailabilitySummary.php');
+
+        $raw = (string) file_get_contents($path);
+        $code = self::sourceWithoutComments($path);
+
+        $this->assertStringContainsString('eligibility', $raw,
+            'the file this test calibrates against no longer contains the prose it was chosen for');
+        $this->assertStringNotContainsStringIgnoringCase('eligib', $code, 'the comment stripper left a docblock behind');
+        $this->assertStringContainsString('final class AvailabilitySummary', $code,
+            'the comment stripper ate the code — every needle would miss and the guard would be vacuous');
+
+        $vue = self::sourceWithoutComments(resource_path('js/Pages/Admin/RotaImport.vue'));
+
+        $this->assertStringNotContainsString('MR-06', $vue, 'the .vue comment stripper left a comment behind');
+        $this->assertStringContainsString('data-testid="import-commit"', $vue,
+            'the .vue comment stripper ate the markup');
+    }
+
+    /**
+     * Every rota surface, by path. The `App\Support\Rota` half is a glob so a class added there
+     * joins the scan without anybody remembering to; the rest is explicit and each entry is
+     * asserted to EXIST, because a stale path in a guard's list is a guard that quietly stopped
+     * covering something (`CsvIsTheOnlyReaderWriterTest` keeps the same discipline).
+     *
+     * @return list<string>
+     */
+    private function rotaSurfaceFiles(): array
+    {
+        $files = glob(app_path('Support/Rota/*.php')) ?: [];
+
+        $this->assertGreaterThanOrEqual(9, count($files), 'App\Support\Rota is not being globbed');
+
+        $named = [
+            'app/Http/Controllers/Admin/MasterRotaController.php',
+            'app/Http/Controllers/Admin/RotaImportController.php',
+            'app/Http/Controllers/RotaController.php',
+            'app/Http/Requests/Admin/RotaCellRequest.php',
+            'app/Http/Requests/Admin/RotaFillRequest.php',
+            'app/Http/Requests/Admin/RotaImportRequest.php',
+            'app/Http/Requests/Admin/VacationRequest.php',
+            'resources/js/Pages/Admin/MasterRota.vue',
+            'resources/js/Pages/Admin/RotaImport.vue',
+            'resources/js/Pages/Rota.vue',
+            'resources/js/Components/AvailabilityPanel.vue',
+        ];
+
+        foreach ($named as $relative) {
+            $path = base_path($relative);
+            $this->assertFileExists($path, "The MR-04 scan names {$relative}, which is gone — prune or correct the list.");
+            $files[] = $path;
+        }
+
+        return $files;
+    }
+
+    /**
+     * PHP through the tokenizer (exact, and it cannot mistake a `//` inside a string for a
+     * comment); `.vue` through three conservative patterns — HTML comments, block comments, and
+     * lines whose first non-space characters are `//`. Conservative on purpose: leaving a comment
+     * behind produces a false POSITIVE, which is noisy but visible, whereas eating code produces a
+     * false negative, which is invisible. The calibration test above pins both ends.
+     */
+    private static function sourceWithoutComments(string $path): string
+    {
+        $source = (string) file_get_contents($path);
+
+        if (str_ends_with($path, '.php')) {
+            $code = '';
+
+            foreach (token_get_all($source) as $token) {
+                if (is_array($token)) {
+                    if ($token[0] === T_COMMENT || $token[0] === T_DOC_COMMENT) {
+                        continue;
+                    }
+
+                    $code .= $token[1];
+
+                    continue;
+                }
+
+                $code .= $token;
+            }
+
+            return $code;
+        }
+
+        $source = (string) preg_replace('/<!--.*?-->/s', '', $source);
+        $source = (string) preg_replace('#/\*.*?\*/#s', '', $source);
+
+        return (string) preg_replace('#^\s*//.*$#m', '', $source);
+    }
 }

@@ -115,6 +115,22 @@ class HandleInertiaRequests extends Middleware
                 // is how a contact field reaches a page nobody meant to put it on (Decision C).
                 'rota_fill_preview' => $request->session()->get('rota_fill_preview'),
                 'rota_fill_result' => $request->session()->get('rota_fill_result'),
+                // MR-06's import (P1d-2 Task 12). Same one-shot channel, same reason, and listed
+                // here for the reason the entry above it was added a task late: a session key no
+                // `share()` names is invisible to every page in the app, and all four suites stay
+                // green while the feature reaches nobody.
+                //
+                // ONE-SHOT IS THE POINT here too: the commit is pinned to the sha256 of the exact
+                // bytes the preview parsed (`RotaImport::digest()`), so an analysis surviving a
+                // navigation would be an analysis the operator could confirm against a file they
+                // have since re-exported.
+                //
+                // Ids, counts and the file's own cells only — `RotaImport::preview()` strips the
+                // resolved Eloquent models (`context`) before returning, because a props payload
+                // built from whole models is how a contact field reaches a page nobody meant to
+                // put it on (Decision C).
+                'rota_import_preview' => $request->session()->get('rota_import_preview'),
+                'rota_import_result' => $request->session()->get('rota_import_result'),
             ],
         ];
     }

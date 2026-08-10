@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { router, usePage } from '@inertiajs/vue3';
+import { Link, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../../Layouts/AppLayout.vue';
 import SaveStatus from '../../Components/SaveStatus.vue';
 import AvailabilityPanel from '../../Components/AvailabilityPanel.vue';
@@ -697,6 +697,19 @@ const submitFill = () => {
                        class="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm font-semibold text-ink">
                         Vacations (CSV)
                     </a>
+                    <!--
+                      The other end of the same trip (Task 12). It sits HERE, beside the two files
+                      it reads back, rather than only in the sidebar: P1d-1's e2e journey found
+                      that a surface reachable only by typing its URL is not published to anybody,
+                      and an operator who has just exported a year is exactly the person about to
+                      import one. An Inertia <Link>, not a plain <a>: unlike the two exports above
+                      — which are file downloads and must be real browser navigations — this is an
+                      ordinary page in the app.
+                    -->
+                    <Link href="/admin/rota/import" data-testid="import-link"
+                          class="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm font-semibold text-ink">
+                        Import a file&hellip;
+                    </Link>
                     <p v-if="people_without_a_short_name > 0" role="alert" data-testid="export-short-name-warning"
                        class="text-sm text-critical">
                         {{ people_without_a_short_name }}

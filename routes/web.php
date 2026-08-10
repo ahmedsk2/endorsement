@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\PeriodController;
 use App\Http\Controllers\Admin\PersonController;
 use App\Http\Controllers\Admin\PromotionController;
 use App\Http\Controllers\Admin\RosterImportController;
+use App\Http\Controllers\Admin\RotaImportController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UnitController;
 use App\Http\Controllers\Admin\UnitMergeController;
@@ -307,6 +308,18 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:rota.manage'])
             ->name('rota.export.assignments');
         Route::get('/rota/export/vacations', [MasterRotaController::class, 'exportVacations'])
             ->name('rota.export.vacations');
+
+        // MR-06's import (P1d-2 Task 12, Decision H). The same preview/commit pair as the fill and
+        // for the same reason: the preview is the deliverable and must be incapable of writing, so
+        // it is a separate route rather than an `apply=true` flag one boolean away from the
+        // destructive path. Behind `cap:rota.manage` like the export it reads back — a whole-year
+        // overwrite is at least as administrative as a whole-year extraction.
+        //
+        // ONE screen for BOTH files; `kind` selects which, as a validated enum on the request and
+        // never sniffed from the headers (the two files share four column names).
+        Route::get('/rota/import', [RotaImportController::class, 'index'])->name('rota.import');
+        Route::post('/rota/import/preview', [RotaImportController::class, 'preview'])->name('rota.import.preview');
+        Route::post('/rota/import/commit', [RotaImportController::class, 'commit'])->name('rota.import.commit');
     });
 
 /*

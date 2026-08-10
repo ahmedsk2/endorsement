@@ -47,15 +47,32 @@ onUnmounted(() => mq?.removeEventListener('change', syncDesktop));
 // covering the page the user just asked for.
 watch(() => page.url, () => { navOpen.value = false; });
 
-// Cosmetic active-link highlight. The real gate is the server-side `cap:` middleware.
-const isActive = (href) => {
+/**
+ * WHICH SCREEN AM I ON — the PATH, never the query string.
+ *
+ * Inertia's `page.url` carries the full path AND query (`/rota?year=2026-2027`). Both helpers below
+ * used to compare that whole string against a bare href, so every filterable screen in this app
+ * silently lost its nav highlight — and its `aria-current="page"`, which is what a screen reader
+ * announces — the moment a filter was applied. `/rota` (year, search, level), `/endorsement/{unit}`
+ * (date range), `/endorsement/compliance`, `/admin/rota`, `/admin/structure/periods` and
+ * `/admin/access-control` all push a query string from their own controls.
+ *
+ * Found in a browser (P1d-2 Task 6's read-view journey), not in review: every unit-test mount in
+ * `tests/js/AppLayout.test.js` had stubbed a bare path, so nothing in the suite could see it. The
+ * fix is here rather than at the six call sites because a query string never changes which screen
+ * you are on, and a seventh filterable screen would otherwise arrive with the same bug.
+ */
+const currentPath = computed(() => {
     const url = page.props ? page.url : '';
 
-    return url === href || (typeof url === 'string' && url.startsWith(href + '/'));
-};
+    return typeof url === 'string' ? url.split(/[?#]/)[0] : '';
+});
+
+// Cosmetic active-link highlight. The real gate is the server-side `cap:` middleware.
+const isActive = (href) => currentPath.value === href || currentPath.value.startsWith(href + '/');
 
 // The chooser is "active" only on the exact URL — unit pages highlight their own entry.
-const isExactly = (href) => (page.props ? page.url : '') === href;
+const isExactly = (href) => currentPath.value === href;
 
 // The unit list comes from the server (`nav.units`, built by Unit::navList()) rather than a
 // literal array here, so creating, renaming, recolouring, reordering or retiring a unit on

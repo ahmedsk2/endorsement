@@ -190,6 +190,46 @@ describe('AppLayout — role-gated navigation', () => {
         expect(w.findAll('nav[aria-label="Primary"] a[href="/admin/rota"]')).toHaveLength(1);
     });
 
+    /**
+     * A QUERY STRING DOES NOT CHANGE WHICH SCREEN YOU ARE ON — and until P1d-2 Task 6 this layout
+     * thought it did. Inertia's `page.url` carries the full path AND query, and both nav helpers
+     * compared it whole, so every filterable screen in this app dropped its "you are here"
+     * highlight — and its `aria-current="page"`, which is what a screen reader announces — the
+     * instant a filter was applied.
+     *
+     * Found by walking the rota in a real browser, not by reading the code: `/rota`'s year picker,
+     * search box and level filter all push `?year=`/`?q=`/`?level=`, so the read view lost its own
+     * nav entry on the first click a resident made. Neither this file nor any PHPUnit case saw it,
+     * because every mount here stubbed a bare path.
+     *
+     * It was never rota-specific. `/endorsement/{unit}?from=&to=` (Endorsement/Index.vue's date
+     * filter) is the same bug on the app's most-used screen, and it predates the rota entirely —
+     * which is why the fix is in the two helpers rather than in the Rota link's own expression.
+     */
+    it('keeps a nav entry current when the screen carries a query string', () => {
+        store.page.props.auth.can = ['rota.view', 'endorsement.view'];
+        store.page.props.auth.user = { id: 11, member_name: 'res', full_name: 'A Resident', position: 4 };
+        store.page.props.nav.units = [
+            { code: 'picu', label: 'Pediatric Intensive Care Unit', bar: 'channel-bar-picu' },
+        ];
+
+        // isExactly(): the rota read view, filtered.
+        store.page.url = '/rota?year=2026-2027&q=ahmed';
+        expect(mountLayout().get('nav[aria-label="Primary"] a[href="/rota"]').attributes('aria-current'))
+            .toBe('page');
+
+        // isActive(): a unit's own index, date-filtered — the same defect, on the screen the
+        // department actually lives on.
+        store.page.url = '/endorsement/picu?from=2026-08-01&to=2026-08-10';
+        expect(mountLayout().get('nav[aria-label="Primary"] a[href="/endorsement/picu"]').attributes('aria-current'))
+            .toBe('page');
+
+        // And the chooser must NOT claim to be current just because a query string was stripped
+        // off a deeper path — `isExactly` still means exactly.
+        expect(mountLayout().get('nav[aria-label="Primary"] a[href="/endorsement"]').attributes('aria-current'))
+            .toBeUndefined();
+    });
+
     it('shows the signed-in user name and logs out via router.post', async () => {
         store.page.props.auth.can = ['profile.manage'];
         store.page.props.auth.user = { id: 1, member_name: 'jdoe', full_name: 'Jane Doe', position: 1 };

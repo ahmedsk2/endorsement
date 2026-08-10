@@ -1108,6 +1108,89 @@ would otherwise have no home.
    **Counts.** `php artisan test` 1187 → **1193**, `npm test` 151 → **157**, `npm run test:e2e`
    **21** unchanged, `npm run build` green.
 
+**Task 7 (2026-08-10) — "three operations" is four action keys, and the task text says both.** The
+task's own opening names *"fill-down, fill-across and copy-period"* while Decision E says *"two
+fill-down actions, not one that guesses"* and Task 8 validates *"`op` in the **four** action keys"*.
+Four is the reconciled reading and what shipped: `RotaFill::FILL_DOWN_LEVEL`, `FILL_DOWN_COLUMN`,
+`FILL_ACROSS`, `COPY_PERIOD`, collected in `RotaFill::OPERATIONS` so Task 8's `RotaFillRequest`
+validates against the one list rather than restating it. Three *shapes*, four *actions*.
+
+**Task 7 (2026-08-10) — THE PLAN NEVER DEFINES "a cell carrying a split", and the narrow reading is
+a live data-loss bug.** Counting spans (`count > 1`) would leave a cell holding ONE span that starts
+on the 9th unprotected — which is Decision E's own worked example of deliberate work ("the four of
+them who join late start on the 9th"). What shipped: a cell carries a split when its span set is
+anything other than empty or exactly one span covering the period end to end (the degenerate split
+`MasterRotaAssignment`'s docblock names). `RotaFill::isSplit()`/`isWholePeriod()` are the one
+definition, used by both the target guard and Decision E's cross-period source test.
+
+**Task 7 (2026-08-10) — `UNCHANGED` has to be decided BEFORE the split guard, and the plan's outcome
+table does not say which wins.** A target already holding exactly the source's split loses nothing,
+so demanding a per-cell confirmation for it would be a tick for a no-op — and an operator taught to
+tick meaningless boxes is an operator who ticks the meaningful one.
+`test_an_identical_split_target_is_unchanged_and_needs_no_confirmation` pins it. The full precedence
+now lives in `outcomeFor()`'s docblock: source-level refusal (retired unit, split source) → stale
+target person → unchanged → split target → replace/assign, with source-level first because it kills
+every target and a preview where one row blames the target and the rest blame the source reads as a
+partial failure when it is a total one.
+
+**Task 7 (2026-08-10) — `SKIP_SPLIT_TARGET` keeps its proposal; every other skip drops it.** The
+plan says each target carries "the current span set and the proposed one". For the three skips
+nothing legitimate can be proposed, so `proposed` is `[]` — but `SKIP_SPLIT_TARGET` is the one skip
+the operator is asked to overrule, and they cannot choose between two span sets they can only see
+one of. Asserted in `test_a_target_carrying_a_split_is_skipped_unless_confirmed`.
+
+**Task 7 (2026-08-10) — the stale-person candidate set had to be scoped to the ACADEMIC YEAR, not
+the source period, and only the test found it.** The first shape unioned the active roster with
+people holding a span *in the source period*, which reads correct and is not:
+`RotaGrid`'s row set unions anybody holding a span anywhere in the **year**, so a person who left in
+April still has a row in every column — including the ones where their cell is empty.
+`test_an_inactive_target_person_is_skipped` went red with *"No target planned for person 2 in period
+1"*: the departed person simply was not in the plan, so a fill-down-column preview was one row
+shorter than the column with nothing to say why. Fixed by widening the union's subquery to the year,
+at **zero** extra queries — both halves are model query builders passed to `whereIn` (`Period::forYear()`
+and `MasterRotaAssignment::query()`), deliberately not `->from('master_rota_assignments')`, because a
+raw table name would be the first mention of that table outside its one writer and
+`RotaWritersAreSingularTest`'s needles do not look for it.
+
+**Task 7 (2026-08-10) — an empty source cell, an unknown op and an empty target set are ERRORS, not
+empty plans.** The plan's return shape has an `errors` key and never says what fills it. A preview
+that silently renders "0 cells" is indistinguishable from one whose operator picked the wrong cell.
+Five errors ship: unknown operation, source period gone, empty source cell, copy-period with no or
+same or out-of-year target, and a catch-all "nothing for this fill to do" when the target set comes
+out empty for any other reason. `errors` non-empty always means `targets` empty.
+
+**Task 7 (2026-08-10) — `plan()` strips a `context` key that `analyse()` returns.** `analyse()`
+resolves the `Person`/`Period` MODELS it validated against, which Task 8's `apply()` dispatches to
+`RotaAssignment::set()`/`split()` without a second round of queries; `plan()` unsets them, because
+Eloquent models in a props payload is how a contact field reaches a page nobody meant to put it on
+(Decision C, finding 3). Task 8 needs no change to `analyse()` for this.
+
+**Task 7 (2026-08-10) — the red was watched twice, and the second time was the point.** The class was
+created as a stub returning an empty plan FIRST, so the 14 behavioural cases failed on wrong
+outcomes and missing targets rather than on "class not found" — the standing rules name a missing
+class as explicitly not the reason a test should be red. The two remaining cases passed against that
+stub **vacuously** (two empty plans are identical; a plan that resolves nothing issues no query), so
+each gained a non-vacuity assertion — five targets, and a non-empty target list — and both were then
+watched red. Finally, `test_plan_writes_nothing` was proved falsifiable by planting the exact defect
+it exists to catch (a `RotaAssignment::set()` inside `analyse()`'s target loop, i.e. Task 8's
+`apply()` leaking into `plan()`) and watching it go red before reverting.
+
+**Task 7 (2026-08-10) — that probe also showed the guard's own failure message was 126 KB.** The
+first version compared the whole serialised assignment row set with `assertSame`, so a real failure
+dumped 390 rows into the runner — the "never dump a failing suite into context" rule broken by the
+test meant to help. Now: row count first (the readable half), then `md5()` of the row set (which
+still catches a same-count swap that a count alone would pass).
+
+**Task 7 (2026-08-10) — measured query budgets, and they are constant in the number of targets.**
+Read from a deliberately unreachable `assertLessThan(1, …)` on a 40-person, 13-period fixture, then
+restored: `fill_down_level` **6**, `fill_down_column` **4**, `fill_across` **5**, `copy_period` **5**.
+`fill_down_level`'s extra two are `Person::levelSpansBetween()` and its eager `level` load; the two
+cross-period ops' extra one is the academic year's period list, which fill-down does not need.
+
+**Task 7 (2026-08-10) — counts.** `php artisan test` 1193 → **1209** (sixteen in the new
+`RotaFillPlanTest`). `npm test` **157** and `npm run test:e2e` **21** unchanged — this task adds no
+client file and no route. `npm run build` green.
+
 ---
 
 ## Standing rules for every task

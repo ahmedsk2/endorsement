@@ -41,7 +41,9 @@ use Tests\TestCase;
  * the year below carries a split with a gap, a person with no assignment at all, a mid-year
  * promotion, a vacation crossing a week boundary and a person who has left the department — one
  * for each figure `AvailabilitySummary` computes. `test_the_summary_under_comparison_is_not_empty`
- * asserts every one of them is non-zero before the parity assertion means anything.
+ * asserts every one of them is non-zero before the parity assertion means anything — and the
+ * promotion, which is not a counter and so cannot be asserted that way, has its own case in
+ * `test_a_promoted_person_is_bucketed_under_the_level_held_at_that_periods_start`.
  */
 class AvailabilitySummaryParityTest extends TestCase
 {
@@ -115,11 +117,54 @@ class AvailabilitySummaryParityTest extends TestCase
         $this->assertGreaterThan(0, $first['stale_assignments']);
         $this->assertGreaterThan(0, $last['unassigned_people']);
         $this->assertGreaterThan(0, array_sum(array_column($first['weeks'], 'on_vacation')));
+    }
 
-        // The mid-year promotion: the same person buckets under two different levels across the
-        // year, which is the figure a summary keyed on the ROW's group level would get wrong.
-        $this->assertNotSame(array_keys($first['by_level_unit']), array_keys($last['by_level_unit']),
-            'the fixture never actually promotes anybody across a period boundary');
+    /**
+     * THE MID-YEAR PROMOTION, ASSERTED SOMEWHERE IT CAN ACTUALLY FAIL (adversarial review,
+     * finding 6).
+     *
+     * This used to be one line inside the non-vacuity case above:
+     *
+     *     assertNotSame(array_keys($first['by_level_unit']), array_keys($last['by_level_unit']))
+     *
+     * under a comment naming the bug a summary keyed on the ROW's group level would produce. It
+     * could not detect that bug. Block 1 IS the academic year's start, so the row group and the
+     * cell level agree there by construction whichever keying is used; and block 3 holds exactly
+     * one person either way, so the two key lists differ under the CORRECT implementation
+     * (`[0, XP1, XP2]` vs `[XP2]`) and differ just as happily under the broken one
+     * (`[0, XP1, XP2]` vs `[XP1]`). Confirmed empirically rather than by reading: keying
+     * `AvailabilitySummary` on `row['group_level_id']` leaves the old assertion green.
+     *
+     * What has to be said instead is the specific thing: Anwar's block-3 days are bucketed under
+     * the level he held at BLOCK 3's start, not the one he held at the YEAR's start. And the two
+     * have to be shown to genuinely disagree in this fixture — an assertion about a promotion is
+     * satisfied for the wrong reason by a fixture that never promotes anybody, which is how the
+     * line it replaces came to be written.
+     */
+    public function test_a_promoted_person_is_bucketed_under_the_level_held_at_that_periods_start(): void
+    {
+        [$periods, $unitA, , $junior, $senior] = $this->seedYear();
+        [, $resident] = $this->viewers();
+
+        $props = $this->propsFrom('/rota?year=2026-2027', $resident);
+        $last = $props['summary'][(int) $periods[2]->getKey()];
+
+        // Anwar is the only person still assigned in block 3, and he was promoted to XP2 at
+        // block 2's start — so block 3's single bucket is keyed on XP2, for the whole 28 days.
+        $this->assertSame([(int) $senior->getKey()], array_keys($last['by_level_unit']),
+            'block 3 bucketed the promoted person under a level other than the one he held at that '
+            .'period\'s start — a summary keyed on the row group rather than the cell level ages a '
+            .'whole cohort down');
+        $this->assertSame(28, $last['by_level_unit'][(int) $senior->getKey()][(int) $unitA->getKey()]['days']);
+
+        // NON-VACUITY, and it is the whole reason the assertion above can fail: the row's GROUP
+        // level really is XP1, so a group-keyed summary really would have reported XP1. Without
+        // this, a fixture whose promotion silently stopped working would leave the case green.
+        $anwar = $this->rowFor($props, 'Anwar Parity');
+        $this->assertSame((int) $junior->getKey(), (int) $anwar['group_level_id'],
+            'the fixture never actually promotes anybody across a period boundary — the row group '
+            .'and the block-3 cell level agree, so the assertion above cannot tell the two keyings '
+            .'apart');
     }
 
     /**
@@ -174,6 +219,25 @@ class AvailabilitySummaryParityTest extends TestCase
     }
 
     /**
+     * One named row off a rendered grid. Named rather than indexed: rows are interleaved
+     * alphabetically and a positional lookup would silently start reading somebody else the day
+     * the fixture gained a person.
+     *
+     * @param  array<string, mixed>  $props
+     * @return array<string, mixed>
+     */
+    private function rowFor(array $props, string $fullName): array
+    {
+        foreach ($props['grid']['rows'] as $row) {
+            if ($row['person']['full_name'] === $fullName) {
+                return $row;
+            }
+        }
+
+        $this->fail("no row for \"{$fullName}\" on this grid");
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function propsFrom(string $url, User $viewer): array
@@ -202,7 +266,7 @@ class AvailabilitySummaryParityTest extends TestCase
      * `XP`-prefixed codes throughout: `Level::factory()->create(['code' => 'R1'])` collides with
      * `ReferenceSeeder`'s seeded ladder (P1c Task 3's recorded trap).
      *
-     * @return array{0: list<Period>, 1: Unit, 2: Unit}
+     * @return array{0: list<Period>, 1: Unit, 2: Unit, 3: Level, 4: Level}
      */
     private function seedYear(): array
     {
@@ -266,6 +330,6 @@ class AvailabilitySummaryParityTest extends TestCase
         RotaAssignment::set($emad, $periods[0], $unitA);
         $emad->forceFill(['active' => false])->save();
 
-        return [$periods, $unitA, $unitB];
+        return [$periods, $unitA, $unitB, $junior, $senior];
     }
 }

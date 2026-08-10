@@ -1038,6 +1038,76 @@ time the document was right. `npm test` 150 → **151** (the nav case above). `p
 **1187**, unchanged: this task adds no PHP case, and the whole suite was re-run green after the
 `AppLayout.vue` fix. `npm run build` green.
 
+**Adversarial slice review (2026-08-10) — six findings, and the two most useful were about TESTS
+rather than about code.** Recorded here because four of the six were pre-existing on `main` and
+would otherwise have no home.
+
+1. **`/rota?q[]=x` was a 500, and so were four sibling sites.** Every query value is a string OR AN
+   ARRAY, chosen by whoever types the URL; `(string) $request->query('q', '')` on an array raises
+   `Array to string conversion`, which `HandleExceptions` promotes to an `ErrorException` and
+   renders as a 500. `$request->string('q')` is not the fix — it throws on array input too. The two
+   parameters read either side of it (`year` behind `is_string()`, `level` behind `is_numeric()`)
+   already guarded, which is exactly what made the third easy to miss, and is why this was treated
+   as a class rather than an instance: `Admin/PeriodController`'s `next_year_start` (same cast),
+   `Admin/AccessControlController`'s `user_id` (different failure — `User::find(['1'])` returns a
+   *Collection*, which is not null, so the null-check below it passed and `$user->getKey()` came out
+   as a `BadMethodCallException`), and both `member_email` normalisers, where a pre-validation
+   `?string` sink turned a would-be 422 into a `TypeError`. `tests/Feature/Security/
+   ArrayShapedQueryTest.php` is named after the shape, asserts a NEGOTIATED answer at each site
+   (rendered page with the parameter ignored, or a 422) and asserts the echoed filter's TYPE as
+   well as the status code — a guard that swallowed `q` into `null` where the screen expects `''`
+   is the same bug one layer along. All four cases were watched red, each for its predicted reason.
+2. **`/rota/` and `/endorsement/` lost the highlight too.** Task 6's fix split `page.url` on
+   `[?#]` and stopped, so a trailing slash — which browsers, proxies and typed URLs all produce —
+   failed every `isExactly` comparison exactly as a query string had. Normalised at the one helper,
+   with `/` kept whole.
+3. **The twelve Administration links bound no `aria-current` at all** (pre-existing on `main`).
+   They carried the visual `channel-bar` highlight and announced nothing, so a screen reader was
+   told where it was on four entries and silent across the whole admin surface. All sixteen links
+   now route through one `ariaCurrent()` helper, and `AppLayout.test.js` sweeps the Administration
+   section PER LINK — the defect was twelve independent omissions, so one sampled representative
+   would have proved one of them.
+4. **`AppLayout.vue`'s docblock overstated finding 2's fix**: it named six filterable screens, but
+   three of the six are Administration entries that bound nothing, so the query-string fix reached
+   the highlight on six and the announced state on three. Corrected to what is true after 3 landed.
+5. **`stale_assignments` counted CELLS and was rendered as "N assignment(s)".** One departed person
+   holding a three-way split in one block was one cell and three assignments, so the number was
+   wrong for its own label — and "assignment" already means a `master_rota_assignments` ROW here
+   (`PeriodController::destroy()` refuses a year while N "master rota assignment(s)" reference it,
+   and that N is rows). The COUNT is the figure worth keeping — a headcount beside two other
+   headcounts, and the number of Clear controls an administrator has to press, since `MasterRota`'s
+   Clear empties a whole cell splits and all — so it became `stale_people` and the sentence moved to
+   meet it. Pinned by one departed person, one period, three spans.
+6. **Two tests could not detect what they named, and this is the entry worth re-reading.**
+   - `AvailabilitySummaryParityTest`'s mid-year-promotion line
+     (`assertNotSame(array_keys($first['by_level_unit']), array_keys($last['by_level_unit']))`)
+     named the bug a summary keyed on the ROW's group level would produce and could not see it:
+     block 1 IS the academic year's start, so both keyings agree there by construction, and block 3
+     holds one person either way — the key lists differ under the correct implementation
+     (`[0, XP1, XP2]` vs `[XP2]`) and just as happily under the broken one (`[0, XP1, XP2]` vs
+     `[XP1]`). **Proven** by keying `AvailabilitySummary` on `row['group_level_id']` and watching
+     the line stay green. (`AvailabilitySummaryTest`'s own unit case DID catch that break — the
+     parity file's line was decorative, not the only cover.) Replaced by the specific claim, plus
+     the non-vacuity half that lets it fail at all, and both halves watched red in turn.
+   - `AvailabilityPanel.test.js`'s "renders nothing when there is no summary" mounted
+     `{ grid: null, summary: null }` — and both pages wrap the panel in a `v-else` on `grid`, so
+     with a null grid the component is never mounted and the case was measuring the PAGES' guard
+     under the COMPONENT's name. **Proven** by deleting the panel's `v-if="summary"` outright and
+     watching the whole file stay green. Split into a null summary with a LIVE grid (the only state
+     the component alone answers for, with a non-vacuity half beside it) and a separately-named case
+     for the pages' grid guard.
+
+   The two guards added in finding 2 that were green on arrival were made falsifiable rather than
+   left as decoration: the segment-prefix case goes red against a bare `startsWith` (both
+   `/endorsement/pic` and `/endorsement/picu` light for one screen — unit codes are
+   administrator-created, so that pair is a real configuration), and the root-path case goes red
+   against an inverted prefix test (six entries current at once). The root case's docblock says
+   plainly that `/` → `''` is unobservable with today's nav and is pinned before something makes it
+   observable — an honest weak guard, named as one, rather than a strong-sounding unfalsifiable one.
+
+   **Counts.** `php artisan test` 1187 → **1193**, `npm test` 151 → **157**, `npm run test:e2e`
+   **21** unchanged, `npm run build` green.
+
 ---
 
 ## Standing rules for every task

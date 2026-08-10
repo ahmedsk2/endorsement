@@ -137,6 +137,58 @@ class AuditAnomaliesTest extends TestCase
         Mail::assertSent(\App\Mail\OpsAlertMail::class);
     }
 
+    /**
+     * P1d-2 Decision F. A bulk rota fill rewrites hundreds of cells behind ONE confirmation, so the
+     * one row it writes always deserves a human look. It is the FIRST rota action on this list.
+     */
+    public function test_a_rota_fill_is_reported_as_a_single_occurrence(): void
+    {
+        Mail::fake();
+        $this->alertable();
+
+        AuditLog::record(
+            'rota_fill',
+            'op=fill_down_column;source_person=7;source_period=3;target_period=none;'
+            .'targets=40;assigned=39;replaced=0;unchanged=0;skipped=1',
+            3,
+            '10.0.0.1',
+        );
+
+        $this->artisan('audit:anomalies')->assertExitCode(0);
+
+        Mail::assertSent(\App\Mail\OpsAlertMail::class, function ($mail) {
+            $body = (string) $mail->render();
+
+            $this->assertStringContainsString('rota_fill', $body);
+            $this->assertStringContainsString('1 x rota_fill', $body);
+
+            return true;
+        });
+    }
+
+    /**
+     * Decision H's reasoning, asserted rather than commented: per-cell rota editing is ordinary
+     * work. Fifty of them in an afternoon is a scheduler doing their job, and a watch list that
+     * paged fifty times for it is one nobody reads on the fifty-first.
+     */
+    public function test_per_cell_rota_editing_is_not_watched(): void
+    {
+        Mail::fake();
+        $this->alertable();
+
+        for ($i = 0; $i < 50; $i++) {
+            AuditLog::record('rota_assign', "person={$i};period=3;unit=1", 3, '10.0.0.1');
+        }
+
+        foreach (['rota_split', 'rota_clear', 'vacation_book', 'vacation_cancel'] as $action) {
+            AuditLog::record($action, 'person=1;period=3', 3, '10.0.0.1');
+        }
+
+        $this->artisan('audit:anomalies')->assertExitCode(0);
+
+        Mail::assertNothingSent();
+    }
+
     public function test_events_outside_the_window_are_ignored(): void
     {
         Mail::fake();

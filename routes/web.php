@@ -284,6 +284,15 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:rota.manage'])
         // (P1c Task 7's follow-up discipline: state this explicitly rather than leave a reader
         // to work it out).
         Route::delete('/rota/vacations/{vacation}', [MasterRotaController::class, 'cancelVacation'])->name('rota.vacations.destroy');
+
+        // MR-06's bulk moves (P1d-2 Task 8). TWO routes, preview and confirm, because the preview
+        // is the deliverable and must be incapable of writing — one route with an `apply=true` flag
+        // would put the destructive path one boolean away from the safe one. Both POST + CSRF and
+        // both inside this `cap:rota.manage` group: a fill behind `rota.view` would fail
+        // `RotaAccessTest::test_every_route_behind_cap_rota_view_is_a_get`, which is what that
+        // assertion is for.
+        Route::post('/rota/fill/preview', [MasterRotaController::class, 'fillPreview'])->name('rota.fill.preview');
+        Route::post('/rota/fill', [MasterRotaController::class, 'fill'])->name('rota.fill');
     });
 
 /*

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\RotaCellRequest;
+use App\Http\Requests\Admin\RotaFillRequest;
 use App\Http\Requests\Admin\VacationRequest;
 use App\Models\AuditLog;
 use App\Models\Period;
@@ -12,7 +13,9 @@ use App\Models\Unit;
 use App\Models\Vacation;
 use App\Support\Rota\AvailabilitySummary;
 use App\Support\Rota\RotaAssignment;
+use App\Support\Rota\RotaFill;
 use App\Support\Rota\RotaGrid;
+use App\Support\Rota\StaleFillPlanException;
 use App\Support\Rota\VacationBooking;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -186,6 +189,99 @@ class MasterRotaController extends Controller
         );
 
         return back();
+    }
+
+    /**
+     * Munawib MR-06's bulk moves, PREVIEWED. Writes nothing — not a row, not an audit entry — and
+     * the flash shape is `RosterImport`'s (`back()->with(...)`), so the screen never holds a stale
+     * plan across a navigation.
+     *
+     * The plan carries its own `digest`, which the confirm posts back. That is the whole
+     * preview-then-confirm contract in one field.
+     */
+    public function fillPreview(RotaFillRequest $request): RedirectResponse
+    {
+        $data = $request->validated();
+
+        return back()->with('rota_fill_preview', RotaFill::plan(
+            $data['op'],
+            $this->fillSource($data),
+            $data['confirmations'] ?? [],
+        ));
+    }
+
+    /**
+     * The confirm. `RotaFill::apply()` owns the ONE transaction and re-derives the plan inside it;
+     * this method's job is the two things a controller is for — turning a refusal into a 422 on the
+     * right field (P1b finding 14: a raw 500 reaching the user is a bug in the controller, not the
+     * guard), and appending ONE audit row.
+     *
+     * THE AUDIT ROW IS WRITTEN AFTER THE TRANSACTION HAS COMMITTED (finding 8), exactly as
+     * `RosterImportController::commit()` does it: `AuditLog::record()` opens its own transaction and
+     * locks the chain tail, so writing from inside the fill's transaction would hold that lock for
+     * the fill's whole duration for no benefit — a failed fill rolls back either way. `apply()`
+     * having returned IS the commit, so the ordering is structural rather than a comment.
+     *
+     * ONE ROW PER OPERATION, never one per cell (P1 finding 11): 780 chain appends would serialise
+     * the audit tail and put 780 findings in one `OpsAlert` body. `rota_fill` is on
+     * `AuditAnomalies`' single-occurrence watch list precisely because it is one row — a single
+     * confirmation that rewrote several hundred cells always deserves a human look.
+     *
+     * Ids and counts only. No person's name, no unit code, no period label (Decision H).
+     */
+    public function fill(RotaFillRequest $request): RedirectResponse
+    {
+        $data = $request->validated();
+
+        try {
+            $result = RotaFill::apply(
+                $data['op'],
+                $this->fillSource($data),
+                $data['confirmations'] ?? [],
+                (string) $data['digest'],
+            );
+        } catch (StaleFillPlanException $e) {
+            throw ValidationException::withMessages(['digest' => $e->getMessage()]);
+        } catch (InvalidArgumentException|RuntimeException $e) {
+            throw ValidationException::withMessages(['op' => $e->getMessage()]);
+        }
+
+        if ($result['errors'] !== []) {
+            throw ValidationException::withMessages(['op' => $result['errors'][0]]);
+        }
+
+        AuditLog::record(
+            'rota_fill',
+            "op={$result['op']}"
+            .';source_person='.($result['source']['person_id'] ?? 'none')
+            .';source_period='.($result['source']['period_id'] ?? 'none')
+            .';target_period='.($result['source']['target_period_id'] ?? 'none')
+            .';targets='.count($result['targets'])
+            .';assigned='.$result['summary']['assign']
+            .';replaced='.$result['summary']['replace']
+            .';unchanged='.$result['summary']['unchanged']
+            .';skipped='.$result['summary']['skipped'],
+            $request->user()->getKey(),
+            $request->ip(),
+        );
+
+        return back()->with('rota_fill_result', $result);
+    }
+
+    /**
+     * The request names the source cell in HTTP terms; `RotaFill` names it in the grid's. One
+     * mapping, both fill routes — never re-typed per action.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{person_id: int|null, period_id: int|null, target_period_id: int|null}
+     */
+    private function fillSource(array $data): array
+    {
+        return [
+            'person_id' => isset($data['source_person_id']) ? (int) $data['source_person_id'] : null,
+            'period_id' => isset($data['source_period_id']) ? (int) $data['source_period_id'] : null,
+            'target_period_id' => isset($data['target_period_id']) ? (int) $data['target_period_id'] : null,
+        ];
     }
 
     public function cancelVacation(Request $request, Vacation $vacation): RedirectResponse

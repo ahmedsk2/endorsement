@@ -1191,6 +1191,102 @@ cross-period ops' extra one is the academic year's period list, which fill-down 
 `RotaFillPlanTest`). `npm test` **157** and `npm run test:e2e` **21** unchanged — this task adds no
 client file and no route. `npm run build` green.
 
+**Task 8 (2026-08-10) — the task text never says what pins the commit to the previewed plan, and
+without one, "re-derives the plan" is only half of `RosterImport`'s discipline.** Decision F says
+`apply()` re-runs `analyse()` inside its transaction and never trusts the client — which it does,
+and which is necessary. But `RosterImport` does a second thing the task text does not transpose: its
+commit refuses outright unless the sha256 of the bytes it is about to import equals the digest its
+own preview returned. Re-derivation alone gives an operator who confirmed *"replace 40 cells"* an
+apply of whatever the grid says by the time their click lands — silently, and with a `back()` that
+looks identical to the one they expected. That is the same defect class the digest exists to close.
+
+What shipped: **`RotaFill::plan()` returns a `digest`, `RotaFillRequest` requires it on the confirm
+route, and `apply()` takes it as a fourth argument.** A fill has no file, so the digest is taken
+over the plan's own STATE PROJECTION — the operation, the source cell, and per target the cell's
+identity, what it CURRENTLY holds and what would be WRITTEN over it — computed by one
+`RotaFill::digest()` used by both entry points, never re-typed. `outcome`/`reason` and the
+confirmations are deliberately OUT of it, because they are a pure function of that state *and* the
+operator's own answers: including them would invalidate the pin on every tick of a confirm box,
+force a re-preview round trip per tick, and make Task 9's master "overwrite all splits" control
+impossible to build. The pin catches the WORLD moving, not the operator deciding.
+`test_confirming_a_cell_does_not_invalidate_the_digest` asserts exactly that pair (the confirmation
+changes the summary; the digest does not). **Task 9's request body therefore carries a fifth field:
+`{op, source_person_id, source_period_id, target_period_id?, confirmations, digest}`** — the task
+text's list omits it.
+
+**Task 8 (2026-08-10) — consequently, the plan's own test 1 describes the wrong behaviour.** It asks
+for *"a request whose claimed plan says 'replace 40 cells' while the database has since changed;
+assert the applied set matches a fresh analysis, not the claim"*. Taken literally that is the
+silent-divergence defect above: the fill would apply a set the operator never saw. Under the pin a
+changed grid is a **refusal** — 422 on `digest`, zero rows written
+(`test_a_fill_is_refused_when_the_grid_changed_under_the_operator`). The "does not trust the
+request" half is kept as its own test
+(`test_the_spans_come_from_the_source_cell_and_never_from_the_request`, which posts a forged
+`unit_id`, a forged `spans` array and a forged `targets` array and asserts the written row carries
+the SOURCE cell's unit).
+
+**Task 8 (2026-08-10) — the refusal is a typed exception, not a string in `errors`.** The controller
+has to tell "the rota moved" apart from every other refusal to put the message on the right field,
+and picking an HTTP field by matching an error message's text is the drift this codebase keeps
+removing. `App\Support\Rota\StaleFillPlanException` (new file, not in the task's "Files touched") is
+thrown from INSIDE `apply()`'s transaction, so the refusal rolls back rather than resting on a
+`return` that is only safe while nothing above it writes.
+
+**Task 8 (2026-08-10) — the audit detail gains two keys the plan's format omits, and one of them is
+a real gap.** Decision F specifies
+`op=…;source_person=…;source_period=…;targets=…;assigned=…;replaced=…;skipped=…`. Two problems.
+(1) **`target_period` is missing**, so a `copy_period` row records that a column was overwritten but
+not *onto which* — the single most important fact about that operation, and unrecoverable
+afterwards. (2) `unchanged` is missing, so `targets` does not equal the sum of the outcome counts
+and a reader has no way to tell a short row from a lost one. Shipped as
+`op=<op>;source_person=<id|none>;source_period=<id>;target_period=<id|none>;targets=<n>;assigned=<n>;replaced=<n>;unchanged=<n>;skipped=<n>`
+— always the same keys, `none` where the operation has no such id, still ids and counts only.
+
+**Task 8 (2026-08-10) — "assert no `rota_fill` row after a forced failure" cannot prove finding 8,
+and the test that replaced it found the harness in the way.** An audit row written INSIDE the
+transaction would roll back too, so the plan's test 5 passes either way. What distinguishes them is
+the transaction DEPTH at the moment the row is appended, asserted in
+`test_the_audit_row_is_appended_outside_the_fills_transaction` via an `AuditLog::created` listener.
+First written as `assertSame([1], …)` and red at `2` — **`RefreshDatabase` wraps every test in a
+transaction of its own**, so the ambient depth is 1 and `AuditLog::record()`'s own makes 2. Now
+asserted as `ambient + 1`, measured in the test rather than hard-coded, and proved falsifiable by
+wrapping the controller's `AuditLog::record()` call in a `DB::transaction()` and watching it read
+`3`.
+
+**Task 8 (2026-08-10) — three guards were proved falsifiable by planting the defect, not by
+reading them.**
+1. `RotaWritersAreSingularTest` — a `MasterRotaAssignment::create(` planted in `RotaFill::apply()`'s
+   dispatch loop went red naming the file and the needle. It would catch a second writer here.
+2. `test_a_failure_part_way_through_rolls_the_whole_fill_back` — replacing `apply()`'s
+   `DB::transaction(fn …)` with a plain immediately-invoked closure went red with **7 rows where
+   there had been 6**, i.e. a genuine partial apply. The atomicity claim is measured, not asserted.
+3. `AuditAnomaliesTest::test_a_rota_fill_is_reported_as_a_single_occurrence` was written and watched
+   red (*"the expected OpsAlertMail was not sent"*) BEFORE `rota_fill` joined the watch list — so
+   the list is proved to fire on it, not merely to contain the string.
+
+**Task 8 (2026-08-10) — the acting administrator is a row in their own fill, and two tests had to
+say so.** `User::factory()` links every account to a `people` row (P0c), and that person is active,
+so a `fill_down_column` run by an administrator targets their own roster row as well. Correct
+behaviour — a fill-down fills the column it is looking at — but it made a 40-peer fixture produce
+**41** targets and a 2-peer one produce 3. Both counts are now stated in the tests with the reason,
+rather than computed from the plan, because a test that derives its expected count from the thing
+under test asserts nothing about the count.
+
+**Task 8 (2026-08-10) — `AuditAnomaliesTest::test_per_cell_rota_editing_is_not_watched` passed on
+its first run,** and is recorded as such per the standing rules. It is a regression guard on
+Decision H (fifty `rota_assign` rows plus one each of `rota_split`/`rota_clear`/`vacation_book`/
+`vacation_cancel` raise no alert), not a red-first test: those five actions were already absent from
+the watch list. It would go red the moment anybody adds one of them.
+
+**Task 8 (2026-08-10) — `RotaFill`'s class docblock opened with "THIS CLASS WRITES NOTHING", which
+this task makes false.** Rewritten to "TWO ENTRY POINTS, ONE ANALYSIS", keeping the writes-nothing
+claim where it is still true and testable (`plan()`, `test_plan_writes_nothing`). Left as-is it
+would have been the most confidently wrong sentence in the file.
+
+**Task 8 (2026-08-10) — counts.** `php artisan test` 1209 → **1226** (fifteen in the new
+`RotaFillCommitTest`, two in `AuditAnomaliesTest`). `npm test` **157** and `npm run test:e2e` **21**
+unchanged — this task adds no client file. `npm run build` green.
+
 ---
 
 ## Standing rules for every task

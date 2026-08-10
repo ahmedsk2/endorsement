@@ -8,24 +8,27 @@ use App\Models\Person;
 use App\Models\Unit;
 use App\Support\Calendar;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 /**
  * Munawib MR-06's bulk moves — fill-down, fill-across and copy-period — as **the plan a bulk move
- * makes, before it makes it** (P1d-2 Decisions E and F).
+ * makes, before it makes it**, and then the move itself (P1d-2 Decisions E and F).
  *
- * THIS CLASS WRITES NOTHING. `plan()` computes a delta and returns it; not one row is created,
- * updated or deleted anywhere in this file, and `RotaFillPlanTest::test_plan_writes_nothing`
- * pins that over a fully populated year by comparing the whole `master_rota_assignments` row set
- * — dates included — before and after a plan naming hundreds of target cells. Task 8's `apply()`
- * is the only thing that writes, it goes through `RotaAssignment` (never `MasterRotaAssignment`
- * directly — `RotaWritersAreSingularTest` fails the build for a second writer), and it re-runs the
- * same private `analyse()` INSIDE its own transaction rather than trusting anything a client sends
- * back: the rota can change between the preview and the confirm, exactly as `RosterImport::commit()`
- * re-derives rather than trusting a round trip.
+ * TWO ENTRY POINTS, ONE ANALYSIS. `plan()` computes a delta and WRITES NOTHING — not one row is
+ * created, updated or deleted on that path, and `RotaFillPlanTest::test_plan_writes_nothing` pins it
+ * over a fully populated year by comparing the whole `master_rota_assignments` row set, dates
+ * included, before and after a plan naming hundreds of target cells. `apply()` is the only thing
+ * here that writes: it re-runs the SAME private `analyse()` inside ONE transaction rather than
+ * trusting anything a client sends back, and dispatches through `RotaAssignment` — never
+ * `MasterRotaAssignment` directly, which `RotaWritersAreSingularTest` fails the build for.
  *
  * Separating the two is what makes "validate and authorize the whole set before any mutation"
  * (P1 finding 12, `AccessControlController::updateRoles()`) structurally true rather than a comment
- * somebody has to keep honouring.
+ * somebody has to keep honouring. Re-deriving rather than trusting a round trip is
+ * `RosterImport::commit()`'s discipline; `apply()`'s `$expectedDigest` is the other half of it —
+ * the rota can change between the preview and the confirm, and the operator confirmed the plan they
+ * were shown, not whatever the grid says by the time their click lands.
  *
  * THE FOUR OPERATIONS. Three shapes, four actions, because **fill-down is offered as two explicit
  * actions rather than one that guesses which the operator meant** — a single control that infers
@@ -89,7 +92,7 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
  * second pass.
  *
  * IT NAMES NOBODY. Ids, dates and counts only — no person name, no unit code, no period label. Both
- * halves of this feature (the preview props and Task 8's single `rota_fill` audit row) inherit that
+ * halves of this feature (the preview props and the single `rota_fill` audit row) inherit that
  * from here rather than each remembering it.
  *
  * THE QUERIES ARE BOUNDED, and constant in the number of targets: the source cell, the target
@@ -179,23 +182,217 @@ final class RotaFill
      *     targets: list<array{person_id:int, period_id:int, key:string, outcome:string, reason:string|null, current:list<array{unit_id:int,starts_on:string,ends_on:string}>, proposed:list<array{unit_id:int,starts_on:string,ends_on:string}>}>,
      *     summary: array{assign:int, replace:int, unchanged:int, skipped:int},
      *     errors: list<string>,
+     *     digest: string,
      * }
      */
     public static function plan(string $op, array $source, array $confirmations): array
     {
         $analysis = self::analyse($op, $source, $confirmations);
 
-        // `context` carries the resolved Person/Period models Task 8's `apply()` dispatches to
+        // `context` carries the resolved Person/Period models `apply()` dispatches to
         // `RotaAssignment` without a second round of queries. It never reaches a screen: these are
         // Eloquent models, and a props payload built from whole models is how a contact field
         // reaches a page nobody meant to put it on (P1d-2 Decision C, finding 3).
         unset($analysis['context']);
 
+        $analysis['digest'] = self::digest($analysis);
+
         return $analysis;
     }
 
     /**
-     * The ONE analysis. `plan()` is this with the writes not taken; Task 8's `apply()` calls it
+     * THE FILL, COMMITTED. One transaction, the delta computed inside it, and the whole set
+     * validated before the first write (P1 finding 12 — `AccessControlController::updateRoles()`
+     * is the model: authorize the entire matrix, then mutate). A refusal refuses the WHOLE
+     * operation; "412 of 780 applied" is the failure this shape exists to prevent.
+     *
+     * IT NEVER TRUSTS THE REQUEST. The client sends an operation, a source CELL and its per-cell
+     * confirmations — no spans, no units, no dates. Everything written is re-derived here from the
+     * SAME private `analyse()` the preview ran, inside this transaction.
+     *
+     * `$expectedDigest` PINS THE COMMIT TO THE PLAN THE OPERATOR SAW, which is `RosterImport`'s
+     * discipline transposed from a file to a plan. `RosterImportController::commit()` refuses a
+     * file whose sha256 differs from the bytes its preview parsed; a fill has no file — its
+     * "bytes" are the rota rows the plan was computed against — so the digest is taken over the
+     * plan's own STATE PROJECTION (`digest()`, which says exactly what it covers and why). A grid
+     * that changed under the operator is a refusal naming the fix, never a silent apply against a
+     * plan somebody else invalidated.
+     *
+     * The audit row is NOT written here. It is one row per operation, appended by the controller
+     * AFTER this transaction commits (finding 8): `AuditLog::record()` opens its own transaction
+     * and locks the chain tail, so appending from inside this one would hold that lock for the
+     * fill's whole duration for no benefit — a failed fill rolls back regardless of when inside it
+     * a row was written.
+     *
+     * @param  array{person_id?:int|null, period_id?:int|null, target_period_id?:int|null}  $source
+     * @param  array<string, bool>  $confirmations
+     * @return array<string, mixed> `plan()`'s shape plus `applied` — the number of cells written
+     *
+     * @throws StaleFillPlanException when the rota moved between the preview and the confirm
+     * @throws RuntimeException|\InvalidArgumentException when a writer or model guard refuses; the
+     *                                                    transaction is rolled back and NOTHING is
+     *                                                    written
+     */
+    public static function apply(string $op, array $source, array $confirmations, string $expectedDigest): array
+    {
+        return DB::transaction(function () use ($op, $source, $confirmations, $expectedDigest): array {
+            $analysis = self::analyse($op, $source, $confirmations);
+
+            $context = $analysis['context'];
+            unset($analysis['context']);
+
+            $analysis['digest'] = self::digest($analysis);
+            $analysis['applied'] = 0;
+
+            // THE PIN FIRST, and before any write — a stale plan is not a partial apply, it is no
+            // apply at all. Thrown rather than returned so the refusal cannot be walked past by a
+            // later edit to this method: a `return` here is only safe while nothing above it has
+            // written, and that is a property somebody has to keep true.
+            if (! hash_equals($analysis['digest'], $expectedDigest)) {
+                throw new StaleFillPlanException(
+                    'The rota changed since you previewed this fill, so it has not been applied. '
+                    .'Preview it again to see what it would do now.'
+                );
+            }
+
+            if ($analysis['errors'] !== []) {
+                return $analysis;
+            }
+
+            // ONE query for the units named in the proposals — never one per target, and never a
+            // change to `analyse()`, which resolves the people and periods but has no reason to
+            // read units (it needs their ids for a membership test, not their rows).
+            $units = self::unitsFor($analysis['targets']);
+
+            foreach ($analysis['targets'] as $target) {
+                if ($target['outcome'] !== self::ASSIGN && $target['outcome'] !== self::REPLACE) {
+                    continue;
+                }
+
+                $person = $context['people'][$target['person_id']] ?? null;
+                $period = $context['periods'][$target['period_id']] ?? null;
+
+                if (! $person instanceof Person || ! $period instanceof Period) {
+                    // Unreachable by construction — every target came out of `targetCells()`,
+                    // whose ids are exactly these two maps' keys. Named rather than left to a
+                    // null-property fatal, and ids only.
+                    throw new RuntimeException(
+                        "A fill target resolved to no person or period (person={$target['person_id']};"
+                        ."period={$target['period_id']})."
+                    );
+                }
+
+                self::dispatch($person, $period, $target['proposed'], $units);
+
+                $analysis['applied']++;
+            }
+
+            return $analysis;
+        });
+    }
+
+    /**
+     * WHAT THE COMMIT IS PINNED TO, and the reasoning is the point.
+     *
+     * `RosterImport` pins a commit to the digest of the exact BYTES its preview parsed. A fill has
+     * no bytes: its analysis reads the rota itself, so the equivalent artifact is the plan's own
+     * state projection — the operation, the source cell, and for every target the cell's identity,
+     * what it CURRENTLY holds and what would be WRITTEN over it. Any change to the rota that would
+     * change what this fill does changes one of those, and so changes this digest.
+     *
+     * TWO THINGS ARE DELIBERATELY OUT OF IT.
+     *
+     *  - **`outcome` and `reason`**, because they are a pure function of that state AND the
+     *    operator's confirmations. Including them would mean every tick of a per-cell confirm box
+     *    invalidated the pin, forcing a re-preview round trip per tick and making Task 9's master
+     *    "overwrite all splits" control impossible to build. The pin exists to catch the WORLD
+     *    moving, not the operator deciding — and the confirmations are already explicit, per cell,
+     *    in the request body the preview was rendered from.
+     *  - **the confirmations themselves**, for the same reason.
+     *
+     * A change invisible to this digest is therefore a change that alters no cell's current or
+     * proposed span set — one skip reason becoming another, say — and by definition writes nothing
+     * different.
+     *
+     * @param  array<string, mixed>  $analysis
+     */
+    public static function digest(array $analysis): string
+    {
+        return hash('sha256', (string) json_encode([
+            'op' => $analysis['op'],
+            'source' => $analysis['source'],
+            'errors' => $analysis['errors'],
+            'targets' => array_map(static fn (array $target): array => [
+                $target['person_id'],
+                $target['period_id'],
+                $target['current'],
+                $target['proposed'],
+            ], $analysis['targets']),
+        ]));
+    }
+
+    /**
+     * One target cell, through THE ONE WRITER. `RotaWritersAreSingularTest` fails the build for a
+     * second one, and finding 9 is why the nesting is deliberate: `set()`/`split()` each open their
+     * own transaction, Laravel opens a savepoint inside `apply()`'s, and the all-or-nothing property
+     * rests on the OUTER one. Inlining the writer here to "avoid the nesting" would be precisely the
+     * second writer that guard exists to refuse.
+     *
+     * A whole-period proposal goes through `set()` and a split through `split()` — the same two
+     * calls the per-cell editor makes, so a future guard added to either is one a fill inherits.
+     *
+     * @param  list<array{unit_id:int, starts_on:string, ends_on:string}>  $proposed
+     * @param  array<int, Unit>  $units
+     */
+    private static function dispatch(Person $person, Period $period, array $proposed, array $units): void
+    {
+        if (self::isWholePeriod($proposed, $period)) {
+            $unit = $units[$proposed[0]['unit_id']] ?? null;
+
+            if (! $unit instanceof Unit) {
+                throw new RuntimeException("A fill proposed a unit that no longer exists (unit={$proposed[0]['unit_id']}).");
+            }
+
+            RotaAssignment::set($person, $period, $unit);
+
+            return;
+        }
+
+        RotaAssignment::split($person, $period, $proposed);
+    }
+
+    /**
+     * The units the proposals name, in ONE query. `analyse()` resolves the ACTIVE unit id set for a
+     * membership test and never loads a unit row; `set()` needs the model.
+     *
+     * @param  list<array<string, mixed>>  $targets
+     * @return array<int, Unit>
+     */
+    private static function unitsFor(array $targets): array
+    {
+        $ids = [];
+
+        foreach ($targets as $target) {
+            foreach ($target['proposed'] as $span) {
+                $ids[(int) $span['unit_id']] = true;
+            }
+        }
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $units = [];
+
+        foreach (Unit::query()->whereKey(array_keys($ids))->get() as $unit) {
+            $units[(int) $unit->getKey()] = $unit;
+        }
+
+        return $units;
+    }
+
+    /**
+     * The ONE analysis. `plan()` is this with the writes not taken; `apply()` calls it
      * again inside its own transaction and acts on what it says. Two implementations of "what would
      * this fill do" is two answers, and the operator confirmed one of them.
      *

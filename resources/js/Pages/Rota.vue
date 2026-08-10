@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '../Layouts/AppLayout.vue';
+import AvailabilityPanel from '../Components/AvailabilityPanel.vue';
 
 /**
  * The master rota as a resident reads it (Munawib MR-05), at /rota, cap:rota.view — with MR-07's
@@ -73,30 +74,19 @@ const unitsById = computed(() => {
     return map;
 });
 
-const levelsById = computed(() => {
-    const map = {};
-    (props.grid?.levels ?? []).forEach((level) => { map[level.id] = level; });
-    return map;
-});
-
 /**
- * A unit RETIRED since the rota was planned is not in `grid.units` (the grid offers only active
- * units), but its spans still carry their own `unit_code` so a historical assignment does not go
- * blank the day a department closes a ward. This falls back through both before giving up.
+ * A unit RETIRED since the rota was planned is not in `grid.units` — the grid offers active units
+ * only — and there is nothing to fall back to, so the span is marked rather than labelled with an
+ * invented name. Task 4 shipped a `span.unit_code` fallback here on the belief that a historical
+ * span carried its own code; it does not. `RotaGrid::cellFor()` reads that field out of the SAME
+ * active-units map this one is built from (`'unit_code' => $unit?->code`, where `$unitsById` comes
+ * from `Unit::query()->active()`), so it is null in exactly the case the fallback existed to
+ * cover, and non-null only where this lookup already succeeds. It was removed rather than left
+ * as unreachable code with a rationale that reads as true. Task 5's `AvailabilityPanel` resolves
+ * a unit code the same way, so the strip and the summary beneath it cannot label one unit two
+ * ways.
  */
-const codeFromSpans = computed(() => {
-    const map = {};
-    (props.grid?.rows ?? []).forEach((row) => {
-        Object.values(row.cells ?? {}).forEach((cell) => {
-            (cell.spans ?? []).forEach((span) => {
-                if (span.unit_code) map[span.unit_id] = span.unit_code;
-            });
-        });
-    });
-    return map;
-});
-
-const unitCode = (unitId) => unitsById.value[unitId]?.code ?? codeFromSpans.value[unitId] ?? '—';
+const unitCode = (unitId) => unitsById.value[unitId]?.code ?? '—';
 
 // The rota's column count varies by academic year and period system; computed, never a hardcoded
 // colspan.
@@ -125,68 +115,11 @@ const rowGroups = computed(() => {
     return groups.filter((group) => group.rows.length > 0);
 });
 
-// --- MR-07's summary panel ---------------------------------------------------------------
-//
-// Every figure below arrives COMPUTED, from App\Support\Rota\AvailabilitySummary — one fold, two
-// screens (the editor renders the identical numbers). Nothing here sums, counts or converts; the
-// helpers only decide the order things appear in and which label goes beside them.
-
-const summaryFor = (periodId) => props.summary?.[periodId] ?? null;
-
-/** The units this period actually uses, so a period on one ward is not a table of empty columns. */
-const summaryUnitIds = (periodSummary) => {
-    const ids = new Set();
-
-    Object.values(periodSummary.by_level_unit ?? {}).forEach((byUnit) => {
-        Object.keys(byUnit).forEach((unitId) => ids.add(Number(unitId)));
-    });
-
-    return [...ids].sort((a, b) => a - b);
-};
-
-/**
- * The level rows, in the ladder's display order rather than by id. `AvailabilitySummary::NO_LEVEL`
- * is `0` — a person whose level history says nothing about this period. They are bucketed rather
- * than dropped, because dropping them would break the property that the buckets add up to
- * `assigned_days` and would hide a real person from a real block.
- */
-const summaryLevelRows = (periodSummary) => {
-    const buckets = periodSummary.by_level_unit ?? {};
-    const out = [];
-
-    (props.grid?.levels ?? []).forEach((level) => {
-        if (buckets[level.id]) out.push({ id: level.id, label: level.code, units: buckets[level.id] });
-    });
-
-    Object.keys(buckets).forEach((key) => {
-        const id = Number(key);
-        if (!levelsById.value[id]) {
-            out.push({ id, label: id === 0 ? 'No level' : '—', units: buckets[key] });
-        }
-    });
-
-    return out;
-};
-
-/**
- * A week's identity, taken from the PERIOD's own week strip at the same index — the summary's
- * weeks were built by walking that same array in that same order, so index correspondence is
- * exact, and it is the period prop that carries the dual-dated labels.
- *
- * The comparison below is string equality between two already-formatted values, which is how this
- * screen can say "this week is only partly inside the block" without going near a calendar.
- */
-const weekOf = (period, index, week) => {
-    const source = period.weeks?.[index] ?? null;
-
-    return {
-        starts: source?.starts_label?.date ?? week.clipped_starts_on,
-        hijri: source?.starts_label?.hijri ?? '',
-        ends: source?.ends_label?.date ?? week.clipped_ends_on,
-        partial: source !== null
-            && (source.starts_on !== week.clipped_starts_on || source.ends_on !== week.clipped_ends_on),
-    };
-};
+// MR-07's summary panel is `Components/AvailabilityPanel.vue`, and it is the SAME component the
+// editor mounts (Task 5). It was inline here for exactly one task; the moment a second surface
+// needed the same numbers, a copy would have been two renderings of one computation, free to drift
+// on a screen a department reads as authoritative. `tests/js/AvailabilityPanel.test.js` mounts both
+// pages and compares the markup, so the copy cannot come back unnoticed.
 </script>
 
 <template>
@@ -386,118 +319,12 @@ const weekOf = (period, index, week) => {
                 </div>
 
                 <!--
-                  MR-07. One card per period, reflowing from one column on a phone to three on a
-                  wide screen — the same content at every width rather than a second markup, so
-                  there is nothing here that can disagree with itself.
-
-                  These are the DEPARTMENT's figures, not the filtered list's: the server computes
-                  them from the full grid, stale rows included, before it narrows the rows above.
+                  MR-07, the department's availability, rendered by the SAME component the editor
+                  mounts (Task 5). It is handed the grid's periods, levels and units — never the
+                  rows, which this screen has already filtered and the editor has not.
                 -->
-                <section v-if="summary" class="space-y-3">
-                    <div>
-                        <h3 class="text-base font-semibold text-ink">Availability</h3>
-                        <p class="text-sm text-muted">
-                            How each period is covered, by level and unit — and who is on leave each
-                            week. These figures cover the whole department, whatever the filters
-                            above are showing.
-                        </p>
-                    </div>
-
-                    <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                        <article v-for="period in grid.periods" :key="`s-${period.id}`"
-                                 :data-testid="`summary-period-${period.id}`"
-                                 class="rounded-md border border-line bg-panel p-4">
-                            <p class="channel-tag">{{ period.label }}</p>
-                            <p class="text-xs text-muted">
-                                {{ period.starts_label.date }} ({{ period.starts_label.hijri }}) &ndash; {{ period.ends_label.date }}
-                            </p>
-
-                            <template v-if="summaryFor(period.id)">
-                                <dl class="mt-3 grid grid-cols-2 gap-2">
-                                    <div>
-                                        <dt class="channel-tag">Assigned days</dt>
-                                        <dd class="readout text-sm text-ink">{{ summaryFor(period.id).assigned_days }}</dd>
-                                    </div>
-                                    <div>
-                                        <dt class="channel-tag">Days not assigned</dt>
-                                        <dd class="readout text-sm"
-                                            :class="summaryFor(period.id).uncovered_days > 0 ? 'text-caution' : 'text-ink'">
-                                            {{ summaryFor(period.id).uncovered_days }}
-                                        </dd>
-                                    </div>
-                                    <div>
-                                        <dt class="channel-tag">People with a gap</dt>
-                                        <dd class="readout text-sm text-ink">{{ summaryFor(period.id).people_with_a_gap }}</dd>
-                                    </div>
-                                    <div>
-                                        <dt class="channel-tag">Unassigned people</dt>
-                                        <dd class="readout text-sm text-ink">{{ summaryFor(period.id).unassigned_people }}</dd>
-                                    </div>
-                                </dl>
-
-                                <div class="mt-3 overflow-x-auto">
-                                    <table class="w-full text-left text-sm">
-                                        <thead>
-                                            <tr>
-                                                <th scope="col" class="channel-tag py-1">Level</th>
-                                                <th v-for="unitId in summaryUnitIds(summaryFor(period.id))" :key="unitId"
-                                                    scope="col" class="channel-tag py-1">
-                                                    {{ unitCode(unitId) }}
-                                                </th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr v-for="levelRow in summaryLevelRows(summaryFor(period.id))" :key="levelRow.id"
-                                                class="border-t border-line-soft">
-                                                <th scope="row" class="py-1 font-medium text-body">{{ levelRow.label }}</th>
-                                                <td v-for="unitId in summaryUnitIds(summaryFor(period.id))" :key="unitId"
-                                                    class="py-1 text-body"
-                                                    :data-testid="`summary-cell-${period.id}-${levelRow.id}-${unitId}`">
-                                                    <template v-if="levelRow.units[unitId]">
-                                                        <span class="readout">{{ levelRow.units[unitId].people }}</span>
-                                                        <span class="text-xs text-muted">
-                                                            (<span class="readout">{{ levelRow.units[unitId].days }}</span> days)
-                                                        </span>
-                                                    </template>
-                                                    <template v-else>&mdash;</template>
-                                                </td>
-                                            </tr>
-                                            <tr v-if="summaryLevelRows(summaryFor(period.id)).length === 0">
-                                                <td class="py-1 text-sm text-muted">Nothing planned in this period yet.</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-
-                                <p class="channel-tag mt-3">On leave, week by week</p>
-                                <ul class="mt-1 space-y-0.5">
-                                    <li v-for="(week, index) in summaryFor(period.id).weeks" :key="week.starts_on"
-                                        class="text-xs text-body"
-                                        :data-testid="`summary-week-${period.id}-${index}`">
-                                        <span class="readout">{{ weekOf(period, index, week).starts }}</span>
-                                        &ndash;
-                                        <span class="readout">{{ weekOf(period, index, week).ends }}</span>
-                                        <span v-if="weekOf(period, index, week).partial" class="text-muted">(part week)</span>
-                                        &middot; {{ week.on_vacation }} on leave
-                                    </li>
-                                </ul>
-
-                                <!--
-                                  Decision D: a person who has left the department is off the list
-                                  above, but the cells they still hold are neither counted as cover
-                                  nor silently zeroed — counting them would overstate availability,
-                                  and hiding them would leave nobody a reason to clear them.
-                                -->
-                                <p v-if="summaryFor(period.id).stale_assignments > 0"
-                                   class="mt-3 text-xs text-caution"
-                                   :data-testid="`summary-stale-${period.id}`">
-                                    <span class="readout">{{ summaryFor(period.id).stale_assignments }}</span>
-                                    assignment(s) here belong to someone no longer on the roster.
-                                </p>
-                            </template>
-                        </article>
-                    </div>
-                </section>
+                <AvailabilityPanel :periods="grid.periods" :levels="grid.levels" :units="grid.units"
+                                   :summary="summary" />
             </template>
         </div>
     </AppLayout>

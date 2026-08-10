@@ -898,6 +898,71 @@ than only commented.
 and no existing spec navigates by nav-link text, so the new entry cannot make one ambiguous
 (checked, not assumed).
 
+**Task 5 (2026-08-10) — the parity test's FIRST red was the test's own fixture, and the mechanism
+is worth writing down because it would fool the next reader too.** `AvailabilitySummaryParityTest`
+went red as designed on the missing prop, and then went red a second time after the controller was
+fixed — with `unassigned_people` and `uncovered_days` off by exactly one person in every period.
+Nothing was wrong with the code: the helper created its viewer inside the request wrapper, and
+`User::factory()` mints a **`Person`** alongside the account (P0c: identity is two tables). So the
+administrator account created for the first request put one more unassigned person on the roster
+that the second request then legitimately counted. Both viewers are now created before either
+request, with the reason in a comment at the call site — an availability summary counts the roster,
+so anything that touches the roster between two reads changes the answer, correctly.
+
+**Task 5 (2026-08-10) — the plan's Vitest instruction is too weak, and was strengthened rather
+than followed.** The task says *"Add a Vitest case asserting `AvailabilityPanel.vue` renders the
+same markup from the same props on both pages — one component, two mounts."* Mounting the
+COMPONENT twice with the same props asserts that Vue is deterministic and nothing else: it stays
+green through a page that feeds the component a different slice of the grid, through a page that
+never mounts it at all, and through a page that re-inlines its own copy. What shipped mounts the
+two **pages** whole and compares the `[data-testid="availability-panel"]` subtree pulled out of
+each. Verified to fail, twice, by deliberate divergence and restore: (1) the editor passing
+`:levels="[]"` instead of `grid.levels` → *"expected '&lt;section class=…' to be '&lt;section
+class=…'"* plus the non-vacuity case going red on a missing `R1`; (2) the editor's
+`<AvailabilityPanel/>` replaced by a hand-inlined summary section carrying the same testid → same
+two cases red. Both restored and re-run green. The one divergence this shape does **not** catch is
+a second, hand-inlined panel added BESIDE the shared one without the testid; the count case
+(`exactly once`) catches it only if the duplicate uses the component.
+
+**Task 5 (2026-08-10) — the panel takes `periods`/`levels`/`units` and NEVER `rows`, and that is
+load-bearing rather than tidy.** The read view filters `grid.rows` for display and the editor does
+not (Decision D), so any panel that read the row list would render differently on the two screens
+for a reason that has nothing to do with the numbers — and the parity test would be red for a
+correct implementation. Passing the whole `grid` was rejected for the same reason: it hands the
+component the one input it must not use. `summary: null` renders nothing at all, so both pages
+mount it unconditionally inside their existing "a grid exists" branch.
+
+**Task 5 (2026-08-10) — `Rota.vue`'s `codeFromSpans` fallback (Task 4) is UNREACHABLE, and its
+docblock says the opposite.** Task 4 shipped a fallback resolving a unit code from
+`span.unit_code`, commented *"a unit RETIRED since the rota was planned is not in `grid.units` …
+but its spans still carry their own `unit_code`"*. They do not: `RotaGrid::cellFor()` fills that
+field from `$unitsById`, which is built from `Unit::query()->active()` — so `unit_code` is null in
+exactly the retired case the fallback existed to cover, and non-null only where the `grid.units`
+lookup has already succeeded. Confirmed at source (`RotaGrid.php:151` and `:280`), not inferred.
+Removed rather than left as dead code with a rationale that reads as true, and the extracted panel
+resolves a unit code the same way, so the strip and the summary beneath it cannot label one unit
+two ways. `levelsById` in `Rota.vue` became genuinely dead when `summaryLevelRows` moved out and
+went with it.
+
+**Task 5 (2026-08-10) — both query budgets re-measured, both still 16.** Read from a run against a
+deliberately unreachable `assertLessThan(1, …)` on each budget test's own populated fixture, then
+restored: `/admin/rota` **16** (`RotaGridTest`), `/rota` **16** (`RotaReadViewTest`), identical to
+Task 3's and Task 4's figures. Decision B's "the summary costs nothing" claim therefore holds at
+the request level on the EDITOR too, not only on the read view — adding `AvailabilitySummary` to
+`MasterRotaController::index()` moved neither bound.
+
+**Task 5 (2026-08-10) — `tests/js/Rota.test.js` is in the task's file list and needed no edit.**
+Its five summary assertions (`summary-cell-*`, `summary-week-*`, `summary-stale-*`) pass unchanged
+through the extracted component, which is the cheapest available evidence that the extraction is
+behaviour-preserving rather than a rewrite that happens to be self-consistent. `MasterRota.vue`'s
+three existing spec files needed no edit either: `summary` defaults to null and a null summary
+renders nothing.
+
+**Task 5 (2026-08-10) — counts.** `php artisan test` 1183 → **1187** (four in the new
+`AvailabilitySummaryParityTest`). `npm test` 144 → **150** (six in the new
+`tests/js/AvailabilityPanel.test.js`). `npm run build` green. `npm run test:e2e` not re-measured —
+Task 6 owns it.
+
 ---
 
 ## Standing rules for every task

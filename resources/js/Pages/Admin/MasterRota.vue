@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '../../Layouts/AppLayout.vue';
 import SaveStatus from '../../Components/SaveStatus.vue';
+import AvailabilityPanel from '../../Components/AvailabilityPanel.vue';
 
 /**
  * Admin -> Master Rota (Munawib MR-02/MR-03), cap:rota.manage.
@@ -40,6 +41,13 @@ const props = defineProps({
     academic_years: { type: Array, default: () => [] },
     year: { type: String, default: null },
     grid: { type: Object, default: null },
+    /**
+     * MR-07, computed by App\Support\Rota\AvailabilitySummary and rendered by the shared
+     * Components/AvailabilityPanel.vue — the same computation and the same component the resident
+     * read view at /rota uses (Task 5). A planner needs the coverage figures more than a reader
+     * does: this is the screen where a "people with a gap" of five turns into five cells filled.
+     */
+    summary: { type: Object, default: null },
 });
 
 const selectedYear = ref(props.year ?? '');
@@ -537,6 +545,16 @@ const cancelLeave = (vacationId) => {
                         </tbody>
                     </table>
                 </div>
+
+                <!--
+                  MR-07, the same component and the same numbers the read view at /rota renders
+                  (Task 5). It is handed the grid's periods, levels and units — never the rows, so
+                  that this screen showing every stale row and /rota hiding them cannot make the
+                  two panels differ. `tests/js/AvailabilityPanel.test.js` mounts both pages and
+                  compares this subtree's markup.
+                -->
+                <AvailabilityPanel :periods="grid.periods" :levels="grid.levels" :units="grid.units"
+                                   :summary="summary" />
             </template>
 
             <!-- Task 9: the split editor. Submits the WHOLE span set to POST /admin/rota/cell/split

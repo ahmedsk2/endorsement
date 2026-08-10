@@ -10,6 +10,7 @@ use App\Models\Period;
 use App\Models\Person;
 use App\Models\Unit;
 use App\Models\Vacation;
+use App\Support\Rota\AvailabilitySummary;
 use App\Support\Rota\RotaAssignment;
 use App\Support\Rota\RotaGrid;
 use App\Support\Rota\VacationBooking;
@@ -48,15 +49,29 @@ class MasterRotaController extends Controller
         $requestedYear = $request->query('year');
         $year = is_string($requestedYear) && $years->contains($requestedYear) ? $requestedYear : null;
 
+        // No viewer argument, deliberately: `RotaGrid::forYear()` takes none since P1d-2
+        // Decision C. Passing the request's user made this grid emit every colleague's email
+        // and phone in its props whenever a department set `contact_visibility` to `members`
+        // — and for a `people.manage` holder such as the one reading THIS screen, on the
+        // default setting too. No rota surface projects a contact field for any viewer.
+        $grid = $year === null ? null : RotaGrid::forYear($year);
+
         return Inertia::render('Admin/MasterRota', [
             'academic_years' => $years,
             'year' => $year,
-            // No viewer argument, deliberately: `RotaGrid::forYear()` takes none since P1d-2
-            // Decision C. Passing the request's user made this grid emit every colleague's email
-            // and phone in its props whenever a department set `contact_visibility` to `members`
-            // — and for a `people.manage` holder such as the one reading THIS screen, on the
-            // default setting too. No rota surface projects a contact field for any viewer.
-            'grid' => $year === null ? null : RotaGrid::forYear($year),
+            'grid' => $grid,
+            // MR-07, the SAME numbers the read view shows (P1d-2 Decision B, Task 5). Not a
+            // second computation and not a second query: `AvailabilitySummary::forGrid()` is a
+            // pure fold over the array `RotaGrid` has already built, so the editor's measured
+            // query budget is unchanged by this line. `AvailabilitySummaryParityTest` reads this
+            // prop and `/rota`'s off two real responses and asserts they are identical — a
+            // department reading "four on PICU in Block 3" here and "three" there would have no
+            // way to know which one is the rota.
+            //
+            // The FULL grid, stale rows included — the editor never filters its rows, so the
+            // ordering trap Decision D describes cannot bite here, but the argument is the same
+            // one `RotaController` spells out and the same reason `stale_assignments` exists.
+            'summary' => $grid === null ? null : AvailabilitySummary::forGrid($grid),
         ]);
     }
 

@@ -20,8 +20,11 @@ const props = defineProps({
     // to residents; the page additionally hides the full-manager-only controls
     // (role changes, profile edits) the server would 403 anyway.
     canManageAll: { type: Boolean, default: true },
-    // Open invitations, and the roles THIS manager may invite into — a Chief Resident sees
-    // Resident only, matching the server rule in App\Support\ManagerScope.
+    // Every invitation with its DERIVED claim state (AC-02), and the roles THIS manager may invite
+    // into — a Chief Resident sees Resident only, matching the server rule in
+    // App\Support\ManagerScope, which `InvitationController::statusList()` now applies itself
+    // rather than leaving to its caller. `state`, `state_label` and every date are composed
+    // server-side; this component formats nothing.
     invitations: { type: Array, default: () => [] },
     invitablePositions: { type: Object, default: () => ({}) },
 });
@@ -174,15 +177,23 @@ const saveProfile = (u) => {
                             @click="copyLink">{{ copied ? 'Copied' : 'Copy link' }}</button>
                 </div>
 
+                <!-- AC-02's "claim status visible". This table used to drop a row the moment it
+                     was accepted, revoked or expired, which could answer "who is still waiting"
+                     but never "who ever claimed theirs" — the question Munawib §35's "residents
+                     claimed accounts" is made of. The header below also loses a soft-panel utility
+                     that compiles to nothing — no such colour token is declared (P1c-2 finding 15)
+                     — for the token every other table header in this codebase already uses. -->
                 <div v-if="invitations.length" class="mt-4 overflow-x-auto rounded-md border border-line">
                     <table class="w-full text-left text-sm">
-                        <thead class="bg-panel-soft">
+                        <caption class="sr-only">Invitations issued, with the state each has reached</caption>
+                        <thead class="bg-ground-deep">
                             <tr>
-                                <th class="channel-tag px-3 py-2">Email</th>
-                                <th class="channel-tag px-3 py-2">Role</th>
-                                <th class="channel-tag px-3 py-2">Invited by</th>
-                                <th class="channel-tag px-3 py-2">Expires</th>
-                                <th class="channel-tag px-3 py-2"></th>
+                                <th scope="col" class="channel-tag px-3 py-2">Email</th>
+                                <th scope="col" class="channel-tag px-3 py-2">Role</th>
+                                <th scope="col" class="channel-tag px-3 py-2">Invited by</th>
+                                <th scope="col" class="channel-tag px-3 py-2">Status</th>
+                                <th scope="col" class="channel-tag px-3 py-2">Expires</th>
+                                <th scope="col" class="channel-tag px-3 py-2"><span class="sr-only">Actions</span></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -190,16 +201,22 @@ const saveProfile = (u) => {
                                 <td class="px-3 py-2 text-ink">{{ i.member_email }}</td>
                                 <td class="px-3 py-2 text-muted">{{ i.position_label }}</td>
                                 <td class="px-3 py-2 text-muted">{{ i.invited_by || '—' }}</td>
-                                <td class="readout px-3 py-2 text-muted">{{ i.expires_at }}</td>
+                                <td class="px-3 py-2" :data-testid="`invitation-state-${i.id}`">
+                                    <span class="channel-tag">{{ i.state_label }}</span>
+                                </td>
+                                <td class="readout px-3 py-2 text-muted">
+                                    {{ i.expires_at.date }} {{ i.expires_at.time }}
+                                    <span class="block">{{ i.expires_at.hijri }}</span>
+                                </td>
                                 <td class="px-3 py-2 text-right">
-                                    <button type="button" class="text-xs font-semibold text-critical hover:underline"
+                                    <button v-if="i.open" type="button" class="text-xs font-semibold text-critical hover:underline"
                                             @click="revokeInvite(i)">Revoke</button>
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
-                <p v-else class="mt-3 text-sm text-muted">No invitations are waiting to be accepted.</p>
+                <p v-else class="mt-3 text-sm text-muted">No invitations have been issued yet.</p>
             </section>
 
             <!-- Pending registrations -->

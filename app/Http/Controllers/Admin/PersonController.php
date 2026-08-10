@@ -13,6 +13,7 @@ use App\Models\Position;
 use App\Support\Calendar;
 use App\Support\ContactVisibility;
 use App\Support\Csv;
+use App\Support\Invitations\InvitationStatus;
 use App\Support\LevelAssignment;
 use App\Support\LevelPickers;
 use App\Support\PersonPresenter;
@@ -86,6 +87,13 @@ class PersonController extends Controller
         // promotion preview, P1d's rota grid) never invent a second copy.
         $levels = Person::levelsAt($people);
 
+        // AC-02's claim status, on the same one-query-for-the-page terms (P1c-2 Decision B). It is
+        // passed as `$extra` and `PersonPresenter` is not modified at all: the presenter's BASE map
+        // reaches every `rota.view` holder through `contactFree()` — that is every seeded position
+        // — so a base key would publish "who has not claimed their account yet" to the whole
+        // department. `RotaReadViewTest` asserts it never gets there.
+        $invitations = InvitationStatus::forPeople($people, $request->user());
+
         return [
             'people' => $people->map(fn (Person $p): array => PersonPresenter::one(
                 $p,
@@ -94,7 +102,8 @@ class PersonController extends Controller
                     'id' => (int) $l->getKey(),
                     'code' => (string) $l->code,
                     'name' => (string) $l->name,
-                ]],
+                ],
+                    'invitation' => $invitations[(int) $p->getKey()] ?? null],
             ))->values()->all(),
             'positions' => Position::orderBy('id')->get(['id', 'name']),
             // LV-02's bulk "set level" picker. `App\Support\LevelPickers::bulkAssignable()` is

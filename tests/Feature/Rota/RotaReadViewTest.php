@@ -139,6 +139,45 @@ class RotaReadViewTest extends TestCase
     }
 
     /**
+     * P1c-2 Task 2 / Decision B. AC-02's claim status is `$extra` on `PersonPresenter::one()`,
+     * NEVER a base key — and this is the assertion that keeps it that way.
+     *
+     * `PersonPresenter`'s base map reaches every `rota.view` holder through `contactFree()`, and
+     * `rota.view` is seeded for every position (P1d-1 owner decision 2). So a base key is
+     * published to the whole department: "who in this department has not claimed their account
+     * yet" would become a fact every resident could read out of the props. Adding claim state to
+     * the base map is the obvious shortcut when implementing the People screen's status column,
+     * it costs one line, and nothing else in the suite would notice.
+     *
+     * Walked over the WHOLE props tree, and for an ADMINISTRATOR as well as a resident — the same
+     * shape as `test_no_contact_field_reaches_the_props_for_any_viewer`, for the same reason: a
+     * presenter change must not be able to leak through a row this test did not think to look at.
+     */
+    public function test_no_invitation_or_claim_state_reaches_the_rota_read_view_for_any_viewer(): void
+    {
+        [, $person] = $this->seedYear();
+
+        // A real, open invitation for the person on the grid, so "no claim state" is a fact about
+        // the projection rather than a fact about an empty invitations table.
+        $admin = User::factory()->create(['position' => 0]);
+        \App\Models\Invitation::issue('rota.leak@example.test', 4, $admin, $person);
+
+        foreach ([4, 0] as $position) {
+            $viewer = $position === 0 ? $admin : User::factory()->create(['position' => $position]);
+            $props = $this->propsFrom($this->actingAs($viewer)->get('/rota?year=2026-2027'));
+
+            $this->assertContains(
+                $person->getKey(),
+                array_map(fn (array $row): int => $row['person']['id'], $props['grid']['rows']),
+                "position {$position} did not receive the seeded person's row at all"
+            );
+
+            $this->assertSame([], $this->keyPaths($props, ['invitation', 'claim_state', 'invited']),
+                "position {$position} received a claim-status key in the /rota props");
+        }
+    }
+
+    /**
      * Owner decision 1 (2026-08-10): there is no publish gate, so there is nothing anywhere in
      * these props that could carry one. Asserted over the whole page rather than over a key
      * somebody remembered to look at, because the way a draft state arrives is by a later task

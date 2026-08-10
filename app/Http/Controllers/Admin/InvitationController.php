@@ -8,6 +8,7 @@ use App\Models\Invitation;
 use App\Models\PendingRegistration;
 use App\Models\Person;
 use App\Models\User;
+use App\Support\Invitations\InvitationStatus;
 use App\Support\ManagerScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -165,31 +166,57 @@ class InvitationController extends Controller
     }
 
     /**
-     * The open invitations, for the Users screen. No token, hashed or otherwise, ever
-     * reaches the page.
+     * Every invitation, with its derived state, for the Users screen. No token, hashed or
+     * otherwise, ever reaches the page.
+     *
+     * IT USED TO BE OPEN-ONLY, and it used to declare a `?User $viewer` it never read. Both were
+     * defects of the same shape (P1c-2 finding 4). AC-02 asks for *"claim status visible"*, and a
+     * list that drops a row the moment it is accepted, revoked or expired can answer "who is still
+     * waiting" but not "who ever claimed theirs" — the question Munawib §35's *"residents claimed
+     * accounts"* is made of. Meanwhile the scoping the unused parameter implied was being applied
+     * by the CALLER (`UserManagementController::index()`'s own `->when(! $all, …)`), so a second
+     * caller had to remember a rule it could not see. It is applied here now, through
+     * `ManagerScope::mayTarget()` — the same rule that governs acting on the invitation, proven
+     * equivalent to the assertion by `ManagerScopeParityTest`.
+     *
+     * NO LIMIT, deliberately. `invitations` still has no retention rule (design §14 item 7) and
+     * resend makes rows accumulate faster, but truncating the list here would be a disposal policy
+     * chosen by a projection — it belongs in the plan that reviews the whole retention policy, not
+     * in a screen change.
      *
      * @return array<int, array<string, mixed>>
      */
-    public static function openInvitations(?User $viewer): array
+    public static function statusList(?User $viewer): array
     {
         return Invitation::query()
-            ->whereNull('accepted_at')
-            ->whereNull('revoked_at')
-            ->where('expires_at', '>', now())
             // `full_name` is a read-through accessor since P0c: it resolves via the `person`
             // relation, which needs `person_id` loaded — a narrow `id,full_name` constraint
             // omits it and the accessor silently returns null even though the row was fetched.
             ->with('invitedBy:id,person_id')
             ->orderByDesc('id')
             ->get()
-            ->map(fn (Invitation $i) => [
-                'id' => $i->id,
-                'member_email' => $i->member_email,
-                'position' => $i->position,
-                'position_label' => self::OFFERABLE[$i->position] ?? (string) $i->position,
-                'invited_by' => $i->invitedBy?->full_name,
-                'expires_at' => $i->expires_at->format('Y-m-d H:i'),
-            ])
+            ->filter(fn (Invitation $i): bool => ManagerScope::mayTarget($viewer, (int) $i->position))
+            ->map(function (Invitation $i): array {
+                $state = InvitationStatus::stateOf($i);
+
+                return [
+                    'id' => $i->id,
+                    'member_email' => $i->member_email,
+                    'position' => $i->position,
+                    'position_label' => self::OFFERABLE[$i->position] ?? (string) $i->position,
+                    'invited_by' => $i->invitedBy?->full_name,
+                    'state' => $state,
+                    'state_label' => InvitationStatus::labelFor($state, null),
+                    // ONE date shape across both screens (P1c-2 Decision B): a `Calendar::label()`
+                    // with the time appended, never a second `->format()` living in a controller.
+                    'expires_at' => InvitationStatus::at($i->expires_at),
+                    // Revoking a spent or already-revoked invitation is a no-op server-side; the
+                    // control is hidden rather than offered so the screen does not suggest an act
+                    // with no effect.
+                    'open' => $i->isOpen(),
+                ];
+            })
+            ->values()
             ->all();
     }
 

@@ -18,11 +18,28 @@ import AppLayout from '../../Layouts/AppLayout.vue';
  * screen it is always present: the route itself requires `people.manage`, and a holder of that
  * capability always passes `PersonPolicy::viewContact()`/`viewNotes()`'s first branch.)
  *
- * "Status" is always DERIVED (active/retired × account/roster-only) — there is no stored
- * `person_status` column, on purpose (design §5.1 deviation 3).
+ * "Status" is always DERIVED (active/retired × account/roster-only × claim state) — there is no
+ * stored `person_status` column and no stored invitation status, on purpose (design §5.1
+ * deviation 3; P1c-2 Decision B).
  *
- * NOTHING HERE CREATES AN ACCOUNT — position is a JOB ROLE, not a login. There is no delete
- * control: people are deactivated (the "Retire" toggle below), never deleted (owner ruling).
+ * CLAIM STATE (AC-02) arrives as `person.invitation`, built by `App\Support\Invitations\
+ * InvitationStatus` and passed as `$extra` — never a `PersonPresenter` base key, because the base
+ * map reaches every `rota.view` holder and "who has not claimed their account yet" is not a fact
+ * the whole department gets. Every string and every date in it is composed SERVER-SIDE
+ * (`invitation.label`, `invitation.at.date`, `invitation.at.hijri`): this component interpolates
+ * and formats nothing, which is what `CalendarIsTheOnlyConverterTest` requires.
+ *
+ * It is rendered BESIDE the account tag rather than replacing it, because the two answer different
+ * questions and a person can hold an account with no invitation row at all (the bootstrap
+ * administrator, a legacy-imported member, an approved pending registration). Folding them into
+ * one tag would label those people "No invitation", which reads as "unclaimed" and is the opposite
+ * of true.
+ *
+ * NOTHING HERE CREATES AN ACCOUNT — position is a JOB ROLE, not a login, and the Invite button
+ * below POSTs to `admin.invitations.store` (gated in-controller by `App\Support\ManagerScope`),
+ * never to any `/admin/people/*` endpoint. `RosterNeverMintsCredentialsTest` fails the build if
+ * that ever changes. There is no delete control: people are deactivated (the "Retire" toggle
+ * below), never deleted (owner ruling).
  *
  * Mobile cards + desktop table, matching Levels.vue and Units.vue. Create/edit mirror
  * `Levels.vue`'s `createOpen` / `editingId` structure verbatim.
@@ -93,6 +110,49 @@ const toggleHistory = (person) => {
 const historySpans = computed(() => (
     props.history && props.history.person_id === openHistoryId.value ? props.history.spans : null
 ));
+
+// --- Invite (AC-02's convenience on top of an already-satisfied AC-01) ----------------------
+//
+// A roster-only person with an address, whose invitation has never been issued / has expired /
+// was revoked, and whom this viewer may target. Every one of those conditions is decided by the
+// SERVER: `invitation.state` and `invitation.may_invite` come from
+// `App\Support\Invitations\InvitationStatus`, which reads `App\Support\ManagerScope` and
+// `InvitationController::OFFERABLE` — so the button is offered exactly where the endpoint would
+// accept it, rather than where the client guesses it would (D9's rule, applied to an affordance).
+//
+// The address is checked with `'email' in person`, not `person.email`: a withheld contact field is
+// ABSENT from the props, never null, and the two must not be conflated. (On this screen the route
+// itself requires `people.manage`, so it is always present — the check is the shape, not a
+// prediction about this page.)
+const invitableStates = ['none', 'expired', 'revoked'];
+
+const canInvite = (person) => !!person.invitation
+    && person.invitation.may_invite
+    && invitableStates.includes(person.invitation.state)
+    && !person.has_account
+    && 'email' in person
+    && !!person.email;
+
+const invitingId = ref(null);
+const invitationLink = ref(null);
+
+// Straight to the invitation endpoint, which carries ManagerScope's two-tier gate. The link comes
+// back in a one-shot flash and is shown once: it is a bearer credential, stored hashed, and it
+// cannot be re-displayed. If mail is configured it has also been sent; if it is not, this panel is
+// the delivery.
+const invite = (person) => {
+    invitingId.value = person.id;
+    invitationLink.value = null;
+
+    router.post('/admin/invitations', {
+        member_email: person.email,
+        position: person.position,
+    }, {
+        preserveScroll: true,
+        onSuccess: (page) => { invitationLink.value = page.props.flash?.invitation_link ?? null; },
+        onFinish: () => { invitingId.value = null; },
+    });
+};
 
 // --- Contact visibility (PE-02's department setting) ------------------------------------
 
@@ -486,6 +546,15 @@ const bulkReport = computed(() => {
                 <p v-if="bulkForm.errors.ids" class="w-full text-xs text-critical">{{ bulkForm.errors.ids }}</p>
             </div>
 
+            <!-- Shown once, immediately after an Invite. The link is a bearer credential that
+                 creates an account: it is stored hashed and can never be re-displayed, so if mail
+                 is not configured this panel IS the delivery. -->
+            <div v-if="invitationLink" data-testid="invitation-link"
+                 class="channel-bar channel-bar-ok rounded-md bg-ok-soft px-4 py-3 text-sm">
+                <p class="mb-1 font-semibold text-ink">Invitation link — shown only once</p>
+                <p class="readout break-all text-xs text-ink">{{ invitationLink }}</p>
+            </div>
+
             <!-- The last bulk action's per-person outcome — from the writer's own return
                  values, never "Done." -->
             <div v-if="bulkReport.length" class="rounded-md border border-line bg-panel p-4">
@@ -513,12 +582,23 @@ const bulkReport = computed(() => {
                         <p v-if="'phone' in person" class="readout text-xs text-body">{{ person.phone || '—' }}</p>
                         <div class="mt-2 flex flex-wrap gap-2">
                             <span class="channel-tag">{{ person.has_account ? 'Account' : 'Roster only' }}</span>
+                            <span v-if="person.invitation" class="channel-tag">{{ person.invitation.label }}</span>
                             <span v-if="person.external" class="channel-tag">External</span>
                         </div>
+                        <p v-if="person.invitation?.at" class="readout text-xs text-muted">
+                            {{ person.invitation.at.date }} {{ person.invitation.at.time }}
+                            <span>({{ person.invitation.at.hijri }})</span>
+                        </p>
                         <div class="mt-3 flex gap-3">
                             <button type="button" class="text-xs font-semibold text-channel-ink" @click="startEdit(person)">Edit</button>
                             <button type="button" class="text-xs font-semibold text-channel-ink" @click="toggleHistory(person)">
                                 {{ openHistoryId === person.id ? 'Hide history' : 'History' }}
+                            </button>
+                            <button v-if="canInvite(person)" type="button" :disabled="invitingId === person.id"
+                                    class="text-xs font-semibold text-channel-ink disabled:opacity-60"
+                                    :aria-label="`Invite ${person.full_name} to create an account`"
+                                    @click="invite(person)">
+                                Invite
                             </button>
                         </div>
                         <div v-if="openHistoryId === person.id" class="mt-3 border-t border-line-soft pt-3">
@@ -585,13 +665,26 @@ const bulkReport = computed(() => {
                                     <div class="flex flex-wrap gap-2">
                                         <span class="channel-tag">{{ person.active ? 'Active' : 'Retired' }}</span>
                                         <span class="channel-tag">{{ person.has_account ? 'Account' : 'Roster only' }}</span>
+                                        <span v-if="person.invitation" class="channel-tag"
+                                              :data-testid="`claim-state-${person.id}`">{{ person.invitation.label }}</span>
                                         <span v-if="person.external" class="channel-tag">External</span>
                                     </div>
+                                    <p v-if="person.invitation?.at" class="readout mt-1 text-xs text-muted">
+                                        {{ person.invitation.at.time }}
+                                        <span>({{ person.invitation.at.hijri }})</span>
+                                    </p>
                                 </td>
                                 <td class="px-4 py-2 text-right">
                                     <button type="button" class="mr-3 text-xs font-semibold text-channel-ink" @click="startEdit(person)">Edit</button>
-                                    <button type="button" class="text-xs font-semibold text-channel-ink" @click="toggleHistory(person)">
+                                    <button type="button" class="mr-3 text-xs font-semibold text-channel-ink" @click="toggleHistory(person)">
                                         {{ openHistoryId === person.id ? 'Hide history' : 'History' }}
+                                    </button>
+                                    <button v-if="canInvite(person)" type="button" :disabled="invitingId === person.id"
+                                            :data-testid="`invite-${person.id}`"
+                                            class="text-xs font-semibold text-channel-ink disabled:opacity-60"
+                                            :aria-label="`Invite ${person.full_name} to create an account`"
+                                            @click="invite(person)">
+                                        Invite
                                     </button>
                                 </td>
                             </tr>

@@ -812,7 +812,46 @@ downstream consumer is Munawib §35's acceptance clause *"residents claimed acco
 
 ## Amendments made during execution
 
-*(Empty at plan time. Follow the P0c/P0d/P1a/P1b/P1c/P1d convention: when a task turns up something
+**Task 2 (2026-08-10) — `forPeople()` takes Person MODELS, not ids, and the plan's own signature
+would have cost a second query.** Decision B gives the signature as
+`forPeople(iterable $personIds, ?User $viewer)` while its prose says the position for the scoping
+decision may be taken "from the already-loaded person collection". Those are not compatible: with
+bare ids the projection cannot know a position, and a person with **no** invitation row has nothing
+in the `invitations` result to join a position from — so scoping could not be applied to exactly the
+people whose state is `none`, and a Chief Resident would learn that a Consultant had never been
+invited. Implemented as `forPeople(iterable $people, ?User $viewer)` taking the collection
+`PersonController::rosterProps()` already holds. One query, no leak.
+
+**Task 2 — the budget case caught a real N+1 on its first run, from an unexpected direction.**
+`test_the_whole_page_costs_one_query` reported **34** queries for 30 people against a bound of 1.
+The extra thirty were not the invitation lookup (that was correctly one `whereIn`) but a per-person
+`hasAccount()` `EXISTS`, added while computing whether to offer the Invite button. `has_account` is a
+caller-set `withExists()` alias, so it would have been free on the real screen and catastrophic for
+any caller that forgot — the worst shape of defect, invisible in production until the one caller that
+did not know. `mayInvite()` now asks only what is free (role offerable × viewer tier); the screen
+answers the account and address questions from props it already holds. Both budget cases were then
+re-run against the offence deliberately reintroduced (31 and 12→37) before being trusted.
+
+**Task 2 — the claim tag is rendered BESIDE the account tag, not replacing it.** Step 5 has
+`{{ person.has_account ? 'Account' : 'Roster only' }}` *becoming* the claim-state tag, with
+*"Account (claimed 2 Aug)"* as one of five strings. It is shipped as two tags instead, because the
+two facts are independent: a person can hold an account with **no invitation row at all** (the
+bootstrap administrator, a legacy-imported member, an approved pending registration), and a single
+tag would label them *"No invitation"* — which reads as "unclaimed" and is the opposite of true.
+`InvitationStatus` stays purely invitation-derived, exactly as Decision B specifies.
+
+**Task 2 — one `bg-panel-soft` site (Task 7's list) was closed early.** `Users.vue`'s invitations
+table header is the table this task rewrote; leaving a class that compiles to nothing on markup being
+edited anyway would have been deliberate. Two sites remain for Task 7 (`StaffPrivacyNotice.vue`,
+`AcceptInvitation.vue`), and `Users.vue:367`'s stale `colspan` is untouched — it is on the *users*
+table, which this task did not open.
+
+**Task 2 — measured, not computed.** Suite left at **1320** PHPUnit tests (1304 before the task; +12
+`InvitationStatusTest`, +3 `ManagerScopeParityTest`, +1 `RotaReadViewTest`), 6027 assertions, 0
+skipped. Vitest 187, `npm run build` green, `npm run test:e2e` 22 passed. The People screen costs
+**7 queries at any roster size**.
+
+*(Follow the P0c/P0d/P1a/P1b/P1c/P1d convention: when a task turns up something
 this plan's enumeration missed — a site not listed, a test that goes red for a reason the plan did
 not predict, a behaviour that differs between SQLite and MySQL — record it here, dated, with what was
 found and how it was resolved. Findings caught empirically rather than by inspection are the ones

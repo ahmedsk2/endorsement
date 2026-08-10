@@ -108,12 +108,15 @@ class UserManagementController extends Controller
                 ]),
             'positions' => Position::orderBy('id')->get(['id', 'name']),
 
-            // Invitations are how accounts are created now. A Chief Resident sees only the
-            // ones they could act on, matching how `pending` and `users` are scoped above.
-            'invitations' => collect(InvitationController::openInvitations($request->user()))
-                ->when(! $all, fn ($c) => $c->where('position', self::RESIDENT))
-                ->values()
-                ->all(),
+            // Invitations are how accounts are created now, and since P1c-2 the list carries
+            // every one of them with its derived claim state (AC-02), not just the open ones.
+            //
+            // THE SCOPING MOVED, AND THAT IS THE POINT. A Chief Resident still sees only the
+            // invitations they could act on — but the rule now lives inside `statusList()` rather
+            // than in this `->when(! $all, …)`, because it had become a rule a SECOND caller could
+            // not see (P1c-2 finding 4: the projection declared a `?User $viewer` and ignored it
+            // while this line did the work). The People screen is that second caller.
+            'invitations' => InvitationController::statusList($request->user()),
             'invitablePositions' => $all
                 ? InvitationController::OFFERABLE
                 : [self::RESIDENT => InvitationController::OFFERABLE[self::RESIDENT]],

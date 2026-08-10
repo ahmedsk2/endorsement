@@ -44,7 +44,41 @@ final class ManagerScope
     }
 
     /**
+     * The same rule as `assertMayTarget()`, as a PREDICATE — for a read, not an act.
+     *
+     * P1c-2 Decision B: AC-02's claim-status projection has to answer "may this viewer know
+     * anything about this person's account?" once per row across a whole roster. An assertion
+     * that throws, audits and 403s is the wrong shape for that — sixty refusals on one page load
+     * would be sixty audit rows and one aborted request.
+     *
+     * WHY NOT COLLAPSE THE TWO. `assertMayTarget()` keeps its own body deliberately: it writes
+     * TWO DISTINCT refusal audits — `access_denied` when the capability is missing at all,
+     * `user_scope_denied` when the capability is held but the target is out of tier — and that
+     * distinction is the difference between "someone poked at a screen they cannot reach" and "a
+     * Chief Resident tried to act on a Consultant". Expressing the assertion in terms of this
+     * boolean would lose it.
+     *
+     * The deal is that the duplication is PROVEN rather than trusted:
+     * `tests/Feature/Admin/ManagerScopeParityTest.php` runs the two over the whole matrix of
+     * (capability set × position) and fails if they ever disagree. This class's own docblock
+     * records what an unproven copy of this rule cost once already.
+     */
+    public static function mayTarget(?User $user, int $targetPosition): bool
+    {
+        if (self::canManageAll($user)) {
+            return true;
+        }
+
+        return $user !== null
+            && AccessControl::allows($user, 'users.manage_residents')
+            && $targetPosition === self::RESIDENT;
+    }
+
+    /**
      * Authorize an action against ONE account/registration/invitation of $targetPosition.
+     *
+     * The throwing, auditing half of the pair — see `mayTarget()` above for why there are two and
+     * what keeps them honest.
      */
     public static function assertMayTarget(Request $request, int $targetPosition): void
     {

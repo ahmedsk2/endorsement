@@ -264,8 +264,38 @@ describe('AvailabilityPanel — MR-07, one component, two surfaces', () => {
         expect(panel.text()).not.toContain('99');
     });
 
-    /** No summary at all (a year with no periods) renders no panel rather than an empty one. */
-    it('renders nothing when there is no summary', () => {
+    /**
+     * THE PANEL'S OWN GUARD, WHICH THIS CASE PREVIOUSLY COULD NOT REACH (adversarial review,
+     * finding 6).
+     *
+     * It used to mount `{ grid: null, summary: null }` under the name "renders nothing when there
+     * is no summary". Both pages wrap the panel in a `v-else` on `grid`, so with a null grid the
+     * panel is never mounted AT ALL — the assertion held whatever `AvailabilityPanel` did with a
+     * null summary, and it was measuring the PAGES' grid guard under the COMPONENT's name.
+     * Confirmed by deleting the panel's `v-if="summary"` outright and watching this whole file
+     * stay green.
+     *
+     * A null summary with a LIVE grid is the only state the component alone answers for. The two
+     * are null together on today's server (`RotaController` derives one from the other), which is
+     * exactly why the guard needs a test of its own: nothing in the request path would notice its
+     * removal, and the failure it prevents — a heading and an empty table where a department
+     * expects its coverage figures — is silent.
+     */
+    it('renders nothing when it is handed no summary, with the grid still there', () => {
+        expect(mountRead({ summary: null }).findAll('[data-testid="availability-panel"]')).toHaveLength(0);
+        expect(mountEditor({ summary: null }).findAll('[data-testid="availability-panel"]')).toHaveLength(0);
+
+        // Non-vacuity: the same two mounts WITH a summary do produce a panel, so the assertions
+        // above are about the summary prop and not about a mount that failed for another reason.
+        expect(mountRead().findAll('[data-testid="availability-panel"]')).toHaveLength(1);
+        expect(mountEditor().findAll('[data-testid="availability-panel"]')).toHaveLength(1);
+    });
+
+    /**
+     * The other half, under the name of what it actually exercises: on a year with no grid the
+     * PAGES keep the panel off the screen, and it is never mounted for its own guard to run.
+     */
+    it('is not mounted at all on a year with no grid — that is the pages guard, not the panels', () => {
         expect(mountRead({ grid: null, summary: null }).findAll('[data-testid="availability-panel"]')).toHaveLength(0);
         expect(mountEditor({ grid: null, summary: null }).findAll('[data-testid="availability-panel"]')).toHaveLength(0);
     });

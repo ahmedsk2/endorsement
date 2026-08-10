@@ -304,10 +304,19 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:rota.manage'])
         // Behind `cap:rota.manage` rather than `cap:rota.view`: a whole-year extraction is an
         // administrative act and the input to the importer, and putting it in the read group would
         // hand every member of the department a one-click copy of the whole year.
+        //
+        // `no_history` ON BOTH, for the same reason the signature routes carry it (see
+        // App\Http\Middleware\StartSession). A download is not somewhere a person can navigate back
+        // to: without the flag, clicking Export stored the CSV's URL as the session's previous page,
+        // and the next `back()` — the fill preview, the import preview, any of them — redirected
+        // into a download. It destroyed the operator's preview and wrote a phantom `rota_export`
+        // audit row recording a disclosure nobody asked for.
+        // `DownloadRoutesSkipHistoryTest` now asserts this over the whole router rather than over
+        // a list somebody has to remember to extend.
         Route::get('/rota/export/assignments', [MasterRotaController::class, 'exportAssignments'])
-            ->name('rota.export.assignments');
+            ->defaults('no_history', true)->name('rota.export.assignments');
         Route::get('/rota/export/vacations', [MasterRotaController::class, 'exportVacations'])
-            ->name('rota.export.vacations');
+            ->defaults('no_history', true)->name('rota.export.vacations');
 
         // MR-06's import (P1d-2 Task 12, Decision H). The same preview/commit pair as the fill and
         // for the same reason: the preview is the deliverable and must be incapable of writing, so

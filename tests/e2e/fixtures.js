@@ -28,6 +28,15 @@ export function assertLocalhost(baseURL) {
 
 export const ADMIN = { username: 'admin', password: 'AdminPass123!' };
 
+/**
+ * A RESIDENT — position 4, and therefore `rota.view` without `rota.manage` (AccessControlSeeder's
+ * ROLE_DEFAULTS; owner decision 2, 2026-08-10, made `rota.manage` Administrator-only). This is the
+ * actor MR-05 is written for, and the only one who can prove the read view is genuinely reachable
+ * without the editor's capability: an administrator reaching `/rota` proves nothing, because an
+ * administrator holds every capability in the catalogue.
+ */
+export const RESIDENT = { username: 'resident', password: 'ResidentPass123!' };
+
 /* --------------------------------------------------------------------- auth --- */
 
 export async function login(page, who = ADMIN) {

@@ -192,6 +192,65 @@ class InvitationTest extends TestCase
             ->assertSessionHasErrors('member_email');
     }
 
+    // ------------------------------------------------------------------ how long it lives
+
+    /*
+     * AC-02: invitations expire, and the window is a department decision rather than a
+     * constant. Seven days is a DELIBERATE override of Munawib AC-02's fourteen (P1 owner
+     * decision 5, round 2) — a redeemed link reaches a child's clinical records, so a
+     * forwarded one stays live for half as long.
+     */
+
+    public function test_an_invitation_expires_after_the_configured_number_of_days(): void
+    {
+        \App\Support\AppSettings::set('invitation_lifetime_days', '14');
+
+        [$invitation] = $this->invite();
+
+        $this->assertSame(14, Invitation::lifetimeDays());
+        $this->assertSame(
+            now()->addDays(14)->format('Y-m-d H:i'),
+            $invitation->expires_at->format('Y-m-d H:i'),
+        );
+    }
+
+    public function test_an_unset_or_absurd_setting_falls_back_to_seven(): void
+    {
+        // Nothing configured at all: the deployed default applies untouched.
+        $this->assertSame(7, Invitation::lifetimeDays());
+
+        // And a value written straight into the table — a database-console edit the
+        // FormRequest never saw, which is the ONLY reason the clamp exists.
+        \App\Models\AppSetting::updateOrCreate(
+            ['key' => 'invitation_lifetime_days'],
+            ['value' => '999'],
+        );
+        \Illuminate\Support\Facades\Cache::flush();
+
+        $this->assertSame(7, Invitation::lifetimeDays());
+
+        [$invitation] = $this->invite();
+        $this->assertSame(
+            now()->addDays(7)->format('Y-m-d H:i'),
+            $invitation->expires_at->format('Y-m-d H:i'),
+        );
+    }
+
+    public function test_the_default_is_seven_and_the_constant_is_the_default_not_the_value(): void
+    {
+        $this->assertSame(7, Invitation::LIFETIME_DAYS);
+        $this->assertSame(1, Invitation::LIFETIME_MIN);
+        $this->assertSame(30, Invitation::LIFETIME_MAX);
+
+        // With nothing stored, the constant IS what is returned — but through the method,
+        // which is the one definition every caller must read.
+        $this->assertSame(Invitation::LIFETIME_DAYS, Invitation::lifetimeDays());
+
+        // A configured value inside the bounds wins over the constant.
+        \App\Support\AppSettings::set('invitation_lifetime_days', '1');
+        $this->assertSame(1, Invitation::lifetimeDays());
+    }
+
     // ------------------------------------------------------------------ redeeming
 
     public function test_accepting_an_invitation_creates_an_active_verified_account(): void

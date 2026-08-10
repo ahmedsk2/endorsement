@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\Invitation;
 use App\Support\AppSettings;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -65,6 +66,15 @@ class SettingsController extends Controller
             'remind_delay_minutes' => ['sometimes', 'nullable', 'integer', 'between:0,120'],
             'handover_time_morning' => ['sometimes', 'nullable', 'date_format:H:i'],
             'handover_time_afternoon' => ['sometimes', 'nullable', 'date_format:H:i'],
+            // Bounds from the model's own constants, never repeated literals: one
+            // definition, two consumers (this rule and `Invitation::lifetimeDays()`'s
+            // clamp), so they cannot drift apart into a value the form accepts and the
+            // reader silently discards.
+            'invitation_lifetime_days' => [
+                'sometimes', 'nullable', 'integer',
+                'min:'.Invitation::LIFETIME_MIN,
+                'max:'.Invitation::LIFETIME_MAX,
+            ],
         ]);
 
         $changed = [];

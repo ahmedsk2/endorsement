@@ -26,6 +26,7 @@ const form = useForm({
     vapid_subject: props.settings.vapid_subject ?? '',
     vapid_public_key: props.settings.vapid_public_key ?? '',
     vapid_private_key: '',
+    invitation_lifetime_days: props.settings.invitation_lifetime_days ?? '',
     remind_delay_minutes: props.settings.remind_delay_minutes ?? '',
     handover_time_morning: props.settings.handover_time_morning ?? '',
     handover_time_afternoon: props.settings.handover_time_afternoon ?? '',
@@ -153,6 +154,34 @@ const inputClass = 'w-full rounded-md border border-line bg-panel px-3 py-2 text
                                : 'channel-bar-critical bg-critical-soft text-critical'">
                             {{ mailTest.message }}
                         </p>
+                    </div>
+                </section>
+
+                <!-- Invitations -->
+                <section class="channel-bar rounded-md border border-line bg-panel p-5">
+                    <h3 class="mb-1 text-sm font-semibold text-ink">Invitations</h3>
+                    <!--
+                      Beside the mail settings on purpose: this is a credential-exposure
+                      parameter, and an administrator should be able to review every such
+                      parameter in one pass rather than meeting this one on the console
+                      where invitations are issued all day.
+                    -->
+                    <div class="grid gap-3 sm:grid-cols-3">
+                        <div>
+                            <label class="channel-tag mb-1 block" for="invitation_lifetime_days">Link lifetime (days)</label>
+                            <input id="invitation_lifetime_days" v-model="form.invitation_lifetime_days" type="number"
+                                   min="1" max="30" class="readout" :class="inputClass" placeholder="7"
+                                   data-testid="invitation-lifetime-days" />
+                            <p v-if="form.errors.invitation_lifetime_days" class="mt-1 text-xs text-critical">
+                                {{ form.errors.invitation_lifetime_days }}
+                            </p>
+                        </div>
+                        <div class="sm:col-span-2">
+                            <p class="mt-1 text-xs text-muted">
+                                How long an invitation link stays usable. Default 7 days; 30 at most.
+                                Shorter is safer &mdash; the link is a credential.
+                            </p>
+                        </div>
                     </div>
                 </section>
 

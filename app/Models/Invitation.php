@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
+use App\Support\AppSettings;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Str;
 
 /**
  * A single-use, expiring, address-bound invitation to create one account.
@@ -14,8 +14,21 @@ use Illuminate\Support\Str;
  */
 class Invitation extends Model
 {
-    /** How long an invitation stays redeemable. Long enough for a night shift to see it. */
+    /**
+     * The DEFAULT lifetime, in days. Long enough for a night shift to see it.
+     *
+     * SEVEN IS A DELIBERATE OVERRIDE of Munawib AC-02's stated "default 14 days" (P1 owner
+     * decision 5, round 2, 2026-08-08), recorded here rather than applied silently: a
+     * redeemed invitation reaches a child's clinical records, so a link that was forwarded,
+     * left in a shared inbox or printed stays live for half as long.
+     */
     public const LIFETIME_DAYS = 7;
+
+    /** Bounds for the configured lifetime. A day is the shortest useful window... */
+    public const LIFETIME_MIN = 1;
+
+    /** ...and a month the longest anyone has argued for, so the knob cannot reach "never". */
+    public const LIFETIME_MAX = 30;
 
     /**
      * @var list<string>
@@ -66,14 +79,41 @@ class Invitation extends Model
         $invitation = static::create([
             'institution_id' => $invitedBy?->institution_id,
             'person_id' => $person?->getKey(),
-            'member_email' => Str::lower(trim($email)),
+            // ONE definition of normalising an address (`Person::normalizeEmail()`), not a
+            // second inline copy of it — case and whitespace differ between a hospital
+            // spreadsheet, an invitation form and a self-registration, and matching must
+            // not. The `?? ''` is the column contract, not a guess: `member_email` is NOT
+            // NULL, and the normaliser returns null for a blank input. Every caller already
+            // refuses a blank address; the column must not depend on their doing so.
+            'member_email' => Person::normalizeEmail($email) ?? '',
             'position' => $position,
             'token_hash' => hash('sha256', $token),
             'invited_by_user_id' => $invitedBy?->getKey(),
-            'expires_at' => now()->addDays(self::LIFETIME_DAYS),
+            'expires_at' => now()->addDays(self::lifetimeDays()),
         ]);
 
         return [$invitation, $token];
+    }
+
+    /**
+     * How long an invitation stays redeemable, in days.
+     *
+     * `LIFETIME_DAYS` is the DEFAULT, not the value — an unset or unparseable setting falls
+     * back to it, so a department that never opens the settings screen behaves exactly as it
+     * did before this method existed. The clamp is not belt-and-braces over the FormRequest:
+     * `app_settings` is a plain key/value table an operator can also reach with a database
+     * console, and an invitation is a bearer credential whose lifetime must not be settable
+     * to "effectively never" by a route this method cannot see.
+     *
+     * This is the ONE definition. Nothing else computes an expiry.
+     */
+    public static function lifetimeDays(): int
+    {
+        $configured = (int) (AppSettings::get('invitation_lifetime_days') ?? 0);
+
+        return $configured >= self::LIFETIME_MIN && $configured <= self::LIFETIME_MAX
+            ? $configured
+            : self::LIFETIME_DAYS;
     }
 
     /**

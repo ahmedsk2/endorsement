@@ -1702,6 +1702,77 @@ the standing rules say to trust the measurement). `npm test` 173 → **185** (tw
 `tests/js/RotaImport.test.js`). `npm run test:e2e` 21 → **22** (one journey in the new
 `tests/e2e/rota-import.spec.js`). `npm run build` green.
 
+**Task 13 (2026-08-10) — THE TASK'S OWN ITEM 3 IS FALSE AGAINST THE TREE: `Calendar::weeksIn()`
+did NOT gain a second consumer.** The instruction says to record in design §7 that
+*"`Calendar::weeksIn()` gained its second consumer (`AvailabilitySummary`)"*. It has exactly **one**
+production caller, `RotaGrid::forYear():171` — verified by `grep -rn "weeksIn(" app/ resources/js/`,
+which returns that call plus three docblocks *describing* it. `AvailabilitySummary` deliberately
+touches `Calendar` not at all: it folds the `weeks` array `RotaGrid` already put in the props and
+decides "is this person on leave in this week" by comparing four `Y-m-d` **strings**, which is its
+own docblock's *"IT HANDLES NO DATES (ST-06). Not one."* Writing the sentence as instructed would
+have added an eighth factual error to a document whose whole problem is factual errors — and a
+reader chasing the claimed second consumer would find nothing. §7 now records the true, stronger
+version: the snapping half of that item **did** land (`VacationBooking::snap()`, one rule, called by
+`book()` and by the importer's preview), and the weeks half is a case of ST-06 holding harder than
+the plan assumed.
+
+**Task 13 (2026-08-10) — THREE of the documents this task was told to correct were ALREADY correct
+on disk, and one of them is the P1d-1 trap repeating exactly.** Checked before editing, per the
+task's own instruction, and left untouched:
+1. **`docs/spec/08-foundation.md`** — Task 1 corrected it, as the task text itself predicts. Its
+   `rota.manage` paragraph already states the Administrator-only default, names the reversal, names
+   the Scheduler-persona reason a department might grant it, and explains the
+   `applied_role_defaults` never-re-assert consequence. Verified, not re-edited.
+2. **`docs/RUNBOOK-DEPLOY.md`'s Access Control note** — Task 1's own amendment records adding it
+   after finding the runbook already asserted the *old* default. Both bullets are on disk and
+   correct. Only the export/import operator section is new here.
+3. **CLAUDE.md's array-shaped query-parameter rule** — already present, added by the adversarial
+   review, and **absent from the copy of CLAUDE.md this task's executing agent was handed**. That is
+   the precise trap the task text warns about (P1d-1 Task 12 found the sidebar/hue wording already
+   correct on disk and stale only in cached context), observed a second time, in the same file, one
+   slice later. It is worth stating as a general rule rather than a coincidence: **in this
+   repository, a document quoted to you is evidence about the past, not about the tree.**
+
+**Task 13 (2026-08-10) — design §9.1 was already right for a reason that made §13 wrong.** §9.1's
+*"while `rota.manage` (editing) defaults Administrator-only"* is on disk and true today — but it was
+written by **P1d-1's** Task 12, describing a default P1d-1 did not ship, and became accurate only
+when P1d-2 Task 1 reversed the seeder. Left standing, with the reversal recorded beneath it. The
+same sentence had been copied into §13's P1d-1 phase entry, where it is straightforwardly false:
+that entry describes what P1d-1 **shipped**, and P1d-1 shipped Administrator *and* Chief Resident.
+Corrected there. A claim that is true of the tree can still be false of the history it is filed
+under, and this document files claims under history.
+
+**Task 13 (2026-08-10) — GITHUB ACTIONS HAS RUN NO JOB AT ALL SINCE 2026-08-08, and the date this
+task was given is a day late.** The instruction says CI "has been failing to start since
+2026-08-09". Measured with `gh run list --workflow=CI` and `gh run view` rather than taken on
+trust: the last run that actually started was `2026-08-07T17:21Z`; every run from
+`2026-08-08T07:45Z` onward ends in 2–4 seconds with *"The job was not started because recent
+account payments have failed or your spending limit needs to be increased"* on **every** job. Two
+consequences, both recorded in `docs/OWNER-CHECKLIST.md` item 11 as an owner action:
+- The `docker-build` job — added on 2026-08-09 by the ops-rehearsal work *specifically* because
+  nothing in CI had ever built the production image, which is how the `ext-intl` vendor-stage
+  blocker reached a Coolify deploy — has **never executed once**. It was blocked by billing the day
+  it was written. The image was verified by running `docker build` on this machine instead.
+- More broadly, **P0a through P1d-2 have had zero CI coverage**. Every slice was verified locally
+  and committed on that evidence, which is the only reason the tree is trustworthy — but "green"
+  has meant "green on one Windows machine" for two days of work, with no Linux run and no
+  pull-request check. Dependabot's own update runs still succeed, so the commit list shows green
+  ticks that say nothing about CI.
+
+**Task 13 (2026-08-10) — the two owner-side items live in `docs/OWNER-CHECKLIST.md`, not only in a
+plan.** That file is this project's register of "things only the owner can hold", and a plan's
+amendment section is read once. Item 11 is the billing block above; item 12 is the `rota.manage`
+un-tick on an already-seeded instance, stated with why there is deliberately no migration and why
+skipping it is a supported choice rather than a mistake. The runbook keeps its own copy of the
+un-tick because that is where a deploying operator looks; the two do not disagree.
+
+**Task 13 (2026-08-10) — counts, all four suites, measured after the document edits.**
+`php artisan test` **1281**, `npm test` **185**, `npm run test:e2e` **22**, `npm run build` green —
+every one identical to Task 12's figures, as a documentation-only task should be. Recorded because
+"nothing changed" is a measurement here, not an assumption: this task edits six documents and one
+of the four suites (`DeploymentInvariantsTest`, `HostScriptsAreInstanceScopedTest`) does read files
+under `docs/`.
+
 ---
 
 ## Standing rules for every task
@@ -2809,50 +2880,95 @@ git commit -am "docs: what reading, summarising and moving the rota changed"
 
 ## Definition of done — P1d-2b
 
-- [ ] `php artisan test` green, run via **Bash**, after `npm run build`. `npm test` green.
-      `npm run test:e2e` green.
-- [ ] `App\Support\Rota\RotaFill` plans without writing; `plan()` and `apply()` share one
+- [x] `php artisan test` green, run via **Bash**, after `npm run build`. `npm test` green.
+      `npm run test:e2e` green. (Task 13: **1281** / **185** / **22**, build green.)
+- [x] `App\Support\Rota\RotaFill` plans without writing; `plan()` and `apply()` share one
       `analyse()`; `apply()` re-derives inside its own transaction and trusts no client-supplied
-      plan.
-- [ ] A refusal refuses the **whole** operation. Never "412 of 780 applied".
-- [ ] A target cell carrying a split is skipped unless explicitly confirmed, per cell, defaulting
-      to skip.
-- [ ] Fill-across is forwards only; a split source is refused across periods with the reason named;
-      fill-down copies splits verbatim.
-- [ ] Two explicit fill-down actions, never one that guesses.
-- [ ] **One** `rota_fill` audit row per operation, ids and counts only, written after the
+      plan. (Tasks 7–8. `test_plan_writes_nothing` was proved falsifiable by planting a
+      `RotaAssignment::set()` inside `analyse()`'s target loop. Re-derivation alone was not enough —
+      see the Task 8 amendment: the confirm is additionally pinned to a `RotaFill::digest()` over
+      the plan's state projection, so a grid that moved under the operator is a **refusal**, not a
+      silent apply of something they never saw.)
+- [x] A refusal refuses the **whole** operation. Never "412 of 780 applied". (Task 8.
+      `test_a_failure_part_way_through_rolls_the_whole_fill_back` was measured, not asserted:
+      replacing `apply()`'s `DB::transaction()` with a plain closure produced **7 rows where there
+      had been 6**.)
+- [x] A target cell carrying a split is skipped unless explicitly confirmed, per cell, defaulting
+      to skip. (Task 7. The plan never defined "carrying a split" and the narrow reading —
+      `count > 1` — was a live data-loss bug; `RotaFill::isSplit()`/`isWholePeriod()` are the one
+      definition. `UNCHANGED` is decided **before** the split guard, so no confirmation is demanded
+      for a no-op.)
+- [x] Fill-across is forwards only; a split source is refused across periods with the reason named;
+      fill-down copies splits verbatim. (Task 7. `SKIP_SPLIT_SOURCE` keeps no proposal;
+      `SKIP_SPLIT_TARGET` alone does, because it is the one skip the operator is asked to overrule
+      and they cannot choose between two span sets they can only see one of.)
+- [x] Two explicit fill-down actions, never one that guesses. (Task 7. Three shapes, **four** action
+      keys, collected in `RotaFill::OPERATIONS` so `RotaFillRequest` validates against the one list.)
+- [x] **One** `rota_fill` audit row per operation, ids and counts only, written after the
       transaction commits. `rota_fill` is on `AuditAnomalies`' watch list; the five per-cell rota
-      actions are not, and a test asserts both halves.
+      actions are not, and a test asserts both halves. (Task 8. "After the transaction" is asserted
+      by transaction DEPTH at the moment of the append, measured against the ambient depth
+      `RefreshDatabase` imposes rather than hard-coded — a row written *inside* would roll back too,
+      so the plan's own "assert no row after a forced failure" could not have told them apart.
+      `AuditAnomaliesTest::test_a_rota_fill_is_reported_as_a_single_occurrence` was watched red
+      before `rota_fill` joined the list. The detail gained `target_period` and `unchanged`, both
+      missing from Decision F's format — see Amendments.)
 - [x] Export is **two** files, through `App\Support\Csv` only, BOM-first, formula-neutralised, with
       **no email and no phone** — asserted with `contact_visibility = members`. (Task 10. The
       contact assertion is over the file's BYTES, and the neutralisation is asserted as a ROUND
       TRIP through `CsvRosterReader` — a formula name and an Arabic name both come back identical.)
 - [x] A person with no `short_name` is reported before the file is generated. (Task 10. Counted
       over the people who would appear in the file, not the whole roster — see Amendments.)
-- [ ] `RotaImport::preview()`/`commit()` share one `analyse()`; the whole file is validated before
+- [x] `RotaImport::preview()`/`commit()` share one `analyse()`; the whole file is validated before
       any write; the commit is pinned to the previewed digest; outcomes are `CREATE`/`REPLACE`/
       `SKIP_UNKNOWN_PERSON`/`SKIP_UNKNOWN_UNIT`/`SKIP_UNKNOWN_PERIOD`/`ERROR`, plus
-      `SKIP_DUPLICATE` on the vacations file, with the reason for that addition recorded.
-- [ ] The importer **never** invents a person, a unit or a period, and never rediscovers a retired
-      one.
-- [ ] `week`-granularity vacations snap through `VacationBooking::snap()` — the same code path as
-      the screen — and the preview reports the adjustment.
-- [ ] An exported year re-imports as a no-op, asserted end to end through `CsvRosterReader`.
-- [ ] `app/Support/Rota/RotaImport.php` is in `RosterNeverMintsCredentialsTest::SCANNED_FILES`, and
-      the file contains no persistence call of its own.
-- [ ] Every fixture under `tests/fixtures/rota/` is synthetic and exercises a failure shape: a
+      `SKIP_DUPLICATE` on the vacations file, with the reason for that addition recorded. (Task 11,
+      plus **`UNCHANGED`**, which the plan's list omits and the round trip cannot be written
+      without — see Amendments. The pin lives in `RotaImport`, not the controller, because the
+      plan's own test 4 could not otherwise be written until Task 12: a pin a controller can forget
+      to apply is not a pin.)
+- [x] The importer **never** invents a person, a unit or a period, and never rediscovers a retired
+      one. (Task 11. A cell holding one good span and one on a retired unit is skipped **whole** —
+      applying the half that resolved would silently delete the half that did not.)
+- [x] `week`-granularity vacations snap through `VacationBooking::snap()` — the same code path as
+      the screen — and the preview reports the adjustment. (Task 11. Probe 6 is the one worth
+      re-reading: the round trip stayed **green** under a deliberately broken snap, because an
+      exported week booking is already week-aligned. Only the not-aligned fixture guards it.)
+- [x] An exported year re-imports as a no-op, asserted end to end through `CsvRosterReader`.
+      (Task 11. The outcome set is **four** answers, not the plan's two — a real export carries a
+      stale person's spans and a retired unit's code, both put there deliberately by Task 10 — so
+      the assertion that carries the meaning is `create + replace + error === 0`, `applied === 0`,
+      and an md5 fingerprint of both row sets before and after.)
+- [x] `app/Support/Rota/RotaImport.php` is in `RosterNeverMintsCredentialsTest::SCANNED_FILES`, and
+      the file contains no persistence call of its own. (Task 11. That list carries a bare
+      `->save()` needle as well as the account-minting ones, so adding the file brought both;
+      `User::create(` and `->save()` were each planted in `commit()`'s dispatch loop and watched
+      red.)
+- [x] Every fixture under `tests/fixtures/rota/` is synthetic and exercises a failure shape: a
       person not on the roster, a retired unit, a period from another academic year, a span outside
-      its period, two spans that overlap, Arabic names, and a formula-injection cell.
-- [ ] `RotaWritersAreSingularTest` green with **no** new allow-list entry.
+      its period, two spans that overlap, Arabic names, and a formula-injection cell. (Task 11,
+      fourteen files, plus two the plan's table does not list — a blank `short_name` and a bad
+      header row. `assignments-retired-unit.csv` carries two rows, because a retired code and a
+      non-existent code are two different operator problems and ship two different messages.)
+- [x] `RotaWritersAreSingularTest` green with **no** new allow-list entry. (Verified at source: the
+      list is still the two writers plus the two factories. A `MasterRotaAssignment::create(`
+      planted in `RotaFill::apply()`'s dispatch loop, and again in `RotaImport::commit()`'s, went
+      red naming the file and the needle both times.)
 - [x] MR-04 is unbuilt and its absence is asserted over `app/Support/Rota/` in full, including the
       three new classes. (Task 12. Also over the rota's controllers, its form requests and its four
       Vue screens; case-insensitively, over CODE with comments stripped — see Amendments for why
       the plan's literal needle list would have failed the build on the docblocks that state the
       rule, and for the three probes that prove the scan fires.)
-- [ ] No migration was added in either half.
-- [ ] The documents in Task 13 corrected, each claim verified against the tree before it was
-      written.
-- [ ] [Amendments](#amendments-made-during-execution) records what this plan got wrong.
+- [x] No migration was added in either half. (Verified rather than assumed:
+      `git diff --name-only 9c8c1cf...HEAD -- database/migrations` is **empty** across both
+      branches. P1e's `2026_08_16_*` allocation stays free.)
+- [x] The documents in Task 13 corrected, each claim verified against the tree before it was
+      written. (`CLAUDE.md`, design §6.3/§7/§9.1/§13/§14, `docs/spec/15-rulings.md`,
+      `docs/RUNBOOK-DEPLOY.md`, `docs/superpowers/plans/2026-08-08-p1-master-rota.md`, and
+      `docs/OWNER-CHECKLIST.md` for the two owner-side items. `docs/spec/08-foundation.md` and two
+      further passages were checked and found **already correct** — see Amendments, including the
+      one claim in this task's own instructions that turned out false against the tree.)
+- [x] [Amendments](#amendments-made-during-execution) records what this plan got wrong.
 
 ---
 

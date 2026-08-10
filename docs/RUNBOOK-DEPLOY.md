@@ -925,3 +925,81 @@ Post-deploy checklist addition:
 - **Deleting an academic year's periods (Structure → Periods) is now refused while any
   `master_rota_assignments` row references that year.** The unlock is "clear the rota for that
   year first (Master Rota), then delete the periods" — the screen's own error message says so.
+
+---
+
+## Operating the master rota's bulk moves, export and import (P1d-2, 2026-08-10)
+
+**No migration.** P1d-2 added not one, in either of its two branches — every table it needs already
+existed. There is nothing to run after this deploy; this section is operator procedure, not a
+verification step.
+
+**Everything below is behind `cap:rota.manage`** (Administrator-only by default — see the un-tick
+note above if this instance carries P1d-1's Chief Resident grant). The resident-facing `/rota` read
+view is `cap:rota.view` and is GET-only: there is **no publish gate**, so the rota a resident sees is
+always the current one, and there is no "publish" step to remember after editing.
+
+### Bulk fills (Master Rota → "Fill…" on any cell)
+
+Four actions, three shapes: fill this level group, fill this whole column, fill across (this person,
+forwards through the rest of the year — never backwards), and copy one period onto another.
+
+- **Always preview, then confirm.** The preview lists every target cell with its outcome and the
+  reason. The confirm re-derives the plan server-side inside its own transaction; it never applies
+  what the browser sent.
+- **A target cell that already carries a split is SKIPPED unless you tick that cell.** That default
+  is the point: a blanket fill over deliberate split work is silent data loss. A "confirm all splits"
+  control exists and it ticks the individual boxes rather than replacing them, so what you are
+  agreeing to is always visible in the table in front of you.
+- **Ticking a box does not re-run the preview**, deliberately, so the outcomes on screen are the ones
+  the preview ran with. The screen says so and offers "Preview again" beside "Apply this fill".
+- **If the rota changed under you between the preview and the confirm, the fill is REFUSED** — the
+  whole operation, with nothing written — and you are asked to preview again. That is the digest pin
+  working, not an error.
+- **A refusal refuses the whole operation.** There is no partial apply, ever.
+- Each fill writes exactly **one** `rota_fill` audit row (ids and counts, never a name), and
+  `rota_fill` is on the anomaly watch list — so a single confirmation that rewrote several hundred
+  cells produces one alert for a human to read. Expect that mail; it is not a fault.
+
+### Export — two files, and what is deliberately not in them
+
+**Master Rota → Export**, two buttons on two URLs: `rota-<year>.csv` (one row per assignment span)
+and `vacations-<year>.csv` (one row per leave row). Two files, not one — a single file mixing two row
+shapes is how an importer misreads one.
+
+- **A person is identified by `short_name` plus `full_name`. There is no email, no phone and no
+  database id in either file.** Ids are instance-local and meaningless in another deployment; contact
+  detail has no business in a schedule extract that gets mailed around.
+- **`short_name` is nullable, and a person without one exports with a blank handle and cannot be
+  re-imported.** The export screen tells you how many such people appear in the year **before** you
+  download, and links to fix them. Fix them first if you plan a round trip.
+- A person who has left the department but still holds spans **is** in the file — those spans are
+  exactly what blocks deleting the year's periods, so an export made to find out why must show them.
+- Cells beginning `=`, `+`, `-`, `@`, TAB or CR are neutralised with a leading apostrophe on the way
+  out and un-neutralised on the way back in. Do not strip them by hand in a spreadsheet; the pair is
+  what makes export → re-import lossless.
+
+### Import — dry run first, and it invents nobody
+
+**Master Rota → Import a file…**. Choose which kind of file it is (assignments or vacations), upload,
+read the preview, then commit.
+
+- **The importer creates no people, no units and no periods.** An unknown `short_name`, an unknown or
+  retired `unit_code`, or an `(academic_year, period_position)` pair with no row is reported as a
+  named skip against that row, never invented. A handle that resolves to somebody no longer on the
+  active roster is also a skip — the same rule the editor's own pickers apply.
+- **The unit of outcome is the (person, period) cell, not the line.** Two lines describing two halves
+  of one split period are one outcome. A cell whose rows do not all resolve is skipped **whole**,
+  because applying half of it would delete the other half.
+- **A file-level problem — a missing required header, for instance — refuses the WHOLE import.**
+  Never "7 of 8 imported".
+- **The commit is pinned to the exact bytes the preview ran against.** Re-pick the file if you change
+  it; the screen drops its analysis and re-previews rather than committing something you did not see.
+- **Re-importing a file this system exported changes nothing** — every assignment comes back
+  `unchanged`, and every vacation `skip_duplicate`. That is the safe way to check a file before
+  trusting it.
+- **Leave marked `week` granularity is snapped to whole weeks on import, exactly as the booking
+  screen snaps it**, and the preview shows you the adjusted dates before you commit.
+- The commit writes one `rota_import` audit row (counts only) after its transaction; an export writes
+  one `rota_export` row. Neither is on the anomaly watch list — they are routine administrative acts,
+  and putting them there would train you to ignore the channel that exists for `rota_fill`.

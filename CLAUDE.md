@@ -141,14 +141,97 @@ SCBU and WARD are seed data for the QCH institution.
   references it** (`PeriodController::destroy()`). Neither rota table soft-deletes — this is
   schedule structure, not a clinical row, and the hash-chained `audit_log` is the history; a
   mistaken clear is a real delete with no undo in the UI.
+- **There is NO publish gate on the master rota** (owner decision, 2026-08-10). No `status`
+  column, no draft state, no publish action, no "visible from" date. `/rota` always shows the
+  current rota. This closes design §14's open item rather than deferring it: the option was
+  listed as open until the owner answered it, and it is no longer. `rota.manage` defaults
+  **Administrator-only** (same owner decision, **reversing** what P1d-1 shipped on 2026-08-09);
+  `rota.view` is unchanged, seeded for every authenticated member, which is exactly why the read
+  view must not leak contact data. An instance that already seeded the old Chief Resident grant
+  **keeps it** — `AccessControlSeeder` applies each (position, capability) default once via
+  `applied_role_defaults` and never re-asserts, so the remedy is an operator un-tick on Admin →
+  Access Control (`docs/RUNBOOK-DEPLOY.md`), and **there is no migration and must not be one**:
+  revoking a capability an administrator may since have kept deliberately is precisely what that
+  seeder's design refuses to do.
+- **`App\Support\Rota\AvailabilitySummary` is the ONE computation behind MR-07**, a pure fold over
+  `RotaGrid`'s output that touches no model and issues **zero** queries
+  (`AvailabilitySummaryTest::test_it_issues_no_query`), fed the same way by the editor and the
+  read view (`AvailabilitySummaryParityTest`) so the two screens cannot disagree about how many
+  R2s are on PICU in Block 11. It counts `uncovered_days` and `people_with_a_gap` **separately**,
+  because a gap is a legal state (P1d owner decision 3) and 26 uncovered days is one person's whole
+  block *or* 26 people missing a day each — rounding that difference away is what §35's
+  "availability summaries match reality" forbids. `people_with_a_gap` and `unassigned_people` are
+  disjoint, so they add up. The field is `stale_people`, a HEADCOUNT — it was `stale_assignments`
+  until the adversarial review found it counting cells while its label said assignments, and
+  "assignment" already means a `master_rota_assignments` row everywhere else here. **Order matters:**
+  the summary is computed over the FULL grid including stale rows, and the read view filters rows for
+  display afterwards; filtering first loses `stale_people` entirely and silently.
+- **Every bulk rota operation goes through `App\Support\Rota\RotaFill`** and writes through
+  `RotaAssignment`/`VacationBooking` like everything else — `RotaWritersAreSingularTest` fails the
+  build for a second writer, with no allow-list entry. `plan()` and `apply()` share ONE `analyse()`;
+  `apply()` re-derives inside its own transaction and trusts nothing the client sent. The whole set
+  is validated and authorized before the first mutation — a refusal refuses the **whole** operation,
+  never "412 of 780 applied". **A target cell carrying a split is SKIPPED unless that cell is
+  explicitly confirmed** (per cell, absent means false), because a blanket fill destroying deliberate
+  split work is silent data loss; a "cell carrying a split" is any span set other than empty or
+  exactly one span covering the period end to end, never `count > 1`. **One `rota_fill` audit row per
+  OPERATION**, ids and counts only, written **after** the transaction commits — never one per cell,
+  which would serialise the chain tail and put hundreds of findings in one alert body. `rota_fill` is
+  on `AuditAnomalies`' single-occurrence watch list and is the first rota action there; the five
+  per-cell actions (`rota_assign`, `rota_split`, `rota_clear`, `vacation_book`, `vacation_cancel`)
+  deliberately are not, and `AuditAnomaliesTest` asserts both halves. The commit is pinned to a
+  `RotaFill::digest()` over the plan's own state projection (the source cell, and per target what it
+  currently holds and what would be written over it) — deliberately **excluding** outcomes and the
+  operator's confirmations, so ticking a box does not invalidate the pin or force a re-preview.
+- **The rota exports as TWO files and imports through `App\Support\Rota\RotaImport`.**
+  An assignments file (one row per span) and a vacations file (one row per vacation) —
+  `rota-<year>.csv` and `vacations-<year>.csv`, one `RotaExport::filename()` so the two cannot drift
+  into two conventions — on two `cap:rota.manage` GET routes, never one file mixing two row shapes
+  and never a zip. A person is identified by
+  `short_name` (the app-wide unique human handle) plus `full_name`: **no email, no phone, no
+  `person_id`** — ids are instance-local, and D11 makes cross-instance identity a non-question.
+  The importer **invents nothing** — an unknown handle, unit or `(academic_year, position)` pair is
+  a named skip, there is no create path for any of the three, and `app/Support/Rota/RotaImport.php`
+  is in `RosterNeverMintsCredentialsTest::SCANNED_FILES` so it cannot grow one for `users` either
+  (that list brings the bare `->save()` needle with it, not only `User::create(`). Its unit of
+  outcome is the **(person, period) CELL, not the line** — `RotaAssignment::split()` replaces a
+  whole span set, so two lines describing two halves of one period are one outcome, and a cell whose
+  spans do not all resolve is skipped WHOLE rather than half-applied. `SKIP_DUPLICATE` exists on the
+  vacations file only, because assignments are keyed on (person, period) and REPLACE while a vacation
+  has no natural key, so the same file imported twice would otherwise double every leave row.
+  `week`-granularity leave snaps through `VacationBooking::snap()` — the same code path as the
+  booking screen, never a parallel rule re-typed in the importer (owner decision, 2026-08-10) — and
+  the preview reports the adjustment.
 - **`PersonPresenter` gates BOTH `email` and `phone` behind `viewContact`.** `email` shipped
   ungated until P1d's rota grid became the first consumer holding a narrower capability
   (`rota.view`, every seeded position) than every prior caller (`people.manage`, which also grants
   `viewContact`) — a rota surface reaches a person only through the presenter, never a second
   projection.
+- **NO rota surface projects a contact field, for any viewer** (P1d-2 Decision C).
+  `RotaGrid::forYear()` takes **no viewer at all** — the parameter was removed so no future caller
+  can pass one and expect it to mean something — and calls `PersonPresenter::contactFree()`, which
+  is `one()` with the contact question answered "no" at the call site rather than by a department
+  toggle. The gate was never sufficient on its own: `PersonPolicy::viewContact()` is
+  `people.manage || ContactVisibility::membersMaySeeContact()`, so the **first branch alone** was
+  releasing email and phone into `/admin/rota`'s props for its ordinary viewer on a **default**
+  department (`contact_visibility = admins`) — not, as the P1d-2 plan's own finding 3 claimed, only
+  on one that had opted in. Nothing rendered them, which made it invisible in review rather than
+  harmless. Asserted at the most permissive combination the system can produce — an administrator
+  holding `people.manage` on a department set to `members` — by
+  `RotaReadViewTest::test_the_editor_grid_is_contact_free_too`; the export asserts the same property
+  over the file's BYTES.
 - **MR-04 — the rota driving on-call eligibility — is Stage 2.** Nothing in the rota infers
   eligibility: no `off_roster` flag, no call-roster derivation, no per-person include/exclude
-  override. P1d ships the rota's data and screens and records the hook only.
+  override. P1d ships the rota's data and screens and records the hook only. The guard is two scans
+  that fail for different reasons (`RotaAccessTest`): four identifier needles over the whole of
+  `app/`, and a narrow, case-insensitive eight-needle scan over `app/Support/Rota/` in full plus the
+  rota's controllers, form requests and Vue screens. **That second scan strips comments before
+  matching**, deliberately departing from `CalendarIsTheOnlyConverterTest`'s prose-matching
+  discipline: three rota classes open with a paragraph saying they must never become an eligibility
+  computation, so a literal needle scan would fail the build on the rule's own statement and teach
+  people to delete it. The stripper therefore needs its own calibration test
+  (`test_the_scan_strips_comments_and_still_sees_the_code`) — a stripper that over-reached would
+  disable the guard and look exactly like a clean tree.
 - **An index or unique key led by `institution_id` is a recurring mistake, not a one-off.**
   D11 keeps `institution_id` as provenance/in-instance grouping, never a query filter — but a
   plan-supplied migration snippet has twice proposed one anyway (P1a Task 4's `periods` unique

@@ -622,6 +622,20 @@ Munawib §AR-05's collections become Eloquent tables. Semantics binding, names a
 | `feeds` | tokenized, revocable (IN-01, PS-02) — **moved forward to P3** (§9) |
 | `archives` | snapshot at publish-over (PU-01) |
 
+**Both rota tables gained a BULK write path and an IMPORT path in P1d-2 (2026-08-10), and
+neither is a second writer.** `App\Support\Rota\RotaFill` (MR-06's fill-down ×2, fill-across and
+copy-period — three shapes, four explicit action keys, never one control that guesses) and
+`App\Support\Rota\RotaImport` (two-file CSV) both dispatch every row through `RotaAssignment` /
+`VacationBooking`, which remain the only writers; `RotaWritersAreSingularTest` fails the build for a
+second one and needed **no** new allow-list entry for either. P1d-2 added **no migration at all** —
+verified as `git diff --stat 9c8c1cf...HEAD -- database/migrations` being empty across both halves —
+so this section's table is unchanged by it. The bulk discipline is the part worth carrying forward:
+the whole set is validated and authorized before the first mutation, one transaction, and **one**
+summary audit row per operation written *after* it commits. Per-cell auditing was rejected outright
+— several hundred chain appends serialise the audit tail for the operation's duration, and
+`rota_fill` is on `AuditAnomalies`' single-occurrence watch list, so per-cell rows would put
+hundreds of findings in one alert body.
+
 **Audit:** all Rota writes join the existing hash-chained `audit_log`, respecting the standing
 invariant — one canonical string definition (`AuditChain::canonical()`), and a stored naive
 datetime is never re-parsed in the current timezone.
@@ -670,6 +684,20 @@ both bounds inclusive) and `weeksIn()` (every week intersecting a range, clipped
 implementation, shared by the on-screen week picker and — when P1d-2's importer lands — CSV
 import: a `week`-granularity booking is never snapped one way when typed and another when
 imported.
+
+**P1d-2 made that last sentence literally true rather than aspirational (2026-08-10), and it did
+NOT add a second consumer of `Calendar::weeksIn()`.** The snapping half held: `VacationBooking::snap()`
+was extracted out of `book()`, `book()` now calls it, and `RotaImport` calls the same function to
+*display* the adjustment in its preview — one rule, two entry points, and the importer writes through
+`VacationBooking::book()` anyway (owner decision, 2026-08-10: a `week`-granularity vacation is snapped
+on import exactly as on the screen, and the preview reports the adjustment so a snap is never silent).
+The weeks half is worth stating precisely, because the obvious guess is wrong: `Calendar::weeksIn()`
+still has exactly **one** production caller, `RotaGrid::forYear()`. MR-07's `AvailabilitySummary`
+computes "who is on vacation each week" without touching `Calendar` at all — it folds the `weeks` the
+grid already built into its props, and asks whether a vacation intersects a week by comparing four
+`Y-m-d` **strings**, a format that sorts correctly as text. That is ST-06 at its strictest: the
+summary handles no dates, so there is no second place for the department's week to be defined, and no
+second place for it to drift.
 
 **Timezone stays per-INSTANCE, not per-department** (owner decision 3, 2026-08-08, overriding
 this section's earlier implication of a per-institution timezone): `APP_TIMEZONE`
@@ -748,8 +776,29 @@ Munawib's own data model rather than by this project's preference: `masterRota/{
 **no `status` field at all**, unlike `schedules/{periodId}` (`'draft'|'published'|'archived'` plus
 a `version`). P1d therefore ships **no** draft/publish state machine for the rota — §18's
 publish/version/archive machinery (PU-01…03) is Stage 2 and is written entirely about the call
-schedule, once, for both surfaces together. An explicit "not visible until I say so" gate remains
-a real, if unbuilt, product option (§14 open item), additive if the owner wants it later.
+schedule, once, for both surfaces together.
+
+**The publish gate is ANSWERED and CLOSED: there is none (owner decision, 2026-08-10, P1d-2).**
+This paragraph previously ended *"an explicit 'not visible until I say so' gate remains a real, if
+unbuilt, product option (§14 open item), additive if the owner wants it later"*. That option is no
+longer open — the owner closed it when P1d-2 was planned, and §14's item 19 records the answer
+rather than continuing to list the question. No `status` column, no `published_at`, no draft state,
+no publish action, no "visible from" date: `/rota` always shows the current rota. It stayed a
+decision rather than becoming an implicit default because the absence is asserted, not merely
+unimplemented — `RotaReadViewTest::test_there_is_no_publish_state_on_the_read_view` scans the read
+controller's own props for a publish-shaped key (deliberately excluding the five keys
+`HandleInertiaRequests::share()` puts on **every** page, one of which is `flash.status`, or the scan
+would fire on every request in the app regardless of the rota).
+
+**`rota.manage` reverted to Administrator-only on the same date, reversing what P1d-1 shipped.**
+The sentence above — *"while `rota.manage` (editing) defaults Administrator-only"* — is what the
+seeder does today, and was **not** what P1d-1 actually seeded: it shipped the capability to Chief
+Resident as well (Munawib's Scheduler persona maps to no role here, and Chief Resident is the
+nearest fit). A department that wants it there grants it from Access Control, which is one screen
+and no code change. An instance that already received the P1d-1 grant **keeps** it —
+`AccessControlSeeder` applies each (position, capability) default once through `applied_role_defaults`
+and never re-asserts, so this is an operator un-tick (`docs/RUNBOOK-DEPLOY.md`) and deliberately
+**not** a data migration.
 
 ### 9.2 PHI stays put
 
@@ -876,7 +925,7 @@ person/account seam into P1c-1 (this) and **P1c-2** (AC-02's configurable lifeti
 status, AC-03 unbinding, AC-04 per-person roles — open item 13), planned once P1c-1 merged. Two
 claims this plan's own P1c item made turned out false and are corrected at their own sections:
 PE-02's projection is `PersonPresenter`, not `$hidden` (§5.1); LV-02's "resend invitations" is an
-account action, not a roster one, and ships in P1c-2. **P1d-1 — SHIPPED, 2026-08-10.** The master rota's data and its editor: `rota.view` (every seeded position) and `rota.manage` (Administrator-only) capabilities; the department's own week inside `Calendar` (§7); `master_rota_assignments` (one row per span, overlaps refused, gaps allowed and counted, §6.3) and its one writer `App\Support\Rota\RotaAssignment`; `vacations` (no `period_id`) and its one writer `App\Support\Rota\VacationBooking`; the `PeriodController::destroy()` hardening the first table makes necessary; the `PersonPresenter` `email` gating; `/admin/rota`'s grid — rows by level, columns by period, per-cell save, splits, vacations — at a measured, bounded query count. **P1d-2** (scoped, not yet built, planned once P1d-1 merged) is MR-05's resident-facing read view (`/rota`, `cap:rota.view`, search, level filter, per-person period strip), MR-07's per-period availability summaries by level and unit including who is on vacation each week — **the Stage 1 acceptance criterion** — and MR-06's fill-down/fill-across/copy-period plus CSV export/import. **P1e** clinics, the weekly clinic map, and the setup wizard threading every step above, plus the removable demo department seed. Each sub-plan is written when its predecessor merges, per the P0a–P0d convention. |
+account action, not a roster one, and ships in P1c-2. **P1d-1 — SHIPPED, 2026-08-10.** The master rota's data and its editor: `rota.view` (every seeded position) and `rota.manage` capabilities — P1d-1 seeded the latter to Administrator **and Chief Resident**, which P1d-2 reversed to Administrator-only the same day on an owner decision (§9.1); the department's own week inside `Calendar` (§7); `master_rota_assignments` (one row per span, overlaps refused, gaps allowed and counted, §6.3) and its one writer `App\Support\Rota\RotaAssignment`; `vacations` (no `period_id`) and its one writer `App\Support\Rota\VacationBooking`; the `PeriodController::destroy()` hardening the first table makes necessary; the `PersonPresenter` `email` gating; `/admin/rota`'s grid — rows by level, columns by period, per-cell save, splits, vacations — at a measured, bounded query count. **P1d-2 — SHIPPED, 2026-08-10**, in two branches (2a read and summarise, 2b move), adding **no migration in either half**: MR-05's resident-facing read view (`/rota`, `cap:rota.view`, search, level filter, per-person period strip, and a router-level assertion that *every* route behind `cap:rota.view` is a GET — no publish gate exists to add one for); MR-07's `App\Support\Rota\AvailabilitySummary`, one pure, query-free fold over the grid feeding **both** screens, counting uncovered days and the people carrying them separately and reporting who is on leave each week — **the Stage 1 acceptance criterion**; the contact-free projection that closes a props-payload disclosure on the editor as well as the read view (§9.1's neighbour, `PersonPresenter::contactFree()`, and `RotaGrid` taking no viewer at all); and MR-06's bulk moves — `RotaFill` (four action keys, one shared `analyse()`, a digest-pinned confirm, one `rota_fill` audit row per operation on `AuditAnomalies`' watch list, and a split-carrying target skipped unless explicitly confirmed), the two-file CSV export carrying no contact field, and `RotaImport`, which invents no person, unit or period and whose unit of outcome is the (person, period) cell rather than the line. MR-06 is six words in Munawib and the most destructive surface in the rota; the bulk discipline this codebase already had (P1 finding 12, `AccessControlController::updateRoles()`; `RosterImport`'s preview/commit/digest) is not optional for it, which is why every clause above about validation, transactions and confirmation is stated rather than assumed. **P1e** clinics, the weekly clinic map, and the setup wizard threading every step above, plus the removable demo department seed. Each sub-plan is written when its predecessor merges, per the P0a–P0d convention. |
 | **P2 — Engine** | `packages/engine` with **all 21 CG-07 types** (D13), golden fixtures, plain-language previews, severity/rank model; `services/engine`; the CI cross-validation job. |
 | **P3 — Munawib Stage 2** | Slots, call windows, coverage templates, conditions gate with drag ranking, draft workbench with live hints, trackers, undo ≥30, unfilled lens, publish + archive, morning coverage, who's-on-call board, personal pages, tallies, exports. **L1 and the §9.1 share-token feed land here.** |
 | **P4 — Munawib Stage 3** | *Prerequisite: host scaled to 4 OCPU / 24 GB.* Solver service, §4.2 evaluation mode, ranked-sacrifice report, per-placement explanations, partial modes, infeasibility reporting, AU-06 against §11.2's fixture; requests with deadlines and reminders; approval queue with coverage impact; versioned change log; ICS feeds. **L4 lands here.** |
@@ -1004,18 +1053,36 @@ None block starting P0.
 18. **MR-04's eligibility derivation is unbuilt, and its hook is recorded rather than built.**
     *"The master rota drives on-call eligibility automatically"* is Stage 2 (§35, owner decision
     1, P1d): slots, call rosters, an `off_roster` unit flag and per-person include/exclude
-    overrides do not exist anywhere in this codebase, and P1d-1 adds none of them —
-    `tests/Feature/Rota/RotaAccessTest.php::test_nothing_in_the_rota_infers_on_call_eligibility`
-    scans for the shape and fails the build if a future plan reaches for "the rota already knows
-    who is eligible" before P3 actually builds the derivation.
-19. **The master rota has no publish state, by decision — revisit if the owner wants a gate.**
-    §9.1's Decision D: Munawib's own `masterRota/{periodId}` document carries no `status` field
-    (unlike `schedules/{periodId}`), so P1d ships no draft/publish machinery and MR-05's read view
-    is satisfied by a logged-in, `cap:rota.view`-gated screen showing the current rota. An
-    explicit "not visible until I say so" gate is a real, reasonable product requirement a future
-    owner might still want — it is additive (one nullable column, one controller branch), not a
-    rework, if raised. Listed as an open owner decision, default "no gate", in
-    `docs/superpowers/plans/2026-08-09-p1d-master-rota.md`'s own "Owner decisions needed" section.
+    overrides do not exist anywhere in this codebase, and neither P1d-1 nor P1d-2 adds any of them.
+    `tests/Feature/Rota/RotaAccessTest.php` now scans for the shape **twice**, and the two fail for
+    different reasons: `test_nothing_in_the_rota_infers_on_call_eligibility` keeps the original four
+    identifier needles over the whole of `app/`, and
+    `test_nothing_in_the_rota_namespace_infers_on_call_eligibility` (P1d-2) runs eight needles,
+    case-insensitively, over `app/Support/Rota/` in full plus the rota's controllers, form requests
+    and Vue screens — because an availability summary is precisely the shape somebody would reach
+    for to answer *"who can take call in Block 11?"*, a bulk fill is how they would write the answer
+    across a year, and an importer is how they would load one from a spreadsheet. **The second scan
+    strips comments before matching**, which is a deliberate departure from
+    `CalendarIsTheOnlyConverterTest`'s prose-matching discipline: three of those files open with a
+    paragraph stating that they must never become an eligibility computation, so a literal needle
+    scan would fail the build on the rule's own statement and train people to delete the
+    documentation. The stripper is itself pinned in both directions
+    (`test_the_scan_strips_comments_and_still_sees_the_code`) — one that over-reached would silently
+    disable the guard and look identical to a clean tree.
+19. ~~**The master rota has no publish state, by decision — revisit if the owner wants a gate.**~~
+    **CLOSED — ANSWERED, owner decision, 2026-08-10 (P1d-2): there is no gate, and the question is
+    no longer open.** §9.1's Decision D already observed that Munawib's own `masterRota/{periodId}`
+    document carries no `status` field (unlike `schedules/{periodId}`), so P1d shipped no
+    draft/publish machinery and MR-05's read view is a logged-in, `cap:rota.view`-gated screen
+    showing the current rota. This item existed because "we have not built it" and "we have decided
+    against it" are different states and only the second one is safe to build on top of. The owner
+    answered it before P1d-2 began: **no status column, no draft state, no publish action, no
+    'visible from' date.** The absence is asserted rather than merely unimplemented
+    (`RotaReadViewTest::test_there_is_no_publish_state_on_the_read_view`), and the whole
+    `cap:rota.view` route group is asserted GET-only over the ROUTER, so a future publish endpoint
+    cannot arrive there unnoticed. Should a later owner want a gate it remains additive — one
+    nullable column, one controller branch — but it would be a new decision reversing this one, not
+    the resumption of an open question.
 
 ---
 

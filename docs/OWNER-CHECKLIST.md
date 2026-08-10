@@ -260,6 +260,65 @@ something the application can do for you:
 
 ---
 
+## 11. GitHub Actions has not run a single job since 2026-08-08 — it is a billing block
+
+**Nothing in CI has executed for two days of work.** Every run since `2026-08-08T07:45Z` ends in
+2–4 seconds with the same annotation on every job:
+
+> The job was not started because recent account payments have failed or your spending limit needs
+> to be increased. Please check the 'Billing & plans' section in your settings
+
+The last run that actually started was `2026-08-07T17:21Z`. Measured with `gh run list` /
+`gh run view`, not inferred from a red badge — a billing block and a genuine test failure both show
+as a red X on the commit list, which is exactly why this went unnoticed.
+
+**Fix it in GitHub → Settings → Billing & plans** (payment method, then the Actions spending limit).
+Dependabot's own update runs still succeed, so a green tick in that list is not evidence CI is
+working.
+
+Why it matters more than the usual "CI is red":
+
+- **P0a through P1d-2 have had zero CI coverage.** Every one of those slices was verified locally
+  (`php artisan test`, `npm test`, `npm run test:e2e`, `npm run build`) and committed on that
+  evidence. That is the only reason the tree is trustworthy — but "the suite is green" has meant
+  "green on one Windows machine" since 2026-08-08, with no second opinion on Linux, no matrix, and
+  no check on a pull request.
+- **The `docker-build` job has never executed once.** It was added on 2026-08-09 by the ops-rehearsal
+  work for one specific reason: the production image's `composer:2` vendor stage had been failing its
+  `ext-intl` platform check since the extension was first required, and every push stayed green
+  because nothing in CI had ever built the image — a Coolify deploy was the first thing to try it,
+  and it failed. The job exists so that a broken production build shows up on a push instead of on a
+  deploy. It has been blocked by billing since the day it was written, so **the image is currently
+  verified only by `docker build` run by hand on this machine**, which is what was done. Until
+  billing is fixed, treat a green commit list as saying nothing at all about whether the image
+  builds.
+
+## 12. Un-tick `rota.manage` for Chief Resident on this instance
+
+**Only if this instance already deployed P1d-1** (the 2026-08-10 master-rota release). P1d-1 seeded
+`rota.manage` to Administrator **and** Chief Resident; the owner reversed that the same day and
+P1d-2 removed Chief Resident from the defaults.
+
+**The reversal does not reach an instance that already has the grant, by design.**
+`AccessControlSeeder` applies each (position, capability) default exactly once — it records the pair
+in `applied_role_defaults` and never re-asserts it — because whatever `role_capabilities` says about
+an already-applied pair is the administrator's decision, revocations included. Removing the seed
+entry therefore changes fresh deployments only. **There is no migration that revokes it, and there
+must not be one**: silently taking a capability back from an administrator who may have kept it on
+purpose is precisely what that mechanism exists to prevent.
+
+So this one is yours, on the running system:
+
+**Admin → Access Control → Chief Resident → un-tick "Create and edit master rota assignments and
+vacations" → Save.**
+
+Skip it deliberately if you *want* Chief Residents editing the rota — that is a supported
+configuration and the reason the capability is grantable per role at all (Munawib's Scheduler
+persona maps to no role here, and Chief Resident is the nearest fit). `rota.view` is untouched and
+stays on every seeded position: reading the rota is not editing it.
+
+---
+
 ## Ongoing
 
 | When | Do |

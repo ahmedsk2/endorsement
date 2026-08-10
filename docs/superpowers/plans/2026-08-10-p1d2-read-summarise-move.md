@@ -963,6 +963,81 @@ renders nothing.
 `tests/js/AvailabilityPanel.test.js`). `npm run build` green. `npm run test:e2e` not re-measured —
 Task 6 owns it.
 
+**Task 6 (2026-08-10) — THE JOURNEY FOUND A REAL DEFECT, AND IT WAS NEVER ROTA-SPECIFIC: the
+sidebar loses its place the moment any screen carries a query string.** `AppLayout.vue`'s two nav
+helpers compared Inertia's `page.url` — which carries the full path **and** query — against a bare
+href. So `/rota?year=2026-2027` was not `/rota`, the entry stopped being highlighted, and
+`aria-current="page"` — what a screen reader announces — disappeared. MR-05's read view pushes a
+query string from all three of its controls, so a resident lost the highlight on the first click
+they made. Six screens were affected, and the rota was only the newest: `/endorsement/{unit}` with
+its date filter (`Endorsement/Index.vue`, the screen the department actually lives on),
+`/endorsement/compliance`, `/admin/rota`, `/admin/structure/periods` and `/admin/access-control`.
+Fixed with TDD rather than worked around in the spec, per this task's own instruction: one
+`currentPath` computed that splits on `?`/`#`, consumed by both helpers, so a seventh filterable
+screen cannot arrive with the same bug. Red first at BOTH levels and for the same reason — a new
+`tests/js/AppLayout.test.js` case (*"expected undefined to be 'page'"*) and the e2e assertion in
+`rota-read.spec.js` (*"Expected: 'page' / Received: ''"*, run against a build with the fix reverted).
+**Why nothing caught it before:** every existing mount in `AppLayout.test.js` stubbed a bare path
+(`/dashboard`), and PHPUnit never renders the nav at all. This is the same shape as P1d-1's
+missing Clear control — a screen affordance that no layer below the browser was looking at.
+
+**Task 6 (2026-08-10) — the seeder needed a second ACCOUNT, not merely a second person, and the
+read fixture is deliberately disjoint from `master-rota.spec.js`'s.** The plan's file list says "a
+second person and a vacation, if the existing fixture is thin — check what P1d-1's Task 11 already
+added". Checked: it added one `Person` ("E2E Rota Resident"), two periods, and nothing else — no
+account, no level history, no assignment, no vacation. Every other spec in the browser suite signs
+in as `admin`, who holds every capability in the catalogue, so an administrator reaching `/rota`
+would have proved nothing about MR-05; `E2eSeeder` now mints a position-4 `resident` account
+(`rota.view`, never `rota.manage`) and `fixtures.js` exports `RESIDENT` beside `ADMIN`. The two new
+people are **not** "E2E Rota Resident" and their names do not contain that string: that person is
+addressed by name in `master-rota.spec.js` (`hasText`) and has their cell edited through the
+editor's controls, so seeding them an assignment would change what that spec finds. For the same
+reason the seeded leave is 2026-08-16..22 (Block 2's *second* week) rather than the 08-09..15 week
+`master-rota.spec.js` books — so the count this spec asserts is identical whether the suite runs
+whole or one file at a time. Everything is written through `RotaAssignment`, `VacationBooking` and
+`LevelAssignment`; a fixture built by a different route than the app uses can be valid while the
+app's own write path is broken.
+
+**Task 6 (2026-08-10) — every assertion that could pass for the wrong reason was made to fail on
+purpose first.** Four probes, each restored afterwards. (1) `RotaController` stopped echoing
+`filters` → the row set stayed narrowed and *only* `toHaveValue('Colleague')` went red, which is
+exactly the client-only-filter bug the task's "assert the control's value, not just the row set"
+instruction is about. (2) The seeder gave the reader the whole of Block 1 instead of seven days →
+`People with a gap` went `1` → `0`, i.e. the rounded-away zero MR-07 exists to prevent, and
+`Assigned days` `21` → `28`. (3) A `<button @click="router.delete(...)">` planted inside
+`data-testid="rota-strip"` → the `main` button count went red. (4) The fix in the amendment above,
+reverted. Only the login timeout was a natural red (no `resident` account existed yet), and it
+proves the seeder, not the screen.
+
+**Task 6 (2026-08-10) — "nothing writes" is asserted at the NETWORK, and its own non-vacuity is the
+login POST.** A component-level "no `<form>`, no `<button>`" (Task 4's Vitest case) cannot see a
+control that writes through something other than a form, and an empty list of observed writes looks
+identical whether nothing wrote or the recorder never fired. So the request listener is attached
+BEFORE `login()`: signing in is itself a POST, `signInAndWatch()` asserts the recorder caught it,
+and each spec then asserts the list has not grown **since** that mark. Three assertions in total,
+because each misses what the others catch: the landmarks carry no form and no button (asserted
+`toBeVisible()` first, so a zero count cannot come from a locator that matched nothing), the strip
+carries no control at all, and `/admin/rota` answers **403** to this actor in a real browser.
+
+**Task 6 (2026-08-10) — the plan's steps 3–5 were implemented stronger than written, deliberately.**
+Step 3/4 say "assert the narrowed set is the same" after a reload; the shipped spec also asserts the
+**control's own value**, which is what proves the `filters` prop round-tripped rather than the URL
+merely surviving — and it is the assertion that caught probe (1) above. Step 5 says "a non-zero
+figure for the seeded period"; the shipped spec asserts all four headline figures against written-out
+arithmetic, the per-level/per-unit cell for two levels, and the per-week leave count, then re-reads
+every one of them through a `?q=` that narrows the rows to one person — Decision D's ordering trap
+proved in a browser rather than only in `RotaReadViewTest`. The summary figures are located by the
+LABEL a reader sees (`Days not assigned`), not by a testid, because the ids `summary-cell-*` is keyed
+on are not visible anywhere on the screen and pinning what the screen actually says is the point of
+asserting it here at all.
+
+**Task 6 (2026-08-10) — counts, all four suites.** `npm run test:e2e` **18 → 21** (three cases in
+the new `tests/e2e/rota-read.spec.js`). The 18 was re-measured against the committed tree before the
+task began, per the plan's own instruction to trust the measurement over the document — and this
+time the document was right. `npm test` 150 → **151** (the nav case above). `php artisan test`
+**1187**, unchanged: this task adds no PHP case, and the whole suite was re-run green after the
+`AppLayout.vue` fix. `npm run build` green.
+
 ---
 
 ## Standing rules for every task
@@ -1534,31 +1609,31 @@ git commit -am "test: a resident really can read the rota, and really cannot cha
 
 ## Definition of done — P1d-2a
 
-- [ ] `php artisan test` green, run via **Bash**, after `npm run build`. `npm test` green.
+- [x] `php artisan test` green, run via **Bash**, after `npm run build`. `npm test` green.
       `npm run test:e2e` green.
-- [ ] `rota.manage` is Administrator-only in `ROLE_DEFAULTS`, in the parity test, in `RotaAccessTest`
+- [x] `rota.manage` is Administrator-only in `ROLE_DEFAULTS`, in the parity test, in `RotaAccessTest`
       and in `docs/spec/08-foundation.md`; the grant-from-the-screen path has a test; the runbook
       says what to do on an instance that already has the grant, and **no migration revokes it**.
-- [ ] `App\Support\Rota\AvailabilitySummary` exists, is pure, issues **zero** queries (asserted),
+- [x] `App\Support\Rota\AvailabilitySummary` exists, is pure, issues **zero** queries (asserted),
       and is the only computation of MR-07's numbers.
-- [ ] The summary counts uncovered days **and** people carrying a gap, separately, and reports
+- [x] The summary counts uncovered days **and** people carrying a gap, separately, and reports
       per-week vacations from the period's own `weeks`.
-- [ ] `/rota` exists behind `auth` + `cap:rota.view`; every route behind `cap:rota.view` is a GET,
+- [x] `/rota` exists behind `auth` + `cap:rota.view`; every route behind `cap:rota.view` is a GET,
       asserted over the router; a resident is refused `/admin/rota`.
-- [ ] **No contact field appears in the props of either rota surface, for any viewer**, asserted
+- [x] **No contact field appears in the props of either rota surface, for any viewer**, asserted
       with `contact_visibility = members` and an administrator — and `RotaGrid` no longer takes a
       viewer at all.
-- [ ] A deactivated-but-assigned person is absent from the read view, absent from the coverage
+- [x] A deactivated-but-assigned person is absent from the read view, absent from the coverage
       numbers, and present in `stale_assignments`.
-- [ ] The read view carries its own **measured** query budget, taken on a populated year with ten
+- [x] The read view carries its own **measured** query budget, taken on a populated year with ten
       stale people.
-- [ ] Search and filter narrow the rows and leave the summary untouched.
-- [ ] No publish state anywhere: no column, no prop, no control, asserted.
-- [ ] Every date on both screens is server-formatted and dual-dated;
+- [x] Search and filter narrow the rows and leave the summary untouched.
+- [x] No publish state anywhere: no column, no prop, no control, asserted.
+- [x] Every date on both screens is server-formatted and dual-dated;
       `CalendarIsTheOnlyConverterTest` green including its client scan.
-- [ ] `CompiledCssIsLightOnlyTest` and `TextContrastMeetsAaTest` green; no `dark:`, no raw palette
+- [x] `CompiledCssIsLightOnlyTest` and `TextContrastMeetsAaTest` green; no `dark:`, no raw palette
       class, no hex in markup.
-- [ ] [Amendments](#amendments-made-during-execution) records what this plan got wrong.
+- [x] [Amendments](#amendments-made-during-execution) records what this plan got wrong.
 
 ---
 

@@ -48,11 +48,28 @@ const props = defineProps({
      * does: this is the screen where a "people with a gap" of five turns into five cells filled.
      */
     summary: { type: Object, default: null },
+    /**
+     * MR-06's export, finding 5. How many people who would APPEAR in the two files have no
+     * `short_name` — the app-wide unique handle the files identify a person by, and the one the
+     * importer matches on. Nullable on `people`, so a person without one exports a blank handle
+     * and cannot be re-imported; the count is shown BESIDE the export buttons rather than
+     * discovered when a third of the re-import comes back skipped.
+     */
+    people_without_a_short_name: { type: Number, default: 0 },
 });
 
 const page = usePage();
 
 const selectedYear = ref(props.year ?? '');
+
+/**
+ * MR-06's two export URLs. PLAIN `<a href>`, never an Inertia `<Link>` and never `router.get`:
+ * the response is a file stream carrying a Content-Disposition header, not an X-Inertia page
+ * object, so Inertia's own router cannot handle it. Both are GET, so unlike People.vue's roster
+ * export — a POST, which needed a hand-built form and a CSRF field — a link is the whole
+ * mechanism.
+ */
+const exportHref = (file) => `/admin/rota/export/${file}?year=${encodeURIComponent(props.year ?? '')}`;
 
 const changeYear = () => {
     router.get('/admin/rota', selectedYear.value ? { year: selectedYear.value } : {}, {
@@ -664,6 +681,32 @@ const submitFill = () => {
             </section>
 
             <template v-else>
+                <!--
+                  MR-06's export (Decision G). TWO files: one row per span, one row per vacation.
+                  A person is named by their short name plus their full name — no email, no phone,
+                  no id — so the file can be re-imported and carries nobody's contact detail.
+                -->
+                <section class="flex flex-wrap items-center gap-3 rounded-md border border-line bg-panel p-4"
+                         data-testid="rota-export">
+                    <p class="text-sm text-body">Export this year</p>
+                    <a :href="exportHref('assignments')" data-testid="export-assignments"
+                       class="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm font-semibold text-ink">
+                        Rota (CSV)
+                    </a>
+                    <a :href="exportHref('vacations')" data-testid="export-vacations"
+                       class="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm font-semibold text-ink">
+                        Vacations (CSV)
+                    </a>
+                    <p v-if="people_without_a_short_name > 0" role="alert" data-testid="export-short-name-warning"
+                       class="text-sm text-critical">
+                        {{ people_without_a_short_name }}
+                        {{ people_without_a_short_name === 1 ? 'person' : 'people' }}
+                        in this year {{ people_without_a_short_name === 1 ? 'has' : 'have' }}
+                        no short name. They export with a blank handle and cannot be imported back.
+                        <a href="/admin/people" class="font-semibold underline">Fix on Admin &rarr; People</a>
+                    </p>
+                </section>
+
                 <!-- Mobile: one card per person. -->
                 <div class="space-y-4 lg:hidden">
                     <div v-for="group in rowGroups" :key="`m-${group.level.id ?? 'none'}`" class="space-y-3">

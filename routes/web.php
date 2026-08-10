@@ -293,6 +293,20 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:rota.manage'])
         // assertion is for.
         Route::post('/rota/fill/preview', [MasterRotaController::class, 'fillPreview'])->name('rota.fill.preview');
         Route::post('/rota/fill', [MasterRotaController::class, 'fill'])->name('rota.fill');
+
+        // MR-06's export (P1d-2 Task 10, Decision G). TWO routes, not one route with a `?file=`
+        // parameter and not a zip: each URL is independently bookmarkable and independently
+        // audited, a zip would add a packaging path and an `ext-zip` question for no benefit, and
+        // the screen can simply offer two buttons. Both GET — they write nothing; the audit row
+        // records a disclosure, not a change.
+        //
+        // Behind `cap:rota.manage` rather than `cap:rota.view`: a whole-year extraction is an
+        // administrative act and the input to the importer, and putting it in the read group would
+        // hand every member of the department a one-click copy of the whole year.
+        Route::get('/rota/export/assignments', [MasterRotaController::class, 'exportAssignments'])
+            ->name('rota.export.assignments');
+        Route::get('/rota/export/vacations', [MasterRotaController::class, 'exportVacations'])
+            ->name('rota.export.vacations');
     });
 
 /*

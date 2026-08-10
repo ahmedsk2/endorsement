@@ -176,7 +176,15 @@ const commit = () => {
     const analysis = preview.value;
     if (!analysis) return;
 
-    post('/admin/rota/import/commit', { digest: analysis.digest ?? '' }, {
+    // BOTH pins travel back. `digest` says which BYTES were previewed; `state_digest` says which
+    // ROTA they were analysed against. The second is not redundant: a byte-identical file re-derives
+    // against whatever the rota says at commit time, so without it a cell the operator was shown as
+    // "No change" — or skipped entirely, with no proposed content on screen at all — could commit as
+    // a replacement that ate a colleague's split.
+    post('/admin/rota/import/commit', {
+        digest: analysis.digest ?? '',
+        state_digest: analysis.state_digest ?? '',
+    }, {
         onSuccess: () => {
             // The import happened, so the analysis that described it no longer describes the rota.
             // Dropped rather than left on screen behind a button that would now be refused.
@@ -184,13 +192,17 @@ const commit = () => {
             staleNotice.value = '';
         },
         onError: (errors) => {
-            if (errors.file) {
-                // THE FILE CHANGED UNDER THE OPERATOR — `StaleImportFileException`, a 422 on
-                // `file`. Never retried: the analysis they approved describes bytes that no longer
-                // exist, and re-sending with a fresh digest would apply a set they never saw. So:
-                // say it in the server's own words, DROP the analysis so nothing on screen looks
-                // committable, and re-run the PREVIEW, which writes nothing.
-                staleNotice.value = Array.isArray(errors.file) ? errors.file.join(' ') : errors.file;
+            // TWO REFUSALS, ONE RECOVERY. `errors.file` is `StaleImportFileException` (the bytes
+            // moved); `errors.state_digest` is `StaleRotaStateException` (the rota moved). The
+            // messages differ because the operator's situation does — one of them will be told the
+            // file is unchanged — but neither is ever RETRIED: the analysis they approved describes
+            // a world that no longer exists, and re-sending with a fresh digest would apply a set
+            // they never saw. So both say it in the server's own words, DROP the analysis so
+            // nothing on screen looks committable, and re-run the PREVIEW, which writes nothing.
+            const stale = errors.file ?? errors.state_digest;
+
+            if (stale) {
+                staleNotice.value = Array.isArray(stale) ? stale.join(' ') : stale;
                 previewedKey.value = null;
                 runPreview();
 

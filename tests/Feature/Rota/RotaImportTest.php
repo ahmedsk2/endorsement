@@ -15,6 +15,7 @@ use App\Support\Roster\CsvRosterReader;
 use App\Support\Rota\RotaAssignment;
 use App\Support\Rota\RotaImport;
 use App\Support\Rota\StaleImportFileException;
+use App\Support\Rota\StaleRotaStateException;
 use App\Support\Rota\VacationBooking;
 use Database\Seeders\AccessControlSeeder;
 use Database\Seeders\ReferenceSeeder;
@@ -402,6 +403,190 @@ class RotaImportTest extends TestCase
         );
     }
 
+    // --- the SECOND pin: the rota itself ------------------------------------------------------
+
+    /**
+     * THE BYTES ARE NOT THE ONLY THING THAT CAN MOVE. `commit()` re-derives the analysis from the
+     * CURRENT rota, so a file whose sha256 is unchanged can still describe a different set of
+     * writes than the operator approved — and the byte pin cannot see that, by construction.
+     *
+     * The reproduction is the worst shape it takes: a cell previewed as `UNCHANGED` (so the
+     * operator was told, correctly, that importing this file would not touch it), a colleague
+     * splitting that same cell, and the same bytes then committing as `REPLACE` — deleting BOTH
+     * spans of a split nobody was shown.
+     *
+     * `RotaFill::digest()` is the sibling of this pin, on the same table in the same slice, and
+     * `StatePin` is the one definition both take.
+     */
+    public function test_a_commit_is_refused_when_the_rota_moved_under_an_unchanged_cell(): void
+    {
+        $this->commit('assignments-clean.csv');
+
+        // What the operator looks at: every cell in the file already says what the rota says.
+        $preview = $this->preview('assignments-clean.csv');
+        $this->assertSame(3, $preview['summary']['unchanged']);
+        $this->assertSame(0, $preview['summary']['replace'], 'the preview promised no replacement');
+
+        // A colleague splits one of those cells while the preview is on screen. `import.two`'s
+        // Block 1 cell is one span in the file; it is two on the rota from here on.
+        $split = Person::query()->where('short_name', 'import.two')->firstOrFail();
+        $spans = [
+            ['unit_id' => (int) $this->unit->getKey(), 'starts_on' => '2026-07-08', 'ends_on' => '2026-07-14'],
+            ['unit_id' => (int) $this->ward->getKey(), 'starts_on' => '2026-07-15', 'ends_on' => '2026-07-21'],
+        ];
+        RotaAssignment::split($split, $this->block1, $spans);
+
+        $fingerprint = $this->assignmentFingerprint();
+
+        try {
+            RotaImport::commit(
+                $this->reader('assignments-clean.csv'),
+                RotaImport::KIND_ASSIGNMENTS,
+                $this->bytes('assignments-clean.csv'),
+                $preview['digest'],
+                $this->fakeRequest(),
+                $preview['state_digest'],
+            );
+            $this->fail('a commit against a rota that moved under the preview was allowed');
+        } catch (StaleRotaStateException $e) {
+            // A DIFFERENT refusal from the byte one, and the message has to say so: re-exporting
+            // the file is the fix for one and does nothing at all for the other.
+            $this->assertStringContainsString('rota', $e->getMessage());
+        }
+
+        $this->assertSame($fingerprint, $this->assignmentFingerprint(), 'a refused commit still wrote');
+        $this->assertCount(2, MasterRotaAssignment::query()
+            ->where('person_id', $split->getKey())->where('period_id', $this->block1->getKey())->get(),
+            'the deliberate split was collapsed by a commit the operator never saw');
+    }
+
+    /**
+     * The second reproduction, and the more alarming of the two: the operator was shown NO proposed
+     * content for this cell at all. `SKIP_UNKNOWN_PERIOD` keeps `spans: []` and says "generate that
+     * academic year first" — so generating it, and then hand-splitting the block, turns the same
+     * unchanged bytes into a `REPLACE` of a cell the preview described as untouchable.
+     */
+    public function test_a_commit_is_refused_when_a_skipped_period_came_into_existence(): void
+    {
+        $preview = $this->preview('assignments-foreign-period.csv');
+
+        $skipped = $this->outcomeFor($preview, 'import.one', 1);
+        $this->assertSame(RotaImport::SKIP_UNKNOWN_PERIOD, $skipped['outcome']);
+        $this->assertSame([], $skipped['spans'], 'the operator was shown no proposed content');
+
+        // The department generates the year the file named, and hands the block a split.
+        $future = Period::create([
+            'academic_year' => '2030-2031', 'kind' => Period::WEEK_BLOCK, 'position' => 1,
+            'label' => 'Block 1', 'starts_on' => '2030-07-01', 'ends_on' => '2030-07-28',
+        ]);
+        $person = Person::query()->where('short_name', 'import.one')->firstOrFail();
+        RotaAssignment::split($person, $future, [
+            ['unit_id' => (int) $this->unit->getKey(), 'starts_on' => '2030-07-01', 'ends_on' => '2030-07-14'],
+            ['unit_id' => (int) $this->ward->getKey(), 'starts_on' => '2030-07-15', 'ends_on' => '2030-07-28'],
+        ]);
+
+        $fingerprint = $this->assignmentFingerprint();
+
+        $this->expectException(StaleRotaStateException::class);
+
+        try {
+            RotaImport::commit(
+                $this->reader('assignments-foreign-period.csv'),
+                RotaImport::KIND_ASSIGNMENTS,
+                $this->bytes('assignments-foreign-period.csv'),
+                $preview['digest'],
+                $this->fakeRequest(),
+                $preview['state_digest'],
+            );
+        } finally {
+            $this->assertSame($fingerprint, $this->assignmentFingerprint(),
+                'the split in a newly generated block was collapsed by a preview that proposed nothing');
+        }
+    }
+
+    /**
+     * The pin catches the WORLD moving, and nothing else. A re-import of an untouched rota must
+     * still be the cheap no-op the round trip depends on — a pin that refused that would be a pin
+     * nobody could use.
+     */
+    public function test_an_untouched_rota_commits_against_its_own_state_digest(): void
+    {
+        $this->commit('assignments-clean.csv');
+
+        $preview = $this->preview('assignments-clean.csv');
+
+        $result = RotaImport::commit(
+            $this->reader('assignments-clean.csv'),
+            RotaImport::KIND_ASSIGNMENTS,
+            $this->bytes('assignments-clean.csv'),
+            $preview['digest'],
+            $this->fakeRequest(),
+            $preview['state_digest'],
+        );
+
+        $this->assertSame(0, $result['applied']);
+        $this->assertSame($preview['state_digest'], $result['state_digest']);
+    }
+
+    /**
+     * The leave file gets the same pin. It has no destructive writer — `VacationBooking::book()`
+     * only creates — but the outcome set the operator approved still changes when somebody books
+     * leave under them, and a `CREATE` silently becoming a `SKIP_DUPLICATE` or an `ERROR` is a
+     * result they never agreed to.
+     *
+     * What is pinned is exactly what DECIDES the row: the already-booked leave that INTERSECTS the
+     * proposal. Leave in another month cannot turn this row into a different answer, and refusing
+     * over it would make the pin unusable on a department that books leave all year.
+     */
+    public function test_a_leave_commit_is_refused_when_leave_was_booked_under_the_preview(): void
+    {
+        $preview = $this->preview('vacations-clean.csv', RotaImport::KIND_VACATIONS);
+        $this->assertGreaterThan(0, $preview['summary']['create']);
+
+        $person = Person::query()->where('short_name', 'import.one')->firstOrFail();
+        // Overlaps the file's 2026-07-06..2026-07-08 row, so that row's answer is no longer the
+        // `CREATE` the operator approved.
+        VacationBooking::book($person, '2026-07-08', '2026-07-10', Vacation::GRANULARITY_DATE);
+
+        $fingerprint = $this->vacationFingerprint();
+
+        $this->expectException(StaleRotaStateException::class);
+
+        try {
+            RotaImport::commit(
+                $this->reader('vacations-clean.csv'),
+                RotaImport::KIND_VACATIONS,
+                $this->bytes('vacations-clean.csv'),
+                $preview['digest'],
+                $this->fakeRequest(),
+                $preview['state_digest'],
+            );
+        } finally {
+            $this->assertSame($fingerprint, $this->vacationFingerprint());
+        }
+    }
+
+    /**
+     * The two pins are TWO refusals, not one with two messages. Re-exporting the file fixes a byte
+     * mismatch and does nothing at all for a rota that moved, so a controller choosing which 422 to
+     * raise must be able to tell them apart by TYPE — never by matching an error message's text.
+     */
+    public function test_the_two_pins_are_distinct_types(): void
+    {
+        // Non-vacuity: `is_a()` answers false for a class that does not exist, so this whole
+        // assertion would pass against a missing type.
+        $this->assertTrue(class_exists(StaleRotaStateException::class));
+        $this->assertTrue(class_exists(StaleImportFileException::class));
+
+        $this->assertFalse(
+            is_a(StaleRotaStateException::class, StaleImportFileException::class, true),
+            'the rota-moved refusal is a subclass of the file-moved one, so a catch cannot tell them apart',
+        );
+        $this->assertFalse(
+            is_a(StaleImportFileException::class, StaleRotaStateException::class, true),
+        );
+    }
+
     // --- idempotence -----------------------------------------------------------------------
 
     /**
@@ -711,10 +896,17 @@ class RotaImportTest extends TestCase
         return RotaImport::preview($this->reader($fixture), $kind, $this->bytes($fixture));
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * PREVIEW, THEN COMMIT — the real flow, because a commit now carries TWO pins and the second
+     * one can only come from a preview. A helper that minted its own state digest would be a helper
+     * that could not tell a working pin from a deleted one.
+     *
+     * @return array<string, mixed>
+     */
     private function commit(string $fixture, string $kind = RotaImport::KIND_ASSIGNMENTS): array
     {
         $bytes = $this->bytes($fixture);
+        $preview = RotaImport::preview($this->reader($fixture), $kind, $bytes);
 
         return RotaImport::commit(
             $this->reader($fixture),
@@ -722,6 +914,7 @@ class RotaImportTest extends TestCase
             $bytes,
             RotaImport::digest($bytes),
             $this->fakeRequest(),
+            $preview['state_digest'],
         );
     }
 
@@ -732,12 +925,15 @@ class RotaImportTest extends TestCase
         file_put_contents($path, $bytes);
 
         try {
+            $preview = RotaImport::preview(new CsvRosterReader($path), $kind, $bytes);
+
             return RotaImport::commit(
                 new CsvRosterReader($path),
                 $kind,
                 $bytes,
                 RotaImport::digest($bytes),
                 $this->fakeRequest(),
+                $preview['state_digest'],
             );
         } finally {
             @unlink($path);

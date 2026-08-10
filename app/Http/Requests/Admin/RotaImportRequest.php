@@ -71,6 +71,16 @@ class RotaImportRequest extends FormRequest
                 // sha256, hex.
                 'size:64',
             ],
+            // THE SECOND PIN — the rota the preview was computed against, not the file. Same shape
+            // and same rule as `digest` above, and required on the same route for the same reason:
+            // the preview is what produces it. `RotaImport::commit()` owns the refusal (one
+            // definition of each pin, used by both entry points); this only rejects the shapes that
+            // could never be a digest at all.
+            'state_digest' => [
+                $this->routeIs('admin.rota.import.commit') ? 'required' : 'nullable',
+                'string',
+                'size:64',
+            ],
         ];
     }
 

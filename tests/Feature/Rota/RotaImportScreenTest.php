@@ -11,6 +11,7 @@ use App\Models\Unit;
 use App\Models\User;
 use App\Models\Vacation;
 use App\Support\LevelAssignment;
+use App\Support\Rota\RotaAssignment;
 use App\Support\Rota\RotaImport;
 use Database\Seeders\AccessControlSeeder;
 use Database\Seeders\ReferenceSeeder;
@@ -238,13 +239,15 @@ class RotaImportScreenTest extends TestCase
             'file' => $this->uploaded('assignments-clean.csv'),
         ])->assertRedirect();
 
-        $stale = session('rota_import_preview')['digest'];
+        $stale = session('rota_import_preview');
 
         $response = $this->actingAs($this->admin)->post('/admin/rota/import/commit', [
             'kind' => RotaImport::KIND_ASSIGNMENTS,
-            // A DIFFERENT file, carrying the previous one's digest.
+            // A DIFFERENT file, carrying the previous one's digests. The rota has NOT moved, so
+            // this isolates the byte pin: the only thing wrong here is the file.
             'file' => $this->uploaded('assignments-unknown-person.csv'),
-            'digest' => $stale,
+            'digest' => $stale['digest'],
+            'state_digest' => $stale['state_digest'],
         ]);
 
         $response->assertSessionHasErrors('file');
@@ -265,6 +268,60 @@ class RotaImportScreenTest extends TestCase
             'kind' => RotaImport::KIND_ASSIGNMENTS,
             'file' => $this->uploaded('assignments-clean.csv'),
         ])->assertSessionHasErrors('digest');
+
+        $this->assertSame(0, MasterRotaAssignment::query()->count());
+    }
+
+    /**
+     * THE SECOND PIN AT THE ROUTE. The file is byte-identical, so the byte digest matches and says
+     * nothing; the ROTA moved. `RotaImportTest` proves `commit()` throws `StaleRotaStateException`
+     * — this proves the operator sees a 422 rather than an applied import, and on a DIFFERENT field
+     * from the file one, because "re-export the file" and "look at the rota again" are two
+     * different instructions and the screen acts on each differently.
+     */
+    public function test_a_rota_changed_since_the_preview_is_refused_on_the_state_digest_field(): void
+    {
+        $this->actingAs($this->admin)->post('/admin/rota/import/preview', [
+            'kind' => RotaImport::KIND_ASSIGNMENTS,
+            'file' => $this->uploaded('assignments-clean.csv'),
+        ])->assertRedirect();
+
+        $preview = session('rota_import_preview');
+        $this->flushHeaders();
+
+        // A colleague assigns one of the file's own cells while the preview is on screen.
+        RotaAssignment::set(
+            Person::query()->where('short_name', 'import.one')->firstOrFail(),
+            Period::query()->where('position', 1)->firstOrFail(),
+            Unit::findByCode('XIW'),
+        );
+
+        $response = $this->actingAs($this->admin)->post('/admin/rota/import/commit', [
+            'kind' => RotaImport::KIND_ASSIGNMENTS,
+            'file' => $this->uploaded('assignments-clean.csv'),
+            'digest' => $preview['digest'],
+            'state_digest' => $preview['state_digest'],
+        ]);
+
+        $response->assertSessionHasErrors('state_digest');
+        $response->assertSessionDoesntHaveErrors('file');
+
+        $message = (string) session('errors')->first('state_digest');
+        $this->assertStringContainsString('rota changed', $message);
+        $this->assertStringContainsString('preview', $message, 'the refusal must name the fix');
+
+        $this->assertSame(1, MasterRotaAssignment::query()->count(),
+            'the colleague\'s row is all there should be — the stale commit wrote');
+        $this->assertSame(0, AuditLog::query()->where('action', 'rota_import')->count());
+    }
+
+    public function test_a_commit_with_no_state_digest_at_all_is_refused(): void
+    {
+        $this->actingAs($this->admin)->post('/admin/rota/import/commit', [
+            'kind' => RotaImport::KIND_ASSIGNMENTS,
+            'file' => $this->uploaded('assignments-clean.csv'),
+            'digest' => RotaImport::digest($this->bytes('assignments-clean.csv')),
+        ])->assertSessionHasErrors('state_digest');
 
         $this->assertSame(0, MasterRotaAssignment::query()->count());
     }
@@ -312,12 +369,26 @@ class RotaImportScreenTest extends TestCase
 
     // --- helpers ------------------------------------------------------------------------------
 
+    /**
+     * PREVIEW, THEN COMMIT — through the real routes, because a commit carries TWO pins and only a
+     * preview can produce the second. A helper that computed the state digest itself would be a
+     * helper that could not tell a wired-up pin from a forgotten one.
+     */
     private function commit(string $fixture, string $kind): \Illuminate\Testing\TestResponse
     {
+        $this->actingAs($this->admin)->post('/admin/rota/import/preview', [
+            'kind' => $kind,
+            'file' => $this->uploaded($fixture),
+        ]);
+
+        $preview = session('rota_import_preview');
+        $this->flushHeaders();
+
         return $this->actingAs($this->admin)->post('/admin/rota/import/commit', [
             'kind' => $kind,
             'file' => $this->uploaded($fixture),
             'digest' => RotaImport::digest($this->bytes($fixture)),
+            'state_digest' => $preview['state_digest'] ?? '',
         ]);
     }
 

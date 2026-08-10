@@ -47,6 +47,7 @@ import RotaImport from '../../resources/js/Pages/Admin/RotaImport.vue';
 const PREVIEW_URL = '/admin/rota/import/preview';
 const COMMIT_URL = '/admin/rota/import/commit';
 const DIGEST = 'f'.repeat(64);
+const STATE_DIGEST = 'a'.repeat(64);
 
 const span = (code, from, to) => ({ unit_id: 10, unit_code: code, starts_on: from, ends_on: to });
 
@@ -54,6 +55,7 @@ const assignmentsAnalysis = (overrides = {}) => ({
     kind: 'assignments',
     file_errors: [],
     digest: DIGEST,
+    state_digest: STATE_DIGEST,
     summary: { create: 1, replace: 1, unchanged: 1, skipped: 1, error: 0 },
     outcomes: [
         {
@@ -97,6 +99,7 @@ const vacationsAnalysis = (overrides = {}) => ({
     kind: 'vacations',
     file_errors: [],
     digest: DIGEST,
+    state_digest: STATE_DIGEST,
     summary: { create: 1, replace: 0, unchanged: 0, skipped: 0, error: 0 },
     outcomes: [
         {
@@ -252,6 +255,41 @@ describe('Admin/RotaImport — preview, then import (Task 12)', () => {
         expect(call[0]).toBe(COMMIT_URL);
         expect(call[1].get('digest')).toBe(DIGEST);
         expect(call[1].get('kind')).toBe('assignments');
+    });
+
+    /**
+     * TWO pins, and the second is the one the byte digest cannot supply. A file that did not change
+     * still re-derives against whatever the rota says at commit time, so `state_digest` is what
+     * stops a cell shown as "No change" committing as a replacement of somebody's split.
+     */
+    it('imports with the STATE digest as well, so an unchanged file cannot ride a changed rota', async () => {
+        const w = mountScreen({ rota_import_preview: assignmentsAnalysis() });
+
+        await previewed(w);
+        await w.find('[data-testid="import-commit"]').trigger('click');
+
+        expect(lastCall(COMMIT_URL)[1].get('state_digest')).toBe(STATE_DIGEST);
+    });
+
+    it('treats a rota that moved like a file that moved — notice, drop, re-PREVIEW', async () => {
+        const w = mountScreen({ rota_import_preview: assignmentsAnalysis() });
+
+        await previewed(w);
+        await w.find('[data-testid="import-commit"]').trigger('click');
+
+        settle(lastCall(COMMIT_URL), 'onError', {
+            state_digest: 'The rota changed since you previewed this file, so nothing has been imported. The file itself is unchanged — preview it again to see what it would do now.',
+        });
+        await w.vm.$nextTick();
+
+        // The operator is told the FILE is fine, which is the whole reason this is a second message
+        // rather than the file one reused.
+        expect(w.find('[data-testid="import-stale-notice"]').text()).toContain('The rota changed');
+        expect(w.find('[data-testid="import-stale-notice"]').text()).toContain('file itself is unchanged');
+
+        expect(w.find('[data-testid="import-preview-section"]').exists()).toBe(false);
+        expect(router.post.mock.calls.at(-1)[0]).toBe(PREVIEW_URL);
+        expect(router.post.mock.calls.filter((c) => c[0] === COMMIT_URL)).toHaveLength(1);
     });
 
     it('drops a stale analysis, says so in the server\'s words, and re-PREVIEWS rather than retrying', async () => {

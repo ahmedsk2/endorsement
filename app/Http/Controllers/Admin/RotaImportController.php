@@ -9,6 +9,7 @@ use App\Support\Roster\CsvRosterReader;
 use App\Support\Roster\RosterFormatException;
 use App\Support\Rota\RotaImport;
 use App\Support\Rota\StaleImportFileException;
+use App\Support\Rota\StaleRotaStateException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -31,9 +32,12 @@ use Inertia\Response;
  *
  * What is left for a controller is exactly what a controller is for:
  *
- *  1. Turn ONE typed refusal into a 422 on the right field. `StaleImportFileException` is caught
- *     by type rather than by matching an error message's text, which is the drift this codebase
- *     keeps removing — the message is the operator's, not a control-flow token.
+ *  1. Turn the TYPED refusals into a 422 on the right field. `StaleImportFileException` (the file
+ *     moved) and `StaleRotaStateException` (the rota moved) are caught by type rather than by
+ *     matching an error message's text, which is the drift this codebase keeps removing — the
+ *     message is the operator's, not a control-flow token. They land on DIFFERENT fields because
+ *     they are different operator actions: one is fixed by re-exporting the file, the other by
+ *     looking at the rota again, and the file is byte-identical in the second case.
  *  2. Flash the analysis so a screen can render it. Both keys are enumerated in
  *     `HandleInertiaRequests::share()`; a session key no `share()` names is invisible to every
  *     page in the app (Task 9's amendment records a whole feature that shipped that way, with all
@@ -87,11 +91,23 @@ class RotaImportController extends Controller
         [$reader, $bytes] = $this->readerFromRequest($request);
 
         try {
-            $result = RotaImport::commit($reader, $data['kind'], $bytes, $data['digest'] ?? null, $request);
+            $result = RotaImport::commit(
+                $reader,
+                $data['kind'],
+                $bytes,
+                $data['digest'] ?? null,
+                $request,
+                $data['state_digest'] ?? null,
+            );
         } catch (StaleImportFileException $e) {
             // The file changed under the operator. Their preview described a file that no longer
             // exists, so it is refused outright and never silently retried against the new bytes.
             throw ValidationException::withMessages(['file' => $e->getMessage()]);
+        } catch (StaleRotaStateException $e) {
+            // The ROTA changed under the operator — a different refusal on a different field,
+            // because it is a different operator action with a different fix. Re-exporting the file
+            // does nothing here; the file is byte-identical. See `StatePin`.
+            throw ValidationException::withMessages(['state_digest' => $e->getMessage()]);
         }
 
         // A file-level problem refuses the WHOLE import — never "7 of 8 imported". `commit()` has

@@ -33,6 +33,16 @@ use InvalidArgumentException;
  *    reader here and `CsvIsTheOnlyReaderWriterTest` fails the build for one.
  *  - The audit row carries counts only and is appended AFTER the transaction commits (finding 8).
  *
+ * AND ONE PIN `RosterImport` HAS NO NEED OF: **the rota itself** (`StaleRotaStateException`,
+ * `stateDigest()`, {@see StatePin}). A roster import's analysis is a function of the file and the
+ * people in it; a rota import's is a function of the file and the WHOLE CURRENT ROTA, which a
+ * colleague can move while the preview is on screen. Re-deriving inside the transaction — which
+ * this does, and must — is what makes that dangerous rather than safe: unchanged bytes then commit
+ * whatever the FRESH analysis says. The slice review reproduced it twice, and the worse of the two
+ * was a cell the preview showed with `spans: []` and the words "generate that academic year first"
+ * committing as a `REPLACE` that collapsed a hand-made split. `RotaFill::digest()` is the sibling
+ * pin on the same table in the same slice; both take their definition from `StatePin`.
+ *
  * DIFFERENT, DELIBERATELY.
  *
  *  1. **No column-mapping.** `RosterImport` takes an operator `$mapping` because a hospital HR
@@ -147,6 +157,7 @@ final class RotaImport
         unset($analysis['context']);
 
         $analysis['digest'] = self::digest($bytes);
+        $analysis['state_digest'] = self::stateDigest($analysis);
 
         return $analysis;
     }
@@ -159,9 +170,12 @@ final class RotaImport
      *
      * @param  string|null  $claimedDigest  the digest `preview()` returned for the bytes the
      *                                      operator actually looked at
+     * @param  string|null  $claimedStateDigest  the digest `preview()` returned for the ROTA those
+     *                                           bytes were analysed against
      * @return array<string, mixed> `preview()`'s shape plus `applied` — how many cells were written
      *
      * @throws StaleImportFileException when the file is not the one that was previewed
+     * @throws StaleRotaStateException when the rota is not the one the preview was computed against
      */
     public static function commit(
         RosterReader $reader,
@@ -169,8 +183,9 @@ final class RotaImport
         string $bytes,
         ?string $claimedDigest,
         Request $request,
+        ?string $claimedStateDigest = null,
     ): array {
-        $result = DB::transaction(function () use ($reader, $kind, $bytes, $claimedDigest): array {
+        $result = DB::transaction(function () use ($reader, $kind, $bytes, $claimedDigest, $claimedStateDigest): array {
             // THE PIN FIRST, before anything is read or written. Thrown rather than returned so it
             // cannot be walked past by a later edit: a `return` here is only safe while nothing
             // above it has written, and that is a property somebody has to keep true.
@@ -188,7 +203,24 @@ final class RotaImport
             unset($analysis['context']);
 
             $analysis['digest'] = $digest;
+            $analysis['state_digest'] = self::stateDigest($analysis);
             $analysis['applied'] = 0;
+
+            // THE SECOND PIN, and the one re-derivation alone cannot supply. Re-deriving means this
+            // commit computes a FRESH answer from the CURRENT rota — so unchanged bytes can, and in
+            // the reproductions that motivated this did, describe a completely different set of
+            // writes from the one the operator approved: a cell previewed `UNCHANGED`, or skipped
+            // with `spans: []` on screen, committing as a `REPLACE` that deleted both halves of a
+            // split nobody was ever shown. The byte digest cannot see any of that, by construction.
+            //
+            // A DIFFERENT REFUSAL FROM THE BYTE ONE, and a different type, because they name
+            // different operator actions: re-export the file, or re-preview it. See `StatePin`.
+            if ($claimedStateDigest === null || ! hash_equals($analysis['state_digest'], $claimedStateDigest)) {
+                throw new StaleRotaStateException(
+                    'The rota changed since you previewed this file, so nothing has been imported. '
+                    .'The file itself is unchanged — preview it again to see what it would do now.'
+                );
+            }
 
             // A file-level problem refuses the WHOLE import — never "7 of 8". Two lines disagreeing
             // about the file's own shape is a question about the file, and the operator answers it
@@ -271,6 +303,45 @@ final class RotaImport
     public static function digest(string $bytes): string
     {
         return hash('sha256', $bytes);
+    }
+
+    /**
+     * THE SECOND PIN: the ROTA the file was analysed against, not the file.
+     *
+     * `digest()` above answers "is this the file you looked at". It cannot answer "is this the rota
+     * you looked at", and until the slice review that added this it was the ONLY pin an import had
+     * — so a commit re-derived its analysis from a rota that had moved and wrote whatever the fresh
+     * answer said, against an outcome set the operator never saw.
+     *
+     * The projection is per outcome: the cell's identity, what it holds NOW, and what would be
+     * WRITTEN over it. `outcome` and `reason` are deliberately excluded — {@see StatePin} is the
+     * one definition of that rule and states why, and `RotaFill::digest()` is its other consumer.
+     *
+     * A VACATION HAS NO PERIOD, so it pins `null` there and projects the snapped bounds as its
+     * proposal. Its `current` is the already-booked leave that INTERSECTS that proposal — precisely
+     * the set that decides the row's answer, and no wider: leave in another month cannot make this
+     * row a different outcome, and refusing over it would make the pin unusable on a department
+     * that books leave all year.
+     *
+     * @param  array<string, mixed>  $analysis
+     */
+    public static function stateDigest(array $analysis): string
+    {
+        return StatePin::of(
+            'import:'.$analysis['kind'],
+            // An import has no operator input beyond the file, and the file is pinned by its bytes.
+            [],
+            $analysis['file_errors'],
+            array_map(static fn (array $outcome): array => [
+                $outcome['person_id'],
+                $outcome['period_id'] ?? null,
+                $outcome['current'],
+                $outcome['spans'] ?? [[
+                    'starts_on' => $outcome['snapped_starts_on'],
+                    'ends_on' => $outcome['snapped_ends_on'],
+                ]],
+            ], $analysis['outcomes']),
+        );
     }
 
     /**
@@ -725,6 +796,10 @@ final class RotaImport
             'snapped_starts_on' => null,
             'snapped_ends_on' => null,
             'snapped' => false,
+            // What this row's answer is DECIDED by: the leave this person already holds that
+            // intersects the proposal. Named `current` to match an assignment outcome's own key,
+            // because `stateDigest()` reads one projection over both files.
+            'current' => [],
             'errors' => [],
             'reason' => null,
             'outcome' => self::ERROR,
@@ -763,7 +838,23 @@ final class RotaImport
 
         $personId = (int) $person->getKey();
 
+        // GATHERED FIRST, THEN JUDGED, rather than judged as it goes. Behaviourally identical — a
+        // duplicate IS an intersection, so the first intersecting entry decided the answer before
+        // this too — but it leaves the deciding set on the outcome for `stateDigest()` to pin,
+        // which is what stops a leave booked under the preview committing as an answer the operator
+        // never saw. ONE overlap predicate, written once, feeding both the projection and the
+        // judgement below.
+        $intersecting = [];
+
         foreach ($known[$personId] ?? [] as $existing) {
+            if ($existing['starts_on'] <= $snapped['ends_on'] && $existing['ends_on'] >= $snapped['starts_on']) {
+                $intersecting[] = $existing;
+            }
+        }
+
+        $outcome['current'] = $intersecting;
+
+        foreach ($intersecting as $existing) {
             if ($existing['starts_on'] === $snapped['starts_on'] && $existing['ends_on'] === $snapped['ends_on']) {
                 // The whole reason this outcome exists: leave has no natural key, so without this
                 // the same file imported twice doubles every row in it.
@@ -771,15 +862,13 @@ final class RotaImport
                     'reason' => 'This leave is already booked, to the day.'] + $outcome;
             }
 
-            if ($existing['starts_on'] <= $snapped['ends_on'] && $existing['ends_on'] >= $snapped['starts_on']) {
-                // `Vacation::booted()` would refuse this with a RuntimeException mid-commit, which
-                // would abort the whole file over a row the preview called clean. Named here
-                // instead, on that row alone.
-                return ['outcome' => self::ERROR, 'errors' => [
-                    "Line {$line}: this leave ({$snapped['starts_on']}..{$snapped['ends_on']}) overlaps leave "
-                    ."already booked for the same person ({$existing['starts_on']}..{$existing['ends_on']}).",
-                ]] + $outcome;
-            }
+            // `Vacation::booted()` would refuse this with a RuntimeException mid-commit, which
+            // would abort the whole file over a row the preview called clean. Named here instead,
+            // on that row alone.
+            return ['outcome' => self::ERROR, 'errors' => [
+                "Line {$line}: this leave ({$snapped['starts_on']}..{$snapped['ends_on']}) overlaps leave "
+                ."already booked for the same person ({$existing['starts_on']}..{$existing['ends_on']}).",
+            ]] + $outcome;
         }
 
         $known[$personId][] = ['starts_on' => $snapped['starts_on'], 'ends_on' => $snapped['ends_on']];

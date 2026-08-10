@@ -292,43 +292,32 @@ final class RotaFill
     }
 
     /**
-     * WHAT THE COMMIT IS PINNED TO, and the reasoning is the point.
+     * WHAT THE COMMIT IS PINNED TO. `RosterImport` pins a commit to the digest of the exact BYTES
+     * its preview parsed; a fill has no bytes, because its analysis reads the rota itself. So the
+     * equivalent artifact is the plan's own STATE PROJECTION — the operation, the source cell, and
+     * for every target the cell's identity, what it currently holds and what would be written over
+     * it.
      *
-     * `RosterImport` pins a commit to the digest of the exact BYTES its preview parsed. A fill has
-     * no bytes: its analysis reads the rota itself, so the equivalent artifact is the plan's own
-     * state projection — the operation, the source cell, and for every target the cell's identity,
-     * what it CURRENTLY holds and what would be WRITTEN over it. Any change to the rota that would
-     * change what this fill does changes one of those, and so changes this digest.
-     *
-     * TWO THINGS ARE DELIBERATELY OUT OF IT.
-     *
-     *  - **`outcome` and `reason`**, because they are a pure function of that state AND the
-     *    operator's confirmations. Including them would mean every tick of a per-cell confirm box
-     *    invalidated the pin, forcing a re-preview round trip per tick and making Task 9's master
-     *    "overwrite all splits" control impossible to build. The pin exists to catch the WORLD
-     *    moving, not the operator deciding — and the confirmations are already explicit, per cell,
-     *    in the request body the preview was rendered from.
-     *  - **the confirmations themselves**, for the same reason.
-     *
-     * A change invisible to this digest is therefore a change that alters no cell's current or
-     * proposed span set — one skip reason becoming another, say — and by definition writes nothing
-     * different.
+     * {@see StatePin} is the one definition of that rule, shared with `RotaImport::stateDigest()`
+     * (the slice review found the importer missing this pin entirely, on the same table, in this
+     * same slice). What it covers, what it deliberately excludes — `outcome`, `reason` and the
+     * operator's own confirmations — and why, is stated there, once.
      *
      * @param  array<string, mixed>  $analysis
      */
     public static function digest(array $analysis): string
     {
-        return hash('sha256', (string) json_encode([
-            'op' => $analysis['op'],
-            'source' => $analysis['source'],
-            'errors' => $analysis['errors'],
-            'targets' => array_map(static fn (array $target): array => [
+        return StatePin::of(
+            'fill:'.$analysis['op'],
+            $analysis['source'],
+            $analysis['errors'],
+            array_map(static fn (array $target): array => [
                 $target['person_id'],
                 $target['period_id'],
                 $target['current'],
                 $target['proposed'],
             ], $analysis['targets']),
-        ]));
+        );
     }
 
     /**

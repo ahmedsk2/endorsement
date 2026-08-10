@@ -124,8 +124,12 @@ test.describe('rota import — a year exported, imported back, and a changed fil
 
         // Every cell in the file already says what the rota says. The two counts that matter are
         // the destructive ones, and both are the SERVER's own.
-        await expect(page.getByTestId('import-summary')).toContainText('0 to add');
-        await expect(page.getByTestId('import-summary')).toContainText('0 to replace');
+        //
+        // READ OFF THE NUMBER'S OWN ELEMENT, exactly, never as a substring of the sentence:
+        // `toContainText('0 to add')` is satisfied by "10 to add", so a count assertion a
+        // ten-times-larger number passes is not a count assertion at all.
+        await expect(page.getByTestId('import-count-create')).toHaveText('0');
+        await expect(page.getByTestId('import-count-replace')).toHaveText('0');
 
         // Non-vacuity: a preview of an empty file would also show "0 to replace". The rows have to
         // be there, and none of them may be a write.
@@ -137,7 +141,8 @@ test.describe('rota import — a year exported, imported back, and a changed fil
         await expect(page.getByTestId('import-replace-warning')).toHaveCount(0);
 
         await page.getByTestId('import-commit').click();
-        await expect(page.getByTestId('import-result')).toContainText('0 cell(s) written');
+        await expect(page.getByTestId('import-result')).toBeVisible();
+        await expect(page.getByTestId('import-applied')).toHaveText('0');
 
         // THE RELOAD. Everything above is a fact about a screen; this asks the server for the rota
         // again and reads the cell back.
@@ -179,7 +184,7 @@ test.describe('rota import — a year exported, imported back, and a changed fil
 
         // THE DESTRUCTIVE CASE, LEGIBLE BEFORE ANYTHING IS CONFIRMED. Not "1 cell would change" —
         // the unit and the dates that would be discarded, and the ones that would replace them.
-        await expect(page.getByTestId('import-summary')).toContainText('1 to replace');
+        await expect(page.getByTestId('import-count-replace')).toHaveText('1');
         await expect(page.getByTestId('import-replace-warning')).toBeVisible();
 
         const row = previewRow(page, HANDLE, 'Block 1');

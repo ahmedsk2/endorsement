@@ -283,13 +283,20 @@ const commit = () => {
 
             <section v-if="preview" class="space-y-4 rounded-md border border-line bg-panel p-5"
                      data-testid="import-preview-section">
-                <!-- The SERVER's counts. This component computes none of them. -->
+                <!--
+                  The SERVER's counts. This component computes none of them.
+
+                  Each number carries its OWN testid so a test can assert it exactly. Reading them
+                  out of the sentence is a substring match, and "0 to add" is satisfied by "10 to
+                  add" — a count assertion a ten-times-larger number passes is not a count
+                  assertion. See tests/e2e/rota-import.spec.js.
+                -->
                 <p class="channel-tag" aria-live="polite" data-testid="import-summary">
-                    <span class="readout">{{ preview.summary.create }}</span> to add &middot;
-                    <span class="readout">{{ preview.summary.replace }}</span> to replace &middot;
-                    <span class="readout">{{ preview.summary.unchanged }}</span> unchanged &middot;
-                    <span class="readout">{{ preview.summary.skipped }}</span> skipped &middot;
-                    <span class="readout">{{ preview.summary.error }}</span>
+                    <span class="readout" data-testid="import-count-create">{{ preview.summary.create }}</span> to add &middot;
+                    <span class="readout" data-testid="import-count-replace">{{ preview.summary.replace }}</span> to replace &middot;
+                    <span class="readout" data-testid="import-count-unchanged">{{ preview.summary.unchanged }}</span> unchanged &middot;
+                    <span class="readout" data-testid="import-count-skipped">{{ preview.summary.skipped }}</span> skipped &middot;
+                    <span class="readout" data-testid="import-count-error">{{ preview.summary.error }}</span>
                     error<span v-if="preview.summary.error !== 1">s</span>
                 </p>
 
@@ -444,11 +451,12 @@ const commit = () => {
 
             <section v-if="result" class="rounded-md border border-line bg-panel p-4" data-testid="import-result">
                 <p class="channel-tag">
-                    Last import &mdash; <span class="readout">{{ result.applied }}</span> cell(s) written:
-                    <span class="readout">{{ result.summary.create }}</span> added,
-                    <span class="readout">{{ result.summary.replace }}</span> replaced,
-                    <span class="readout">{{ result.summary.unchanged }}</span> already matched,
-                    <span class="readout">{{ result.summary.skipped }}</span> skipped
+                    Last import &mdash;
+                    <span class="readout" data-testid="import-applied">{{ result.applied }}</span> cell(s) written:
+                    <span class="readout" data-testid="import-result-create">{{ result.summary.create }}</span> added,
+                    <span class="readout" data-testid="import-result-replace">{{ result.summary.replace }}</span> replaced,
+                    <span class="readout" data-testid="import-result-unchanged">{{ result.summary.unchanged }}</span> already matched,
+                    <span class="readout" data-testid="import-result-skipped">{{ result.summary.skipped }}</span> skipped
                 </p>
             </section>
         </div>

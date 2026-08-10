@@ -241,34 +241,61 @@ final class BulkResend
     }
 
     /**
-     * Every distinct position the operation will ask `ManagerScope` to approve — the LIVE
-     * invitations of every selected person, not merely the latest one each.
+     * Every distinct position the operation will ask `ManagerScope` to approve.
      *
-     * Wider than the acted-on set on purpose. `InvitationIssue::issue()` asserts over every row it
-     * is about to supersede, and if one of those asserts fired from inside the transaction the
+     * A UNION OF TWO SETS, and the first half is this method's whole baseline (review finding F3).
+     * It used to return the positions of LIVE INVITATIONS ONLY — and these two endpoints sit in an
+     * `auth`-only route group, because the invitation rule is two-tier and position-dependent and
+     * is therefore applied in-controller rather than by a `cap:` middleware. That exception is only
+     * sound if the in-controller pass asserts something. Select people who have all claimed, or who
+     * were never invited, and the old answer was `[]`: the controller's `foreach` had nothing to
+     * iterate, and ANY authenticated account received the plan — per person, their invitation state,
+     * their invitation id and whether they hold an account. `people.position` is now always in the
+     * set, so a non-empty selection can never authorize nothing.
+     *
+     * `people.position` is also the RIGHT half rather than a defensive one: it is the position
+     * `InvitationIssue::issue()` itself authorizes against (F1), because a redeemed account resolves
+     * its capabilities from the roster row and not from the invitation.
+     *
+     * The second half is the SUPERSEDE set — every live invitation the operation will revoke on its
+     * way to minting a replacement, not merely the latest one per person.
+     *
+     * WIDER THAN THE ACTED-ON SET ON PURPOSE. `issue()` asserts over every row it is about to
+     * supersede, and if one of those asserts fired from inside `commit()`'s transaction the
      * `user_scope_denied` row it wrote would roll back with the abort — the attempt would vanish
-     * from the trail, which is the exact defect P1c-1 finding 12 records. Authorizing the whole
-     * superseded set up front means the inner asserts are a belt already proven by the braces.
+     * from the trail, which is the exact defect P1c-1 finding 12 records. Authorizing the whole set
+     * up front means the inner asserts are a belt already proven by the braces.
      *
      * @param  list<int>  $personIds
      * @return list<int>
      */
     public static function positionsToAuthorize(array $personIds): array
     {
-        if ($personIds === []) {
+        $ids = array_values(array_unique(array_map('intval', $personIds)));
+
+        if ($ids === []) {
             return [];
         }
 
-        $positions = Invitation::query()
-            ->whereIn('person_id', $personIds)
+        // `withTrashed()`, matching `analyse()`: a retired person is skipped by the operation but is
+        // still somebody this viewer either may or may not know about, and `person_ids.*` validates
+        // with a bare `exists` that sees soft-deleted rows too.
+        $people = Person::withTrashed()->whereIn('id', $ids)->get();
+
+        $positions = $people->map(static fn (Person $p): int => (int) $p->position)->all();
+
+        $superseded = Invitation::query()
+            ->whereIn('person_id', $ids)
             ->whereNull('accepted_at')
             ->whereNull('revoked_at')
-            ->pluck('position')
-            ->map(static fn ($p): int => (int) $p)
-            ->unique()
-            ->sort()
-            ->values()
-            ->all();
+            ->pluck('position');
+
+        foreach ($superseded as $position) {
+            $positions[] = (int) $position;
+        }
+
+        $positions = array_values(array_unique($positions));
+        sort($positions);
 
         return $positions;
     }

@@ -231,6 +231,60 @@ class RotaFillCommitTest extends TestCase
     }
 
     /**
+     * THE PIN COVERS THE TARGETS, NOT ONLY THE SOURCE — and until the slice review nothing asserted
+     * it: the whole suite stayed green with `$target['current']` deleted from `RotaFill::digest()`.
+     *
+     * The case that needs it is a colleague filling in a cell this fill was about to ASSIGN. The
+     * operator's plan says "empty, so I will add" — `current: []` — and by commit time the cell
+     * holds somebody's deliberate work. The source has not moved, so a digest over the source alone
+     * still matches, and the fill silently overwrites.
+     *
+     * Watched red before it was trusted: with that one line removed from the projection, the
+     * confirm below succeeded and the peer came back holding the fill's unit instead of unit B.
+     */
+    public function test_a_fill_is_refused_when_a_colleague_filled_in_a_TARGET_cell(): void
+    {
+        [$periods, $unitA] = $this->seedYear();
+        $unitB = Unit::create(['code' => 'XFB', 'name' => 'Fill Unit B', 'active' => true]);
+        [$junior] = $this->twoLevels();
+
+        $source = $this->person($junior, $periods[0]);
+        $peer = $this->person($junior, $periods[0]);
+
+        RotaAssignment::set($source, $periods[0], $unitA);
+
+        $plan = RotaFill::plan(RotaFill::FILL_DOWN_COLUMN, [
+            'person_id' => $source->getKey(),
+            'period_id' => $periods[0]->getKey(),
+        ], []);
+
+        // The target the operator was shown: empty today, and an ADD rather than a replacement —
+        // which is exactly why nothing on screen warned them about it.
+        $target = collect($plan['targets'])->firstWhere('person_id', $peer->getKey());
+        $this->assertNotNull($target);
+        $this->assertSame(RotaFill::ASSIGN, $target['outcome']);
+        $this->assertSame([], $target['current'], 'the plan must describe this cell as empty');
+
+        // Somebody else fills that cell in while the preview is on screen. The SOURCE is untouched.
+        RotaAssignment::set($peer, $periods[0], $unitB);
+
+        $response = $this->postFill([
+            'op' => RotaFill::FILL_DOWN_COLUMN,
+            'source_person_id' => $source->getKey(),
+            'source_period_id' => $periods[0]->getKey(),
+            'digest' => $plan['digest'],
+        ]);
+
+        $response->assertStatus(422);
+        $response->assertJsonValidationErrors('digest');
+
+        $rows = $this->spansOf($peer, $periods[0]);
+        $this->assertCount(1, $rows);
+        $this->assertSame((int) $unitB->getKey(), (int) $rows[0]->unit_id,
+            'the colleague\'s assignment on a TARGET cell was silently overwritten');
+    }
+
+    /**
      * ALL OR NONE. A writer that throws on the third of five cells must leave the table exactly as
      * it was — including the spans the first two cells REPLACED, which `RotaAssignment` deletes
      * before it inserts.

@@ -319,6 +319,38 @@ stays on every seeded position: reading the rota is not editing it.
 
 ---
 
+## 13. Keep a SECOND account holding `access.manage` — and know what the invitation knob does
+
+Two things arrived with the 2026-08-10 account-lifecycle release (P1c-2). Neither needs a command;
+both are yours to decide.
+
+**A. More than one `access.manage` holder, always.** The self-lockout guard on Admin → Access
+Control protects the Administrator **role's** default set — it stops position 0 giving up
+`access.manage` on the role matrix. It does **not** run on the per-account grant/deny path, on either
+screen. So an administrator can deny `access.manage` to the last account holding it, and the security
+console then answers to nobody: no screen can grant it back, and recovery means a database console.
+This is pre-existing, measured rather than guessed, and deliberately not patched in a release whose
+job was to extract one writer without changing behaviour (design §14 open item 20; a test already
+pins both screens in agreement so a future fix is proved to reach each of them). **Until it is fixed,
+the mitigation is entirely procedural: keep at least two active accounts holding `access.manage`, and
+do not experiment with denying it to yourself.**
+
+**B. "Link lifetime (days)" on Admin → Settings.** How long an invitation link stays usable, default
+**7**, maximum **30**. Munawib's own figure is 14; 7 is the deliberate choice here, because redeeming
+an invitation creates an account that reaches children's clinical records, so a link that was
+forwarded, printed or left in a shared inbox is live for half as long. **Leave it alone unless you
+have a reason.** Raising it is a real, if small, security decision; the field is on the Settings
+screen rather than the account console precisely so it is reviewed alongside SMTP and VAPID rather
+than adjusted for convenience by whoever is issuing invitations that day. An unset field means the
+default is in force — that is the normal, intended state.
+
+Also worth knowing, because both look like faults and are not: **resending an invitation kills the
+old link** (a new one is minted; the old row is kept and marked revoked), and **unbinding an account
+removes it from the Users list** (it is kept as history, cannot log in, and cannot be reactivated — a
+colleague who returns gets a fresh invitation and needs their roles granted again).
+
+---
+
 ## Ongoing
 
 | When | Do |
@@ -327,6 +359,7 @@ stays on every seeded position: reading the rota is not editing it.
 | After any deploy (wait ~1 min for the container swap) | `bash scripts/verify-live.sh` |
 | Quarterly | Restore drill (`docs/RUNBOOK-BACKUP.md`) |
 | If a release adds migrations | Run `php artisan migrate --force` yourself after the deploy — the container never migrates at boot, by design |
+| Whenever you change who holds `access.manage` | Confirm at least two active accounts still hold it (item 13) |
 
 `audit:verify` runs hourly, `backup:run` at 01:30, `data:retention` at 02:30, handover
 reminders at 07:30 and 15:30 — all inside the container, all logging a critical line on

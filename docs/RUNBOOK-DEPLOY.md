@@ -1003,3 +1003,64 @@ read the preview, then commit.
 - The commit writes one `rota_import` audit row (counts only) after its transaction; an export writes
   one `rota_export` row. Neither is on the anomaly watch list — they are routine administrative acts,
   and putting them there would train you to ignore the channel that exists for `rota_fill`.
+
+---
+
+## The 2026-08-10 account-lifecycle release (P1c-2) — NO MIGRATION
+
+**Nothing to verify in the schema, and that is the point of saying so.** P1c-2 added **no migration
+at all** — every column it needed already existed (`invitations.person_id`, `users.person_id`,
+`user_capabilities.effect`, `app_settings.key`/`value`, `handover_signoffs.signed_off_by_name`). The
+`2026_08_14_1201*` slot the P1c-1 plan reserved for it is **released, unclaimed**; P1d's
+`2026_08_15_*` remains the last migration in the tree. A runbook that is silent about a release reads
+as an oversight, so: there is genuinely nothing to run, and `php artisan migrate --pretend` should
+report no pending migrations after this deploy.
+
+### One post-deploy check, per instance
+
+```bash
+# From the app container. Expect NO ROW, or the value 7.
+php artisan tinker --execute="dump(\App\Support\AppSettings::get('invitation_lifetime_days'), \App\Models\Invitation::lifetimeDays());"
+```
+
+**An absent row is the intended state** — `Invitation::LIFETIME_DAYS = 7` is the default, and
+`lifetimeDays()` falls back to it. A surprising value means somebody set it deliberately on the
+Settings screen; find out who before changing it back (the write is audited by key name under
+`settings_update`). Anything outside **[1, 30]** is ignored by the model's own clamp and the fallback
+applies — that clamp exists because `app_settings` is a plain key/value table reachable from a
+database console, and such a write passes no validator.
+
+### What changed operationally
+
+- **Admin → Settings now carries "Link lifetime (days)"**, behind `settings.manage`. It is a
+  credential-exposure parameter — how long a bearer link to a child's clinical records stays live —
+  which is why it sits beside SMTP and VAPID rather than on the account console. Shorter is safer.
+- **Resend rotates the token.** Resending an invitation mints a **new** link and kills the old one;
+  the superseded row is kept and marked revoked, never deleted. If somebody reports that an old link
+  stopped working after a resend, that is correct behaviour, not a fault.
+- **Bulk resend (People → select → Resend invitations) refuses outright unless SMTP is configured**,
+  is capped at **50** people per request, and is throttled to six requests a minute. It previews
+  before it confirms, and the confirm is pinned to the state you previewed — if somebody claims their
+  account in between, it refuses with *"Something changed since you previewed this resend"* rather
+  than mailing a stale set. **Mail is sent only after the database work commits**, so the failure mode
+  is "rows exist, some mail did not go" — visible, reported per person on screen, and fixable by
+  resending. Never the reverse.
+- **Unbinding an account (Users → Unbind) is irreversible from the UI.** It clears the person link,
+  deactivates the account and keeps it as history. **The row then disappears from the Users screen
+  entirely**, because that list inner-joins `people` — expected, and the flash message says so. The
+  account cannot be reactivated; a colleague who returns gets a **new** invitation and an
+  administrator **re-grants their roles**, which are not restored automatically. Before clearing the
+  link it snapshots the signer's name onto every handover that account signed which does not already
+  carry one, so old signed sheets keep saying who signed them; the count lands in the
+  `account_unbound` audit row.
+- **Roles can now be granted from Admin → People as well as Admin → Access Control.** Both write the
+  same rows through the same code, and both require **`access.manage`** — `people.manage` alone does
+  not grant roles, deliberately.
+
+### Known gap, carried not fixed
+
+The self-lockout guard covers the **role matrix only**. A holder of `access.manage` can deny that
+capability to the last account holding it — from either screen — after which the Access Control
+console is unreachable and recovery needs a database console. Pre-existing, measured rather than
+inferred, and recorded as design §14 open item 20. **Operationally: keep more than one account
+holding `access.manage`.**

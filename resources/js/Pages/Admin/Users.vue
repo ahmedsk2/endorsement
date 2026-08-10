@@ -441,7 +441,7 @@ const unbind = (u) => {
                                 </td>
                             </tr>
                             <tr v-if="!filteredUsers.length">
-                                <td colspan="7" class="px-4 py-6 text-center text-sm text-muted">No users match the search.</td>
+                                <td colspan="8" class="px-4 py-6 text-center text-sm text-muted">No users match the search.</td>
                             </tr>
                         </tbody>
                     </table>

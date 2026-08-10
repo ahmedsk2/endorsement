@@ -1173,6 +1173,59 @@ allow-list anywhere gained an entry for this task.
 `AccessControlController.php:246-319`; it was at `:236-322` before this task opened the file.
 `AccessControl.php:168-178` (the deny-wins two-pass) and `:186-191` (the cache key) are correct.
 
+**Task 7 (2026-08-11) — the tidies were TWO sites and one moved line, not the three and the `:367`
+this task's own step 1 lists.** Both were checked against the tree before anything was edited, as
+step 1 itself instructs. `bg-panel-soft`: finding 15 named three, Task 2 closed `Users.vue:179`
+early on markup it was rewriting anyway (recorded in its own amendment), so **two** were live —
+`StaffPrivacyNotice.vue:25` and `AcceptInvitation.vue:43`, both at exactly the cited lines. Both are
+now `bg-ground-deep`, and `resources/css/app.css` declares `--color-ground`, `--color-ground-deep`
+and `--color-panel` and **no `--color-panel-soft`**, which is what makes this a defect rather than a
+preference: the class compiled to nothing. The `colspan`: finding 16 puts it at `Users.vue:367` and
+Task 5's report repeats that; it is at **`:444`**, moved by Task 5's own Unbind button and the
+markup around it. The defect is real and unchanged — the users table has eight `<th>` (`:349-363`)
+and the empty-state cell spanned seven. A third line reference in the same family was already
+recorded stale by Task 5 (`invited_by` at `InvitationController.php:187`, now `:452`). **Four stale
+line references across seven tasks: cite by symbol, verify by reading.**
+
+**Task 7 — the design doc section this task was pointed at is not the one that needed correcting.**
+The brief named §11; §11 is *Migration and fixtures* and P1c-2 invalidates nothing in it (it adds no
+migration and no fixture). The sections that actually carried false or now-incomplete claims were
+**§1.2** (the overrides table, which had no AC-02 row — the whole point of the correction), **§5.1**
+(no claim-status projection, no unbind, no snapshot), **§9** (a new §9.4 for AC-04's second surface
+and why it is not on `people.manage`), **§12** (whose whole account of the source-level guard family
+was one bullet naming two of them — `tests/Feature/Build/` now holds seventeen files), **§13** (the
+sequencing table still read "P1c-2 … planned once P1c-1 merged"), and **§14** (items 7, 13 and 17,
+plus two new items, 20 and 21). Recorded because "the doc is wrong at
+§N" is exactly the kind of claim this plan family keeps finding to be *nearly* right.
+
+**Task 7 — three things the brief said to fix were ALREADY CORRECT on disk, and one claim in it is
+wrong against the tree.** Checked before editing, per P1d-1 Task 12's and P1d-2 Task 13's recorded
+experience of being told to fix wording that only existed stale in a cached context. Already right,
+and left alone: `docs/spec/15-rulings.md`'s existing 29 rulings (nothing P1c-2 did contradicts one —
+three new rows were **appended**, none amended); `docs/RUNBOOK-DEPLOY.md`'s P1d-2 operating section;
+and `phpunit.xml`'s memory-limit block, which Task 4 had already written with its full empirical
+reasoning in place — CLAUDE.md gained the note, the file needed nothing. Wrong against the tree: the
+brief says *"four new single-writer guards exist now"* and then names **three**.
+`tests/Feature/Build/` gained exactly three (`InvitationWritersAreSingularTest`,
+`AccountLinkHasOneWriterTest`, `CapabilityWritersAreSingularTest`); the fourth new test file of the
+guard *species* is `ManagerScopeParityTest`, which is a **parity matrix**, not a single-writer scan,
+and it lives in `tests/Feature/Admin/`.
+
+**Task 7 — the pre-existing lockout gap is recorded in FOUR places, deliberately, because each has a
+different reader.** `docs/superpowers/specs/…-design.md` §14 item 20 is the technical record with the
+measurement and what pins a future fix to both doors; `docs/spec/08-foundation.md` states it where
+the access-control model is described, so nobody reads "self-lockout guard" there and assumes it
+covers everything; `CLAUDE.md` carries it as a standing rule so an implementer meets it before
+touching `CapabilityGrant`; and `docs/OWNER-CHECKLIST.md` item 13 carries the only mitigation that
+exists today, which is procedural — **keep two active accounts holding `access.manage`**. A gap whose
+only mitigation is a human habit belongs in the document the human reads.
+
+**Task 7 — measured, not computed.** Suite unchanged at **1396** PHPUnit tests, 6419 assertions, 0
+skipped; Vitest **192**; `npm run test:e2e` **22 passed**; `npm run build` green. No test moved,
+which is the expected shape for a task that changes documents plus one `colspan` and two utility
+classes — none of the three has an assertion pointed at it. `grep -rn "bg-panel-soft" resources/`
+returns nothing.
+
 *(Follow the P0c/P0d/P1a/P1b/P1c/P1d convention: when a task turns up something
 this plan's enumeration missed — a site not listed, a test that goes red for a reason the plan did
 not predict, a behaviour that differs between SQLite and MySQL — record it here, dated, with what was
@@ -1953,40 +2006,74 @@ git commit -am "docs: an account has a beginning, a middle and an end, and the d
 
 ## Definition of done
 
-- [ ] `php artisan test` — green, 0 failures, **0 skipped**, run under Bash after `npm run build`.
-      **Measure the number; do not compute it.** The baseline was 1297; every task's amendment
-      records what it actually left behind.
-- [ ] `npm test` green (baseline 187); `npm run build` green.
-- [ ] **No migration was added.** `git diff --stat main -- database/migrations` is empty, and the
-      `2026_08_14_1201*` slot is still unclaimed (Decision H).
-- [ ] `CompiledCssIsLightOnlyTest`, `TextContrastMeetsAaTest`, `CalendarIsTheOnlyConverterTest`,
+*Measured at Task 7, 2026-08-11, via Bash after `npm run build`. Every number below is a reading,
+not arithmetic.*
+
+- [x] `php artisan test` — green, **1396 tests, 6419 assertions, 0 failures, 0 skipped**. (The
+      baseline was 1297; the six implementing tasks added 99. Each task's amendment records what it
+      actually left behind, and one of them — Task 4's — records the suite crossing PHP's stock 128M
+      CLI ceiling on the way.)
+- [x] `npm test` green — **192**, not the 187 written above. The baseline was measured before Task 6
+      added five `PeopleRolesPanel` cases; the stated number was stale by the time the box was read,
+      which is this plan family's single most common species of error. `npm run build` green.
+- [x] **No migration was added.** `git diff --stat main -- database/migrations` is empty, and no
+      `2026_08_14_1201*` file exists — the slot P1c-1 reserved is **released unclaimed** (Decision H).
+      The two `2026_08_14_1200*` files in the tree are P1c-1's.
+- [x] `CompiledCssIsLightOnlyTest`, `TextContrastMeetsAaTest`, `CalendarIsTheOnlyConverterTest`,
       `CalendarWritersFlushTest` and `InstitutionProvenanceTest` all green, **none with a new
       allow-list entry**.
-- [ ] `ContactFieldsAreProjectedOnceTest` green **with no allow-list change** — claim status is
-      `$extra`, and nothing new reads `->phone`/`->notes`/`->email` off a `Person`.
-- [ ] `RosterNeverMintsCredentialsTest` green **with no allow-list change** — the People screen's
+- [ ] ~~`ContactFieldsAreProjectedOnceTest` green **with no allow-list change**~~ — **THIS BOX
+      CANNOT BE TICKED AS WRITTEN, and the guard is what proved it (Task 3's amendment).** The test
+      is green, and the clause's *reasoning* holds in full: claim status is `$extra`, never a base
+      key. But the one writer of `invitations` must read `people.email` — it is the address the
+      credential is frozen onto and half the predicate deciding which live links to kill — so
+      `app/Support/Invitations/InvitationIssue.php` carries one allow-list entry with that reason
+      written out beside it. The alternative, passing the address in from each caller, makes "an
+      invitation is addressed to the roster row's current address" a thing every caller can get
+      wrong. Task 4 then hit the same guard and fixed it the other way, by reading **less**:
+      `BulkResend` takes the address off the minted invitation rather than the person, and uses
+      `Person::hasEmail()` for the yes/no question — **no second entry was added**.
+- [x] `RosterNeverMintsCredentialsTest` green **with no allow-list change** — the People screen's
       Invite and Resend buttons POST to `InvitationController`, never to `PersonController`.
-- [ ] `PersonActiveHasOneWriterTest` green **with no allow-list change** — `AccountUnbind` never
-      writes `people.active`.
-- [ ] The three new guard tests exist, are green, and **each was watched failing against a
-      deliberately introduced offence before being trusted**: `InvitationWritersAreSingularTest`,
-      `AccountLinkHasOneWriterTest`, `CapabilityWritersAreSingularTest`.
-- [ ] `PickerParityTest` green — D9 survived everything here.
-- [ ] `ManagerScopeParityTest` green over the whole matrix — `mayTarget()` and `assertMayTarget()`
+- [x] `PersonActiveHasOneWriterTest` green **with no allow-list change** — `AccountUnbind` never
+      writes `people.active`. This is the disjointness proof, not a formality.
+- [x] The three new guard tests exist, are green, and **each was watched failing against a
+      deliberately introduced offence before being trusted**: `InvitationWritersAreSingularTest`
+      (an `Invitation::create(`/`DB::table('invitations')`/`'revoked_at' =>` trio, and separately a
+      bare `Invitation::issue(` in `PersonController`), `AccountLinkHasOneWriterTest` (a second link
+      writer in `PersonController` — and then watched staying **green** against a planted
+      `person_id === null` *read*, which is what proves the trailing space in that needle is
+      load-bearing), `CapabilityWritersAreSingularTest` (twice: a model-name trio, and the
+      relation-shaped `$user->userCapabilities()->updateOrCreate(...)` that no model-name needle
+      would see). Every plant was reverted with `git status` left clean.
+- [x] `PickerParityTest` green — D9 survived everything here.
+- [x] `ManagerScopeParityTest` green over the whole matrix — `mayTarget()` and `assertMayTarget()`
       agree for every (capability set × position) pair.
-- [ ] `AccessControlPageTest` green **unchanged** — Task 6's extraction moved a body, not a
-      behaviour.
-- [ ] No `dark:` utility, no raw Tailwind palette class, no hex in any new markup, and
-      `grep -rn "bg-panel-soft" resources/` returns nothing.
-- [ ] No date arithmetic anywhere in `resources/js`; every date and time this plan shows arrives
+- [x] `AccessControlPageTest` green **unchanged** — `git diff main` reports no edit of any kind to
+      that file. Task 6's extraction moved a body, not a behaviour.
+- [x] No `dark:` utility, no raw Tailwind palette class, no hex in any new markup, and
+      `grep -rn "bg-panel-soft" resources/` returns nothing (Task 7 closed the last two sites;
+      Task 2 had closed the third early, on markup it was rewriting anyway).
+- [x] No date arithmetic anywhere in `resources/js`; every date and time this plan shows arrives
       preformatted.
-- [ ] No staff name, email address, phone number or filename in any `audit_log.detail` written by
-      this plan, and none in any log line either — Task 4's per-recipient failure logging is the one
-      most likely to slip.
-- [ ] `users` row count is unchanged by every unbind test; no account is deleted anywhere.
-- [ ] `tests/fixtures/roster/` and `tests/fixtures/calendar/golden.json` untouched.
-- [ ] The dress rehearsal in Task 4 was run against a real server with `MAIL_MAILER=log`, and the
-      throwaway database was destroyed afterwards.
+- [x] No staff name, email address, phone number or filename in any `audit_log.detail` written by
+      this plan, and none in any log line either. Task 3 also found and closed a **pre-existing**
+      leak of the same species on the path it was refactoring: the single-invite mail-failure log
+      carried `$e->getMessage()`, and SMTP transport errors routinely quote the envelope recipient
+      back. It now carries the person id, the invitation id and the exception class, nothing else.
+- [x] `users` row count is unchanged by every unbind test; no account is deleted anywhere.
+- [x] `tests/fixtures/roster/` and `tests/fixtures/calendar/golden.json` untouched — `git diff
+      --name-only main -- tests/fixtures/` is empty.
+- [x] The dress rehearsal in Task 4 was run against a real server — **but not the recipe written
+      above, which contradicts Decision D property 1.** `MAIL_MAILER=log` makes the endpoint refuse
+      outright, so reading five links out of `laravel.log` would have exercised the refusal and
+      nothing else. It was run with `MAIL_MAILER=smtp` against a disposable local SMTP sink instead,
+      which is strictly better evidence: `Mail::fake()` proves the call, a real transport proves the
+      mailable **renders**. Five distinct recipients, five distinct 64-hex tokens, no `@` anywhere in
+      the audit trail, and a replayed digest refused with no sixth email. The throwaway database, the
+      sink and the driver were destroyed; nothing entered the repository.
+- [x] `npm run test:e2e` — **22 passed**. Unchanged: nothing in this plan touches a path the e2e
+      world exercises, and no invitation spec was added (the harness has no mail transport).
 
 ---
 

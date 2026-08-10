@@ -899,12 +899,22 @@ SELECT COUNT(*) FROM vacations;
 
 Post-deploy checklist addition:
 
-- **`rota.view` lands on EVERY seeded role automatically, `rota.manage` on Administrator and
-  Chief Resident** — the same `applied_role_defaults` idempotent-apply mechanism `structure.manage`
-  and `people.manage` used above, no owner action needed. `rota.view` reaching every position is
+- **`rota.view` lands on EVERY seeded role automatically, `rota.manage` on Administrator only**
+  — the same `applied_role_defaults` idempotent-apply mechanism `structure.manage` and
+  `people.manage` used above, no owner action needed. `rota.view` reaching every position is
   deliberate (MR-05: a resident needs to read which unit they rotate through next) — worth a
   glance at the Access Control page after deploy if a department wants it narrower than the
   default.
+- **`rota.manage` was reversed to Administrator-only on 2026-08-10, and an instance that already
+  has the old grant KEEPS it — that is by design.** P1d-1 seeded `rota.manage` to Chief Resident
+  (position 5); P1d-2 removed it from the defaults. `AccessControlSeeder` applies each
+  (position, capability) default **once**, records it in `applied_role_defaults`, and never
+  re-asserts it, so removing the entry does **not** revoke the capability on an instance that
+  already seeded it. That is deliberate: a capability an administrator may since have kept
+  deliberately is theirs, and this seeder does not re-impose decisions over an administrator's.
+  To remove it: **Admin → Access Control → Chief Resident → un-tick "Create and edit master rota
+  assignments and vacations" → Save.** There is no migration and there must not be one. A fresh
+  deployment is unaffected — Chief Resident never receives the grant in the first place.
 - **`/admin/rota` shows a teaching empty state, not an error, until an academic year of periods
   exists.** The rota's columns are periods (P1b's Structure → Periods screen); a fresh deployment
   or a new academic year has nothing to plan against until that screen generates one.

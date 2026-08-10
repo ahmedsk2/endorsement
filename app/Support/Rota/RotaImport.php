@@ -119,6 +119,23 @@ final class RotaImport
     public const ERROR = 'error';
 
     /**
+     * THE ROW CAP FOR THIS ARTEFACT, which is not the roster's (`CsvRosterReader::MAX_ROWS`, 2000).
+     *
+     * A rota file is ONE ROW PER SPAN. Sixty people across thirteen blocks is 780 rows before a
+     * single split; a department that splits blocks routinely, or exports two academic years, is
+     * past two thousand without anything unusual having happened — so the roster's number made this
+     * system refuse to read a file it had itself just written, and did it as an uncaught 500
+     * because the reader's cap fires mid-generator. THE SYSTEM MUST NOT BE ABLE TO EXPORT A FILE IT
+     * REFUSES TO READ.
+     *
+     * Twenty thousand still catches what a cap is for — a pasted wrong file, a duplicated sheet —
+     * with the 4 MB upload limit (`RotaImportRequest::MAX_KILOBYTES`) as the outer backstop at
+     * roughly 50 000 rows of this shape. It is passed to the reader by `RotaImportController`, so
+     * the refusal names the number that actually applied.
+     */
+    public const MAX_ROWS = 20000;
+
+    /**
      * The columns an assignments file cannot be read without. The rest of
      * `RotaExport::ASSIGNMENT_HEADERS` (`period_label`, `period_starts_on`, `period_ends_on`,
      * `full_name`) is there for the human reading the file: this importer resolves the period from

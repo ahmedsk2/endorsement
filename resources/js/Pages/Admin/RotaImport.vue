@@ -41,6 +41,7 @@ import AppLayout from '../../Layouts/AppLayout.vue';
 const props = defineProps({
     academic_years: { type: Array, default: () => [] },
     max_kilobytes: { type: Number, default: 4096 },
+    max_rows: { type: Number, default: 20000 },
 });
 
 const page = usePage();
@@ -221,7 +222,7 @@ const commit = () => {
             <div>
                 <h2 class="text-xl font-semibold text-ink">Rota import</h2>
                 <p class="text-sm text-muted">
-                    CSV or tab-separated, UTF-8, up to {{ maxMegabytes }} MB and 2000 rows &mdash; the
+                    CSV or tab-separated, UTF-8, up to {{ maxMegabytes }} MB and {{ max_rows }} rows &mdash; the
                     files Master Rota exports, edited and read back. Nothing is written until you
                     import: preview first, and check what it would replace.
                     <a :href="exportHref" class="font-semibold underline" data-testid="import-export-link">

@@ -26,7 +26,17 @@ use SplFileObject;
  */
 final class CsvRosterReader implements RosterReader
 {
-    /** A department roster is tens of staff; two thousand is a paste accident or a wrong file. */
+    /**
+     * THE DEFAULT CAP, WHICH IS THE ROSTER'S. A department roster is tens of staff; two thousand is
+     * a paste accident or a wrong file.
+     *
+     * IT IS A DEFAULT AND NOT A LAW, because this reader has a second caller whose artefact is
+     * shaped completely differently. A rota file is one row per SPAN, not one per person: sixty
+     * people across thirteen blocks is 780 rows before a single split, and a department that splits
+     * blocks passes two thousand without anything unusual happening. Applying the roster's number
+     * there made the system refuse to read a file it had just written — see `RotaImport::MAX_ROWS`,
+     * which is the cap that applies to that artefact, and `RotaImportController`, which passes it.
+     */
     public const MAX_ROWS = 2000;
 
     private const DELIMITER_CANDIDATES = [',', "\t", ';'];
@@ -41,8 +51,17 @@ final class CsvRosterReader implements RosterReader
 
     private readonly string $delimiter;
 
-    public function __construct(private readonly string $path)
+    private readonly int $maxRows;
+
+    /**
+     * @param  int|null  $maxRows  the caller's own row cap. Null takes {@see self::MAX_ROWS}, which
+     *                             is the ROSTER's number — pass one whenever the artefact is not a
+     *                             roster, or the reader refuses files this system itself writes.
+     */
+    public function __construct(private readonly string $path, ?int $maxRows = null)
     {
+        $this->maxRows = $maxRows ?? self::MAX_ROWS;
+
         $contents = (string) file_get_contents($path);
 
         if (! mb_check_encoding($contents, 'UTF-8')) {
@@ -103,10 +122,13 @@ final class CsvRosterReader implements RosterReader
 
             $dataRows++;
 
-            if ($dataRows > self::MAX_ROWS) {
+            if ($dataRows > $this->maxRows) {
+                // NAMES THE CAP THAT ACTUALLY APPLIED, not a constant. Two callers with two
+                // artefacts have two numbers, and an operator told "more than 2000" about a file
+                // this system accepted at 12 000 would go looking for a row that is not the problem.
                 throw new RosterFormatException(
-                    'This file has more than '.self::MAX_ROWS.' rows. That is a paste accident or '
-                    .'the wrong file — a department roster is at most a few hundred names.'
+                    'This file has more than '.$this->maxRows.' rows, which is more than this '
+                    .'import accepts. That is a paste accident or the wrong file.'
                 );
             }
 

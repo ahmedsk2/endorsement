@@ -14,6 +14,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use InvalidArgumentException;
+use RuntimeException;
 
 /**
  * Admin → Rota import (cap:rota.manage). Munawib MR-06, P1d-2 Decision H, Task 12.
@@ -61,6 +63,9 @@ class RotaImportController extends Controller
             // Stated once, server-side, so the screen's own "up to N MB" sentence and the rule
             // that enforces it cannot drift apart.
             'max_kilobytes' => RotaImportRequest::MAX_KILOBYTES,
+            // Same reason as the size above, and the reason it is not `CsvRosterReader::MAX_ROWS`:
+            // this artefact's cap is the rota's, not the roster's.
+            'max_rows' => RotaImport::MAX_ROWS,
         ]);
     }
 
@@ -75,7 +80,17 @@ class RotaImportController extends Controller
 
         [$reader, $bytes] = $this->readerFromRequest($request);
 
-        return back()->with('rota_import_preview', RotaImport::preview($reader, $data['kind'], $bytes));
+        try {
+            $analysis = RotaImport::preview($reader, $data['kind'], $bytes);
+        } catch (InvalidArgumentException|RuntimeException $e) {
+            // THE CATCH WRAPS THE IMPORT, NOT THE READER'S CONSTRUCTOR, and that is the whole
+            // point. `CsvRosterReader::rows()` is a generator, so its row cap throws MID-ITERATION,
+            // inside `preview()` — long after `readerFromRequest()` has returned. Both routes were
+            // an uncaught `RuntimeException` for exactly that reason.
+            throw ValidationException::withMessages(['file' => $e->getMessage()]);
+        }
+
+        return back()->with('rota_import_preview', $analysis);
     }
 
     /**
@@ -108,6 +123,18 @@ class RotaImportController extends Controller
             // because it is a different operator action with a different fix. Re-exporting the file
             // does nothing here; the file is byte-identical. See `StatePin`.
             throw ValidationException::withMessages(['state_digest' => $e->getMessage()]);
+        } catch (InvalidArgumentException|RuntimeException $e) {
+            // EVERY OTHER REFUSAL FROM INSIDE THE TRANSACTION, matching `MasterRotaController::fill()`
+            // (P1b finding 14: a raw 500 reaching the user is a bug in the controller, not in the
+            // guard). The reachable one today is the reader's row cap, thrown mid-generator —
+            // `RosterFormatException` extends `RuntimeException` and arrives here. The writer and
+            // model guards behind it agree with this analysis on every rule, so nothing reaches
+            // them from a file today; "unreachable today" is precisely the state a catch is for,
+            // and the transaction has already rolled back by the time this runs.
+            //
+            // ORDER MATTERS: both stale-pin types extend `RuntimeException`, so they are caught
+            // above by their own types or they would land here with the wrong field.
+            throw ValidationException::withMessages(['file' => $e->getMessage()]);
         }
 
         // A file-level problem refuses the WHOLE import — never "7 of 8 imported". `commit()` has
@@ -121,6 +148,16 @@ class RotaImportController extends Controller
     }
 
     /**
+     * The reader is given `RotaImport::MAX_ROWS`, NOT the reader's own default. That default is the
+     * ROSTER's number (2000) and a rota file is one row per span — 60 people across 13 blocks is
+     * 780 before a single split — so leaving it made this system refuse to read the file its own
+     * export had just written.
+     *
+     * The `RosterFormatException` catch here covers the ENCODING refusal only, which the reader's
+     * constructor does throw before any row. The row cap does NOT arrive here: `rows()` is a
+     * generator and its cap fires inside `RotaImport::preview()`/`commit()`, which is why both of
+     * those calls have a catch of their own.
+     *
      * @return array{0: CsvRosterReader, 1: string} the reader, and the raw bytes read ONCE — the
      *                                              digest is over bytes, and re-reading the temp
      *                                              upload a second time for that alone would be a
@@ -132,7 +169,7 @@ class RotaImportController extends Controller
             $path = $request->file('file')->getRealPath();
             $bytes = (string) file_get_contents($path);
 
-            return [new CsvRosterReader($path), $bytes];
+            return [new CsvRosterReader($path, RotaImport::MAX_ROWS), $bytes];
         } catch (RosterFormatException $e) {
             throw ValidationException::withMessages(['file' => $e->getMessage()]);
         }

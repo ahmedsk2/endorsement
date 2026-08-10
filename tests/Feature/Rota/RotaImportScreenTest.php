@@ -11,6 +11,7 @@ use App\Models\Unit;
 use App\Models\User;
 use App\Models\Vacation;
 use App\Support\LevelAssignment;
+use App\Support\Roster\CsvRosterReader;
 use App\Support\Rota\RotaAssignment;
 use App\Support\Rota\RotaImport;
 use Database\Seeders\AccessControlSeeder;
@@ -51,6 +52,9 @@ class RotaImportScreenTest extends TestCase
     private const FIXTURES = __DIR__.'/../../fixtures/rota';
 
     private const YEAR = '2026-2027';
+
+    private const HEADER = 'academic_year,period_position,period_label,period_starts_on,'
+        .'period_ends_on,short_name,full_name,unit_code,starts_on,ends_on';
 
     private User $admin;
 
@@ -365,6 +369,124 @@ class RotaImportScreenTest extends TestCase
         $this->actingAs($this->admin)->post('/admin/rota/import/preview', [
             'kind' => RotaImport::KIND_ASSIGNMENTS,
         ])->assertSessionHasErrors('file');
+    }
+
+    // --- the row cap --------------------------------------------------------------------------
+
+    /**
+     * THE SYSTEM MUST NOT REFUSE A FILE IT EXPORTS. `CsvRosterReader::MAX_ROWS` is 2000 because a
+     * department ROSTER is tens of names — but a rota file is one row per SPAN, so 60 people across
+     * 13 blocks is 780 before a single split and a department that splits blocks passes 2000 without
+     * anything unusual happening. The reader now takes the cap from its caller.
+     */
+    public function test_a_rota_file_larger_than_a_roster_is_read_rather_than_refused(): void
+    {
+        $response = $this->actingAs($this->admin)->post('/admin/rota/import/preview', [
+            'kind' => RotaImport::KIND_ASSIGNMENTS,
+            'file' => UploadedFile::fake()->createWithContent(
+                'big.csv', $this->generatedAssignments(CsvRosterReader::MAX_ROWS + 1),
+            ),
+        ]);
+
+        $response->assertRedirect();
+        $response->assertSessionHasNoErrors();
+        $this->assertNotNull(session('rota_import_preview'));
+    }
+
+    /**
+     * ...and past the cap that IS this file's, a 422 on `file` naming the real limit — never the
+     * raw 500 it was. `CsvRosterReader::rows()` is a GENERATOR, so the refusal is thrown
+     * mid-iteration, deep inside `RotaImport::preview()` — long after any try/catch wrapped around
+     * building the reader has returned. That is why the catch has to wrap the import call itself.
+     */
+    public function test_a_file_past_the_rota_row_cap_is_a_422_on_the_file_field(): void
+    {
+        $content = $this->generatedSeparatorRows(RotaImport::MAX_ROWS + 1);
+
+        foreach (['/admin/rota/import/preview', '/admin/rota/import/commit'] as $url) {
+            $this->flushHeaders();
+
+            $response = $this->actingAs($this->admin)->post($url, [
+                'kind' => RotaImport::KIND_ASSIGNMENTS,
+                'file' => UploadedFile::fake()->createWithContent('huge.csv', $content),
+                // The BYTE pin is checked before the file is iterated, so a commit only reaches the
+                // reader's cap when it matches — a hand-built request, which is exactly the shape
+                // that used to arrive as a 500. The state pin is checked AFTER the analysis, so it
+                // never gets a turn here.
+                'digest' => RotaImport::digest($content),
+                'state_digest' => str_repeat('b', 64),
+            ]);
+
+            $response->assertSessionHasErrors('file');
+            $this->assertStringContainsString(
+                (string) RotaImport::MAX_ROWS,
+                (string) session('errors')->first('file'),
+                'the refusal must name the limit that actually applies to this file',
+            );
+        }
+
+        $this->assertSame(0, MasterRotaAssignment::query()->count());
+    }
+
+    /**
+     * Every OTHER refusal from inside the import transaction is a 422 too, matching
+     * `MasterRotaController::fill()`. A writer or model guard is a refusal the operator can act on;
+     * reaching them as a raw 500 is a bug in the controller, not in the guard (P1b finding 14).
+     */
+    public function test_the_commit_catches_a_writer_refusal_rather_than_500ing(): void
+    {
+        $reflection = new \ReflectionMethod(\App\Http\Controllers\Admin\RotaImportController::class, 'commit');
+        $source = implode('', array_slice(
+            file($reflection->getFileName()),
+            $reflection->getStartLine() - 1,
+            $reflection->getEndLine() - $reflection->getStartLine() + 1,
+        ));
+
+        // Asserted at source because the writers and this analysis agree on every rule today, so
+        // there is no file that reaches one of those guards — and "unreachable today" is exactly
+        // the state a catch is for. The reachable half is proved above: `RosterFormatException`
+        // extends `RuntimeException` and arrives through this same catch.
+        $this->assertMatchesRegularExpression(
+            '/catch \(InvalidArgumentException\|RuntimeException/',
+            $source,
+            'a writer or model refusal inside the import transaction would reach the operator as a 500',
+        );
+    }
+
+    /**
+     * A file of one repeated CELL: the outcome is per (person, period), so however many rows this
+     * has, it is one cell and one person lookup.
+     *
+     * @param  int  $rows  data rows, not counting the header
+     */
+    private function generatedAssignments(int $rows): string
+    {
+        $lines = [self::HEADER];
+
+        for ($i = 0; $i < $rows; $i++) {
+            $lines[] = self::YEAR.',1,Block 1,2026-07-01,2026-07-28,import.one,Nadia Import,XIU,'
+                .'2026-07-01,2026-07-28';
+        }
+
+        return implode("\n", $lines)."\n";
+    }
+
+    /**
+     * Rows of SEPARATORS ONLY — a spreadsheet's own output when a range is selected a few rows too
+     * far, and what `analyseAssignments()` skips outright as contributing no cell.
+     *
+     * Used for the over-cap case on purpose. The reader counts rows BEFORE anything is resolved, so
+     * this exercises the cap exactly, while a file of 20 001 REAL rows accumulates a cell of 20 001
+     * spans and was measured exhausting PHP's 128 MB limit part-way through the full suite (it
+     * passed in isolation, which is the shape of a test that fails for somebody else later).
+     *
+     * @param  int  $rows  data rows, not counting the header
+     */
+    private function generatedSeparatorRows(int $rows): string
+    {
+        $empty = str_repeat(',', substr_count(self::HEADER, ','));
+
+        return self::HEADER."\n".str_repeat($empty."\n", $rows);
     }
 
     // --- helpers ------------------------------------------------------------------------------

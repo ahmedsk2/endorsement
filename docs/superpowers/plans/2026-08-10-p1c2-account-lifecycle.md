@@ -2149,3 +2149,60 @@ Stage 1's people work. Three outputs P1e and anything after it must respect:
 - **`App\Support\CapabilityGrant` is the only writer of `user_capabilities`**, and a third surface
   onto it is a screen change, not a security change — provided it is gated on `access.manage`. A
   surface gated on anything narrower is a privilege-escalation path, not a convenience.
+
+---
+
+## Amendments from the adversarial review (2026-08-11)
+
+Four security findings, worked in order; F1's fix largely closed F3. Suite left at **1421**
+PHPUnit tests (1396 at the review's baseline; +8 `InvitationPositionEscalationTest`, +8
+`RosterPositionEscalationTest`, +9 `BulkResendAuthorizationTest`), 6517 assertions. Vitest 192,
+`npm run test:e2e` 22 passed, `npm run build` green.
+
+**F1 (CRITICAL) — an invitation was authorized against a column nothing downstream consults.**
+Every endpoint checked `invitations.position`; `InvitationAcceptController` takes the
+`person_id !== null` branch for every row this system mints and that branch does not write
+`position`, so the account resolves its capabilities from `people.position`. The two diverge with
+no misuse at any step (invite at 4 → correct the roster row to 0 → the live invitation still reads
+4 → a Chief Resident may target 4). Fixed at `InvitationIssue::issue()`, the one writer, beside the
+supersede loop and before the transaction opens; a no-op on `store()`'s create branch, which opens
+the person at exactly `$position`. **Red first:** four legs failed with 302 where 403 was expected,
+and `test_a_redeemed_account_resolves_capabilities_from_the_roster_not_the_invitation` **passed on
+the unfixed tree** — the escalation as a measured fact rather than an inference. The plan's premise
+that `InvitationStatus::mayInvite()` and the write side agreed (Decision B's D9 note) held for the
+offer only. Ruling 34.
+
+**F2 (IMPORTANT) — Decision F's stated premise was already false.** The decision gates the roles
+panel on `access.manage` "because hanging a role control off the roster gate would create an
+escalation path"; the path existed one field to the left, since `PersonRequest::POSITIONS` offers 0
+and position 0 carries `access.manage` by role default. Gated in `PositionChange::write()` — the
+one definition, because a FormRequest rule would not reach `RosterImport`, whose position column
+resolves by NAME against `positions` from a `cap:people.manage` route. `applyWithoutAudit()` now
+takes the actor positionally and non-optionally. **This changes People-screen behaviour**: the two
+role selects offer `grantable_positions` plus the row's own current position. The gate is on the
+TRANSITION, so a sitting Administrator's row stays editable from the roster console. Ruling 35.
+
+**F3 (IMPORTANT) — the bulk gate iterated a list that is routinely empty.** `bulkPreview()` and
+`bulkResend()` are `auth`-only by design (the two-tier rule is position-dependent and applied
+in-controller), and that design is only sound while the in-controller pass is guaranteed to assert
+something. `positionsToAuthorize()` returned live-invitation positions alone, so a cohort that had
+all claimed — or was never invited — authorized nothing and any authenticated account received the
+plan. Now a union with every selected person's `people.position`, which is also the column the
+writer authorizes against since F1. Ruling 36.
+
+**F4 (IMPORTANT) — the pre-authorization pass did not mirror the writer's supersede set.**
+`InvitationIssue::supersededBy()` is now the one definition of it. The red run stated the finding
+in as many words: the confirm 403s on the address-carry-over fixture, and `audit_log` is **empty** —
+the `user_scope_denied` row written from inside `commit()`'s transaction rolled back with it.
+Building that fixture took one correction: `people.email` is UNIQUE and `issue()` supersedes by
+address, so the collision can only arise AFTER both invitations exist — a consultant invited, moving
+mailbox, and a resident's address later corrected onto the freed one (Decision G). Ruling 37.
+
+**What the review got wrong, in one place.** Finding F1's step 3 says the stale invitation is shown
+to a Chief Resident by `statusList()` "filtering on `mayTarget(viewer, invitation.position)`". That
+is true of Admin → Users' invitation list, and it remains true — but the People screen, which the
+finding's own reproduction walks through, already scopes each row on `people.position`
+(`InvitationStatus::forPeople()`), so it hides the row correctly. The disclosure that survives is
+one invitation row's existence and expiry on a different screen, not an escalation: every write path
+now refuses. Left as-is rather than widened into scope creep, and recorded here so it is not
+rediscovered as new.

@@ -256,6 +256,39 @@ SCBU and WARD are seed data for the QCH institution.
   transaction commits, never inside it** — mail cannot be rolled back, and recipients holding live
   links to invitations that do not exist has no recovery; the reverse (rows exist, some mail did
   not go) is visible, reportable per person and fixable by resending.
+- **An invitation is authorized against the BOUND PERSON's position, never `invitations.position`**
+  (`InvitationIssue::issue()`, adversarial review F1, 2026-08-11). `InvitationAcceptController`
+  takes the `person_id !== null` branch for every row this system mints and that branch does **not**
+  write `position` — deliberately, because `people.position` has one writer (`PositionChange`) and
+  an invitee must not re-rank the roster row they are claiming. So a redeemed account resolves its
+  capabilities from the ROSTER (`$user->position` is a read-through accessor; `AccessControl::
+  resolve()` joins `role_capabilities` on it) while all four endpoints were checking a column
+  nothing downstream consults. The two diverge with **no misuse at any step**: an admin invites a
+  new joiner at 4, later corrects that roster row to 0, and the live invitation still reads 4 — a
+  Chief Resident may target 4, so resend, bulk resend and (via `Person::matchByEmail()`) invite each
+  handed them a link that mints an Administrator. Asserted at the ONE WRITER beside the supersede
+  loop and before the transaction opens, so all three doors close together; on `store()`'s create
+  branch the person is opened at exactly `$position`, making it a no-op there.
+  `InvitationStatus::mayInvite()` already gated the OFFER on `people.position` — offer and write now
+  agree (D9). Do **not** "fix" the asymmetry by writing `position` at redemption.
+  `tests/Feature/Security/InvitationPositionEscalationTest.php`, whose
+  `test_a_redeemed_account_resolves_capabilities_from_the_roster_not_the_invitation` passed on the
+  tree *before* the fix — the escalation stated as a fact about the system, not inferred.
+- **`BulkResend::positionsToAuthorize()` returns a UNION and is never empty for a non-empty
+  selection** (review F3/F4, 2026-08-11): every selected person's `people.position` **plus** the
+  live invitations from `InvitationIssue::supersededBy()`. Both halves are load-bearing. The
+  invitation half alone returned `[]` for a selection that had all claimed or was never invited —
+  and these two endpoints sit in an **`auth`-only** route group (invitations are this codebase's one
+  deliberate exception to a `cap:` middleware, the rule being two-tier and position-dependent), so
+  the controller's `foreach` asserted nothing and any authenticated account received the plan: per
+  person, their invitation state, invitation id and whether they hold an account. **An `auth`-only
+  group is only sound while the in-controller pass is guaranteed to assert something.**
+  `supersededBy()` is the ONE definition of "the set this operation will supersede", shared by the
+  writer and its pre-authorization — they diverged both ways before: the pass matched `person_id`
+  alone (so an invitation reached only by the ADDRESS axis fired `assertMayTarget()` from *inside*
+  `commit()`'s transaction and the `user_scope_denied` row rolled back with it — P1c-1 finding 12
+  through a different door) and had no expiry filter (so a merely aged-out higher-position row
+  refused a batch the operator was entitled to run).
 - **Unbinding an account is `App\Support\AccountUnbind` and nothing else, and it SNAPSHOTS
   `handover_signoffs.signed_off_by_name` before it clears the link.** For any handover signed
   before 2026-07-27 that column is null and the signer's name resolves live through
@@ -279,6 +312,27 @@ SCBU and WARD are seed data for the QCH institution.
   leaves and returns on a new account does **not** regain old roles; an administrator re-grants
   them. Auto-restoring on re-bind means a departed administrator's grants silently reattach to
   whoever claims that identity next, reviewed by nobody.
+- **Placing somebody at position 0 requires `users.manage`** (`PositionChange::write()`, review F2,
+  2026-08-11) — and that **falsifies AC-04's stated premise**. Decision F's gate is right, but its
+  reason ("hanging a role control off the roster gate *would* create an escalation path") described
+  a path that already existed one field to the left: `PersonRequest::POSITIONS` offers 0, position 0
+  holds `access.manage` by seeded role default, and `AccessControl::resolve()` reads
+  `people.position` — so a `people.manage` holder promoted their own roster row, had their
+  capability cache flushed for them by the write itself, and held the security console. Gated in
+  `PositionChange::write()`, the single definition all three writers pass through: a rule in the
+  FormRequest alone would not reach `RosterImport`, which calls `applyWithoutAudit()` from a
+  `cap:people.manage` route and resolves its position column by NAME against `positions` — a CSV
+  cell reading "Administrator" never meets a FormRequest rule at all. `applyWithoutAudit()`
+  therefore takes the actor **positionally and non-optionally**. It is the **TRANSITION** that is
+  gated, not the value: a `people.manage` holder may still edit a sitting Administrator's roster row
+  (the edit form submits the position it was rendered with, and refusing that would make every
+  administrator's row unsaveable by the console that exists to edit rows); a CREATE is a placement,
+  which is what `wasRecentlyCreated` distinguishes. It throws rather than auditing — a refusal
+  written from inside `PersonController`'s or `RosterImport`'s transaction would roll back with it.
+  The offer narrows to match: `grantable_positions` (`PositionChange::grantableBy()`) is what the
+  People screen's two role `<select>`s offer, PLUS whatever the row already holds; the full
+  `positions` catalog still ships beside it, because it is what renders an existing Administrator's
+  role NAME.
 - **OPEN, and pre-existing: `assertNoSelfLockout()` guards the ROLE matrix only.** It never runs on
   the per-user override path, so a holder of `access.manage` can deny it to the last account
   holding it — after which `AccessControl::holdersOf('access.manage')` answers nobody and the

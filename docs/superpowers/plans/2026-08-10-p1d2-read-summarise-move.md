@@ -1773,6 +1773,78 @@ every one identical to Task 12's figures, as a documentation-only task should be
 of the four suites (`DeploymentInvariantsTest`, `HostScriptsAreInstanceScopedTest`) does read files
 under `docs/`.
 
+### Adversarial slice review (2026-08-10) — six findings, all fixed on `feat/p1d2b-rota-move`
+
+*Six defects the thirteen tasks and their own tests did not catch. Two were data loss. The pattern
+worth carrying forward: **every one of them was a case where a guard existed and did not cover the
+case it was written for**, not a case where nobody thought about the problem.*
+
+**R1 — the importer was pinned to the file's bytes and not to the rota (data loss, twice
+reproduced).** Task 11 gave `RotaImport::commit()` a sha256 over the uploaded bytes and re-derived
+the analysis inside its own transaction. Re-deriving is what makes the byte pin insufficient: the
+commit computes a FRESH answer, so unchanged bytes apply whatever the rota says NOW. A cell
+previewed `UNCHANGED` was committed as `REPLACE` after a colleague split it, taking both spans; and
+a cell previewed `SKIP_UNKNOWN_PERIOD` with `spans: []` and *"generate that academic year first"*
+on screen committed as a `REPLACE` that collapsed a hand-made split — the operator had been shown
+**no proposed content for that cell at all**. Task 8's own amendment had already named this class
+for the fill and closed it there; the importer, in the same slice on the same table, did not get
+it. Fixed by `App\Support\Rota\StatePin` — ONE definition of what a preview-then-confirm commit is
+pinned to, now the single source for both `RotaFill::digest()` and `RotaImport::stateDigest()` —
+plus `StaleRotaStateException`, deliberately NOT a subclass of `StaleImportFileException` because
+"re-export the file" and "look at the rota again" are different instructions and the file is
+byte-identical in the second case. Fourteen existing tests demanded the pin the moment it landed,
+which is why both commit helpers now preview first through the real flow.
+
+**R2 — the import 500ed on a file the export itself writes.** `CsvRosterReader::rows()` is a
+generator, so `MAX_ROWS` throws MID-ITERATION — inside `RotaImport::preview()`/`commit()`, long
+after `readerFromRequest()`'s try/catch has returned. Both routes were an uncaught
+`RuntimeException`. And 2000 was the ROSTER's number: a rota file is one row per SPAN, so 60 people
+across 13 blocks is 780 before a single split. The cap now belongs to the caller
+(`RotaImport::MAX_ROWS`, 20 000) and the refusal names the number that actually applied.
+`commit()` also gained the `InvalidArgumentException|RuntimeException` catch `MasterRotaController::fill()`
+already had. `RosterFormatException`'s docblock had claimed the throw always precedes the first
+row, which is true of the encoding check and cannot be true of the row cap — that sentence is
+exactly how this shipped.
+
+**R3 — both export GETs were missing `->defaults('no_history', true)`.** So `StartSession` stored
+the download URL and the next `back()` — a fill preview, an import preview — redirected into a CSV,
+destroying the preview and writing a phantom `rota_export` audit row. The flag **had no test at all
+in this codebase**, which is how two routes shipped without it; it is now asserted over the whole
+router by return type (`DownloadRoutesSkipHistoryTest`), with the three signature routes asserted
+by name because no return type can find a plain `Response` carrying PNG bytes.
+
+**R4 — `RotaFill::digest()`'s target `current` projection was guarding nothing.** The whole suite
+stayed green with that line deleted. The untested case is a colleague filling in a cell the fill was
+about to `ASSIGN`: the plan says "empty, so I will add", the source has not moved, and the fill
+overwrites deliberate work with nothing on screen having warned about it.
+
+**R5 — two cell keys could resolve to one (person, period), and the second `split()` ate the
+first.** The key was built from raw text and was wrong in both directions at once: `1` and `+1`
+(both `filter_var`-integer 1) made two cells whose overlap was never compared, while folding case
+on the handle put two rows that resolve DIFFERENTLY under one key. **SQLite/MySQL divergence worth
+recording**: `people.short_name` is compared case-insensitively by MySQL's default collation and
+case-sensitively by SQLite, so the handle half behaves differently on the two engines — the id-keyed
+form is correct on both, and the test says so.
+
+**R6 — three e2e count assertions a ten-times-larger number passed.**
+`toContainText('0 to add')` is satisfied by `"10 to add"`. Each count now carries its own testid and
+is read with `toHaveText`; proved by rendering `10` where `0` belonged and watching the new
+assertion fail on `Received: "10"`.
+
+**Counts after the six fixes:** `php artisan test` **1297** (from 1281), `npm test` **187** (from
+185), `npm run test:e2e` **22** (unchanged — R6 tightened three existing assertions rather than
+adding a case), `npm run build` green.
+
+**One thing the review got wrong, and it is worth stating.** R2 asked for a `RosterFormatException`
+catch *and* a general `InvalidArgumentException|RuntimeException` catch as two separate additions.
+`RosterFormatException` extends `RuntimeException`, so one catch serves both; and the general catch
+is, today, **unreachable from any file** — `RotaImport`'s analysis and the writer/model guards agree
+on every rule (empty set, `to < from`, span outside period, self-overlap), which is exactly the
+property `RotaImportTest` and `RotaAssignmentWriterTest` each assert from their own side. The catch
+is still right — "unreachable today" is precisely the state a catch is for — but it is asserted at
+source rather than exercised, and this note is here so a later reader does not go hunting for the
+file that triggers it.
+
 ---
 
 ## Standing rules for every task

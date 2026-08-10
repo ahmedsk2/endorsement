@@ -761,6 +761,72 @@ pinned rather than incidentally right. On the plan's *"check, do not assume"* in
 span-prop shape: no existing `RotaGridTest` case pins the exact key set of a span, so the new `days`
 key needed no assertion updated — only the float that the new case's `assertSame` exposed.
 
+**Task 3 (2026-08-10) — finding 3's disclosure claim HELD, and it is wider than the finding
+states.** Verified empirically before implementing, by watching
+`test_the_editor_grid_is_contact_free_too` fail against the committed tree. The failure named four
+leaked paths on a two-row grid:
+
+```
+grid.rows.0.person.phone   grid.rows.0.person.email
+grid.rows.1.person.phone   grid.rows.1.person.email
+```
+
+The finding describes the leak as conditional on `contact_visibility = members`. It is not, for an
+administrator: `PersonPolicy::viewContact()` is `people.manage OR membersMaySeeContact()`, so the
+FIRST branch alone already released both fields to any `people.manage` holder on the DEFAULT
+setting — and `people.manage` is exactly what the `/admin/rota` viewer holds. (That half is
+already pinned by a green test in the tree,
+`ContactProjectionNarrowsTest::test_a_roster_manager_still_sees_the_email`, which sets no
+institution setting at all.) So the editor grid was disclosing contact detail for its typical
+viewer on a stock department, not only for an opted-in one. The fix is unchanged in shape —
+`RotaGrid` asks for the contact-free projection and takes no viewer — but the finding understates
+what it closes.
+
+**Task 3 (2026-08-10) — the router-level GET assertion is VACUOUSLY GREEN before the route
+exists, and a second case was added to say so.** The plan's snippet passed on the first run against
+the committed tree: it iterates the routes carrying `cap:rota.view`, and before this task there
+were none, so `$offenders` was empty and the guard proved nothing. That is the standing rules'
+"a test that passes on first run has proved nothing" in its most literal form, and here it is a
+permanent property rather than a one-off — deleting or renaming the group at any future date
+silently re-empties the set. `test_the_read_view_route_is_actually_registered_behind_cap_rota_view`
+ships beside it and asserts the set is non-empty; it went red as expected. The two fail for
+different reasons and neither subsumes the other, which is the same argument the plan already makes
+for shipping the router assertion alongside the per-route 403 cases.
+
+**Task 3 (2026-08-10) — the publish-state scan cannot walk the WHOLE props tree; `flash.status`
+is a shared Inertia prop.** `HandleInertiaRequests::share()` emits `flash.status` (the layout's
+one-shot banner channel) on every page in the app. A scan for a `status` key over the full props
+tree therefore fires on every request regardless of the rota, so
+`test_there_is_no_publish_state_on_the_read_view` excludes the five shared keys (`auth`, `nav`,
+`shift`, `flash`, `errors`) and scans the controller's own props. The CONTACT scan deliberately
+does **not** exclude them — no shared prop carries a contact field today, and if one ever does,
+that test should be the thing that says so.
+
+**Task 3 (2026-08-10) — measured query cost of `/rota`: 16 on a populated year, and
+`AvailabilitySummary` adds none of them.** Measured with the same fixture `RotaGridTest`'s budget
+case uses (60 people, 13 periods, 1170 spans, 120 vacations, 30 mid-year promotions, ten stale
+people) via a throwaway test, deleted after reading the figure. In one process: `/rota` as a
+resident **16**; `/admin/rota` as an administrator **14**; a SECOND `/rota` request in the same
+process **11**. The 16→11 drop between the first and second request by the same actor is
+first-request session/capability-catalogue warmup, not grid work — which is also why the resident's
+16 and the administrator's 14 are not comparable as a difference between the two screens. The
+number for Task 4 to pin is **16**, the same figure `RotaGridTest` measures for the editor against
+its `assertLessThan(20)` bound; Decision B's "zero query cost" claim for the summary holds
+(`AvailabilitySummaryTest::test_it_issues_no_query` proves the other half compositionally).
+
+**Task 3 (2026-08-10) — a minimal `resources/js/Pages/Rota.vue` shipped in Task 3, not Task 4.**
+The plan lists that file under Task 4 only, which would leave a committed tree where `GET /rota`
+resolves server-side and then fails in the browser because the Inertia page component does not
+exist. `npm run build` stays green either way (the page glob resolves at runtime), so nothing would
+have caught it — but "tree deployable after every commit" is a CLAUDE.md non-negotiable, and an
+unreachable-but-registered route that 500s on the client is not deployable. What shipped is
+deliberately the smallest honest screen: the year picker, the two empty states, and a read-only
+table of person × period carrying unit codes. **No search input, no level filter control, no
+summary panel, no mobile cards** — Task 4 replaces this file wholesale and should treat it as a
+placeholder, not a starting point. Note that the search and level filter are already applied
+SERVER-side by `RotaController` (Task 3 implements them; Task 4 only tests them and adds the
+inputs), so `filters` is populated and correct before any control exists to set it.
+
 ---
 
 ## Standing rules for every task

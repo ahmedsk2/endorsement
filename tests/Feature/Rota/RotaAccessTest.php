@@ -156,6 +156,51 @@ class RotaAccessTest extends TestCase
         $this->assertFalse(\App\Support\AccessControl::allows($nurse, 'rota.manage'));
     }
 
+    /**
+     * `rota.view` is seeded for EVERY authenticated position, so anything reachable with it is
+     * reachable by the whole department. Asserted over the ROUTER rather than as a list of 403
+     * cases, because a hand-written list only covers the routes somebody remembered to add to it
+     * — and the failure this guards against is a future PR hanging a write endpoint off the read
+     * group, which no enumerated 403 case would ever see.
+     *
+     * Both shapes ship: this one, and the per-route refusals above. They fail for different
+     * reasons and neither subsumes the other.
+     */
+    public function test_every_route_behind_cap_rota_view_is_a_get(): void
+    {
+        $offenders = [];
+
+        foreach (\Illuminate\Support\Facades\Route::getRoutes() as $route) {
+            if (! in_array('cap:rota.view', $route->gatherMiddleware(), true)) {
+                continue;
+            }
+
+            if ($route->methods() !== ['GET', 'HEAD']) {
+                $offenders[] = $route->uri().' allows '.implode(',', $route->methods());
+            }
+        }
+
+        $this->assertSame([], $offenders,
+            "A write route behind cap:rota.view would be writable by every member of the department.\n"
+            .implode("\n", $offenders));
+    }
+
+    /**
+     * The other half of the router assertion, and the reason the one above cannot be trusted
+     * alone: a guard that iterates a set is vacuously green when the set is empty. If the
+     * `cap:rota.view` group is ever deleted or renamed, this fails and the GET-only assertion
+     * does not.
+     */
+    public function test_the_read_view_route_is_actually_registered_behind_cap_rota_view(): void
+    {
+        $matched = array_filter(
+            iterator_to_array(\Illuminate\Support\Facades\Route::getRoutes()),
+            fn ($route): bool => in_array('cap:rota.view', $route->gatherMiddleware(), true),
+        );
+
+        $this->assertNotEmpty($matched, 'no route sits behind cap:rota.view — MR-05 has no read view');
+    }
+
     public function test_the_editor_route_is_not_under_the_endorsement_prefix(): void
     {
         // Unit::RESERVED_CODES is derived from routes under `endorsement/` by

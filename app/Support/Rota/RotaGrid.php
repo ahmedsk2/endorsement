@@ -7,7 +7,6 @@ use App\Models\MasterRotaAssignment;
 use App\Models\Period;
 use App\Models\Person;
 use App\Models\Unit;
-use App\Models\User;
 use App\Models\Vacation;
 use App\Support\Calendar;
 use App\Support\PersonPresenter;
@@ -30,14 +29,28 @@ use Illuminate\Database\Eloquent\Collection as EloquentCollection;
  * span/vacation queries below take the COMBINED set — a second round for stale people would be
  * the same N+1 in a new costume.
  *
+ * NO ROTA SURFACE PROJECTS A CONTACT FIELD, FOR ANY VIEWER (P1d-2 Decision C). Rows go through
+ * `PersonPresenter::contactFree()`, and `forYear()` takes NO viewer at all — the parameter was
+ * removed rather than ignored, so a future caller cannot pass one and expect it to mean something.
+ * This is deliberately stronger than gating on what the viewer holds. `PersonPolicy::viewContact()`
+ * is `people.manage OR institutions.contact_visibility === 'members'`, so passing the real user
+ * made this grid emit every colleague's email and phone whenever a department flipped that toggle —
+ * and for a `people.manage` holder on the default setting too. Nothing rendered them; the leak was
+ * in the Inertia props, where review does not look. Both rota surfaces (`/admin/rota` and the
+ * MR-05 read view at `/rota`, which every seeded position can reach) are covered by the one call
+ * below, and `RotaReadViewTest` asserts the absence for an administrator on the most permissive
+ * institution setting the system can produce.
+ *
  * Named N+1 traps this class exists to avoid — each is a real defect this codebase has already
  * paid for once elsewhere:
  *  - `Person::levelAt()` per cell → 780 queries. Solved by `Person::levelSpansBetween()` (Task 3)
  *    fetched ONCE, then `Person::levelFromSpans()` resolved in memory per (person, period).
  *  - `$assignment->unit` per cell → up to 780 queries. Units are resolved from the id-keyed map
  *    built from query 6; a cell NEVER touches the `unit()` relation.
- *  - `PersonPresenter::one()` calling `$person->hasAccount()` per row when the caller forgot
- *    `withExists()` → 60 EXISTS queries. Query 2 carries `withExists(['user as has_account'])`.
+ *  - `PersonPresenter::contactFree()` calling `$person->hasAccount()` per row when the caller
+ *    forgot `withExists()` → 60 EXISTS queries. Query 2 carries `withExists(['user as
+ *    has_account'])`. Dropping the viewer changed nothing here: the presenter's contact and notes
+ *    branches never queried, and the EXISTS is the account check, which both projections do.
  *  - A narrowed `select()`/`pluck()` on the person query that drops `person_id` → `full_name`
  *    and `position` silently resolve to null (the P0c defect that broke four live sites with no
  *    test coverage). Query 2 fetches WHOLE `Person` models, never a projection.
@@ -55,7 +68,7 @@ final class RotaGrid
      *     rows: list<array<string, mixed>>,
      * }|null null when the academic year has no periods — the rota's columns ARE periods.
      */
-    public static function forYear(string $academicYear, ?User $viewer): ?array
+    public static function forYear(string $academicYear): ?array
     {
         // Query 1 — the columns.
         $periods = Period::query()->forYear($academicYear)->ordered()->get();
@@ -196,7 +209,7 @@ final class RotaGrid
             }
 
             $rows[] = [
-                'person' => PersonPresenter::one($person, $viewer),
+                'person' => PersonPresenter::contactFree($person),
                 'group_level_id' => $groupLevel?->getKey(),
                 // On the ROW, not inside `person` — PersonPresenter projects a person, and "this
                 // row is only here because it still holds a span" is a fact about the grid. The

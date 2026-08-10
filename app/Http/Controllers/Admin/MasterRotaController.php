@@ -51,7 +51,12 @@ class MasterRotaController extends Controller
         return Inertia::render('Admin/MasterRota', [
             'academic_years' => $years,
             'year' => $year,
-            'grid' => $year === null ? null : RotaGrid::forYear($year, $request->user()),
+            // No viewer argument, deliberately: `RotaGrid::forYear()` takes none since P1d-2
+            // Decision C. Passing the request's user made this grid emit every colleague's email
+            // and phone in its props whenever a department set `contact_visibility` to `members`
+            // — and for a `people.manage` holder such as the one reading THIS screen, on the
+            // default setting too. No rota surface projects a contact field for any viewer.
+            'grid' => $year === null ? null : RotaGrid::forYear($year),
         ]);
     }
 

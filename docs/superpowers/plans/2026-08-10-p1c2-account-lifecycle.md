@@ -1101,6 +1101,78 @@ change**, which is the disjointness proof: `AccountUnbind` writes `users.active`
 never touches `people`. `RosterNeverMintsCredentialsTest`, `InstitutionProvenanceTest`,
 `CompiledCssIsLightOnlyTest` and `CalendarIsTheOnlyConverterTest` are green untouched.
 
+**Task 6 (2026-08-11) — `applyForUser()` takes the override MAP, not Decision F's
+`array $grants, array $denies`.** The signature in Decision F is
+`applyForUser(User $user, array $grants, array $denies, User $actor, ?string $ip)`. Every other
+part of this surface already speaks one shape — `capability id => 'grant'|'deny'` — and it is what
+the request carries, what the editors bind to and what the existing
+`pluck('effect', 'capability_id')` diff reads. Splitting it into two lists would have added a lossy
+conversion at both callers and, worse, would have made "the same capability id in BOTH lists"
+representable, which the map cannot express at all and which no rule in the plan resolves. Same
+species as Task 3's and Task 5's amendments: the plan's signature contradicted the tree it had to
+plug into, and the tree won. `$user` (not `int $userId`) is the plan's, and is kept.
+
+**Task 6 — the READ moved into the writer too, and the guard is what forced it.**
+`AccessControlController::selectedUser()` read `UserCapability::where(...)` directly. A guard whose
+needles are narrow enough to miss a `::where(...)->delete()` is not a guard, and a delete is
+exactly the write shape a fluent chain hides across line breaks — so the needle set includes
+`UserCapability::where(`/`::query(`, and the projection had to move with it
+(`CapabilityGrant::overridesFor()`, plus `overridesByPerson()` for the roster screen). That is
+strictly better anyway: both screens now render the same projection, and the allow-list is two
+files rather than four.
+
+**Task 6 — the plan's allow-list is wrong in both directions.** Decision F says to allow-list
+`CapabilityGrant.php`, "the seeder and the migration". Neither is needed:
+`AccessControlSeeder` mentions `user_capabilities` only in prose (it writes `role_capabilities`
+only), and `2026_07_24_120003` carries `Schema::create('user_capabilities'` and
+`$table->string('effect')`, neither of which matches a needle. What DOES need an entry, and the
+plan does not mention, is **`app/Support/AccessControl.php`**: the resolver and `holdersOf()` read
+the table through `DB::table('user_capabilities')`, and a coarse raw-builder needle cannot tell a
+read from a write. Entered with that reason written out.
+
+**Task 6 — `updateUser()` resolves with `withTrashed()`, and that is preservation rather than a
+change.** The extracted writer takes a `User`, so the controller must load one where it previously
+used the validated int. `exists:users,id` runs on the raw query builder and never sees the
+SoftDeletes scope, so a trashed id has always passed validation on this endpoint; a plain
+`findOrFail()` would have turned that blind spot into a 404 that never used to happen. Nothing in
+this codebase sets `users.deleted_at` (deletion was withdrawn 2026-07-19), so the two match the
+same set — the point is not to invent a refusal while claiming a refactor.
+
+**Task 6 — the escalation surface was measured on both doors, and the finding is pre-existing.**
+`assertNoSelfLockout()` guards the ROLE matrix only; it does not run on the per-user override path
+at all. Measured against the tree: an administrator can deny `access.manage` **to themselves**
+through `PUT /admin/access-control/user`, after which `AccessControl::holdersOf('access.manage')`
+answers **nobody** and the console is unreachable without database access. Also measured: a holder
+of `access.manage` can grant themselves any capability in the catalog — a Resident holding
+`access.manage` as a per-user grant went from not holding `endorsement.reopen` to holding it in one
+request. Both are inherent to what `access.manage` means, both predate this task, and Task 6
+changes neither: the extraction is behaviour-preserving and adding a refusal would be new behaviour
+on a path whose tests must pass untouched. What Task 6 does add is
+`test_the_two_doors_agree_about_denying_the_last_access_manage_holder`, which asserts the two
+surfaces AGREE rather than that either permits — so when a lockout guard is eventually added (to
+`CapabilityGrant`, the only place it can now be added), that case stays green and becomes the proof
+the guard reached both doors. It was watched failing against a guard planted in `updatePerson()`
+alone.
+
+**Task 6 — measured, not computed.** Suite left at **1396** PHPUnit tests (1381 before the task;
++13 `PersonRolesTest`, +2 `CapabilityWritersAreSingularTest`), 6419 assertions, 0 skipped. Vitest
+**192** (187 before; +5 `PeopleRolesPanel`), `npm run build` green, `npm run test:e2e` 22 passed.
+`AccessControlPageTest` is green **with no edit of any kind**, which is the behaviour-preservation
+evidence the task asked for. `CapabilityWritersAreSingularTest` was watched failing twice against
+planted offences before being trusted — a `UserCapability::create(` + `DB::table('user_capabilities')`
++ `'effect' =>` trio, and separately the RELATION-shaped writer
+(`$user->userCapabilities()->updateOrCreate(...)`) that no model-name needle would see — and both
+plants were reverted with `git status` left clean. The panel's two client-side gates were
+mutation-tested as well (dropping the prop check to `can('people.manage')` turns two cases red;
+removing the no-account branch turns a third red).
+`RosterNeverMintsCredentialsTest`, `ContactFieldsAreProjectedOnceTest`, `InstitutionProvenanceTest`,
+`CompiledCssIsLightOnlyTest` and `CalendarIsTheOnlyConverterTest` are green **untouched**, and no
+allow-list anywhere gained an entry for this task.
+
+**Task 6 — a stale line reference.** Decision F and the task both cite `updateUser()` at
+`AccessControlController.php:246-319`; it was at `:236-322` before this task opened the file.
+`AccessControl.php:168-178` (the deny-wins two-pass) and `:186-191` (the cache key) are correct.
+
 *(Follow the P0c/P0d/P1a/P1b/P1c/P1d convention: when a task turns up something
 this plan's enumeration missed — a site not listed, a test that goes red for a reason the plan did
 not predict, a behaviour that differs between SQLite and MySQL — record it here, dated, with what was

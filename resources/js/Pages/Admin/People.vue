@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import { router, useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '../../Layouts/AppLayout.vue';
+import { useCan } from '../../Composables/useCan.js';
 
 /**
  * Admin → People (Munawib PE-01…03, LV-02…04, ST-04).
@@ -63,6 +64,12 @@ const props = defineProps({
     // never written as a literal here, because a screen that promised fifty while the endpoint
     // accepted forty would refuse exactly the selection it invited.
     invitation_resend_cap: { type: Number, default: 50 },
+    // AC-04's roles panel (P1c-2 Task 6). ABSENT — not empty — for a viewer who does not hold
+    // `access.manage`, which is a different capability from the `people.manage` that opens this
+    // screen at all. An empty override map and a withheld one look identical on screen, and this
+    // is the same discipline `PersonPresenter` applies to a withheld contact field.
+    //   { capabilities: [{ id, key, label, description }], overrides: { personId: { capId: effect } } }
+    capability_grants: { type: Object, default: null },
     // Inertia's shared error bag. The only key this screen reads from it is `invitation`: the
     // Invite/Resend controls post to `InvitationController`, which is not a `useForm()` here, so
     // its refusals have no form object to land on. Without this the endpoint's "that invitation
@@ -199,6 +206,63 @@ const resend = (person) => {
         onFinish: () => { invitingId.value = null; },
     });
 };
+
+// --- Roles (AC-04, P1c-2 Task 6) ----------------------------------------------------------
+//
+// GRANTED HERE, HELD ON THE ACCOUNT. Owner decision 2 keeps `user_capabilities` keyed to the
+// account; what AC-04 asks for is that an administrator can grant a role WHERE THE PERSON IS
+// rather than hunting the same colleague down on a second console. So this panel posts to
+// `/admin/access-control/person`, in the `cap:access.manage` route group, and the server resolves
+// the person's linked account and writes through to it — one writer, two surfaces.
+//
+// THE GATE IS `access.manage`, NOT THIS SCREEN'S `people.manage`. `people.manage` is "who exists
+// and what level they hold": its holder may rename a ward, and if the roster gate also decided
+// who may grant capabilities it would be a path to `access.manage` — a privilege escalation
+// created by a UI convenience. Two independent signals have to agree before anything renders:
+// the server omitted the whole prop for a viewer without the capability, and `useCan` says the
+// same from the shared `auth.can`. NEITHER IS THE GATE — the route group is — but a control that
+// appears where the endpoint would refuse it is its own kind of defect.
+const { can } = useCan();
+
+const canGrantRoles = computed(() => can('access.manage') && !!props.capability_grants);
+
+const capabilityCatalog = computed(() => props.capability_grants?.capabilities ?? []);
+
+const overridesFor = (person) => props.capability_grants?.overrides?.[person.id] ?? {};
+
+const openRolesId = ref(null);
+
+// A map { capabilityId: 'grant' | 'deny' } — a capability ABSENT from it is inherited from the
+// role default, which is a third state and not a missing one. That is why the control is a
+// three-way select rather than a checkbox.
+const rolesForm = useForm({ person_id: null, overrides: {} });
+
+const toggleRoles = (person) => {
+    if (openRolesId.value === person.id) {
+        openRolesId.value = null;
+
+        return;
+    }
+
+    openRolesId.value = person.id;
+    rolesForm.clearErrors();
+    rolesForm.person_id = person.id;
+    rolesForm.overrides = { ...overridesFor(person) };
+};
+
+const roleOverrideFor = (capId) => rolesForm.overrides[capId] ?? 'inherit';
+
+const setRoleOverride = (capId, value) => {
+    const next = { ...rolesForm.overrides };
+    if (value === 'inherit') {
+        delete next[capId];
+    } else {
+        next[capId] = value;
+    }
+    rolesForm.overrides = next;
+};
+
+const saveRoles = () => rolesForm.put('/admin/access-control/person', { preserveScroll: true });
 
 // --- Contact visibility (PE-02's department setting) ------------------------------------
 
@@ -772,6 +836,12 @@ const resendRows = (plan) => plan.rows.map((row) => ({
                             <button type="button" class="text-xs font-semibold text-channel-ink" @click="toggleHistory(person)">
                                 {{ openHistoryId === person.id ? 'Hide history' : 'History' }}
                             </button>
+                            <button v-if="canGrantRoles" type="button" class="text-xs font-semibold text-channel-ink"
+                                    :aria-label="`Roles for ${person.full_name}`"
+                                    :aria-expanded="openRolesId === person.id ? 'true' : 'false'"
+                                    @click="toggleRoles(person)">
+                                {{ openRolesId === person.id ? 'Hide roles' : 'Roles' }}
+                            </button>
                             <button v-if="canInvite(person)" type="button" :disabled="invitingId === person.id"
                                     class="text-xs font-semibold text-channel-ink disabled:opacity-60"
                                     :aria-label="`Invite ${person.full_name} to create an account`"
@@ -808,6 +878,42 @@ const resendRows = (plan) => plan.rows.map((row) => ({
                                     </p>
                                 </li>
                             </ul>
+                        </div>
+                        <div v-if="canGrantRoles && openRolesId === person.id" class="mt-3 border-t border-line-soft pt-3">
+                            <p v-if="!person.has_account" class="text-xs text-body">
+                                This person has no account. Roles are granted to an account — invite them first.
+                            </p>
+                            <div v-else>
+                                <div v-for="cap in capabilityCatalog" :key="cap.id" class="mb-2">
+                                    <label class="channel-tag mb-1 block" :for="`m-person-${person.id}-cap-${cap.id}`">
+                                        {{ cap.label }} <span class="readout text-muted">{{ cap.key }}</span>
+                                    </label>
+                                    <select :id="`m-person-${person.id}-cap-${cap.id}`"
+                                            :value="roleOverrideFor(cap.id)"
+                                            class="w-full rounded-md border border-line bg-panel px-2 py-2 text-xs text-ink focus:border-channel focus:outline-none"
+                                            @change="setRoleOverride(cap.id, $event.target.value)">
+                                        <option value="inherit">Inherit (role default)</option>
+                                        <option value="grant">Grant</option>
+                                        <option value="deny">Deny</option>
+                                    </select>
+                                </div>
+                                <p v-if="rolesForm.errors.overrides" class="mt-2 text-xs text-critical" role="alert">
+                                    {{ rolesForm.errors.overrides }}
+                                </p>
+                                <p v-if="rolesForm.errors.person_id" class="mt-2 text-xs text-critical" role="alert">
+                                    {{ rolesForm.errors.person_id }}
+                                </p>
+                                <button type="button" :disabled="rolesForm.processing"
+                                        class="mt-2 min-h-11 w-full rounded-md bg-channel px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                                        @click="saveRoles">
+                                    Save roles
+                                </button>
+                                <p class="mt-3 text-xs text-muted">
+                                    Roles belong to the account, not the person. If this person leaves and later
+                                    returns on a new account, an administrator grants their roles again — they are
+                                    not restored automatically.
+                                </p>
+                            </div>
                         </div>
                     </div>
                     <p v-else class="text-xs text-muted">Editing below — use the desktop table for the full form, or resize the window.</p>
@@ -862,6 +968,13 @@ const resendRows = (plan) => plan.rows.map((row) => ({
                                     <button type="button" class="mr-3 text-xs font-semibold text-channel-ink" @click="startEdit(person)">Edit</button>
                                     <button type="button" class="mr-3 text-xs font-semibold text-channel-ink" @click="toggleHistory(person)">
                                         {{ openHistoryId === person.id ? 'Hide history' : 'History' }}
+                                    </button>
+                                    <button v-if="canGrantRoles" type="button" class="mr-3 text-xs font-semibold text-channel-ink"
+                                            :data-testid="`roles-${person.id}`"
+                                            :aria-label="`Roles for ${person.full_name}`"
+                                            :aria-expanded="openRolesId === person.id ? 'true' : 'false'"
+                                            @click="toggleRoles(person)">
+                                        {{ openRolesId === person.id ? 'Hide roles' : 'Roles' }}
                                     </button>
                                     <button v-if="canInvite(person)" type="button" :disabled="invitingId === person.id"
                                             :data-testid="`invite-${person.id}`"
@@ -984,6 +1097,74 @@ const resendRows = (plan) => plan.rows.map((row) => ({
                                             </tr>
                                         </tbody>
                                     </table>
+                                </td>
+                            </tr>
+                            <!-- AC-04's roles panel. Gated on `access.manage`, NOT on the
+                                 `people.manage` that opens this screen — see the script block. -->
+                            <tr v-if="canGrantRoles && editingId !== person.id && openRolesId === person.id"
+                                class="border-t border-line bg-ground-deep">
+                                <td :colspan="showsPhone ? 8 : 7" class="px-4 py-3">
+                                    <div v-if="!person.has_account" data-testid="roles-no-account">
+                                        <p class="text-sm text-body">
+                                            This person has no account. Roles are granted to an account — invite them first.
+                                        </p>
+                                    </div>
+                                    <div v-else>
+                                        <table class="w-full max-w-3xl text-left text-xs">
+                                            <caption class="sr-only">Capability overrides for {{ person.full_name }}</caption>
+                                            <thead>
+                                                <tr>
+                                                    <th scope="col" class="channel-tag pb-1 pr-4">Capability</th>
+                                                    <th scope="col" class="channel-tag pb-1">Override</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr v-for="cap in capabilityCatalog" :key="cap.id" class="border-t border-line-soft">
+                                                    <th scope="row" class="py-1 pr-4 text-left font-normal">
+                                                        <span class="font-medium text-ink">{{ cap.label }}</span>
+                                                        <span class="readout ml-2 text-muted">{{ cap.key }}</span>
+                                                        <span v-if="cap.description" class="mt-0.5 block max-w-md font-normal text-muted">{{ cap.description }}</span>
+                                                    </th>
+                                                    <td class="py-1">
+                                                        <select :value="roleOverrideFor(cap.id)"
+                                                                :data-testid="`person-${person.id}-cap-${cap.id}`"
+                                                                :aria-label="`Override ${cap.key} for ${person.full_name}`"
+                                                                class="rounded-md border border-line bg-panel px-2 py-1 text-xs text-ink focus:border-channel focus:outline-none"
+                                                                @change="setRoleOverride(cap.id, $event.target.value)">
+                                                            <option value="inherit">Inherit (role default)</option>
+                                                            <option value="grant">Grant</option>
+                                                            <option value="deny">Deny</option>
+                                                        </select>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                        <p v-if="rolesForm.errors.overrides" class="mt-2 text-xs text-critical" role="alert">
+                                            {{ rolesForm.errors.overrides }}
+                                        </p>
+                                        <p v-if="rolesForm.errors.person_id" class="mt-2 text-xs text-critical" role="alert">
+                                            {{ rolesForm.errors.person_id }}
+                                        </p>
+                                        <div class="mt-3 flex flex-wrap items-center gap-3">
+                                            <button type="button" :disabled="rolesForm.processing"
+                                                    :data-testid="`save-roles-${person.id}`"
+                                                    class="min-h-11 rounded-md bg-channel px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                                                    @click="saveRoles">
+                                                Save roles
+                                            </button>
+                                            <span v-if="rolesForm.recentlySuccessful" class="text-xs text-ok" role="status">Saved.</span>
+                                        </div>
+                                        <!-- Stated where an operator will read it, not left as folklore.
+                                             Auto-restoring privileges when a person is re-bound to a new
+                                             account means a departed administrator's grants silently
+                                             reattach to whoever claims that identity next, and nobody
+                                             reviews a restore that nobody performed. -->
+                                        <p class="mt-3 max-w-2xl text-xs text-muted">
+                                            Roles belong to the account, not the person. If this person leaves and later
+                                            returns on a new account, an administrator grants their roles again — they are
+                                            not restored automatically.
+                                        </p>
+                                    </div>
                                 </td>
                             </tr>
                         </template>

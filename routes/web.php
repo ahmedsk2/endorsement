@@ -96,6 +96,13 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:access.manage'])
         Route::put('/access-control/roles', [AccessControlController::class, 'updateRoles'])->name('access-control.roles');
         Route::put('/access-control/role', [AccessControlController::class, 'updateRole'])->name('access-control.role');
         Route::put('/access-control/user', [AccessControlController::class, 'updateUser'])->name('access-control.user');
+        // AC-04. The People screen's roles panel posts HERE, not to anything under
+        // `/admin/people` — a role-granting control served from that screen's own
+        // `cap:people.manage` group would make the roster gate a path to `access.manage`, which
+        // is a privilege escalation created by a UI convenience (P1c-2 Decision F). The screen
+        // is shared, the authorization is not, and the endpoint is a second SURFACE onto the
+        // same `App\Support\CapabilityGrant` writer `access-control/user` above already uses.
+        Route::put('/access-control/person', [AccessControlController::class, 'updatePerson'])->name('access-control.person');
     });
 
 /*

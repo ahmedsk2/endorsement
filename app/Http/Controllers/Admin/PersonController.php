@@ -10,7 +10,13 @@ use App\Models\Institution;
 use App\Models\Level;
 use App\Models\Person;
 use App\Models\Position;
+// Type-hint only. `RosterNeverMintsCredentialsTest` is what keeps this class from ever WRITING
+// an account — naming the class in a signature is not a write, and the guard's needles are the
+// write shapes, not the symbol.
+use App\Models\User;
+use App\Support\AccessControl;
 use App\Support\Calendar;
+use App\Support\CapabilityGrant;
 use App\Support\ContactVisibility;
 use App\Support\Csv;
 use App\Support\Invitations\BulkResend;
@@ -95,7 +101,7 @@ class PersonController extends Controller
         // department. `RotaReadViewTest` asserts it never gets there.
         $invitations = InvitationStatus::forPeople($people, $request->user());
 
-        return [
+        return $this->capabilityGrantProps($people, $request->user()) + [
             'people' => $people->map(fn (Person $p): array => PersonPresenter::one(
                 $p,
                 $request->user(),
@@ -121,6 +127,50 @@ class PersonController extends Controller
             // `InvitationBulkResendRequest` validates against, so the screen can never promise a
             // batch size the endpoint refuses.
             'invitation_resend_cap' => BulkResend::CAP,
+        ];
+    }
+
+    /**
+     * AC-04's per-person roles panel, or NOTHING AT ALL (P1c-2 Decision F, Task 6).
+     *
+     * GATED ON `access.manage`, NOT ON THIS ROUTE'S `people.manage`. That is the whole security
+     * content of the panel: `people.manage` is "who exists and what level they hold" (P1c
+     * Decision A), and its holder is a departmental administrator who may rename a ward. If the
+     * roster gate also decided who may see and set capabilities, it would be a path to
+     * `access.manage` — a privilege escalation created by a UI convenience. The endpoint the
+     * panel posts to sits in the `cap:access.manage` route group for the same reason; this is the
+     * matching half, so the control is not offered where the endpoint would refuse it.
+     *
+     * ABSENT, NOT EMPTY, for a viewer without the capability — `PersonPresenter`'s discipline for
+     * a withheld contact field, for the same reason: an empty override map and a withheld one
+     * look identical on screen, and a future reader eventually renders one as the other.
+     *
+     * ONE KEY RATHER THAN A PER-PERSON `$extra`, and `PersonPresenter` is not touched at all. Its
+     * BASE map reaches every `rota.view` holder through `contactFree()` — that is every seeded
+     * position — so "who holds which capability" must not be able to arrive there by a later
+     * refactor of the presenter's own map.
+     *
+     * TWO QUERIES FOR THE WHOLE SCREEN, at any roster size: the catalog, and one join for every
+     * override on the page. The People screen's query cost may not move with the size of the
+     * department (`InvitationStatusTest`'s budget case), and a per-row capability lookup is
+     * exactly the N+1 that case exists to catch.
+     *
+     * @param  Collection<int, Person>  $people
+     * @return array<string, mixed>
+     */
+    private function capabilityGrantProps(Collection $people, ?User $viewer): array
+    {
+        if ($viewer === null || ! AccessControl::allows($viewer, 'access.manage')) {
+            return [];
+        }
+
+        return [
+            'capability_grants' => [
+                'capabilities' => CapabilityGrant::catalog(),
+                'overrides' => CapabilityGrant::overridesByPerson(
+                    $people->map(static fn (Person $p): int => (int) $p->getKey())->all(),
+                ),
+            ],
         ];
     }
 

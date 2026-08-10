@@ -16,6 +16,7 @@ use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\EndorsementController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PushSubscriptionController;
+use App\Http\Controllers\RotaController;
 use App\Http\Controllers\SignatureController;
 use Illuminate\Support\Facades\Route;
 
@@ -283,6 +284,31 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:rota.manage'])
         // (P1c Task 7's follow-up discipline: state this explicitly rather than leave a reader
         // to work it out).
         Route::delete('/rota/vacations/{vacation}', [MasterRotaController::class, 'cancelVacation'])->name('rota.vacations.destroy');
+    });
+
+/*
+ * The master rota as a resident READS it (Munawib MR-05). `cap:rota.view` — seeded to every
+ * authenticated position (P1d-1 owner decision 2), so this screen is read by the whole department,
+ * which is exactly why `RotaGrid` projects contact-free for every viewer (P1d-2 Decision C).
+ *
+ * NOT under `/admin`, and its own controller rather than a method on `MasterRotaController`
+ * (Decision A): that class sits wholly inside the `cap:rota.manage` group above, and a
+ * `cap:rota.view` method on it would put one class behind two capabilities. A resident reading the
+ * rota is not doing administration.
+ *
+ * ONE ROUTE, AND IT IS A GET — there is NO PUBLISH GATE (owner decision 1, 2026-08-10): `/rota`
+ * always shows the current rota, so there is nothing here to POST. Do not add a write endpoint to
+ * this group; `RotaAccessTest::test_every_route_behind_cap_rota_view_is_a_get` asserts the
+ * GET-only property over the ROUTER, which is what makes it hold for routes nobody has written
+ * yet.
+ *
+ * Deliberately NOT under `/endorsement`, so Unit::RESERVED_CODES is untouched. Do NOT add `ROTA`
+ * to that list — ReservedUnitCodesTest derives it from the literal segments under that prefix
+ * alone, bidirectionally, so an unnecessary entry fails the build just as a missing one does.
+ */
+Route::middleware(['auth', 'throttle:clinical', 'cap:rota.view'])
+    ->group(function () {
+        Route::get('/rota', [RotaController::class, 'index'])->name('rota');
     });
 
 /*

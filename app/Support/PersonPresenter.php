@@ -64,6 +64,39 @@ final class PersonPresenter
     }
 
     /**
+     * A projection for a surface that has NO business showing contact detail, whatever the viewer
+     * holds and whatever `institutions.contact_visibility` says. Delegates to one() — this is not
+     * a second projection, it is one() with the contact question answered "no" at the call site
+     * instead of by a department toggle.
+     *
+     * The master rota is the whole reason it exists (P1d-2 Decision C): `rota.view` is seeded for
+     * every authenticated member, so a rota screen is read by the entire department, and no rota
+     * screen renders an email address or a phone number in any state.
+     *
+     * Why a NAMED method rather than the two obvious alternatives. Passing `null` as the viewer at
+     * the call site works — both gated blocks in one() check `$viewer !== null` — but it lies: the
+     * rota *has* a viewer, and a later reader "fixing" the null by passing the real user would
+     * silently reopen the hole with no test failing. Filtering the contact keys back out after
+     * one() returns is a second projection in all but name, and exactly what
+     * `ContactFieldsAreProjectedOnceTest` exists to refuse. Naming the intent here is the only
+     * option that survives being read six months later.
+     *
+     * This closed a live disclosure, not a hypothetical one. Before it,
+     * `RotaGrid::forYear()` passed the request's user through, so on a department set to
+     * `contact_visibility = members` the EDITOR grid already emitted every colleague's email and
+     * phone in its Inertia props — for a `people.manage` holder it did so on the default setting
+     * too. No screen rendered them, which is why review missed it: a payload disclosure that
+     * nothing displays is invisible unless somebody reads the props.
+     *
+     * @param  array<string, mixed>  $extra
+     * @return array<string, mixed>
+     */
+    public static function contactFree(Person $person, array $extra = []): array
+    {
+        return self::one($person, null, $extra);
+    }
+
+    /**
      * @param  iterable<Person>  $people
      * @return list<array<string, mixed>>
      */

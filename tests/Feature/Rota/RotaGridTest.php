@@ -143,6 +143,42 @@ class RotaGridTest extends TestCase
         $this->assertGreaterThan(0, $cell['uncovered_days']);
     }
 
+    /**
+     * The other half of `AvailabilitySummary`'s contract (P1d-2 Task 2, Decision B): the summary
+     * is a pure fold that touches no date at all, which is only possible because each span arrives
+     * carrying its own day count. It is computed HERE, where the Carbon objects are already in hand
+     * for `uncovered_days`, rather than re-derived downstream — one fewer place a date converter
+     * could ever appear (ST-06).
+     *
+     * The counts are asserted with assertSame, so they are also the assertion that these are whole
+     * INTEGERS: Carbon 3's diffInDays() returns a float, and a day count that reaches the client as
+     * 8.0 is a day count somebody will eventually compare against 8 and lose.
+     */
+    public function test_every_span_carries_its_own_day_count(): void
+    {
+        [$periods, $people, $unitA] = $this->seedYear(periods: 1, people: 1);
+        $person = $people[0];
+        $period = $periods[0];
+
+        $unitB = Unit::create(['code' => 'XGD', 'name' => 'Rota Grid Unit D', 'active' => true]);
+
+        $from = $period->starts_on->format('Y-m-d');
+        $mid1 = $period->starts_on->addDays(9)->format('Y-m-d');   // 10 days
+        $mid2 = $period->starts_on->addDays(18)->format('Y-m-d');  // an 8-day gap between them
+        $to = $period->ends_on->format('Y-m-d');                   // 10 days, 28 in the period
+
+        RotaAssignment::split($person, $period, [
+            ['unit_id' => $unitA->getKey(), 'starts_on' => $from, 'ends_on' => $mid1],
+            ['unit_id' => $unitB->getKey(), 'starts_on' => $mid2, 'ends_on' => $to],
+        ]);
+
+        $cell = $this->rowFor($this->fetchGrid(), $person)['cells'][$period->getKey()];
+
+        $this->assertSame(10, $cell['spans'][0]['days']);
+        $this->assertSame(10, $cell['spans'][1]['days']);
+        $this->assertSame(8, $cell['uncovered_days']);
+    }
+
     public function test_a_vacation_intersecting_a_period_appears_on_that_periods_cell(): void
     {
         [$periods, $people] = $this->seedYear(periods: 2, people: 1);

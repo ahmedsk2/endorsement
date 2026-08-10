@@ -259,6 +259,18 @@ SCBU and WARD are seed data for the QCH institution.
   — a predicate written once as Eloquent and once as raw SQL is two predicates that drift.
   `tests/Feature/Endorsement/PickerParityTest.php` asserts it as a matrix (every fixture x all
   four fields).
+- **Every value in `$_GET`/`$_POST` is a string OR AN ARRAY, chosen by whoever typed the URL.** A
+  `(string)` cast on an array raises `Array to string conversion`, which `HandleExceptions` promotes
+  to an `ErrorException` and renders as a 500 — `/rota?q[]=x` was one, and four sibling sites shared
+  the shape (`Admin/PeriodController`'s `next_year_start`; `Admin/AccessControlController`'s
+  `user_id`, where `User::find(['1'])` returns a *Collection* that is not null and reaches
+  `getKey()` as a `BadMethodCallException`; and both `member_email` normalisers, where a
+  pre-validation `?string` sink turns a would-be 422 into a `TypeError`). Guard on the SHAPE —
+  `is_string()` / `is_numeric()` before the sink — and never with `$request->string()`, which throws
+  on array input too. Where the value feeds a FormRequest, let a non-string through untouched so the
+  rules reject it the negotiated way. `tests/Feature/Security/ArrayShapedQueryTest.php` asserts a
+  negotiated answer AND the echoed prop's type at every site; a guard that swallows a filter into
+  `null` where the screen expects `''` is the same bug one layer along.
 - `handover_signoffs`' four NAMED roles are `*_person_id`; `signed_off_by_user_id` and
   `reopened_by_user_id` stay `users` — names of record versus actors. `people.id` and `users.id`
   are independent sequences: never move an id between them without a join through

@@ -69,7 +69,15 @@ class ProfileController extends Controller
         // case-sensitive collation would let a duplicate through validation and then hit
         // `people.email`'s unique index as a raw 500. Normalizing the input first makes the
         // comparison correct regardless of collation.
-        $request->merge(['member_email' => Person::normalizeEmail($request->input('member_email'))]);
+        //
+        // Only a STRING is normalised. `normalizeEmail()` is typed `?string`, and this merge runs
+        // BEFORE `validate()`, so an array-shaped `member_email` used to be a TypeError — a 500 —
+        // rather than the 422 the rules below would have given it. Passing a non-string through
+        // untouched lets `email`/`string` reject it the negotiated way.
+        $submittedEmail = $request->input('member_email');
+        $request->merge(['member_email' => is_string($submittedEmail)
+            ? Person::normalizeEmail($submittedEmail)
+            : $submittedEmail]);
 
         $data = $request->validate([
             'full_name' => ['required', 'string', 'max:255'],

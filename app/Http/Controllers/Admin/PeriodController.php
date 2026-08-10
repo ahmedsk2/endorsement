@@ -54,7 +54,13 @@ class PeriodController extends Controller
     public function index(Request $request): Response
     {
         $start = Calendar::academicYearStart();
-        $nextYearStart = Calendar::tryParse((string) $request->query('next_year_start', ''));
+
+        // `?next_year_start[]=…` is an ARRAY, and the string cast this line used to carry raised
+        // `Array to string conversion` — an `ErrorException`, rendered as a 500, on the screen that
+        // generates a department's whole academic year. An unusable value is treated exactly as an
+        // absent one, which is what `tryParse()` already does for an unparseable string.
+        $requestedNextYearStart = $request->query('next_year_start');
+        $nextYearStart = Calendar::tryParse(is_string($requestedNextYearStart) ? $requestedNextYearStart : '');
 
         $preview = $start === null ? null : $this->preview($start, $nextYearStart);
 

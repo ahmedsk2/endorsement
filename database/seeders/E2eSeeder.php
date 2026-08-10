@@ -2,9 +2,16 @@
 
 namespace Database\Seeders;
 
+use App\Models\Level;
+use App\Models\MasterRotaAssignment;
 use App\Models\Period;
 use App\Models\Person;
+use App\Models\Unit;
 use App\Models\User;
+use App\Models\Vacation;
+use App\Support\LevelAssignment;
+use App\Support\Rota\RotaAssignment;
+use App\Support\Rota\VacationBooking;
 use Illuminate\Database\Seeder;
 
 /**
@@ -74,6 +81,115 @@ class E2eSeeder extends Seeder
                 'academic_year' => '2026-2027', 'kind' => Period::WEEK_BLOCK, 'position' => 2,
                 'label' => 'Block 2', 'starts_on' => '2026-08-15', 'ends_on' => '2026-08-28',
             ]);
+        }
+
+        $this->seedReadableRota();
+    }
+
+    /**
+     * The MR-05 read view's world (P1d-2 Task 6): an actor who holds `rota.view` and NOT
+     * `rota.manage`, and a rota with enough shape in it that the availability summary can be
+     * asserted against something other than zero.
+     *
+     * WHY A SECOND ACCOUNT AT ALL. Every other spec in the browser suite signs in as `admin`, who
+     * holds every capability in the catalogue — so an administrator reaching `/rota` would say
+     * nothing about whether a resident can. Position 4 receives `rota.view` from
+     * `AccessControlSeeder::ROLE_DEFAULTS` and never `rota.manage` (owner decision 2, 2026-08-10),
+     * which is exactly the actor MR-05 names.
+     *
+     * WHY THESE PEOPLE ARE NOT "E2E Rota Resident". That person belongs to `master-rota.spec.js`,
+     * which addresses their row by name (`hasText: 'E2E Rota Resident'`) and writes through the
+     * editor's own controls; giving them a seeded assignment would change what that spec finds in
+     * the cell it is about to edit. The two names below are chosen so neither contains that string
+     * as a substring, and the read spec never touches the editor's person.
+     *
+     * THE SHAPE, AND WHY EACH PART OF IT IS THERE:
+     *  - a DELIBERATE GAP — PICU for 7 days of a 14-day block — because a summary that can only
+     *    count assignments cannot tell a half-planned period from a finished one, and Stage 1's
+     *    acceptance (Munawib §35) is that the summaries match reality. The read spec asserts the
+     *    same 7 in two renderings: the reader's own cell, and MR-07's per-level/per-unit table.
+     *  - TWO LEVELS (R1 and R2) — the level filter needs something to filter to, and a filter that
+     *    is offered one option can be "proved" by a screen that ignores it.
+     *  - A WEEK'S LEAVE, in Block 2's second week (2026-08-16..22 under the [5,6] weekend default,
+     *    which `Calendar`'s own tests already pin). MR-07's "who is on vacation each week" is
+     *    otherwise a strip of zeroes. That week is deliberately NOT the one `master-rota.spec.js`
+     *    books leave in (2026-08-09..15), so the count the read spec asserts is the same whether
+     *    the suite runs whole or one file at a time.
+     *
+     * FICTIONAL, AND STAYS THAT WAY (CLAUDE.md): no real staff list belongs in this repository, in
+     * a fixture or anywhere else.
+     *
+     * Every write goes through the sanctioned writer — `RotaAssignment`, `VacationBooking`,
+     * `LevelAssignment` — never a model create, both because the build guards say so and because a
+     * fixture built by a different route than the app uses is a fixture that can be valid while the
+     * app's own path is broken.
+     */
+    private function seedReadableRota(): void
+    {
+        $blocks = Period::query()->where('academic_year', '2026-2027')->orderBy('position')->get();
+        $r1 = Level::query()->where('code', 'R1')->first();
+        $r2 = Level::query()->where('code', 'R2')->first();
+        $picu = Unit::findByCode('PICU');
+        $nicu = Unit::findByCode('NICU');
+
+        if ($blocks->count() < 2 || $r1 === null || $r2 === null || $picu === null || $nicu === null) {
+            return;
+        }
+
+        [$block1, $block2] = [$blocks[0], $blocks[1]];
+
+        $reader = Person::updateOrCreate(
+            ['email' => 'e2e-rota-reader@example.org'],
+            ['full_name' => 'E2E Rota Reader', 'short_name' => 'ereader', 'position' => 4, 'active' => true],
+        );
+
+        $colleague = Person::updateOrCreate(
+            ['email' => 'e2e-rota-colleague@example.org'],
+            ['full_name' => 'E2E Rota Colleague', 'short_name' => 'ecolleague', 'position' => 4, 'active' => true],
+        );
+
+        // The account. Only the reader gets one: the colleague is roster-only, which is a valid
+        // state by construction (P0c — a person with no `users` row cannot authenticate) and keeps
+        // the fixture honest about the fact that the rota names people, not accounts.
+        User::updateOrCreate(
+            ['member_name' => 'resident'],
+            [
+                'person_id' => $reader->id,
+                'password' => 'ResidentPass123!',
+                'active' => true,
+                'pass_exp_date' => now()->format('Y-m-d'),
+                // As for `admin` above: without this, RequireSetup sends every route to /setup.
+                'setup_completed_at' => now(),
+            ],
+        );
+
+        // Effective from before the academic year starts, because `RotaGrid` groups a row by the
+        // level held at the YEAR's start — a span opening on the first day of Block 1 would still
+        // group correctly, but only by luck of an inclusive bound.
+        LevelAssignment::assign($reader, $r1, '2026-07-01');
+        LevelAssignment::assign($colleague, $r2, '2026-07-01');
+
+        // `set()` and `split()` both REPLACE this person's spans in the period, so re-running the
+        // seeder converges rather than duplicating.
+        RotaAssignment::split($reader, $block1, [
+            ['unit_id' => $picu->id, 'starts_on' => '2026-08-01', 'ends_on' => '2026-08-07'],
+        ]);
+        RotaAssignment::set($reader, $block2, $picu);
+        RotaAssignment::set($colleague, $block1, $nicu);
+        RotaAssignment::set($colleague, $block2, $nicu);
+
+        // `book()` has no upsert — a vacation is a row, not a cell — so this one is guarded.
+        $onLeave = Vacation::query()->where('person_id', $colleague->id)->exists();
+
+        if (! $onLeave) {
+            VacationBooking::book($colleague, '2026-08-16', '2026-08-16', Vacation::GRANULARITY_WEEK);
+        }
+
+        // A guard rather than a comment: this fixture only means anything if the rota really is
+        // there to be read, and a silently empty grid would make the read spec's failure look like
+        // a screen defect rather than a seeding one.
+        if (MasterRotaAssignment::query()->count() < 4) {
+            throw new \RuntimeException('E2eSeeder failed to seed the readable rota.');
         }
     }
 }

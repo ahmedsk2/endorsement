@@ -83,9 +83,10 @@ class AccessControlSeeder extends Seeder
 
         'rota.manage' => 'Create and edit master rota assignments and vacations: assign a person '
             .'to a unit for a period or a date-bounded split of one, and book or cancel a leave '
-            .'span. Default: Administrator and Chief Resident — Chief Resident is Munawib\'s '
-            .'Scheduler persona and owns the master rota; grantable per role or per named user '
-            .'like any capability.',
+            .'span. Default: Administrator only (owner decision, 2026-08-10). Munawib §5 also '
+            .'grants it to its Scheduler persona, which maps to no role here; Chief Resident is '
+            .'the nearest fit, and a department that wants it there grants it — per role or per '
+            .'named user, like any capability.',
     ];
 
     /**
@@ -150,13 +151,15 @@ class AccessControlSeeder extends Seeder
             'profile.manage', 'rota.view',
             'endorsement.view', 'endorsement.edit',
         ],
-        // Chief Resident (5): a Resident clinically, plus the scoped admin powers. Owner
-        // decision 1 (P1d, 2026-08-09): rota.manage defaults here too — Chief Resident is
-        // Munawib's Scheduler persona and owns the master rota.
+        // Chief Resident (5): a Resident clinically, plus the scoped admin powers. `rota.manage` is
+        // NOT here (owner decision 2, 2026-08-10, reversing the 2026-08-09 decision P1d-1 shipped):
+        // editing the master rota defaults Administrator-only and an administrator grants it per
+        // department from Admin -> Access Control, the same shape `structure.manage` and
+        // `people.manage` already ship in.
         5 => [
             'profile.manage', 'rota.view',
             'endorsement.view', 'endorsement.edit',
-            'users.manage_residents', 'rota.manage',
+            'users.manage_residents',
         ],
     ];
 

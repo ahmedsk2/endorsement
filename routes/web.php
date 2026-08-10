@@ -160,6 +160,20 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:users.manage'])
     ->group(function () {
         Route::patch('/users/{user}/position', [UserManagementController::class, 'setPosition'])->name('users.position');
         Route::patch('/users/{user}/profile', [UserManagementController::class, 'updateProfile'])->name('users.profile');
+
+        // AC-03's turnover action. FULL MANAGER ONLY, and that is a narrowing: activate/
+        // deactivate sits in the `auth`-only group above under ManagerScope's two-tier rule, so a
+        // Chief Resident may ground a resident account. Unbinding is a strictly larger act — it
+        // is irreversible (there is no rebind, by design), it has no undo in the UI, and it
+        // writes a clinical table to preserve an attestation — so it belongs beside the other
+        // acts this group already reserves for an Administrator. A second in-controller
+        // ManagerScope gate is deliberately NOT added: every request that reaches here holds
+        // `users.manage`, for which that check can only ever return true, and a gate that cannot
+        // refuse is the declared-and-never-used defect P1c-2 finding 4 named.
+        //
+        // PATCH, not DELETE: nothing is deleted. Account deletion was withdrawn as a capability
+        // (owner ruling, 2026-07-19) and a DELETE here would read as its return.
+        Route::patch('/users/{user}/unbind', [UserManagementController::class, 'unbind'])->name('users.unbind');
     });
 
 /*

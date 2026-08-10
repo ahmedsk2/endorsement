@@ -145,6 +145,33 @@ const saveProfile = (u) => {
     });
 };
 
+/*
+ * AC-03 — turnover. Unbinding clears the person link, deactivates the account and KEEPS it as
+ * history: who signed off what, who invited whom. It is not a deletion and there is no rebind —
+ * a colleague who returns gets a NEW invitation, and an administrator grants their roles again.
+ *
+ * The confirmation names the person and states all four consequences, because none of them is
+ * visible afterwards: the row leaves this table (the console inner-joins `people`), the account
+ * cannot be reactivated, its roles do not come back, and there is no undo.
+ *
+ * Full managers only — the server route sits in the `cap:users.manage` group, so a scoped (Chief
+ * Resident) manager never sees a control the server would refuse.
+ */
+const unbind = (u) => {
+    const who = u.full_name || u.member_name;
+
+    if (!confirm(
+        `Unbind the account for ${who}?\n\n`
+        + '• The account is deactivated and can never be reactivated.\n'
+        + '• It is kept as history and disappears from this list.\n'
+        + `• ${who} stays on the roster and can still be named and scheduled.\n`
+        + '• Any roles granted to this account are NOT restored if they return — invite them for a new account and grant the roles again.\n\n'
+        + 'There is no undo.'
+    )) return;
+
+    router.patch(`/admin/users/${u.id}/unbind`, {}, { preserveScroll: true });
+};
+
 // There is deliberately NO delete affordance here (owner ruling, 2026-07-19). Deactivate is the
 // supported way to retire an account: `users.id` is the actor FK on audit_log, so removing an
 // account degrades the accountability trail, while deactivation revokes access and keeps every
@@ -404,6 +431,11 @@ const saveProfile = (u) => {
                                                 ? 'border border-critical text-critical hover:bg-critical-soft'
                                                 : 'bg-ok text-white hover:bg-ok/90']">
                                         {{ u.active ? 'Deactivate' : 'Activate' }}
+                                    </button>
+                                    <button v-if="canManageAll" type="button" :data-testid="`unbind-${u.id}`" @click="unbind(u)"
+                                            :aria-label="`Unbind and retire the account for ${u.member_name}, keeping it as history`"
+                                            class="ml-2 rounded-md border border-critical px-3 py-1.5 text-xs font-semibold text-critical transition hover:bg-critical-soft">
+                                        Unbind
                                     </button>
                                     </template>
                                 </td>

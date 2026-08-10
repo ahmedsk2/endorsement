@@ -7,6 +7,7 @@ use App\Models\AuditLog;
 use App\Models\PendingRegistration;
 use App\Models\Position;
 use App\Models\User;
+use App\Support\AccountUnbind;
 use App\Support\PositionChange;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -252,6 +253,23 @@ class UserManagementController extends Controller
 
         $active = (bool) $data['active'];
 
+        // AC-03's load-bearing guard (P1c-2 Decision E). Without it this endpoint is the other
+        // door back to the trap the unbind exists to avoid: `$user->full_name` and
+        // `$user->position` are read-through accessors onto the linked person, so a REACTIVATED
+        // unbound account is a live, nameless, positionless login holding whatever explicit
+        // capability overrides it kept. There is deliberately no rebind action — owner decision
+        // 2's whole point is that a returning colleague gets a new account and freshly granted
+        // roles — so the message names the remedy that actually exists.
+        //
+        // (`authorizeTarget()` above reads `(int) $user->position`, which is 0 for an unbound
+        // account, so a scoped manager is already refused before reaching this line. That is the
+        // safe direction and is stated here rather than left to be rediscovered.)
+        if ($active && $user->person_id === null) {
+            throw ValidationException::withMessages([
+                'active' => 'This account was unbound from its person and is kept only as history. Invite the person again to give them a new account.',
+            ]);
+        }
+
         if (! $active && PositionChange::isLastActiveAdministrator($user)) {
             throw ValidationException::withMessages([
                 'active' => 'This is the last active Administrator account — it cannot be deactivated.',
@@ -273,6 +291,31 @@ class UserManagementController extends Controller
         );
 
         return back()->with('status', $active ? 'Account activated.' : 'Account deactivated.');
+    }
+
+    /**
+     * AC-03 — turnover. Unbind this account from its person, deactivate it, and KEEP it.
+     *
+     * Delegates to `App\Support\AccountUnbind::apply()`, the one definition (P1c-2 Decision E),
+     * which snapshots the signer's name onto any handover this account signed before that name
+     * was frozen, clears the link and deactivates in one transaction, then flushes the
+     * capability cache and audits — ids and a count only.
+     *
+     * DISTINCT from `PersonStatus::apply()`, deliberately. That one deactivates a PERSON
+     * (`people.active` plus the linked account); this one retires an ACCOUNT and never touches
+     * `people` at all — a colleague can turn over to a new account (a hospital address change, a
+     * returning locum) while remaining a perfectly active member of the roster, and conflating
+     * the two would take a person the department still schedules off the rota.
+     *
+     * There is no undo in the UI, exactly as for clearing a period's rota assignments: the
+     * audit row is the trace. `index()` inner-joins `people`, so the row leaves this screen —
+     * the flash says so rather than leaving it to be discovered.
+     */
+    public function unbind(Request $request, User $user): RedirectResponse
+    {
+        AccountUnbind::apply($user, $request->user(), $request->ip());
+
+        return back()->with('status', 'Account unbound and deactivated. It is kept as history and no longer appears in this list.');
     }
 
     /**

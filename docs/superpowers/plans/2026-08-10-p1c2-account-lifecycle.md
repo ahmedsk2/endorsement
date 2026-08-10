@@ -1028,6 +1028,79 @@ red), and an `Invitation::create(`/`'revoked_at' =>` pair planted in `BulkResend
 Test`, `PersonActiveHasOneWriterTest`, `InstitutionProvenanceTest`, `CompiledCssIsLightOnlyTest` and
 `CalendarIsTheOnlyConverterTest` are green untouched.
 
+**Task 5 (2026-08-11) — the snapshot was watched preventing the blanking, not assumed to.** The
+whole unbind was implemented FIRST with the snapshot deliberately omitted, and
+`test_an_unsnapshotted_signoff_keeps_its_signer_name` went red on exactly the failure finding 6
+predicts: the rendered `signoff.signed_off_by_name` on a signed sheet moved from `'Dr Alpha'` to
+**`null`** the moment the link was cleared, with every other case in the file green. The audit case
+went red alongside it (`signoffs_snapshotted=0`), which is the count agreeing with the defect rather
+than papering over it. The fixture is CONSTRUCTED, per the plan: a day is signed through the real
+endpoint and then aged back to the pre-freeze shape with a query-builder write, because the freeze
+migration backfilled nothing and a test that merely signed a day would be asserting against a row
+that already carries its snapshot.
+
+**Task 5 — `apply()` audits, because the plan's stated reason for its return value contradicts its
+own signature.** The implementation note says the count is returned *"so the caller's audit detail
+comes from the writer's own answer"* — but the signature it gives in the same sentence is
+`apply(User $user, User $actor, ?string $ip)`, and `$actor`/`$ip` exist for nothing except an audit
+row. A caller-written audit leaves both parameters declared and never read, which is finding 4's
+defect exactly (`openInvitations()`'s unused `?User $viewer`). Resolved the way Task 3's amendment
+resolved the same species: the writer audits — `PositionChange::apply()`'s shape (write, guard,
+flush, audit), which is what a once-per-request act should be, as against `PersonStatus::apply()`'s
+deliberate silence for a bulk loop — and the count is still returned, for the tests and for any
+future caller that must report what happened.
+
+**Task 5 — the route sits in the `cap:users.manage` group and carries NO second in-controller
+gate.** The task's Files-touched line says `cap:users.manage`; Decision E says the action sits
+"behind `ManagerScope::assertMayTarget()`". Both can be done, and doing both is wrong: every request
+reaching that group already holds `users.manage`, for which `assertMayTarget()` can only ever return
+true, so the second gate is unreachable by construction — the same declared-and-never-used shape as
+above. The group wins because it is **strictly narrower** (Administrator only, versus Administrator
+*or* a Chief Resident acting on a Resident) and unbinding is strictly larger than the
+deactivate it sits beside: irreversible by design, no undo in the UI, and the one action in this plan
+that writes a clinical table. `PATCH`, not `DELETE` — nothing is deleted, and a `DELETE` here would
+read as the return of the capability withdrawn on 2026-07-19.
+
+**Task 5 — all three accepted-blanking claims hold against the tree, and one line reference is
+stale.** Checked rather than trusted, because one of them is a clinical record. (a) Finding 8:
+`reopened_by_user_id` appears in `app/` and `resources/js/` at exactly two sites —
+`EndorsementController.php:583` (the write) and `HandoverSignoff.php:126` (`$fillable`). No relation,
+no `reopened_by_name`, nothing resolves that id to a name, so unbinding cannot blank it. **True.**
+(b) Finding 7's `PersonPresenter::history()` `'by' => $span->createdBy?->full_name` is live at
+`PersonPresenter.php:142` and does blank. **True, accepted.** (c) Finding 7's `invited_by` is live
+and does blank, but **not at `InvitationController.php:187`** — Task 2 replaced `openInvitations()`
+with `statusList()`, so it is now `:452`, rendered at `Users.vue:227`. The fact is unchanged; the
+citation is not. A fourth question the plan did not ask was checked too: the other four named roles
+on `handover_signoffs` are **not** a second door. Their `*_name` columns were frozen at write time
+from the start, `signoffPayload()` reads them with **no relation fallback at all**, and their FKs are
+`*_person_id` (people, which an unbind never touches). `signed_off_by_name` is the only blanking site
+on that table, which is why it is the only one snapshotted.
+
+**Task 5 — the snapshot reads `withTrashed()`.** Nothing in `app/` soft-deletes a `handover_signoffs`
+row today (`UnitMerge` reads them `withTrashed()` but writes no `deleted_at`), so this matches the
+same set either way. It is written that way because a snapshot that quietly skipped a row on account
+of a global scope would be a snapshot that missed evidence, and a scope is not the thing that should
+be deciding which attestations are preserved.
+
+**Task 5 — one case beyond the plan's thirteen.**
+`test_the_snapshot_does_not_reach_another_accounts_signoff` re-points a signoff at a second account
+and asserts the unbind leaves it null. Without it, an implementation that dropped the
+`where('signed_off_by_user_id', …)` clause and stamped the unbound person's name onto **every**
+un-snapshotted row in the table would pass all thirteen — the failure mode of a snapshot is not only
+"too few rows".
+
+**Task 5 — measured, not computed.** Suite left at **1381** PHPUnit tests (1360 before the task; +19
+`AccountUnbindTest`, +2 `AccountLinkHasOneWriterTest`), 6346 assertions, 0 skipped. Vitest 187,
+`npm run build` green, `npm run test:e2e` 22 passed. `AccountLinkHasOneWriterTest` was watched failing
+against a second link-writer planted in `PersonController` — it named the file and all four write
+shapes (`'person_id' => null`, `->person_id = `, `->update(['person_id'`, `DB::table('users')`) — and
+then watched staying GREEN against a planted `$user->person_id === null` **read**, which is what
+proves the trailing space in that needle is load-bearing rather than decorative; the plant was
+reverted and `git status` left clean. `PersonActiveHasOneWriterTest` is green **with no allow-list
+change**, which is the disjointness proof: `AccountUnbind` writes `users.active` and the link and
+never touches `people`. `RosterNeverMintsCredentialsTest`, `InstitutionProvenanceTest`,
+`CompiledCssIsLightOnlyTest` and `CalendarIsTheOnlyConverterTest` are green untouched.
+
 *(Follow the P0c/P0d/P1a/P1b/P1c/P1d convention: when a task turns up something
 this plan's enumeration missed — a site not listed, a test that goes red for a reason the plan did
 not predict, a behaviour that differs between SQLite and MySQL — record it here, dated, with what was

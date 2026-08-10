@@ -349,7 +349,13 @@ class AccessControlController extends Controller
     private function selectedUser(Request $request): ?array
     {
         $userId = $request->query('user_id');
-        if ($userId === null) {
+
+        // A query value is a string OR AN ARRAY. `?user_id[]=1` reached `User::find()` as an array,
+        // where it means findMany and returns a COLLECTION — which is not null, so the guard below
+        // passed it straight through to `$user->getKey()` and out as a `BadMethodCallException`,
+        // rendered as a 500. Guarded on the SHAPE rather than on the sink: an unusable `user_id`
+        // now selects nobody, exactly as an unknown id already did.
+        if (! is_string($userId)) {
             return null;
         }
 

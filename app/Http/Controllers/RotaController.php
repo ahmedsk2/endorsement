@@ -82,7 +82,14 @@ class RotaController extends Controller
         // search box. These three statements are in this order on purpose. Do not reorder them.
         $summary = $grid === null ? null : AvailabilitySummary::forGrid($grid);
 
-        $search = trim((string) $request->query('q', ''));
+        // EVERY QUERY VALUE IS A STRING **OR AN ARRAY**, chosen by whoever typed the URL. `q` used
+        // to be cast straight to string, so `/rota?q[]=x` raised `Array to string conversion`,
+        // which `HandleExceptions` promotes to an `ErrorException` and renders as a 500 — a page a
+        // resident can take down by appending two characters to their own filter. Its two siblings
+        // below already guarded, which is exactly what made it easy to miss. `$request->string()`
+        // is not the alternative: it throws on array input too.
+        $requestedSearch = $request->query('q');
+        $search = is_string($requestedSearch) ? trim($requestedSearch) : '';
         $requestedLevel = $request->query('level');
         $levelId = is_numeric($requestedLevel) ? (int) $requestedLevel : null;
 

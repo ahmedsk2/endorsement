@@ -101,6 +101,8 @@ class PersonController extends Controller
         // department. `RotaReadViewTest` asserts it never gets there.
         $invitations = InvitationStatus::forPeople($people, $request->user());
 
+        $positions = Position::orderBy('id')->get(['id', 'name']);
+
         return $this->capabilityGrantProps($people, $request->user()) + [
             'people' => $people->map(fn (Person $p): array => PersonPresenter::one(
                 $p,
@@ -112,7 +114,19 @@ class PersonController extends Controller
                 ],
                     'invitation' => $invitations[(int) $p->getKey()] ?? null],
             ))->values()->all(),
-            'positions' => Position::orderBy('id')->get(['id', 'name']),
+            'positions' => $positions,
+            // WHICH of those positions this viewer may PLACE somebody at (review finding F2). The
+            // full catalog above still ships and must: it is what renders an existing
+            // Administrator's role NAME, and a screen that dropped position 0 outright would show
+            // "Role 0" on every administrator's row. This is the narrower list the two role
+            // <select>s offer, and `PositionChange::grantableBy()` is the ONE definition it and
+            // `PositionChange::write()`'s refusal both come from — offer and write, one predicate
+            // (D9). `people.manage` is the roster gate; making somebody an Administrator is the
+            // ACCOUNT console's act, because position 0 carries `access.manage` by role default.
+            'grantable_positions' => PositionChange::grantableBy(
+                $request->user(),
+                $positions->pluck('id')->map(intval(...))->all(),
+            ),
             // LV-02's bulk "set level" picker. `App\Support\LevelPickers::bulkAssignable()` is
             // the ONE predicate this offer and `PersonBulkRequest`'s write-side rule both read
             // from (review finding 5) — every ACTIVE level, EXT included — unlike Task 10's

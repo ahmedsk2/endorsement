@@ -50,6 +50,12 @@ import { useCan } from '../../Composables/useCan.js';
 const props = defineProps({
     people: { type: Array, default: () => [] },
     positions: { type: Array, default: () => [] },
+    // WHICH of `positions` this viewer may PLACE somebody at (review finding F2). The full
+    // catalog above is still what renders a role NAME — an existing Administrator's row would
+    // read "Role 0" if position 0 were simply dropped from it. This narrower list is what the two
+    // role <select>s offer, and it comes from `PositionChange::grantableBy()`, the same
+    // definition the server refuses with (D9: offer and write, one predicate).
+    grantable_positions: { type: Array, default: () => [] },
     // LV-02's bulk "set level" picker (Task 9). Every active level, EXT included.
     levels: { type: Array, default: () => [] },
     contact_visibility: { type: String, default: 'admins' },
@@ -82,6 +88,14 @@ const inputClass = 'w-full rounded-md border border-line bg-panel px-3 py-2 text
 const search = ref('');
 
 const positionName = (id) => props.positions.find((p) => p.id === id)?.name || `Role ${id}`;
+
+// The options a role <select> offers: every position this viewer may assign, PLUS whatever the
+// row already holds. The second half matters — the edit form submits the position it was
+// rendered with, so an Administrator's row opened by a `people.manage` holder must still be able
+// to save itself unchanged. The server gates the TRANSITION for the same reason.
+const positionOptions = (current = null) => props.positions.filter(
+    (p) => props.grantable_positions.includes(p.id) || p.id === current,
+);
 
 // Every row was projected by the same presenter for the same viewer, so checking the first
 // row's shape is enough to know whether the `phone` column applies to the whole list.
@@ -305,7 +319,9 @@ const createOpen = ref(false);
 const blankCreateForm = () => ({
     full_name: '',
     short_name: '',
-    position: props.positions[0]?.id ?? 4,
+    // The first position this viewer may actually assign — never `positions[0]`, which is
+    // Administrator and which a `people.manage` holder would then be refused for by default.
+    position: props.grantable_positions[0] ?? props.positions[0]?.id ?? 4,
     email: '',
     phone: '',
     joined_at: '',
@@ -617,7 +633,7 @@ const resendRows = (plan) => plan.rows.map((row) => ({
                         <div>
                             <label class="channel-tag mb-1 block" for="new-position">Role</label>
                             <select id="new-position" v-model.number="createForm.position" :class="inputClass">
-                                <option v-for="p in positions" :key="p.id" :value="p.id">{{ p.name }}</option>
+                                <option v-for="p in positionOptions()" :key="p.id" :value="p.id">{{ p.name }}</option>
                             </select>
                             <p v-if="createForm.errors.position" class="mt-1 text-xs text-critical">{{ createForm.errors.position }}</p>
                         </div>
@@ -1009,7 +1025,7 @@ const resendRows = (plan) => plan.rows.map((row) => ({
                                             <div>
                                                 <label class="channel-tag mb-1 block" :for="`edit-position-${person.id}`">Role</label>
                                                 <select :id="`edit-position-${person.id}`" v-model.number="editForm.position" :class="inputClass">
-                                                    <option v-for="p in positions" :key="p.id" :value="p.id">{{ p.name }}</option>
+                                                    <option v-for="p in positionOptions(person.position)" :key="p.id" :value="p.id">{{ p.name }}</option>
                                                 </select>
                                                 <p v-if="editForm.errors.position" class="mt-1 text-xs text-critical">{{ editForm.errors.position }}</p>
                                             </div>

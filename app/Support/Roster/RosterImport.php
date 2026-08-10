@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\Level;
 use App\Models\Person;
 use App\Models\Position;
+use App\Models\User;
 use App\Support\Calendar;
 use App\Support\LevelAssignment;
 use App\Support\PositionChange;
@@ -76,17 +77,17 @@ final class RosterImport
                 return ['summary' => $summary, 'rows' => $analysis['rows'], 'file_errors' => $analysis['file_errors']];
             }
 
-            $actorId = $request->user()?->getKey();
+            $actor = $request->user();
 
             foreach ($analysis['rows'] as &$row) {
                 $outcome = $row['outcome'];
 
                 try {
                     if ($outcome === self::CREATE) {
-                        self::applyCreate($row, $actorId);
+                        self::applyCreate($row, $actor);
                         $summary['created']++;
                     } elseif ($outcome === self::UPDATE) {
-                        self::applyUpdate($row, $actorId);
+                        self::applyUpdate($row, $actor);
                         $summary['updated']++;
                     } else {
                         $summary['skipped']++;
@@ -490,7 +491,7 @@ final class RosterImport
      *
      * @param  array<string, mixed>  $row
      */
-    private static function applyCreate(array &$row, ?int $actorId): void
+    private static function applyCreate(array &$row, ?User $actor): void
     {
         $values = $row['values'];
 
@@ -505,14 +506,14 @@ final class RosterImport
             'active' => true,
         ]);
 
-        PositionChange::applyWithoutAudit($person, (int) $values['position_id']);
+        PositionChange::applyWithoutAudit($person, (int) $values['position_id'], $actor);
         // A brand-new person has no PRIOR position to compare against — every create is a
         // genuine assignment, never "unchanged" (unlike an update, below).
         $row['position_changed'] = true;
 
         if ($values['level_id'] !== null) {
             LevelAssignment::assign($person, Level::find($values['level_id']), Calendar::todayYmd(), [
-                'actor' => $actorId,
+                'actor' => $actor?->getKey(),
                 'reason' => 'roster import',
             ]);
         }
@@ -526,7 +527,7 @@ final class RosterImport
      *
      * @param  array<string, mixed>  $row
      */
-    private static function applyUpdate(array &$row, ?int $actorId): void
+    private static function applyUpdate(array &$row, ?User $actor): void
     {
         $values = $row['values'];
 
@@ -559,12 +560,12 @@ final class RosterImport
         $before = (int) $person->position;
         $target = (int) $values['position_id'];
 
-        PositionChange::applyWithoutAudit($person, $target);
+        PositionChange::applyWithoutAudit($person, $target, $actor);
         $row['position_changed'] = $before !== $target;
 
         if ($values['level_id'] !== null) {
             LevelAssignment::assign($person, Level::find($values['level_id']), Calendar::todayYmd(), [
-                'actor' => $actorId,
+                'actor' => $actor?->getKey(),
                 'reason' => 'roster import',
             ]);
         }

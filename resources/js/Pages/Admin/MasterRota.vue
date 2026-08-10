@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue';
-import { router } from '@inertiajs/vue3';
+import { Link, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '../../Layouts/AppLayout.vue';
 import SaveStatus from '../../Components/SaveStatus.vue';
 import AvailabilityPanel from '../../Components/AvailabilityPanel.vue';
@@ -48,9 +48,28 @@ const props = defineProps({
      * does: this is the screen where a "people with a gap" of five turns into five cells filled.
      */
     summary: { type: Object, default: null },
+    /**
+     * MR-06's export, finding 5. How many people who would APPEAR in the two files have no
+     * `short_name` — the app-wide unique handle the files identify a person by, and the one the
+     * importer matches on. Nullable on `people`, so a person without one exports a blank handle
+     * and cannot be re-imported; the count is shown BESIDE the export buttons rather than
+     * discovered when a third of the re-import comes back skipped.
+     */
+    people_without_a_short_name: { type: Number, default: 0 },
 });
 
+const page = usePage();
+
 const selectedYear = ref(props.year ?? '');
+
+/**
+ * MR-06's two export URLs. PLAIN `<a href>`, never an Inertia `<Link>` and never `router.get`:
+ * the response is a file stream carrying a Content-Disposition header, not an X-Inertia page
+ * object, so Inertia's own router cannot handle it. Both are GET, so unlike People.vue's roster
+ * export — a POST, which needed a hand-built form and a CSRF field — a link is the whole
+ * mechanism.
+ */
+const exportHref = (file) => `/admin/rota/export/${file}?year=${encodeURIComponent(props.year ?? '')}`;
 
 const changeYear = () => {
     router.get('/admin/rota', selectedYear.value ? { year: selectedYear.value } : {}, {
@@ -319,6 +338,307 @@ const submitVacation = () => {
 const cancelLeave = (vacationId) => {
     router.delete(`/admin/rota/vacations/${vacationId}`, { preserveScroll: true, preserveState: true });
 };
+
+// --- Task 9: MR-06's bulk moves — preview, then confirm ---------------------------------
+
+/**
+ * PREVIEW, THEN CONFIRM, AND NEVER A SILENT OVERWRITE. This is the most destructive surface in
+ * the rota: one confirmation can rewrite several hundred cells, which is why it is the only rota
+ * action on `AuditAnomalies`' single-occurrence watch list (Decision F).
+ *
+ * NOTHING ON THIS PANEL WRITES EXCEPT ONE BUTTON. All four actions POST to
+ * `/admin/rota/fill/preview`, which `RotaFillCommitTest::test_the_preview_route_writes_nothing`
+ * pins server-side. `/admin/rota/fill` is reachable from `submitFill()` alone, and only once a
+ * plan has been rendered.
+ *
+ * THE COMPONENT DERIVES NO ROTA FIGURE. Outcomes, reasons, current and proposed span sets and the
+ * four counts all arrive computed on every target (`RotaFill::plan()`); this file decides layout
+ * and nothing else. The one number it does compute is how many confirm boxes the OPERATOR has
+ * ticked — their own decisions, not a fact about the rota — and it is labelled as such.
+ *
+ * IT CONVERTS NO DATE. A span's `starts_on`/`ends_on` are `Y-m-d` strings the server formatted
+ * through `App\Support\Calendar`; they are printed, compared to nothing, and parsed by nobody
+ * (ST-06 / design Decision A, ten needles and no allow-list).
+ *
+ * THE PLAN IS ONE-SHOT AND MATCHED. It arrives on `flash.rota_fill_preview`, so any navigation
+ * clears it; and it is only rendered when the operation and source cell it ECHOES are the ones
+ * currently selected, so a plan cannot be shown under a different action's heading.
+ */
+const FILL_ACTIONS = [
+    {
+        op: 'fill_down_level',
+        label: 'Fill down · this level group',
+        hint: 'Copy this cell to everybody else at the same level, in this block.',
+    },
+    {
+        op: 'fill_down_column',
+        label: 'Fill down · whole column',
+        hint: 'Copy this cell to everybody else in this block.',
+    },
+    {
+        op: 'fill_across',
+        label: 'Fill across · later blocks',
+        hint: 'Copy this cell forwards to every later block of the year. Whole-block assignments only.',
+    },
+];
+
+const FILL_SPLIT_TARGET = 'skip_split_target';
+
+/**
+ * The badge beside each target. The REASON under it is the server's own sentence, rendered
+ * verbatim — a screen that reworded it would be a second definition of why a cell was skipped,
+ * and the two would drift the first time one of them was edited.
+ */
+const FILL_OUTCOME_LABELS = {
+    assign: 'Will be assigned',
+    replace: 'Will be replaced',
+    unchanged: 'No change',
+    skip_split_target: 'Skipped — this cell is split',
+    skip_split_source: 'Skipped — the source is split',
+    skip_stale_person: 'Skipped — off the roster',
+    skip_retired_unit: 'Skipped — retired unit',
+};
+
+// `{ personId, periodId, op }` while a fill is being planned; `op` is null until the operator
+// picks one of the four. Two explicit fill-downs, never one that guesses (Decision E).
+const fillEditor = ref(null);
+const fillCopyTarget = ref('');
+const fillConfirmations = ref({});
+const fillPlanVisible = ref(false);
+const fillStaleNotice = ref('');
+const fillErrors = ref({});
+const fillStatus = ref('');
+const fillProcessing = ref(false);
+const fillPreviewedTicks = ref('[]');
+
+const rowsByPersonId = computed(() => {
+    const map = {};
+    (props.grid?.rows ?? []).forEach((row) => { map[row.person.id] = row; });
+    return map;
+});
+
+/**
+ * A plan names NOBODY — ids and counts only, deliberately (`RotaFill`'s docblock), and the same
+ * discipline the single `rota_fill` audit row inherits. The name comes from the grid the operator
+ * is already looking at. An id that is not on the grid falls back to the id itself rather than a
+ * dash: on a preview the operator has to check, "#42" is actionable and "—" is not.
+ */
+const fillPersonName = (personId) => rowsByPersonId.value[personId]?.person.full_name ?? `#${personId}`;
+
+const fillPeriodLabel = (periodId) => (props.grid?.periods ?? []).find((p) => p.id === periodId)?.label ?? `#${periodId}`;
+
+/**
+ * A unit RETIRED since the rota was planned is not in `grid.units` (the grid offers active units
+ * only) and a plan's span tuples carry an id, never a code. Marked rather than invented, the same
+ * choice `AvailabilityPanel` makes: a bare id in a span line reads as a ward name.
+ */
+const fillUnitCode = (unitId) => unitsById.value[unitId]?.code ?? '—';
+
+const fillSourceCell = computed(() => {
+    if (!fillEditor.value || !props.grid) return null;
+    const row = rowsByPersonId.value[fillEditor.value.personId];
+    return row ? row.cells[fillEditor.value.periodId] : null;
+});
+
+// The three cell-sourced actions have nothing to copy from an empty cell — the server answers
+// "that cell is empty" and the preview would be an error. Said before the click rather than after.
+const fillSourceIsEmpty = computed(() => (fillSourceCell.value?.spans.length ?? 0) === 0);
+
+// Copy-period moves one whole column onto another of the SAME academic year; the server refuses
+// anything else, so nothing else is offered.
+const fillCopyTargets = computed(
+    () => (props.grid?.periods ?? []).filter((period) => period.id !== fillEditor.value?.periodId),
+);
+
+/** The request body, built once for both routes so the confirm cannot name a different cell. */
+const fillBody = () => {
+    const editor = fillEditor.value;
+    const copy = editor.op === 'copy_period';
+
+    const body = {
+        op: editor.op,
+        // Copy-period is the one operation with no source PERSON: it moves a whole column.
+        source_person_id: copy ? null : editor.personId,
+        source_period_id: editor.periodId,
+    };
+
+    if (copy) body.target_period_id = Number(fillCopyTarget.value) || null;
+
+    // No dates. No spans. No unit. Every span a fill writes is read from the source cell
+    // server-side — a body that could carry spans would be a second, unvalidated write path into
+    // master_rota_assignments alongside RotaCellRequest's.
+    return body;
+};
+
+const fillPlan = computed(() => {
+    if (!fillPlanVisible.value || !fillEditor.value?.op) return null;
+
+    const plan = page.props.flash?.rota_fill_preview ?? null;
+    if (!plan) return null;
+
+    const expected = fillBody();
+
+    // The server echoes the operation and the source cell it planned against. A plan that names
+    // anything else is a previous plan surviving a navigation, and is never rendered as if it
+    // described the current selection.
+    if (plan.op !== expected.op) return null;
+    if ((plan.source?.person_id ?? null) !== expected.source_person_id) return null;
+    if ((plan.source?.period_id ?? null) !== expected.source_period_id) return null;
+    if ((plan.source?.target_period_id ?? null) !== (expected.target_period_id ?? null)) return null;
+
+    return plan;
+});
+
+/** What the last fill actually did, in the server's own counts. Survives the panel being closed. */
+const fillResult = computed(() => page.props.flash?.rota_fill_result ?? null);
+
+const fillSplitTargets = computed(
+    () => (fillPlan.value?.targets ?? []).filter((target) => target.outcome === FILL_SPLIT_TARGET),
+);
+
+const fillAllSplitsConfirmed = computed(
+    () => fillSplitTargets.value.length > 0
+        && fillSplitTargets.value.every((target) => fillConfirmations.value[target.key] === true),
+);
+
+/** Only the ticked cells, which IS the explicit confirmed set — absent means false, server-side. */
+const fillConfirmedSet = () => {
+    const out = {};
+    Object.entries(fillConfirmations.value).forEach(([key, on]) => { if (on) out[key] = true; });
+    return out;
+};
+
+const fillTickSignature = (map) => JSON.stringify(Object.keys(map).sort());
+
+// The confirm stays valid whatever is ticked — `RotaFill::digest()` deliberately excludes the
+// confirmations, so a tick never invalidates the pin. But the OUTCOMES on screen were computed
+// against the ticks the preview ran with, so a changed tick makes the table one preview out of
+// date, and saying so is cheaper than silently showing "skipped" beside a cell about to be
+// overwritten.
+const fillTicksDrifted = computed(
+    () => fillPlan.value !== null && fillTickSignature(fillConfirmedSet()) !== fillPreviewedTicks.value,
+);
+
+const openFill = (row, period) => {
+    fillErrors.value = {};
+    fillStaleNotice.value = '';
+    fillStatus.value = '';
+    fillPlanVisible.value = false;
+    fillConfirmations.value = {};
+    fillCopyTarget.value = '';
+    fillEditor.value = { personId: row.person.id, periodId: period.id, op: null };
+};
+
+const closeFill = () => {
+    fillEditor.value = null;
+    fillPlanVisible.value = false;
+    fillConfirmations.value = {};
+    fillStaleNotice.value = '';
+    fillErrors.value = {};
+    fillStatus.value = '';
+};
+
+const chooseFillAction = (op) => {
+    fillEditor.value = { ...fillEditor.value, op };
+    // A different action is a different plan. The previous one described another operation, and
+    // its confirmations were answers about that operation's targets.
+    fillPlanVisible.value = false;
+    fillConfirmations.value = {};
+    fillStaleNotice.value = '';
+    runFillPreview();
+};
+
+const toggleFillConfirmation = (key, event) => {
+    fillConfirmations.value = { ...fillConfirmations.value, [key]: event.target.checked };
+};
+
+/**
+ * The master control SETS the individual boxes rather than replacing them with a flag. One bit
+ * standing for N destructive decisions is exactly what Decision F refuses: the confirmed set is
+ * always explicit, per cell, in the request body the operator's own preview was rendered from —
+ * and an operator can still untick one of them afterwards without losing the rest.
+ */
+const setAllSplitConfirmations = (event) => {
+    const on = event.target.checked;
+    const next = { ...fillConfirmations.value };
+
+    fillSplitTargets.value.forEach((target) => { next[target.key] = on; });
+
+    fillConfirmations.value = next;
+};
+
+const runFillPreview = () => {
+    if (!fillEditor.value?.op) return;
+
+    const confirmations = fillConfirmedSet();
+
+    fillProcessing.value = true;
+    fillErrors.value = {};
+    // Nothing to show while a preview is in flight — the plan on screen is the previous answer.
+    fillPlanVisible.value = false;
+
+    router.post('/admin/rota/fill/preview', { ...fillBody(), confirmations }, {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => {
+            // `flash.rota_fill_preview` has landed by the time Inertia calls this, so the plan
+            // becomes visible only once the SERVER has answered for this exact selection.
+            fillPlanVisible.value = true;
+            fillPreviewedTicks.value = fillTickSignature(confirmations);
+        },
+        onError: (errors) => { fillErrors.value = errors; },
+        onFinish: () => { fillProcessing.value = false; },
+    });
+};
+
+const submitFill = () => {
+    const plan = fillPlan.value;
+    if (!plan) return;
+
+    fillProcessing.value = true;
+    fillStatus.value = 'saving';
+    fillErrors.value = {};
+
+    router.post('/admin/rota/fill', {
+        ...fillBody(),
+        confirmations: fillConfirmedSet(),
+        // The pin. `RotaFill::apply()` recomputes this over the rota it is about to write and
+        // `hash_equals` it; a mismatch means the grid moved and is refused outright.
+        digest: plan.digest,
+    }, {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => {
+            fillStatus.value = 'saved';
+            // The fill happened, so the plan that described it no longer describes the rota.
+            // Dropped rather than left on screen behind a button that would now be refused.
+            fillPlanVisible.value = false;
+            fillConfirmations.value = {};
+            fillStaleNotice.value = '';
+        },
+        onError: (errors) => {
+            fillStatus.value = 'error';
+
+            if (errors.digest) {
+                // THE ROTA MOVED UNDER THE OPERATOR — `StaleFillPlanException`, a 422 on `digest`
+                // (Task 8). Never retried: the plan they approved describes a rota that no longer
+                // exists, and re-sending it with a fresh digest would apply a set they never saw.
+                // So: say it in the server's own words, DROP the plan so nothing on screen looks
+                // confirmable, clear the ticks — they were answers about split contents, which may
+                // be exactly what changed — and re-run the PREVIEW, which writes nothing.
+                fillStaleNotice.value = errors.digest;
+                fillPlanVisible.value = false;
+                fillConfirmations.value = {};
+                runFillPreview();
+
+                return;
+            }
+
+            fillErrors.value = errors;
+        },
+        onFinish: () => { fillProcessing.value = false; },
+    });
+};
 </script>
 
 <template>
@@ -361,6 +681,45 @@ const cancelLeave = (vacationId) => {
             </section>
 
             <template v-else>
+                <!--
+                  MR-06's export (Decision G). TWO files: one row per span, one row per vacation.
+                  A person is named by their short name plus their full name — no email, no phone,
+                  no id — so the file can be re-imported and carries nobody's contact detail.
+                -->
+                <section class="flex flex-wrap items-center gap-3 rounded-md border border-line bg-panel p-4"
+                         data-testid="rota-export">
+                    <p class="text-sm text-body">Export this year</p>
+                    <a :href="exportHref('assignments')" data-testid="export-assignments"
+                       class="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm font-semibold text-ink">
+                        Rota (CSV)
+                    </a>
+                    <a :href="exportHref('vacations')" data-testid="export-vacations"
+                       class="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm font-semibold text-ink">
+                        Vacations (CSV)
+                    </a>
+                    <!--
+                      The other end of the same trip (Task 12). It sits HERE, beside the two files
+                      it reads back, rather than only in the sidebar: P1d-1's e2e journey found
+                      that a surface reachable only by typing its URL is not published to anybody,
+                      and an operator who has just exported a year is exactly the person about to
+                      import one. An Inertia <Link>, not a plain <a>: unlike the two exports above
+                      — which are file downloads and must be real browser navigations — this is an
+                      ordinary page in the app.
+                    -->
+                    <Link href="/admin/rota/import" data-testid="import-link"
+                          class="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm font-semibold text-ink">
+                        Import a file&hellip;
+                    </Link>
+                    <p v-if="people_without_a_short_name > 0" role="alert" data-testid="export-short-name-warning"
+                       class="text-sm text-critical">
+                        {{ people_without_a_short_name }}
+                        {{ people_without_a_short_name === 1 ? 'person' : 'people' }}
+                        in this year {{ people_without_a_short_name === 1 ? 'has' : 'have' }}
+                        no short name. They export with a blank handle and cannot be imported back.
+                        <a href="/admin/people" class="font-semibold underline">Fix on Admin &rarr; People</a>
+                    </p>
+                </section>
+
                 <!-- Mobile: one card per person. -->
                 <div class="space-y-4 lg:hidden">
                     <div v-for="group in rowGroups" :key="`m-${group.level.id ?? 'none'}`" class="space-y-3">
@@ -419,6 +778,14 @@ const cancelLeave = (vacationId) => {
                                                 :data-testid="`vacation-open-${row.person.id}-${period.id}`"
                                                 @click="openVacation(row, period)">
                                             On leave&hellip;
+                                        </button>
+                                        <!-- Task 9: MR-06's bulk moves. Opens a PREVIEW panel; nothing
+                                             here writes. Off a stale row for the same reason Split is:
+                                             the server refuses to name an inactive person as a source. -->
+                                        <button v-if="!row.stale" type="button" class="text-xs font-semibold text-channel-ink"
+                                                :data-testid="`fill-open-${row.person.id}-${period.id}`"
+                                                @click="openFill(row, period)">
+                                            Fill&hellip;
                                         </button>
                                         <button v-if="cellMode(row.cells[period.id]) !== 'empty'" type="button"
                                                 class="text-xs font-semibold text-critical"
@@ -518,6 +885,11 @@ const cancelLeave = (vacationId) => {
                                                     :data-testid="`vacation-open-${row.person.id}-${period.id}`"
                                                     @click="openVacation(row, period)">
                                                 On leave&hellip;
+                                            </button>
+                                            <button v-if="!row.stale" type="button" class="text-xs font-semibold text-channel-ink"
+                                                    :data-testid="`fill-open-${row.person.id}-${period.id}`"
+                                                    @click="openFill(row, period)">
+                                                Fill&hellip;
                                             </button>
                                             <button v-if="cellMode(row.cells[period.id]) !== 'empty'" type="button"
                                                     class="text-xs font-semibold text-critical"
@@ -698,6 +1070,212 @@ const cancelLeave = (vacationId) => {
                     </button>
                     <button type="button" class="text-sm font-semibold text-body" @click="closeVacationEditor">Cancel</button>
                 </div>
+            </section>
+
+            <!--
+              Task 9: MR-06's bulk moves — PREVIEW, THEN CONFIRM.
+
+              What the last fill did, from the server's own result, outside the panel gate: an
+              operator who closed the panel still gets told what happened.
+            -->
+            <section v-if="fillResult" class="rounded-md border border-line bg-panel p-4" data-testid="fill-result">
+                <p class="channel-tag">
+                    Last fill &mdash; <span class="readout">{{ fillResult.applied }}</span> cell(s) written,
+                    <span class="readout">{{ fillResult.summary.unchanged }}</span> unchanged,
+                    <span class="readout">{{ fillResult.summary.skipped }}</span> skipped
+                </p>
+            </section>
+
+            <section v-if="fillEditor" class="rounded-md border border-line bg-panel p-6" data-testid="fill-panel">
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <p class="text-sm font-semibold text-ink">Fill from this cell</p>
+                        <p class="text-xs text-muted">
+                            {{ fillPersonName(fillEditor.personId) }} &middot; {{ fillPeriodLabel(fillEditor.periodId) }}
+                            &mdash; nothing is written until you confirm a preview.
+                        </p>
+                    </div>
+                    <button type="button" class="text-sm font-semibold text-body" @click="closeFill">Close</button>
+                </div>
+
+                <!-- The four actions. Each one PREVIEWS; none writes. -->
+                <div class="mt-4 flex flex-wrap items-end gap-2">
+                    <button v-for="action in FILL_ACTIONS" :key="action.op" type="button"
+                            class="min-h-11 rounded-md border border-line bg-ground-deep px-3 py-2 text-sm font-semibold text-ink disabled:opacity-50"
+                            :class="fillEditor.op === action.op ? 'border-channel' : ''"
+                            :disabled="fillSourceIsEmpty || fillProcessing"
+                            :title="action.hint"
+                            :data-testid="`fill-action-${action.op}`"
+                            @click="chooseFillAction(action.op)">
+                        {{ action.label }}
+                    </button>
+
+                    <div class="flex items-end gap-2">
+                        <div>
+                            <label class="channel-tag mb-1 block" for="fill-copy-target">Copy this whole block onto</label>
+                            <select id="fill-copy-target" v-model="fillCopyTarget" data-testid="fill-copy-target"
+                                    class="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm text-ink">
+                                <option value="">Choose a block&hellip;</option>
+                                <option v-for="period in fillCopyTargets" :key="period.id" :value="String(period.id)">
+                                    {{ period.label }}
+                                </option>
+                            </select>
+                        </div>
+                        <button type="button"
+                                class="min-h-11 rounded-md border border-line bg-ground-deep px-3 py-2 text-sm font-semibold text-ink disabled:opacity-50"
+                                :class="fillEditor.op === 'copy_period' ? 'border-channel' : ''"
+                                :disabled="!fillCopyTarget || fillProcessing"
+                                title="Copy every assignment in this block onto the chosen block. Whole-block assignments only."
+                                data-testid="fill-action-copy_period"
+                                @click="chooseFillAction('copy_period')">
+                            Copy period&hellip;
+                        </button>
+                    </div>
+                </div>
+
+                <p v-if="fillSourceIsEmpty" class="mt-2 text-xs text-caution">
+                    This cell is empty, so there is nothing to fill down or across from. Assign it
+                    first &mdash; or copy this whole block onto another one.
+                </p>
+
+                <!-- The rota moved under the operator. Their plan is gone and a fresh one is on its way. -->
+                <p v-if="fillStaleNotice" role="alert" data-testid="fill-stale-notice"
+                   class="mt-3 rounded-md border border-line bg-critical-soft p-3 text-sm text-critical">
+                    {{ fillStaleNotice }}
+                </p>
+
+                <div v-if="fillPlan?.errors?.length" class="mt-3" data-testid="fill-errors">
+                    <p v-for="(message, index) in fillPlan.errors" :key="index" class="text-sm text-critical">
+                        {{ message }}
+                    </p>
+                </div>
+
+                <p v-if="fillErrors.op" class="mt-2 text-sm text-critical" data-testid="fill-error">{{ fillErrors.op }}</p>
+                <p v-if="fillErrors.confirmations" class="mt-2 text-sm text-critical">{{ fillErrors.confirmations }}</p>
+
+                <template v-if="fillPlan && fillPlan.targets.length">
+                    <!-- The SERVER's counts. This component computes none of them. -->
+                    <p class="channel-tag mt-4" aria-live="polite" data-testid="fill-summary">
+                        <span class="readout">{{ fillPlan.targets.length }}</span> cell(s) &middot;
+                        <span class="readout">{{ fillPlan.summary.assign }}</span> to assign &middot;
+                        <span class="readout">{{ fillPlan.summary.replace }}</span> to replace &middot;
+                        <span class="readout">{{ fillPlan.summary.unchanged }}</span> unchanged &middot;
+                        <span class="readout">{{ fillPlan.summary.skipped }}</span> skipped
+                    </p>
+
+                    <!--
+                      The destructive case, named before the table shows it cell by cell. A cell
+                      carrying a split holds dates somebody chose deliberately (Decision E's "the
+                      four of them who join late start on the 9th"), so it is SKIPPED by default and
+                      overwritten only per cell. The master control below sets those boxes; it does
+                      not replace them.
+                    -->
+                    <div v-if="fillSplitTargets.length" class="mt-3 rounded-md border border-line bg-caution-soft p-3"
+                         data-testid="fill-split-warning">
+                        <p class="text-sm text-ink">
+                            <span class="readout">{{ fillSplitTargets.length }}</span> cell(s) below already carry
+                            dates somebody chose. They are skipped unless you confirm each one, and
+                            what would be discarded is listed against each.
+                        </p>
+                        <label class="mt-2 flex items-center gap-2 text-sm text-body">
+                            <input type="checkbox" data-testid="fill-confirm-all"
+                                   :checked="fillAllSplitsConfirmed" @change="setAllSplitConfirmations" />
+                            Overwrite every split listed below
+                        </label>
+                    </div>
+
+                    <div class="mt-3 overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-ground-deep">
+                                <tr>
+                                    <th scope="col" class="channel-tag px-2 py-1">Person</th>
+                                    <th scope="col" class="channel-tag px-2 py-1">Block</th>
+                                    <th scope="col" class="channel-tag px-2 py-1">Outcome</th>
+                                    <th scope="col" class="channel-tag px-2 py-1">Now</th>
+                                    <th scope="col" class="channel-tag px-2 py-1">After</th>
+                                    <th scope="col" class="channel-tag px-2 py-1">Confirm</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="target in fillPlan.targets" :key="target.key"
+                                    :data-testid="`fill-target-${target.key}`"
+                                    class="border-t border-line-soft align-top">
+                                    <td class="px-2 py-1 text-body">{{ fillPersonName(target.person_id) }}</td>
+                                    <td class="px-2 py-1 text-body">{{ fillPeriodLabel(target.period_id) }}</td>
+                                    <td class="px-2 py-1">
+                                        <span class="channel-tag" :data-testid="`fill-outcome-${target.key}`">
+                                            {{ FILL_OUTCOME_LABELS[target.outcome] ?? target.outcome }}
+                                        </span>
+                                        <p v-if="target.reason" class="mt-1 max-w-xs text-xs text-muted"
+                                           :data-testid="`fill-reason-${target.key}`">
+                                            {{ target.reason }}
+                                        </p>
+                                    </td>
+                                    <!--
+                                      WHAT WOULD BE DESTROYED, span by span and dated — never a
+                                      count. This column is the entire reason the confirm step
+                                      exists: an operator about to overwrite deliberate split work
+                                      has to see the work, not a number standing for it.
+                                    -->
+                                    <td class="px-2 py-1" :data-testid="`fill-current-${target.key}`">
+                                        <ul v-if="target.current.length" class="space-y-0.5">
+                                            <li v-for="(span, index) in target.current" :key="index"
+                                                class="channel-tag"
+                                                :class="target.outcome === 'replace' || target.outcome === FILL_SPLIT_TARGET ? 'text-critical' : ''">
+                                                {{ fillUnitCode(span.unit_id) }}
+                                                <span class="readout">{{ span.starts_on }}</span>&ndash;<span class="readout">{{ span.ends_on }}</span>
+                                            </li>
+                                        </ul>
+                                        <p v-else class="text-xs text-muted">Empty</p>
+                                    </td>
+                                    <td class="px-2 py-1" :data-testid="`fill-proposed-${target.key}`">
+                                        <ul v-if="target.proposed.length" class="space-y-0.5">
+                                            <li v-for="(span, index) in target.proposed" :key="index" class="channel-tag">
+                                                {{ fillUnitCode(span.unit_id) }}
+                                                <span class="readout">{{ span.starts_on }}</span>&ndash;<span class="readout">{{ span.ends_on }}</span>
+                                            </li>
+                                        </ul>
+                                        <p v-else class="text-xs text-muted">Nothing would be written</p>
+                                    </td>
+                                    <td class="px-2 py-1">
+                                        <!-- Per cell, unchecked by default, and only where there is
+                                             something to overrule. A skip nobody may overrule (a split
+                                             SOURCE, a departed person, a retired unit) offers no box,
+                                             because there is nothing to confirm. -->
+                                        <label v-if="target.outcome === FILL_SPLIT_TARGET"
+                                               class="flex items-center gap-2 text-xs text-body">
+                                            <input type="checkbox" :data-testid="`fill-confirm-${target.key}`"
+                                                   :checked="fillConfirmations[target.key] === true"
+                                                   @change="toggleFillConfirmation(target.key, $event)" />
+                                            Overwrite it
+                                        </label>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <p v-if="fillTicksDrifted" class="mt-2 text-xs text-caution" data-testid="fill-ticks-drifted">
+                        The outcomes above were worked out before you changed those boxes. Preview
+                        again to see what the fill would do now &mdash; confirming without doing so is
+                        still safe, it just applies more than the table says.
+                    </p>
+
+                    <div class="mt-4 flex flex-wrap items-center gap-3 border-t border-line-soft pt-4">
+                        <button type="button" :disabled="fillProcessing"
+                                class="min-h-11 rounded-md bg-channel px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                                data-testid="fill-submit" @click="submitFill">
+                            Apply this fill
+                        </button>
+                        <button type="button" :disabled="fillProcessing"
+                                class="min-h-11 rounded-md border border-line px-3 py-2 text-sm font-semibold text-body disabled:opacity-60"
+                                data-testid="fill-preview-again" @click="runFillPreview">
+                            Preview again
+                        </button>
+                        <button type="button" class="text-sm font-semibold text-body" @click="closeFill">Cancel</button>
+                        <SaveStatus :status="fillStatus" testid="fill-status" />
+                    </div>
+                </template>
             </section>
         </div>
     </AppLayout>

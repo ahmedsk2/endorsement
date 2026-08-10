@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\PeriodController;
 use App\Http\Controllers\Admin\PersonController;
 use App\Http\Controllers\Admin\PromotionController;
 use App\Http\Controllers\Admin\RosterImportController;
+use App\Http\Controllers\Admin\RotaImportController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UnitController;
 use App\Http\Controllers\Admin\UnitMergeController;
@@ -284,6 +285,50 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:rota.manage'])
         // (P1c Task 7's follow-up discipline: state this explicitly rather than leave a reader
         // to work it out).
         Route::delete('/rota/vacations/{vacation}', [MasterRotaController::class, 'cancelVacation'])->name('rota.vacations.destroy');
+
+        // MR-06's bulk moves (P1d-2 Task 8). TWO routes, preview and confirm, because the preview
+        // is the deliverable and must be incapable of writing — one route with an `apply=true` flag
+        // would put the destructive path one boolean away from the safe one. Both POST + CSRF and
+        // both inside this `cap:rota.manage` group: a fill behind `rota.view` would fail
+        // `RotaAccessTest::test_every_route_behind_cap_rota_view_is_a_get`, which is what that
+        // assertion is for.
+        Route::post('/rota/fill/preview', [MasterRotaController::class, 'fillPreview'])->name('rota.fill.preview');
+        Route::post('/rota/fill', [MasterRotaController::class, 'fill'])->name('rota.fill');
+
+        // MR-06's export (P1d-2 Task 10, Decision G). TWO routes, not one route with a `?file=`
+        // parameter and not a zip: each URL is independently bookmarkable and independently
+        // audited, a zip would add a packaging path and an `ext-zip` question for no benefit, and
+        // the screen can simply offer two buttons. Both GET — they write nothing; the audit row
+        // records a disclosure, not a change.
+        //
+        // Behind `cap:rota.manage` rather than `cap:rota.view`: a whole-year extraction is an
+        // administrative act and the input to the importer, and putting it in the read group would
+        // hand every member of the department a one-click copy of the whole year.
+        //
+        // `no_history` ON BOTH, for the same reason the signature routes carry it (see
+        // App\Http\Middleware\StartSession). A download is not somewhere a person can navigate back
+        // to: without the flag, clicking Export stored the CSV's URL as the session's previous page,
+        // and the next `back()` — the fill preview, the import preview, any of them — redirected
+        // into a download. It destroyed the operator's preview and wrote a phantom `rota_export`
+        // audit row recording a disclosure nobody asked for.
+        // `DownloadRoutesSkipHistoryTest` now asserts this over the whole router rather than over
+        // a list somebody has to remember to extend.
+        Route::get('/rota/export/assignments', [MasterRotaController::class, 'exportAssignments'])
+            ->defaults('no_history', true)->name('rota.export.assignments');
+        Route::get('/rota/export/vacations', [MasterRotaController::class, 'exportVacations'])
+            ->defaults('no_history', true)->name('rota.export.vacations');
+
+        // MR-06's import (P1d-2 Task 12, Decision H). The same preview/commit pair as the fill and
+        // for the same reason: the preview is the deliverable and must be incapable of writing, so
+        // it is a separate route rather than an `apply=true` flag one boolean away from the
+        // destructive path. Behind `cap:rota.manage` like the export it reads back — a whole-year
+        // overwrite is at least as administrative as a whole-year extraction.
+        //
+        // ONE screen for BOTH files; `kind` selects which, as a validated enum on the request and
+        // never sniffed from the headers (the two files share four column names).
+        Route::get('/rota/import', [RotaImportController::class, 'index'])->name('rota.import');
+        Route::post('/rota/import/preview', [RotaImportController::class, 'preview'])->name('rota.import.preview');
+        Route::post('/rota/import/commit', [RotaImportController::class, 'commit'])->name('rota.import.commit');
     });
 
 /*

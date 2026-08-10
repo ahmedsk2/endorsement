@@ -195,4 +195,41 @@ class CsvRosterReaderTest extends TestCase
             @unlink($path);
         }
     }
+
+    /**
+     * THE CAP BELONGS TO THE CALLER, NOT TO THE READER. `MAX_ROWS` is the ROSTER's number, and a
+     * rota file — one row per SPAN rather than one per person — passes it on an ordinary department
+     * year. Leaving it fixed made the system refuse to read a file it had just exported, so the
+     * reader takes a number and the refusal names the one that actually applied.
+     */
+    public function test_the_row_cap_is_the_callers_and_the_message_names_it(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'roster');
+        $handle = fopen($path, 'w');
+        fwrite($handle, "Full Name,Email\n");
+        for ($i = 0; $i <= CsvRosterReader::MAX_ROWS; $i++) {
+            fwrite($handle, "Person {$i},person{$i}@example.test\n");
+        }
+        fclose($handle);
+
+        try {
+            // The same file the default cap refuses, read whole by a caller whose artefact is
+            // bigger. Non-vacuity: the case above proves the default refuses it.
+            $generous = new CsvRosterReader($path, CsvRosterReader::MAX_ROWS * 10);
+            $this->assertCount(CsvRosterReader::MAX_ROWS + 1, iterator_to_array($generous->rows(), false));
+
+            // ...and a caller with a SMALLER one is refused earlier, in its own number's words.
+            $strict = new CsvRosterReader($path, 5);
+
+            try {
+                iterator_to_array($strict->rows(), false);
+                $this->fail('a caller-supplied cap was ignored');
+            } catch (RosterFormatException $e) {
+                $this->assertStringContainsString('more than 5 rows', $e->getMessage());
+                $this->assertStringNotContainsString((string) CsvRosterReader::MAX_ROWS, $e->getMessage());
+            }
+        } finally {
+            @unlink($path);
+        }
+    }
 }

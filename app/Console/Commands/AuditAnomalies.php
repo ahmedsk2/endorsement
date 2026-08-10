@@ -90,6 +90,12 @@ class AuditAnomalies extends Command
             // forty people would otherwise page an operator forty times for one act, and an
             // alert channel that cries wolf forty times is one nobody reads on the forty-first.
             'person_promotion' => 'a training-level cohort was promoted',
+            // P1d-2 Decision F: the first rota action on this list, and deliberately the ONLY one.
+            // Per-cell editing (rota_assign/rota_split/rota_clear/vacation_book/vacation_cancel) is
+            // ordinary work and stays off it — P1d-1 Decision H. A fill rewrites hundreds of cells
+            // behind one confirmation, which is why it is audited as ONE row (P1 finding 11) and
+            // why that one row always deserves a human look.
+            'rota_fill' => 'a bulk rota fill rewrote many cells at once',
         ] as $action => $meaning) {
             $n = AuditLog::where('action', $action)->where('created_at', '>=', $since)->count();
 

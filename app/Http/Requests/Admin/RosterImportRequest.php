@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Admin;
 
+use App\Http\Requests\Concerns\DetectsOversizedUpload;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
@@ -20,20 +21,14 @@ use Illuminate\Foundation\Http\FormRequest;
  */
 class RosterImportRequest extends FormRequest
 {
-    public const MAX_KILOBYTES = 4096;
-
     /**
-     * Computed ONCE, at the very top of `prepareForValidation()`, before this class's OWN
-     * `merge()` call below runs. `merge()` writes 'mapping'/'confirmations' keys onto the
-     * request's parameter bag even when their decoded value is `null` — which makes `$this->
-     * post()` NON-empty from that point on. Checking finding 9's "empty $_POST" shape AFTER that
-     * merge would therefore never see it as empty, silently disabling the whole guard. Caught
-     * empirically: a direct `Illuminate\Http\Request::create()` with the same server vars showed
-     * `post()` correctly empty, but the SAME shape routed through this FormRequest reported "the
-     * file field is required" instead of the size message — the merge, not the detection logic,
-     * was the bug.
+     * Finding 9's `post_max_size` detection, shared with `RotaImportRequest` since P1d-2 Task 12
+     * — the ordering constraint it carries (detect BEFORE this class's own `merge()`) is not
+     * visible from the call site, so it lives in one place rather than in two hand-written copies.
      */
-    private bool $emptyPostPastUploadLimit = false;
+    use DetectsOversizedUpload;
+
+    public const MAX_KILOBYTES = 4096;
 
     /** The route middleware (`cap:people.manage`) is the gate; nothing extra here. */
     public function authorize(): bool
@@ -43,7 +38,9 @@ class RosterImportRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        $this->emptyPostPastUploadLimit = $this->isEmptyPostPastUploadLimit();
+        // FIRST, before the merge below — see the trait's docblock for why the position is the
+        // whole trick and how getting it backwards silently disables the guard.
+        $this->detectOversizedUpload();
 
         $mapping = $this->input('mapping');
         $confirmations = $this->input('confirmations');
@@ -62,7 +59,7 @@ class RosterImportRequest extends FormRequest
         // finding 9: when the empty-POST shape is detected, 'file' is NOT marked required —
         // withValidator() below supplies the one, correct error instead of a confusing SECOND
         // "the file field is required" alongside it.
-        $fileRule = $this->emptyPostPastUploadLimit ? 'nullable' : 'required';
+        $fileRule = $this->uploadWasOversized() ? 'nullable' : 'required';
 
         return [
             'file' => [$fileRule, 'file', 'mimes:csv,txt,tsv', 'max:'.self::MAX_KILOBYTES],
@@ -89,25 +86,9 @@ class RosterImportRequest extends FormRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator): void {
-            if ($this->emptyPostPastUploadLimit) {
-                $validator->errors()->add(
-                    'file',
-                    'That file is larger than the '.round(self::MAX_KILOBYTES / 1024).' MB upload limit — choose a smaller export.',
-                );
+            if ($this->uploadWasOversized()) {
+                $validator->errors()->add('file', $this->oversizedUploadMessage(self::MAX_KILOBYTES));
             }
         });
-    }
-
-    /**
-     * PHP's own behaviour past `post_max_size`: the whole request body is discarded, so
-     * `$_POST`/`$_FILES` come back empty while `Content-Length` still names the real size the
-     * browser sent. A GET-shaped empty body is not this — the check only fires when the request
-     * genuinely claimed to be carrying content.
-     */
-    private function isEmptyPostPastUploadLimit(): bool
-    {
-        $contentLength = (int) $this->server('CONTENT_LENGTH', 0);
-
-        return $contentLength > 0 && $this->post() === [] && $this->allFiles() === [];
     }
 }

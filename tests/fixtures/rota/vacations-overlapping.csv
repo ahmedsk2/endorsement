@@ -1,0 +1,3 @@
+short_name,full_name,starts_on,ends_on,granularity,source
+import.one,Nadia Import,2026-07-06,2026-07-08,date,manual
+import.one,Nadia Import,2026-07-07,2026-07-12,date,manual

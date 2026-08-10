@@ -2223,8 +2223,13 @@ gating this list never named, the `PeriodController::destroy()` hardening the fi
 necessary, the editor grid with per-cell save/splits/vacations, and the e2e reload-persistence
 journey covering all three) **shipped 2026-08-10**; **P1d-2** (item 5's fill-down/across/copy-period
 plus CSV export/import, item 6's read view, item 7's availability summaries — **the Stage 1
-acceptance criterion**) is scoped but not yet built, planned once P1d-1 merges, per the sub-plan's
-own "P1d-2" section.
+acceptance criterion**) **also shipped 2026-08-10**, itself split into two branches and planned in
+its own document, `docs/superpowers/plans/2026-08-10-p1d2-read-summarise-move.md`: **P1d-2a**
+read and summarise (the `rota.manage` default reversal, `AvailabilitySummary`, the contact-free
+projection, `/rota` and its journey) and **P1d-2b** move (`RotaFill`'s preview/confirm engine, the
+two-file export, `RotaImport`, the import screen and its journey, MR-04 restated over the new
+files). Neither half added a migration. **P1d is therefore complete** — items 1–8 above are all
+shipped, MR-04 excepted, which was never in P1d.
 
 - **This list never named the `PersonPresenter` `email` gating at all.** `email` shipped
   ungated from P1c onward because every caller then held `people.manage`, which also grants
@@ -2241,7 +2246,23 @@ own "P1d-2" section.
   Munawib's own data model carries no `status` field at all**, unlike `schedules`. P1d-1 therefore
   ships no draft/publish state machine for the rota (design doc §9.1, Decision D) — MR-05's read
   view (P1d-2) is a `cap:rota.view` screen showing the current rota, not a state machine with a
-  publish action.
+  publish action. **Closed by owner decision on 2026-08-10** (rulings 26/27, design §14 item 19):
+  the explicit gate P1d-1 left listed as an unbuilt product option was offered and declined, so
+  "no publish gate" is now a decision rather than a not-yet. `/rota`'s whole route group is
+  asserted GET-only over the router, so an endpoint that would need one cannot arrive unnoticed.
+- **Item 5's six words — "fill-down/across, copy period, import/export" — describe the most
+  destructive surface in the rota, and say nothing about the discipline it needs.** P1d-2 supplies
+  it: bulk writes over hundreds of cells behind one confirmation are validated and authorized as a
+  whole set before the first mutation, run in one transaction, refuse whole rather than partially,
+  audit **one** row per operation (not per cell), and skip any target cell carrying a deliberate
+  split unless that cell is explicitly confirmed. Item 5 also never said which direction a
+  fill-across runs; it is **forwards only**, because backwards would overwrite periods the
+  department has already worked.
+- **Item 7 says "availability summaries" and defines nothing.** A summary that counts only
+  assignments cannot tell a fully-planned period from a half-planned one, which is exactly what
+  §35's *"availability summaries match reality"* is about. `AvailabilitySummary` counts uncovered
+  days and the number of people carrying a gap **separately**, alongside assignments and leave, and
+  reports a departed-but-still-assigned person as their own figure rather than as coverage.
 
 ### P1e — Clinics, setup wizard, demo department *(CL-01…02, CL-04…05, ST-01, ST-03 subset, ST-05)*
 

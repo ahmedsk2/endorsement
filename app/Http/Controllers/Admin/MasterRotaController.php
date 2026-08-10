@@ -4,15 +4,20 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\RotaCellRequest;
+use App\Http\Requests\Admin\RotaFillRequest;
 use App\Http\Requests\Admin\VacationRequest;
 use App\Models\AuditLog;
 use App\Models\Period;
 use App\Models\Person;
 use App\Models\Unit;
 use App\Models\Vacation;
+use App\Support\Csv;
 use App\Support\Rota\AvailabilitySummary;
 use App\Support\Rota\RotaAssignment;
+use App\Support\Rota\RotaExport;
+use App\Support\Rota\RotaFill;
 use App\Support\Rota\RotaGrid;
+use App\Support\Rota\StaleFillPlanException;
 use App\Support\Rota\VacationBooking;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,6 +26,7 @@ use Inertia\Inertia;
 use Inertia\Response;
 use InvalidArgumentException;
 use RuntimeException;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Admin → Master Rota (cap:rota.manage). Munawib MR-02/MR-03.
@@ -72,7 +78,82 @@ class MasterRotaController extends Controller
             // ordering trap Decision D describes cannot bite here, but the argument is the same
             // one `RotaController` spells out and the same reason `stale_people` exists.
             'summary' => $grid === null ? null : AvailabilitySummary::forGrid($grid),
+            // Finding 5, BEFORE the file is generated rather than after a third of the re-import
+            // comes back SKIP_UNKNOWN_PERSON. `people.short_name` is nullable and it is what
+            // Task 11 matches a person on, so a blank handle is an unimportable line. A pure fold
+            // over the grid already in memory — it costs no query.
+            'people_without_a_short_name' => $grid === null ? 0 : RotaExport::peopleWithoutAShortName($grid),
         ]);
+    }
+
+    /**
+     * Munawib MR-06's export, half one: one row per SPAN (P1d-2 Decision G). Behind
+     * `cap:rota.manage` with the rest of this class, not behind `cap:rota.view` — the read view
+     * answers "which unit am I on", while a whole-year extraction is an administrative act, it is
+     * the INPUT to Task 11's importer, and it earns its own audit row. It also keeps the
+     * `cap:rota.view` group at exactly one GET route, which is what `RotaAccessTest`'s two
+     * router-level assertions pin between them.
+     *
+     * A GET, and it writes nothing — the audit row is a record of a disclosure, not of a change.
+     *
+     * `App\Support\Csv::stream()` neutralises every cell and writes the BOM first; nothing here
+     * touches a CSV primitive, which is what `CsvIsTheOnlyReaderWriterTest` requires and what
+     * makes `App\Support\Roster\CsvRosterReader` able to read this file back unchanged.
+     */
+    public function exportAssignments(Request $request): StreamedResponse
+    {
+        return $this->export($request, 'assignments');
+    }
+
+    /** Half two: one row per VACATION. Two files, never one — see `RotaExport`'s docblock. */
+    public function exportVacations(Request $request): StreamedResponse
+    {
+        return $this->export($request, 'vacations');
+    }
+
+    /**
+     * The two exports differ by four lines, so they share one method rather than two that drift.
+     *
+     * THE AUDIT ROW CARRIES IDS, FIELD NAMES AND COUNTS ONLY (Decision H): which file, which
+     * academic year, how many rows. No filename, no person's name, no unit code, no period label.
+     * `rota_export` is deliberately NOT on `AuditAnomalies`' single-occurrence watch list — an
+     * export is a routine administrative act and one alert per download would train an operator to
+     * ignore the channel that exists for the bulk fill.
+     *
+     * The rows are counted BEFORE the response is returned because a `StreamedResponse` does not
+     * run its callback until after this method has (see `RotaExport`'s docblock on why the rows are
+     * an array rather than a generator) — so the count in the audit row is the count in the file,
+     * not a second query's opinion of it.
+     */
+    private function export(Request $request, string $file): StreamedResponse
+    {
+        $year = $request->query('year');
+        $year = is_string($year) ? $year : null;
+
+        // A `?year=` naming no periods is a 404. A header-only file would make a typo look
+        // identical to a year whose rota was cleared, and Task 7's amendment records the same
+        // argument for a fill preview that silently renders "0 cells".
+        abort_unless(RotaExport::yearExists($year), 404);
+
+        // Past the guard `$year` is a value that EXISTS in `periods.academic_year`, which is what
+        // makes it safe to put in the filename and the audit detail below — neither is echoing
+        // operator free text.
+        $year = (string) $year;
+
+        $rows = $file === 'vacations' ? RotaExport::vacations($year) : RotaExport::assignments($year);
+
+        AuditLog::record(
+            'rota_export',
+            "file={$file};year={$year};rows=".count($rows),
+            $request->user()->getKey(),
+            $request->ip(),
+        );
+
+        return Csv::stream(
+            RotaExport::filename($file, $year),
+            $file === 'vacations' ? RotaExport::VACATION_HEADERS : RotaExport::ASSIGNMENT_HEADERS,
+            $rows,
+        );
     }
 
     /** One unit for the whole period — the degenerate split (Decision B). */
@@ -186,6 +267,99 @@ class MasterRotaController extends Controller
         );
 
         return back();
+    }
+
+    /**
+     * Munawib MR-06's bulk moves, PREVIEWED. Writes nothing — not a row, not an audit entry — and
+     * the flash shape is `RosterImport`'s (`back()->with(...)`), so the screen never holds a stale
+     * plan across a navigation.
+     *
+     * The plan carries its own `digest`, which the confirm posts back. That is the whole
+     * preview-then-confirm contract in one field.
+     */
+    public function fillPreview(RotaFillRequest $request): RedirectResponse
+    {
+        $data = $request->validated();
+
+        return back()->with('rota_fill_preview', RotaFill::plan(
+            $data['op'],
+            $this->fillSource($data),
+            $data['confirmations'] ?? [],
+        ));
+    }
+
+    /**
+     * The confirm. `RotaFill::apply()` owns the ONE transaction and re-derives the plan inside it;
+     * this method's job is the two things a controller is for — turning a refusal into a 422 on the
+     * right field (P1b finding 14: a raw 500 reaching the user is a bug in the controller, not the
+     * guard), and appending ONE audit row.
+     *
+     * THE AUDIT ROW IS WRITTEN AFTER THE TRANSACTION HAS COMMITTED (finding 8), exactly as
+     * `RosterImportController::commit()` does it: `AuditLog::record()` opens its own transaction and
+     * locks the chain tail, so writing from inside the fill's transaction would hold that lock for
+     * the fill's whole duration for no benefit — a failed fill rolls back either way. `apply()`
+     * having returned IS the commit, so the ordering is structural rather than a comment.
+     *
+     * ONE ROW PER OPERATION, never one per cell (P1 finding 11): 780 chain appends would serialise
+     * the audit tail and put 780 findings in one `OpsAlert` body. `rota_fill` is on
+     * `AuditAnomalies`' single-occurrence watch list precisely because it is one row — a single
+     * confirmation that rewrote several hundred cells always deserves a human look.
+     *
+     * Ids and counts only. No person's name, no unit code, no period label (Decision H).
+     */
+    public function fill(RotaFillRequest $request): RedirectResponse
+    {
+        $data = $request->validated();
+
+        try {
+            $result = RotaFill::apply(
+                $data['op'],
+                $this->fillSource($data),
+                $data['confirmations'] ?? [],
+                (string) $data['digest'],
+            );
+        } catch (StaleFillPlanException $e) {
+            throw ValidationException::withMessages(['digest' => $e->getMessage()]);
+        } catch (InvalidArgumentException|RuntimeException $e) {
+            throw ValidationException::withMessages(['op' => $e->getMessage()]);
+        }
+
+        if ($result['errors'] !== []) {
+            throw ValidationException::withMessages(['op' => $result['errors'][0]]);
+        }
+
+        AuditLog::record(
+            'rota_fill',
+            "op={$result['op']}"
+            .';source_person='.($result['source']['person_id'] ?? 'none')
+            .';source_period='.($result['source']['period_id'] ?? 'none')
+            .';target_period='.($result['source']['target_period_id'] ?? 'none')
+            .';targets='.count($result['targets'])
+            .';assigned='.$result['summary']['assign']
+            .';replaced='.$result['summary']['replace']
+            .';unchanged='.$result['summary']['unchanged']
+            .';skipped='.$result['summary']['skipped'],
+            $request->user()->getKey(),
+            $request->ip(),
+        );
+
+        return back()->with('rota_fill_result', $result);
+    }
+
+    /**
+     * The request names the source cell in HTTP terms; `RotaFill` names it in the grid's. One
+     * mapping, both fill routes — never re-typed per action.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array{person_id: int|null, period_id: int|null, target_period_id: int|null}
+     */
+    private function fillSource(array $data): array
+    {
+        return [
+            'person_id' => isset($data['source_person_id']) ? (int) $data['source_person_id'] : null,
+            'period_id' => isset($data['source_period_id']) ? (int) $data['source_period_id'] : null,
+            'target_period_id' => isset($data['target_period_id']) ? (int) $data['target_period_id'] : null,
+        ];
     }
 
     public function cancelVacation(Request $request, Vacation $vacation): RedirectResponse

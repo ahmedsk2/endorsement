@@ -97,6 +97,24 @@ class HandleInertiaRequests extends Middleware
                 // upload clears it client-side before either of these is ever consulted again.
                 'roster_preview' => $request->session()->get('roster_preview'),
                 'roster_result' => $request->session()->get('roster_result'),
+                // MR-06's bulk rota moves (P1d-2 Tasks 8/9). Same one-shot channel, same reason,
+                // and it is the reason this whole feature reaches a screen at all: Task 8 shipped
+                // `back()->with('rota_fill_preview', …)` without an entry here, and a session key
+                // no `share()` names is invisible to every page in the app — the preview existed
+                // only in a feature test. `RotaFillCommitTest::test_the_preview_and_the_result_
+                // reach_the_screen_as_shared_flash_props` asserts both halves through a real
+                // second request.
+                //
+                // ONE-SHOT IS THE POINT, not an accident of the mechanism: a fill plan is pinned
+                // to the rota it was computed against (`RotaFill::digest()`), so a plan surviving
+                // a navigation would be a plan the operator could confirm against a grid they
+                // have since changed themselves.
+                //
+                // Ids and counts only — `RotaFill::plan()` strips the resolved Eloquent models
+                // (`context`) before returning, because a props payload built from whole models
+                // is how a contact field reaches a page nobody meant to put it on (Decision C).
+                'rota_fill_preview' => $request->session()->get('rota_fill_preview'),
+                'rota_fill_result' => $request->session()->get('rota_fill_result'),
             ],
         ];
     }

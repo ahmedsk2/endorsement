@@ -17,6 +17,7 @@ use Database\Seeders\AccessControlSeeder;
 use Database\Seeders\ReferenceSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Inertia\Testing\AssertableInertia as Assert;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -567,6 +568,163 @@ class RotaFillCommitTest extends TestCase
         $response->assertStatus(422);
         $response->assertJsonValidationErrors('op');
         $this->assertSame($before, $this->assignmentDigest());
+    }
+
+    /**
+     * P1d-2 Task 9 — THE PLAN HAS TO REACH THE SCREEN, and until this task it could not.
+     *
+     * `back()->with('rota_fill_preview', …)` puts the plan in the session flash; Inertia does not
+     * forward session flash to a page on its own. Every other one-shot channel in this app is
+     * enumerated in `HandleInertiaRequests::share()`'s `flash` array (`roster_preview`,
+     * `promotion_preview`, `bulk_report`, …) precisely because an unlisted key is invisible to
+     * every screen. Task 8 shipped the two flashes and no share entry, so the preview was written
+     * into a session nothing ever read — a whole feature reachable only from a feature test.
+     *
+     * Asserted through a REAL second request rather than by reading `session()`, because "the
+     * controller flashed it" and "the page can see it" are different claims and only the second
+     * one is the feature.
+     */
+    public function test_the_preview_and_the_result_reach_the_screen_as_shared_flash_props(): void
+    {
+        [$periods, $unit] = $this->seedYear();
+        [$junior] = $this->twoLevels();
+
+        $source = $this->person($junior, $periods[0]);
+        $this->person($junior, $periods[0]);
+
+        RotaAssignment::set($source, $periods[0], $unit);
+
+        $body = [
+            'op' => RotaFill::FILL_DOWN_COLUMN,
+            'source_person_id' => $source->getKey(),
+            'source_period_id' => $periods[0]->getKey(),
+        ];
+
+        $this->actingAs($this->admin)
+            ->withHeaders(['X-Inertia' => 'true', 'Accept' => 'application/json'])
+            ->post('/admin/rota/fill/preview', $body)
+            ->assertRedirect();
+
+        // `withHeaders()` persists for the REST OF THE TEST (it sets the case's default headers,
+        // not one request's), so an un-flushed `X-Inertia: true` makes the next GET a 409 version
+        // mismatch rather than a page. Flushed here so the assertion below reads the real rendered
+        // page an operator's browser would get.
+        $this->flushHeaders();
+
+        $this->actingAs($this->admin)
+            ->get('/admin/rota?year=2026-2027')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('flash.rota_fill_preview.targets', 2)
+                ->where('flash.rota_fill_preview.op', RotaFill::FILL_DOWN_COLUMN)
+                ->has('flash.rota_fill_preview.digest')
+                ->has('flash.rota_fill_preview.summary')
+                // Decision C again, at the props layer this time: a preview reaching a SCREEN is
+                // the exact moment an Eloquent model in the payload would start emitting contact
+                // fields nobody put there.
+                ->missing('flash.rota_fill_preview.context')
+            );
+
+        $plan = RotaFill::plan($body['op'], [
+            'person_id' => $source->getKey(),
+            'period_id' => $periods[0]->getKey(),
+            'target_period_id' => null,
+        ], []);
+
+        $this->postFill($body + ['digest' => $plan['digest']])->assertRedirect();
+
+        $this->flushHeaders();
+
+        $this->actingAs($this->admin)
+            ->get('/admin/rota?year=2026-2027')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('flash.rota_fill_result.applied', 2)
+                ->missing('flash.rota_fill_result.context')
+            );
+    }
+
+    /**
+     * P1d-2 Task 9 — THE PREVIEW REQUEST CARRIES ITS OWN COST, and it is pinned here.
+     *
+     * `RotaFillPlanTest::test_the_plan_is_a_bounded_number_of_queries` bounds `RotaFill::plan()` in
+     * isolation (4–6 on this shape). This bounds the whole HTTP round trip an operator's click
+     * actually makes — session, the capability catalogue, `RotaFillRequest`'s `exists` rules and the
+     * plan itself — because that is the number that grows when somebody adds a per-target lookup to
+     * the CONTROLLER or the REQUEST rather than to `RotaFill`, where Task 7's bound would catch it.
+     *
+     * Measured by reading a deliberately unreachable `assertLessThan(1, …)` and restoring it:
+     * **7 queries**, warm, for a 44-target column on a 13-period year — and the same 7 for a
+     * 4-target one. A COLD first request in the process measured 10; the three-query difference is
+     * session and capability-catalogue warmup, the same effect Task 3's amendment measured as a
+     * 16→11 drop on `/rota`, which is why the warm-up below is discarded and why the bound is 12
+     * rather than an equality on 7.
+     *
+     * THE EQUALITY IS THE REAL GUARD, and it is the second half. The same operation is measured
+     * twice, once against a four-person column and once against a forty-four-person one, and the
+     * two counts must be IDENTICAL: a bound of 15 is met by an N+1 that happens to run on a small
+     * fixture, and 40 is not a number that would make one obvious. A warm-up request runs first so
+     * neither measurement carries the process's one-off session and capability reads.
+     */
+    public function test_the_preview_request_is_a_bounded_number_of_queries(): void
+    {
+        [$periods, $unit] = $this->seedYear(13);
+        [$junior, $senior] = $this->twoLevels();
+
+        $source = $this->person($junior, $periods[0]);
+        RotaAssignment::set($source, $periods[0], $unit);
+
+        for ($i = 0; $i < 3; $i++) {
+            RotaAssignment::set($this->person($junior, $periods[0]), $periods[0], $unit);
+        }
+
+        $preview = function () use ($source, $periods): array {
+            $this->flushHeaders();
+
+            DB::enableQueryLog();
+            DB::flushQueryLog();
+
+            $this->actingAs($this->admin)
+                ->withHeaders(['X-Inertia' => 'true', 'Accept' => 'application/json'])
+                ->post('/admin/rota/fill/preview', [
+                    'op' => RotaFill::FILL_DOWN_COLUMN,
+                    'source_person_id' => $source->getKey(),
+                    'source_period_id' => $periods[0]->getKey(),
+                ])
+                ->assertRedirect();
+
+            $count = count(DB::getQueryLog());
+            DB::disableQueryLog();
+
+            return [$count, count(session('rota_fill_preview')['targets'])];
+        };
+
+        // Warm-up, discarded: the first request of a process resolves the session and the
+        // capability catalogue, which is not grid work and would make the two figures below
+        // incomparable.
+        $preview();
+
+        [$smallCount, $smallTargets] = $preview();
+
+        for ($i = 0; $i < 40; $i++) {
+            RotaAssignment::set($this->person($i % 2 === 0 ? $junior : $senior, $periods[0]), $periods[0], $unit);
+        }
+
+        [$largeCount, $largeTargets] = $preview();
+
+        // Non-vacuity, both halves: a budget is trivially met by a request that planned nothing,
+        // and an equality is trivially met by two columns of the same size.
+        $this->assertGreaterThan(3, $smallTargets);
+        $this->assertGreaterThan($smallTargets + 30, $largeTargets);
+
+        $this->assertSame(
+            $smallCount,
+            $largeCount,
+            "the fill preview ran {$smallCount} queries for {$smallTargets} targets and {$largeCount} for {$largeTargets} — "
+            .'the cost must be constant in the number of targets, which is the 780-query preview this bound exists to catch.'
+        );
+
+        $this->assertLessThan(12, $largeCount, "the fill preview ran {$largeCount} queries for {$largeTargets} targets.");
     }
 
     // ---------------------------------------------------------------- fixture

@@ -1287,6 +1287,113 @@ would have been the most confidently wrong sentence in the file.
 `RotaFillCommitTest`, two in `AuditAnomaliesTest`). `npm test` **157** and `npm run test:e2e` **21**
 unchanged — this task adds no client file. `npm run build` green.
 
+**Task 9 (2026-08-10) — THE PLAN COULD NOT REACH A SCREEN AT ALL, and the task's file list is why
+it would have shipped that way.** Task 8's controller flashes the plan with
+`back()->with('rota_fill_preview', …)`; Inertia does not forward session flash to a page on its own,
+and every other one-shot channel in this app is enumerated in `HandleInertiaRequests::share()`'s
+`flash` array (`roster_preview`, `promotion_preview`, `bulk_report`, …) precisely because a session
+key no `share()` names is invisible to every screen. Neither Task 8's "Files touched" nor Task 9's
+mentions that file, so as written this task builds a panel bound to a prop that is permanently
+`undefined` — and `npm run build`, `npm test` and `php artisan test` would all have stayed green,
+because a Vitest mount supplies its own `usePage()` props and no PHP test renders Vue. Caught by
+writing the test first: `RotaFillCommitTest::test_the_preview_and_the_result_reach_the_screen_as_
+shared_flash_props` went red with *"Property [flash.rota_fill_preview.targets] does not exist"*.
+Asserted through a REAL second request rather than by reading `session()`, because "the controller
+flashed it" and "a page can see it" are different claims and only the second one is the feature.
+`app/Http/Middleware/HandleInertiaRequests.php` therefore joins this task's file list.
+
+**Task 9 (2026-08-10) — the task lists only Vitest, and two of this task's claims are server-side
+facts.** Both new PHP cases live in `tests/Feature/Rota/RotaFillCommitTest.php` (the preview route's
+own test file) rather than a new one: the flash-plumbing case above, and the preview request's query
+budget. A budget measured on `RotaFill::plan()` alone (Task 7: 4–6) does not bound what an
+operator's click costs, and the growth it exists to catch — a per-target lookup added to the
+CONTROLLER or the REQUEST rather than to `RotaFill` — is invisible to Task 7's bound by
+construction.
+
+**Task 9 (2026-08-10) — measured preview budget: 7 warm, 10 cold; pinned at 12 — and the BOUND is
+the weaker half.** Read from a deliberately unreachable `assertLessThan(1, …)` and restored. The
+three-query gap between the first request in a process and the second is session and
+capability-catalogue warmup, the same effect Task 3's amendment measured as a 16→11 drop on `/rota`,
+so the test discards a warm-up request before measuring. The assertion that actually guards the N+1
+is the **equality**: the same operation is measured against a 4-target column and a 44-target one
+and the two counts must be identical. Proved falsifiable by planting a per-target
+`Person::query()->find()` in `MasterRotaController::fillPreview()` — **11 vs 51**, where the bound
+of 12 alone would have passed the small fixture and only failed the large one for a reason the
+message would have mis-stated.
+
+**Task 9 (2026-08-10) — `withHeaders()` persists for the REST OF THE TEST, and that made an Inertia
+GET a 409.** `MakesHttpRequests::withHeaders()` sets the case's default headers, not one request's.
+So the `X-Inertia: true` needed on the preview POST was still attached to the `GET /admin/rota` that
+follows it, and Laravel answered a version mismatch (409) rather than rendering the page — a failure
+that looks exactly like a broken route. `flushHeaders()` before each GET, with the reason at the
+call site. Worth recording because the two rota test files that came before this one never mix the
+two request shapes in one test, so nothing in the tree demonstrated the trap.
+
+**Task 9 (2026-08-10) — Vue Test Utils SILENTLY SKIPS a click on a disabled element, and the
+four-actions case measured two posts for four clicks because of it.** The panel disables its
+controls for the duration of a visit (`fillProcessing`), which is correct — a double-click on
+"Apply this fill" must not post twice. But `trigger()` returns early when `element.disabled` is
+true, and the mocked router never calls `onFinish`, so the flag stayed set. Worse, the count was
+**2**, not 1: `trigger()` awaits a tick on its way out, so every other click landed on a
+freshly-re-enabled button. The fix is in the test — play `onFinish` back, as Inertia always does,
+and let the tick through — not in the component: a screen that stopped disabling itself to make a
+test pass would be a screen that can double-apply a fill.
+
+**Task 9 (2026-08-10) — the master-tick case COULD NOT DETECT the defect it is named after, in its
+first shape.** It asserted the two boxes became checked, then unticked one and asserted the request
+body carried `{'11:101': true}`. A master control that replaced the per-cell set with a single flag
+would pass all of that, because with one box unticked it is no longer "all" and any implementation
+falls back to the explicit set. **Proved** by planting
+`confirmations: fillAllSplitsConfirmed.value ? { all: true } : fillConfirmedSet()` and watching the
+file stay green. Now the body is asserted while ALL boxes are ticked — the state a flag would
+collapse — and the untick-one half is kept beside it as the thing a flag cannot do at all. Red
+against the planted flag (*"expected { all: true } to deeply equal { '9:101': true, '11:101':
+true }"*), green after restore.
+
+**Task 9 (2026-08-10) — the preview is gated on the SERVER's own echo, not on a client-side key.**
+`RosterImport.vue` invalidates its preview with a `previewedKey`/`currentKey` pair over the file and
+mapping, because a file is client-side state the server never sees again. A fill has no such state:
+`RotaFill::plan()` echoes the `op` and the `source` cell it planned against, so `fillPlan` renders
+only when that echo matches the action and cell currently selected. That closes a case a client key
+would not: a plan flashed by a DIFFERENT screen action, or one surviving into a render where the
+operator has since picked another operation, is simply not this plan and is never drawn under this
+one's heading.
+
+**Task 9 (2026-08-10) — ticking a box does NOT re-preview, and the screen says so rather than
+pretending the table is current.** Task 8 kept the confirmations out of the digest exactly so a
+per-tick round trip is unnecessary and a master control is buildable; the consequence the task text
+does not draw is that the OUTCOMES on screen were computed against the ticks the preview ran with,
+so a ticked `SKIP_SPLIT_TARGET` row still reads "skipped" until the next preview. Three things
+follow, all shipped: the four counts stay the server's (the plan's instruction — the component
+computes none of them), a separate line names how many boxes the OPERATOR has ticked since, and a
+"Preview again" control sits beside "Apply this fill". Confirming without re-previewing remains
+correct — `apply()` re-derives with the same confirmations — and the notice says that too, rather
+than blocking a safe action.
+
+**Task 9 (2026-08-10) — the task says "a panel below the grid" and never says how it OPENS.** A
+"Fill…" affordance now sits in every non-stale cell's action row beside Split…/On leave…/Clear, on
+both the mobile cards and the desktop table, and it is off a stale row for the same reason Split is:
+`RotaFillRequest` applies the strict active predicate to `source_person_id`, so a fill from a
+departed person's cell could only ever 422. Copy-period also needed a control the task text does not
+mention — it copies onto ANOTHER block, so the panel offers a `<select>` of the year's other
+periods, and the button is disabled until one is chosen. The three cell-sourced actions are disabled
+on an empty source cell, which the server would otherwise answer with *"that cell is empty"* after
+a round trip.
+
+**Task 9 (2026-08-10) — every claim worth making was proved falsifiable by planting its defect.**
+Four probes, each reverted: (1) the destroyed-span list replaced by `{{ current.length }} span(s)` →
+*"expected '2 span(s)' to contain 'PICU'"*, which is the legibility requirement failing exactly as
+intended; (2) the stale-digest handler calling `submitFill()` again instead of re-previewing → the
+"never retries" case red; (3) the master-tick flag above; (4) `fill_across` pointed at
+`/admin/rota/fill` → *"expected '/admin/rota/fill' to be '/admin/rota/fill/preview'"*. All eleven
+cases were watched red first against the un-implemented screen.
+
+**Task 9 (2026-08-10) — counts.** `php artisan test` 1226 → **1228** (two in `RotaFillCommitTest`).
+`npm test` 157 → **168** (eleven in the new `tests/js/MasterRotaFill.test.js`). `npm run test:e2e`
+**21** unchanged — re-measured rather than assumed, because this task adds a fourth button to every
+cell of `/admin/rota` and `master-rota.spec.js` locates its row by `hasText`; nothing collided.
+`npm run build` green.
+
 ---
 
 ## Standing rules for every task

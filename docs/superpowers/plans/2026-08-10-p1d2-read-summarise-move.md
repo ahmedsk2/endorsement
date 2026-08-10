@@ -1486,6 +1486,104 @@ the plan lists no Vitest file for this task, but a prop nothing renders is exact
 Task 9's amendment records — the PHP side proves the count, only a mount proves an operator sees
 it). `npm run test:e2e` **21** unchanged, re-measured. `npm run build` green.
 
+**Task 11 (2026-08-10) — THE PIN LIVES IN `RotaImport`, NOT IN THE CONTROLLER, and the plan's own
+test list is what forces that.** `RosterImport` has no digest logic at all: `RosterImportController`
+computes the sha256 and throws the `ValidationException`. Transposed literally, Task 11's own test 4
+(*"a changed file 422s naming the mismatch"*) could not be written until Task 12 existed, so the
+task's central safety property would ship a task later than the code it protects. What shipped
+instead follows **Task 8's** precedent in this same slice: `RotaImport::digest()` is one definition
+used by both entry points, `preview()` returns it, and `commit()` takes the operator's claim as a
+fourth argument and refuses inside its own transaction. The refusal is `StaleImportFileException`
+(new file, in neither task's "Files touched") — the file sibling of `StaleFillPlanException`, for
+the reason Task 8 already wrote down: the controller has to tell this refusal apart from every other
+one to put the 422 on the right field, and choosing an HTTP field by matching an error message's
+text is the drift this codebase keeps removing. **Consequence for Task 12:** its controller is
+thinner than `RosterImportController`, not a mirror of it — it maps the exception to a 422 on `file`
+and writes no audit row of its own, because `commit()` writes `rota_import` itself, after its
+transaction (finding 8). A pin that a controller can forget to apply is not a pin.
+
+**Task 11 (2026-08-10) — `commit()` needs the BYTES, and that is a real seam the port does not
+cover.** `RosterReader` exposes `headers()` and `rows()` and nothing about the underlying file, by
+design (xlsx is one class away). The digest is over bytes, so `preview()`/`commit()` take
+`string $bytes` beside the reader, exactly as `RosterImportController::readerFromRequest()` already
+returns both from one `file_get_contents()`. Adding a `digest()` method to the PORT was rejected: it
+would put a second definition of the pin in every future reader implementation, and the one thing
+`RosterImport`'s controller proves about this is that a single definition is what makes it safe.
+
+**Task 11 (2026-08-10) — `UNCHANGED` is not in the plan's outcome list and the round trip cannot be
+written without it.** Decision H enumerates `CREATE`, `REPLACE`, `SKIP_UNKNOWN_*`, `SKIP_DUPLICATE`
+and `ERROR` — then the same task's test 9 asks that an exported year re-import with *"every outcome
+`UNCHANGED`/`SKIP_DUPLICATE`"*. Shipped with `UNCHANGED` as a first-class outcome, and it earns its
+place twice over: it is what makes a re-import cost **zero writes** rather than rewriting every row
+to its own value (a REPLACE of identical spans deletes and re-inserts, which is a different audit
+trail and a different set of row ids for the same rota), and it is the only outcome that can
+distinguish "this file matches the rota" from "this file overwrote the rota with itself".
+
+**Task 11 (2026-08-10) — the round trip's outcome set is FOUR answers, not two, and Task 10 is why.**
+Test 9 as written expects `UNCHANGED`/`SKIP_DUPLICATE`. A real export of a real year also contains a
+stale person's spans and a retired unit's code — Task 10 put both there deliberately, and its own
+amendment says so. So a faithful round trip answers `SKIP_UNKNOWN_PERSON` and `SKIP_UNKNOWN_UNIT`
+too. The assertion that actually carries the meaning is therefore not the outcome vocabulary but
+`create + replace + error === 0`, `applied === 0`, and an md5 fingerprint of the whole assignment and
+vacation row sets taken before and after the commit. All four are asserted;
+`test_an_exported_year_re_imports_as_a_no_op` names the seven expected outcomes exactly, sorted on
+both sides (the export's row order is a legibility property its own docblock disclaims, and pinning
+it would fail the day somebody improves it, for no defect).
+
+**Task 11 (2026-08-10) — a cell holding one good span and one on a retired unit is SKIPPED WHOLE,
+and that had to be decided rather than fallen into.** The cell is the unit of outcome and
+`split()` replaces the whole set, so applying the half that resolved would silently DELETE the half
+that did not — a data-loss shape identical to Task 7's "what is a split" finding. The full
+precedence now lives in `finaliseAssignmentCell()`'s docblock: person → period → file errors →
+unit → compare. Identity first because without it there is no cell to say anything about; the
+file's own errors before the unit because they name something to fix in the file rather than
+something about the department's configuration.
+
+**Task 11 (2026-08-10) — `Vacation::booted()` refuses OVERLAPPING leave, and the plan's outcome list
+has nowhere to put it.** `SKIP_DUPLICATE` covers an exact match; leave that overlaps existing leave
+without matching it would reach the model guard from inside the import transaction and abort the
+WHOLE file over a row the preview called clean. It is an `ERROR` on that row alone, detected against
+the same per-person list the duplicate check uses — so a duplicate/overlap **within the file** and
+one **against the database** are caught by one comparison rather than two rules that can disagree.
+`vacations-overlapping.csv` is the fixture; `test_leave_overlapping_other_leave_is_an_error_not_an_
+aborted_import` asserts the good row still lands.
+
+**Task 11 (2026-08-10) — three guard probes and three behaviour probes, every one reverted.**
+1. `MasterRotaAssignment::create(` planted in `commit()`'s dispatch loop → `RotaWritersAreSingularTest`
+   red naming the file and the needle. 2. `->save()` planted in the same place → the newly-extended
+   `RosterNeverMintsCredentialsTest` red on the bare persistence needle. 3. `User::create(` planted
+   there → the same guard red on the literal account-minting claim. 4. The `UNCHANGED` comparison
+   forced false → the round trip and the idempotence case both red with `replace` where `unchanged`
+   belonged, i.e. a re-import silently rewriting the year. 5. `CsvRosterReader::unNeutralise()`
+   short-circuited → `'=formula` came back as the handle and the round trip answered
+   **`skip_unknown_person`** for that person: the neutralise/un-neutralise mismatch failing in a
+   REAL column, silently, which is the exact defect the plan says only this test can catch.
+   6. `VacationBooking::snap()` made a no-op for `week` → the vacation case red on its own
+   NON-VACUITY half (*"the fixture week row is already aligned — this test would prove nothing"*).
+   **Probe 6 is the one worth reading:** the round trip stayed GREEN under a broken snap, because an
+   exported week booking is already week-aligned, so a no-op snap returns the same bounds. The round
+   trip is not the guard for the snap and never could be — only the not-aligned fixture is.
+
+**Task 11 (2026-08-10) — the red was watched behaviourally, per the standing rules.** The class was
+created as a stub returning an empty analysis FIRST, so 23 of 25 cases failed on wrong outcomes,
+missing cells and un-thrown refusals rather than on "class not found". The two that passed against
+the stub passed **vacuously** (an importer that writes nothing leaves an unmentioned cell alone; an
+empty analysis carries no Eloquent model either) and each gained a non-vacuity assertion — `applied
+=== 3`, and a three-outcome count — before being watched red.
+
+**Task 11 (2026-08-10) — two fixtures the plan's table does not list, both real failure shapes.**
+`assignments-blank-short-name.csv` (`people.short_name` is nullable — finding 5 — so an export can
+legitimately carry a blank handle, and `RotaExport`'s own test docblock already says Task 11 answers
+it `SKIP_UNKNOWN_PERSON`) and `assignments-bad-headers.csv` (the file-error path; the plan asks for
+`test_a_file_error_refuses_the_whole_import` and names no fixture that produces one).
+`assignments-retired-unit.csv` carries **two** rows rather than one, because a retired code and a
+non-existent code are two different operator problems and ship two different messages —
+`Unit::findByCode()` carrying no `active` scope is what makes telling them apart possible.
+
+**Task 11 (2026-08-10) — counts.** `php artisan test` 1241 → **1266** (twenty-five in the new
+`RotaImportTest`). `npm test` **173** and `npm run test:e2e` **21** unchanged — this task adds no
+client file and no route; e2e was re-measured rather than assumed. `npm run build` green.
+
 ---
 
 ## Standing rules for every task

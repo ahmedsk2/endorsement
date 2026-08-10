@@ -15,12 +15,25 @@ use Tests\TestCase;
  */
 class RosterNeverMintsCredentialsTest extends TestCase
 {
-    /** Decision I names these four files explicitly — no allow-list, because none should exist. */
+    /**
+     * Decision I names the first four files explicitly — no allow-list, because none should exist.
+     *
+     * P1d-2 Task 11 adds the rota importer. An import path must not mint an account, and the rota
+     * importer is the second file in this codebase that reads an operator-supplied spreadsheet and
+     * writes rows off the back of it — exactly the shape Decision I exists to fence.
+     *
+     * NOTE WHAT THAT BRINGS WITH IT: the bare `'->save()'` needle below applies to every scanned
+     * file, so every persistence call in `RotaImport` must be `create()`/`update()`. In practice it
+     * makes NO persistence call at all — it persists only through `App\Support\Rota\RotaAssignment`
+     * and `App\Support\Rota\VacationBooking` (Decision F) — which is the strongest available way to
+     * satisfy the needle, and is worth stating rather than leaving for somebody to rediscover.
+     */
     private const SCANNED_FILES = [
         'app/Http/Controllers/Admin/PersonController.php',
         'app/Http/Controllers/Admin/PromotionController.php',
         'app/Http/Controllers/Admin/RosterImportController.php',
         'app/Support/Roster/RosterImport.php',
+        'app/Support/Rota/RotaImport.php',
     ];
 
     private const NEEDLES = [

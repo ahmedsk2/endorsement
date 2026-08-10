@@ -1,0 +1,5 @@
+academic_year,period_position,period_label,period_starts_on,period_ends_on,short_name,full_name,unit_code,starts_on,ends_on
+2026-2027,1,Block 1,2026-07-01,2026-07-28,import.one,Nadia Import,XIU,2026-07-01,2026-07-28
+2026-2027,2,Block 2,2026-07-29,2026-08-25,import.one,Nadia Import,XIU,2026-07-29,2026-08-11
+2026-2027,2,Block 2,2026-07-29,2026-08-25,import.one,Nadia Import,XIW,2026-08-12,2026-08-25
+2026-2027,1,Block 1,2026-07-01,2026-07-28,import.two,Yusuf Import,XIW,2026-07-08,2026-07-21

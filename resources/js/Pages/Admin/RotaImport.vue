@@ -120,6 +120,13 @@ const post = (url, extra, handlers) => {
     router.post(url, data, {
         forceFormData: true,
         preserveScroll: true,
+        // Stated rather than inherited: the operator's chosen file, and the key that says it has
+        // been previewed, must survive the round trip or the commit posts nothing. NOT load-bearing
+        // in Inertia 3 as it stands — the e2e journey was measured passing with this line removed,
+        // because a redirect BACK to the same component reuses the instance — which is exactly why
+        // it is written down. `preserveState` defaults to false for POST, so the flow works today
+        // on behaviour the documented default does not promise. Do not cite this screen as proof
+        // that the flag is unnecessary elsewhere; cite the measurement, and re-measure.
         preserveState: true,
         onSuccess: () => handlers?.onSuccess?.(),
         onError: (errors) => handlers?.onError?.(errors),

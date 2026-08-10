@@ -1682,6 +1682,18 @@ trait's own docblock and `RosterImportRequest` re-pointed at it.
 `RosterImportTest::test_an_oversized_upload_reports_the_size_not_a_missing_field` is what proves the
 extraction did not change the behaviour it moved.
 
+**Task 12 (2026-08-10) — `preserveState` is NOT what makes the upload survive its own preview, and
+that was measured rather than assumed.** The screen posts a file, gets a `back()` redirect, and then
+posts the SAME file again on the commit — which only works if the component instance (and with it
+the `<input type="file">`) survives the round trip. Inertia documents `preserveState` as defaulting
+to **false** for POST, so `RotaImport.vue` sets it explicitly; `RosterImport.vue` (P1c) does not,
+which looked like a latent defect worth chasing. It is not: the flag was REMOVED and the Playwright
+journey re-run, and it still passed — a redirect back to the same component reuses the instance in
+Inertia 3. Recorded here, and at the call site, for two reasons: nobody should "fix" the roster
+screen on the strength of the documented default, and nobody should delete the flag here on the
+strength of this measurement, because the flow would then depend on behaviour the default does not
+promise.
+
 **Task 12 (2026-08-10) — counts, MEASURED after this task's own arithmetic was wrong by one.**
 `php artisan test` 1266 → **1281** (thirteen in the new `RotaImportScreenTest`, **two** in
 `RotaAccessTest` — the namespace scan and its stripper calibration; this paragraph first said three,

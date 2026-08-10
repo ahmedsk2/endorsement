@@ -48,31 +48,53 @@ onUnmounted(() => mq?.removeEventListener('change', syncDesktop));
 watch(() => page.url, () => { navOpen.value = false; });
 
 /**
- * WHICH SCREEN AM I ON — the PATH, never the query string.
+ * WHICH SCREEN AM I ON — the PATH, and only the part of it that names a screen.
  *
  * Inertia's `page.url` carries the full path AND query (`/rota?year=2026-2027`). Both helpers below
  * used to compare that whole string against a bare href, so every filterable screen in this app
- * silently lost its nav highlight — and its `aria-current="page"`, which is what a screen reader
- * announces — the moment a filter was applied. `/rota` (year, search, level), `/endorsement/{unit}`
- * (date range), `/endorsement/compliance`, `/admin/rota`, `/admin/structure/periods` and
- * `/admin/access-control` all push a query string from their own controls.
+ * silently lost its nav highlight the moment a filter was applied — and, on the four links that
+ * bound `:aria-current`, the state a screen reader announces with it. `/rota` (year, search,
+ * level), `/endorsement/{unit}` (date range), `/endorsement/compliance`, `/admin/rota`,
+ * `/admin/structure/periods` and `/admin/access-control` all push a query string from their own
+ * controls; three of those six are Administration entries, which bound no `aria-current` at all
+ * until the adversarial review's finding 3 — so the first version of this fix restored the
+ * highlight on all six and the announced state on three. Every link in this nav binds it now, and
+ * `AppLayout.test.js` sweeps the Administration section per link rather than sampling it.
+ *
+ * A TRAILING SLASH IS THE SAME DEFECT ONE CHARACTER ALONG (finding 2). Splitting on `[?#]` leaves
+ * `/rota/` intact, which equals none of the four `isExactly` hrefs — so a form browsers, proxies
+ * and hand-typed URLs all produce went dark exactly as a query string did. Stripped here, with the
+ * root path kept whole: `/` is the one path that IS a slash, and reducing it to the empty string
+ * would leave something that is not a path at all.
  *
  * Found in a browser (P1d-2 Task 6's read-view journey), not in review: every unit-test mount in
  * `tests/js/AppLayout.test.js` had stubbed a bare path, so nothing in the suite could see it. The
- * fix is here rather than at the six call sites because a query string never changes which screen
- * you are on, and a seventh filterable screen would otherwise arrive with the same bug.
+ * normalisation lives here rather than at the sixteen call sites because neither a query string
+ * nor a trailing slash ever changes which screen you are on, and a seventeenth link would
+ * otherwise arrive with the same bug.
  */
 const currentPath = computed(() => {
     const url = page.props ? page.url : '';
+    const path = typeof url === 'string' ? url.split(/[?#]/)[0] : '';
+    const trimmed = path.replace(/\/+$/, '');
 
-    return typeof url === 'string' ? url.split(/[?#]/)[0] : '';
+    return trimmed === '' && path !== '' ? '/' : trimmed;
 });
 
 // Cosmetic active-link highlight. The real gate is the server-side `cap:` middleware.
+//
+// The prefix is a PATH-SEGMENT prefix — `href + '/'`, never a bare `startsWith`. Unit codes are
+// administrator-created (P1b Task 4), so a department can genuinely hold both `pic` and `picu`, and
+// a bare prefix would light two channels for one screen.
 const isActive = (href) => currentPath.value === href || currentPath.value.startsWith(href + '/');
 
 // The chooser is "active" only on the exact URL — unit pages highlight their own entry.
 const isExactly = (href) => currentPath.value === href;
+
+// One expression for every link's "you are here", so the highlight and the announced state cannot
+// disagree: a link that is styled active and announces nothing is the accessibility defect finding 3
+// found across the whole Administration section.
+const ariaCurrent = (active) => (active ? 'page' : undefined);
 
 // The unit list comes from the server (`nav.units`, built by Unit::navList()) rather than a
 // literal array here, so creating, renaming, recolouring, reordering or retiring a unit on
@@ -167,7 +189,7 @@ const navClass = (active) => [
             <nav id="primary-nav" v-show="navOpen || isDesktop" aria-label="Primary" class="space-y-0.5 p-3">
                 <!-- The chooser: one card per unit with today's status. -->
                 <Link v-if="can('endorsement.view')" href="/endorsement"
-                      :aria-current="isExactly('/endorsement') ? 'page' : undefined"
+                      :aria-current="ariaCurrent(isExactly('/endorsement'))"
                       :class="navClass(isExactly('/endorsement'))">
                     All units
                 </Link>
@@ -176,7 +198,7 @@ const navClass = (active) => [
                 <template v-if="can('endorsement.view')">
                     <Link v-for="unit in units" :key="unit.code"
                           :href="`/endorsement/${unit.code}`"
-                          :aria-current="isActive(`/endorsement/${unit.code}`) ? 'page' : undefined"
+                          :aria-current="ariaCurrent(isActive(`/endorsement/${unit.code}`))"
                           :class="[
                               'block rounded-md px-3 py-2 text-sm font-medium transition',
                               isActive(`/endorsement/${unit.code}`)
@@ -189,7 +211,7 @@ const navClass = (active) => [
 
                 <!-- The missed-days aggregate — its own narrow capability. -->
                 <Link v-if="can('endorsement.compliance')" href="/endorsement/compliance"
-                      :aria-current="isExactly('/endorsement/compliance') ? 'page' : undefined"
+                      :aria-current="ariaCurrent(isExactly('/endorsement/compliance'))"
                       :class="navClass(isExactly('/endorsement/compliance'))">
                     Missed days
                 </Link>
@@ -207,59 +229,79 @@ const navClass = (active) => [
                   kindness.
                 -->
                 <Link v-if="can('rota.view')" href="/rota"
-                      :aria-current="isExactly('/rota') ? 'page' : undefined"
+                      :aria-current="ariaCurrent(isExactly('/rota'))"
                       :class="navClass(isExactly('/rota'))">
                     Rota
                 </Link>
 
                 <!-- Administration -->
+                <!--
+                  Administration. EVERY link here binds `:aria-current` (adversarial review,
+                  finding 3): until it did, all twelve carried the visual channel-bar highlight and
+                  announced nothing, so a screen reader was told where it was on the four top-level
+                  entries and nowhere else — the entire admin surface, silent. Pre-existing on
+                  `main`, not introduced by the rota read view; found while reviewing the code that
+                  slice rewrote.
+                -->
                 <template v-if="canAdmin">
                     <p class="channel-tag px-3 pb-1 pt-4">Administration</p>
                     <Link v-if="can('users.manage') || can('users.manage_residents')" href="/admin/users"
+                          :aria-current="ariaCurrent(isActive('/admin/users'))"
                           :class="navClass(isActive('/admin/users'))">
                         {{ can('users.manage') ? 'Users' : 'Residents' }}
                     </Link>
                     <Link v-if="can('people.manage')" href="/admin/people"
+                          :aria-current="ariaCurrent(isActive('/admin/people'))"
                           :class="navClass(isActive('/admin/people'))">
                         People
                     </Link>
                     <Link v-if="can('people.manage')" href="/admin/promotion"
+                          :aria-current="ariaCurrent(isActive('/admin/promotion'))"
                           :class="navClass(isActive('/admin/promotion'))">
                         Promotion
                     </Link>
                     <Link v-if="can('people.manage')" href="/admin/roster-import"
+                          :aria-current="ariaCurrent(isActive('/admin/roster-import'))"
                           :class="navClass(isActive('/admin/roster-import'))">
                         Roster import
                     </Link>
                     <Link v-if="can('access.manage')" href="/admin/access-control"
+                          :aria-current="ariaCurrent(isActive('/admin/access-control'))"
                           :class="navClass(isActive('/admin/access-control'))">
                         Access Control
                     </Link>
                     <Link v-if="can('structure.manage')" href="/admin/structure/units"
+                          :aria-current="ariaCurrent(isActive('/admin/structure/units'))"
                           :class="navClass(isActive('/admin/structure/units'))">
                         Units
                     </Link>
                     <Link v-if="can('structure.manage')" href="/admin/structure/levels"
+                          :aria-current="ariaCurrent(isActive('/admin/structure/levels'))"
                           :class="navClass(isActive('/admin/structure/levels'))">
                         Levels
                     </Link>
                     <Link v-if="can('structure.manage')" href="/admin/structure/calendar"
+                          :aria-current="ariaCurrent(isActive('/admin/structure/calendar'))"
                           :class="navClass(isActive('/admin/structure/calendar'))">
                         Calendar
                     </Link>
                     <Link v-if="can('structure.manage')" href="/admin/structure/periods"
+                          :aria-current="ariaCurrent(isActive('/admin/structure/periods'))"
                           :class="navClass(isActive('/admin/structure/periods'))">
                         Periods
                     </Link>
                     <Link v-if="can('structure.manage')" href="/admin/structure/holidays"
+                          :aria-current="ariaCurrent(isActive('/admin/structure/holidays'))"
                           :class="navClass(isActive('/admin/structure/holidays'))">
                         Holidays
                     </Link>
                     <Link v-if="can('rota.manage')" href="/admin/rota"
+                          :aria-current="ariaCurrent(isActive('/admin/rota'))"
                           :class="navClass(isActive('/admin/rota'))">
                         Master Rota
                     </Link>
                     <Link v-if="can('settings.manage')" href="/admin/settings"
+                          :aria-current="ariaCurrent(isActive('/admin/settings'))"
                           :class="navClass(isActive('/admin/settings'))">
                         Settings
                     </Link>

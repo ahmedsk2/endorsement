@@ -8,12 +8,15 @@ use App\Models\Period;
 use App\Models\Person;
 use App\Models\Unit;
 use App\Models\User;
+use App\Models\Vacation;
 use App\Support\LevelAssignment;
 use App\Support\Rota\RotaAssignment;
+use App\Support\Rota\VacationBooking;
 use Carbon\CarbonImmutable;
 use Database\Seeders\AccessControlSeeder;
 use Database\Seeders\ReferenceSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -155,6 +158,237 @@ class RotaReadViewTest extends TestCase
         $this->assertSame([], $this->keyPaths($props, ['status', 'published', 'published_at', 'draft']),
             'MR-05 has no publish gate (owner decision 1, 2026-08-10) — the read view always shows '
             .'the current rota');
+    }
+
+    /**
+     * P1d-2 Task 4, Decision B / P1d-1 pre-merge finding 3: the read view carries its OWN budget,
+     * measured on a POPULATED year. A budget measured on an empty grid only ever proves the empty
+     * case, and every N+1 `RotaGrid`'s docblock warns about is per-span, per-vacation or
+     * per-stale-person — none of which exist on an empty year.
+     *
+     * TEN stale people, not one: a union written as one query per stale person costs exactly one
+     * query when there is exactly one, so a single-stale fixture cannot tell a correct
+     * implementation from an N+1.
+     *
+     * MEASURED: 16 on this exact fixture, read from a first run against a deliberately unreachable
+     * bound of 1. The bound below is `assertLessThan`, never an exact count: a first request in a
+     * process pays about five queries of session/capability warmup that a second one does not
+     * (16, then 11 for the same actor on this fixture), so an exact figure would pin request ORDER
+     * rather than grid work. `AvailabilitySummary` adds none of the 16 — it is a pure fold over the
+     * array the grid already built (Decision B), which is why the read view costs exactly what
+     * `RotaGridTest` measures for the editor. The landing-year lookup adds one query, and only to a
+     * request that named no `?year=` — not to this one.
+     */
+    public function test_the_read_view_renders_a_bounded_number_of_queries(): void
+    {
+        $this->seedPopulatedYear();
+
+        $resident = User::factory()->create(['position' => 4]);
+
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+
+        $this->actingAs($resident)->get('/rota?year=2026-2027')->assertOk();
+
+        $count = count(DB::getQueryLog());
+
+        $this->assertLessThan(20, $count,
+            "the read view ran {$count} queries for 780 cells, a summary and a filtered row set");
+    }
+
+    /**
+     * Decision D's ordering trap, asserted rather than commented. `AvailabilitySummary::forGrid()`
+     * runs on the FULL grid and the rows are filtered for display AFTERWARDS; get that backwards
+     * and the department's availability figures start depending on what a reader typed into a
+     * search box — a summary that quietly reports one person's block as the whole department's.
+     */
+    public function test_search_and_filter_narrow_the_rows_but_not_the_summary(): void
+    {
+        [$period] = $this->seedYear();
+
+        // A second, differently-named person on the same period, so `?q=` has something to exclude.
+        $other = Person::factory()->create(['full_name' => 'Zzz Unsearched', 'short_name' => 'zzz']);
+        LevelAssignment::assign($other, Level::query()->where('code', 'XR1')->firstOrFail(),
+            $period->starts_on->format('Y-m-d'));
+        RotaAssignment::set($other, $period, Unit::findByCode('XRU'));
+
+        $resident = User::factory()->create(['position' => 4]);
+
+        $all = $this->propsFrom($this->actingAs($resident)->get('/rota?year=2026-2027'));
+        $searched = $this->propsFrom($this->actingAs($resident)->get('/rota?year=2026-2027&q=Read+View'));
+
+        $this->assertGreaterThan(count($searched['grid']['rows']), count($all['grid']['rows']),
+            'the search returned as many rows as the unfiltered page — it filtered nothing');
+        $this->assertSame(['Read View Fixture'],
+            array_map(fn (array $row): string => $row['person']['full_name'], $searched['grid']['rows']));
+
+        $this->assertSame($all['summary'], $searched['summary'],
+            'the search narrowed the availability summary as well as the row list');
+    }
+
+    /**
+     * Decision D in both directions at once. A person who has left the department is HIDDEN on the
+     * read view — a departed name with a unit beside it reads as current staffing, and it is not —
+     * but their occupied cells are NOT silently zeroed either: counting them as coverage overstates
+     * availability (the exact failure §35's "match reality" names), and pretending the cells are
+     * empty leaves nobody any reason to clear them. So they are their own number.
+     */
+    public function test_a_deactivated_person_who_still_holds_a_span_is_not_on_the_read_view_but_is_counted(): void
+    {
+        [$period] = $this->seedYear();
+
+        $departed = Person::factory()->create(['full_name' => 'Omar Departed']);
+        LevelAssignment::assign($departed, Level::query()->where('code', 'XR1')->firstOrFail(),
+            $period->starts_on->format('Y-m-d'));
+        RotaAssignment::set($departed, $period, Unit::findByCode('XRU'));
+        $departed->forceFill(['active' => false])->save();
+
+        $resident = User::factory()->create(['position' => 4]);
+        $props = $this->propsFrom($this->actingAs($resident)->get('/rota?year=2026-2027'));
+
+        $this->assertNotContains($departed->getKey(),
+            array_map(fn (array $row): int => $row['person']['id'], $props['grid']['rows']),
+            'a departed person is on the read view, where their unit reads as current staffing');
+
+        // Not reachable by search either — the filter runs over the already-filtered set.
+        $searched = $this->propsFrom($this->actingAs($resident)->get('/rota?year=2026-2027&q=Departed'));
+        $this->assertSame([], $searched['grid']['rows']);
+
+        $this->assertGreaterThanOrEqual(1, $props['summary'][$period->getKey()]['stale_assignments'],
+            'the departed person\'s occupied cell vanished from the summary as well as the list');
+    }
+
+    /**
+     * THE LANDING YEAR (P1d-2 Task 4, and this task's one judgment call). The editor lands on
+     * "choose a year" because picking the year to plan is the first decision an administrator
+     * makes. A reader has no such decision: they came to see where they are now, and an empty
+     * screen with a picker asks them to answer a question they did not have. So `/rota` with no
+     * `?year=` resolves the year CONTAINING TODAY.
+     *
+     * Not "the most recent year", which is what a one-line `$years->last()` would give: an
+     * administrator generating next year's periods in March (P1b's Periods screen exists to let
+     * them) would silently move every resident's landing page onto a mostly-empty future grid
+     * while the year they are actually working still had months to run.
+     */
+    public function test_it_lands_on_the_academic_year_that_contains_today(): void
+    {
+        $today = CarbonImmutable::today();
+
+        $this->periodIn('2050-2051', $today->subDays(5)->format('Y-m-d'), $today->addDays(5)->format('Y-m-d'));
+        // Lexically LATER, so a fallback-to-latest implementation lands here instead and fails.
+        $this->periodIn('2099-2100', $today->addYears(40)->format('Y-m-d'), $today->addYears(40)->addDays(20)->format('Y-m-d'));
+
+        $resident = User::factory()->create(['position' => 4]);
+        $props = $this->propsFrom($this->actingAs($resident)->get('/rota'));
+
+        $this->assertSame('2050-2051', $props['year']);
+        $this->assertNotNull($props['grid'], 'the landing year resolved but no grid was built for it');
+    }
+
+    /** No year covers today (a gap between years, or a department planning ahead of itself). */
+    public function test_it_falls_back_to_the_most_recent_year_when_today_falls_in_none(): void
+    {
+        $today = CarbonImmutable::today();
+
+        $this->periodIn('2019-2020', $today->subYears(6)->format('Y-m-d'), $today->subYears(6)->addDays(20)->format('Y-m-d'));
+        $this->periodIn('2020-2021', $today->subYears(5)->format('Y-m-d'), $today->subYears(5)->addDays(20)->format('Y-m-d'));
+
+        $resident = User::factory()->create(['position' => 4]);
+        $props = $this->propsFrom($this->actingAs($resident)->get('/rota'));
+
+        $this->assertSame('2020-2021', $props['year']);
+    }
+
+    /** A department with no periods at all still gets the empty state, not a 500. */
+    public function test_a_department_with_no_periods_lands_on_no_year_at_all(): void
+    {
+        $resident = User::factory()->create(['position' => 4]);
+        $props = $this->propsFrom($this->actingAs($resident)->get('/rota'));
+
+        $this->assertNull($props['year']);
+        $this->assertNull($props['grid']);
+        $this->assertSame([], $props['academic_years']);
+    }
+
+    private function periodIn(string $academicYear, string $startsOn, string $endsOn): Period
+    {
+        return Period::create([
+            'academic_year' => $academicYear,
+            'kind' => Period::WEEK_BLOCK,
+            'position' => 1,
+            'label' => 'Block 1',
+            'starts_on' => $startsOn,
+            'ends_on' => $endsOn,
+        ]);
+    }
+
+    /**
+     * The same populated year `RotaGridTest`'s budget case uses: 60 people, 13 periods, 1170 spans
+     * (half of them split, with a deliberate gap), 120 vacations, 30 mid-year promotions and ten
+     * stale rows.
+     */
+    private function seedPopulatedYear(): void
+    {
+        $level = Level::factory()->create(['code' => 'XV1', 'display_order' => 10]);
+        $promoted = Level::factory()->create(['code' => 'XV2', 'display_order' => 20]);
+        $unitA = Unit::create(['code' => 'XVA', 'name' => 'Read Budget Unit A', 'active' => true]);
+        $unitB = Unit::create(['code' => 'XVB', 'name' => 'Read Budget Unit B', 'active' => true]);
+
+        $periods = [];
+        $start = CarbonImmutable::parse('2026-07-01');
+
+        for ($i = 1; $i <= 13; $i++) {
+            $periodStart = $start->addWeeks(($i - 1) * 4);
+
+            $periods[] = Period::create([
+                'academic_year' => '2026-2027',
+                'kind' => Period::WEEK_BLOCK,
+                'position' => $i,
+                'label' => "Block {$i}",
+                'starts_on' => $periodStart->format('Y-m-d'),
+                'ends_on' => $periodStart->addWeeks(4)->subDay()->format('Y-m-d'),
+            ]);
+        }
+
+        for ($index = 0; $index < 60; $index++) {
+            $person = Person::factory()->create();
+            LevelAssignment::assign($person, $level, $periods[0]->starts_on->format('Y-m-d'));
+
+            foreach ($periods as $period) {
+                if ($index % 2 === 0) {
+                    RotaAssignment::set($person, $period, $unitA);
+
+                    continue;
+                }
+
+                RotaAssignment::split($person, $period, [
+                    ['unit_id' => $unitA->getKey(), 'starts_on' => $period->starts_on->format('Y-m-d'),
+                        'ends_on' => $period->starts_on->addDays(9)->format('Y-m-d')],
+                    ['unit_id' => $unitB->getKey(), 'starts_on' => $period->starts_on->addDays(13)->format('Y-m-d'),
+                        'ends_on' => $period->ends_on->format('Y-m-d')],
+                ]);
+            }
+
+            VacationBooking::book($person,
+                $periods[2]->starts_on->addDay()->format('Y-m-d'),
+                $periods[2]->starts_on->addDays(3)->format('Y-m-d'),
+                Vacation::GRANULARITY_DATE);
+            VacationBooking::book($person,
+                $periods[8]->starts_on->addDay()->format('Y-m-d'),
+                $periods[8]->starts_on->addDays(3)->format('Y-m-d'),
+                Vacation::GRANULARITY_DATE);
+
+            if ($index % 2 === 0) {
+                LevelAssignment::assign($person, $promoted, $periods[6]->starts_on->format('Y-m-d'));
+            }
+        }
+
+        for ($i = 0; $i < 10; $i++) {
+            $departed = Person::factory()->create();
+            LevelAssignment::assign($departed, $level, $periods[0]->starts_on->format('Y-m-d'));
+            RotaAssignment::set($departed, $periods[0], $unitA);
+            $departed->forceFill(['active' => false])->save();
+        }
     }
 
     /**

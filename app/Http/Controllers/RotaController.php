@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\Period;
+use App\Support\Calendar;
 use App\Support\Rota\AvailabilitySummary;
 use App\Support\Rota\RotaGrid;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -33,6 +35,14 @@ use Inertia\Response;
  * an open product option; it is closed, and `RotaReadViewTest` scans these props for the shape so
  * it stays closed.
  *
+ * IT LANDS A READER ON A YEAR, WHICH THE EDITOR DELIBERATELY DOES NOT (P1d-2 Task 4). `/rota`
+ * with no `?year=` shows the year CONTAINING TODAY, falling back to the most recent one generated;
+ * `/admin/rota` still shows "choose an academic year". The asymmetry is the point: choosing which
+ * year to plan is the first decision an administrator makes, and a reader has no such decision —
+ * they came to see where they are now. Nor is it simply "the latest year", which would move every
+ * resident's landing page onto a mostly-empty future grid the moment an administrator generated
+ * next year's periods. See `landingYear()`.
+ *
  * NO CONTACT FIELD, FOR ANY VIEWER. `RotaGrid` projects through
  * `PersonPresenter::contactFree()` and takes no viewer at all (Decision C) — this controller
  * therefore has nothing to gate and nothing to strip, which is the point: there is no second
@@ -42,18 +52,25 @@ class RotaController extends Controller
 {
     public function index(Request $request): Response
     {
-        // The same distinct-year list the editor resolves, and the same "unrecognised year means
-        // no year" handling. Two screens over one rota should not disagree about which years
-        // exist, and a `?year=` naming a year with no periods must render the empty state rather
-        // than a half-built grid — the rota's columns ARE periods (P1b).
+        // The same distinct-year list the editor resolves. Two screens over one rota should not
+        // disagree about which years exist, and a `?year=` naming a year with no periods must not
+        // render a half-built grid — the rota's columns ARE periods (P1b).
         $years = Period::query()
             ->select('academic_year')
             ->distinct()
             ->orderBy('academic_year')
             ->pluck('academic_year');
 
+        // WHERE THIS SCREEN DIVERGES FROM THE EDITOR, DELIBERATELY (P1d-2 Task 4). `/admin/rota`
+        // with no `?year=` renders "choose an academic year", because choosing the year to plan is
+        // the first decision an administrator makes and guessing it for them would be wrong.
+        // A reader has no such decision — they came to see where they are now — so an empty screen
+        // with a picker asks them a question they did not have. An unrecognised year falls here
+        // too; the picker always shows which year is on screen, so nothing is silent.
         $requestedYear = $request->query('year');
-        $year = is_string($requestedYear) && $years->contains($requestedYear) ? $requestedYear : null;
+        $year = is_string($requestedYear) && $years->contains($requestedYear)
+            ? $requestedYear
+            : self::landingYear($years);
 
         $grid = $year === null ? null : RotaGrid::forYear($year);
 
@@ -82,6 +99,39 @@ class RotaController extends Controller
             // re-deriving it from the URL and drifting.
             'filters' => ['q' => $search, 'level' => $levelId],
         ]);
+    }
+
+    /**
+     * The year a reader lands on: the one CONTAINING TODAY, else the most recent one generated.
+     *
+     * Not simply the most recent, which is the shorter version of this method and the wrong one:
+     * an administrator generating next year's periods in March (P1b's Periods screen exists so
+     * they can) would silently move every resident's landing page onto a mostly-empty future grid
+     * while the year the department is actually working still had months to run.
+     *
+     * ONE query, and only on a request that named no year — a `?year=` request never reaches here,
+     * so the measured grid budget is unchanged for every link, bookmark and filter submission the
+     * screen produces. `Calendar::todayYmd()` is the one converter (ST-06); the comparison itself
+     * is the database's, between two `Y-m-d` values, and `whereDate` rather than equality for the
+     * reason `Period::booted()` records — the `date` cast round-trips from MySQL as
+     * `'Y-m-d 00:00:00'`, which never equals a plain `Y-m-d` string.
+     *
+     * @param  Collection<int, string>  $years
+     */
+    private static function landingYear(Collection $years): ?string
+    {
+        if ($years->isEmpty()) {
+            return null;
+        }
+
+        $today = Calendar::todayYmd();
+
+        $current = Period::query()
+            ->whereDate('starts_on', '<=', $today)
+            ->whereDate('ends_on', '>=', $today)
+            ->value('academic_year');
+
+        return $current ?? $years->last();
     }
 
     /**

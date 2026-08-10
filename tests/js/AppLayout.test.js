@@ -162,6 +162,34 @@ describe('AppLayout — role-gated navigation', () => {
         expect(text).not.toContain('People');
     });
 
+    // P1d-2 Decision A: MR-05's read view is a TOP-LEVEL entry, beside the unit channels, not an
+    // admin one. `rota.view` is seeded for every authenticated position, so a resident holding
+    // nothing else must still find the rota — and must NOT be shown an Administration section for
+    // holding it.
+    it('shows a top-level Rota link for rota.view, with no admin section', () => {
+        store.page.props.auth.can = ['rota.view'];
+        store.page.props.auth.user = { id: 9, member_name: 'res', full_name: 'A Resident', position: 4 };
+
+        const text = navText(mountLayout());
+        expect(text).toContain('Rota');
+        expect(text).not.toContain('Administration');
+        expect(text).not.toContain('Master Rota');
+    });
+
+    // An administrator legitimately sees BOTH: reading the department's rota and editing it are
+    // two acts on two screens, and hiding the read view from the person most likely to want to
+    // check what residents actually see would be a strange kindness (Decision A says so in the
+    // layout's own comment, so it does not come back as a review question).
+    it('shows both entries to somebody holding rota.view and rota.manage', () => {
+        store.page.props.auth.can = ['rota.view', 'rota.manage'];
+        store.page.props.auth.user = { id: 10, member_name: 'adm', full_name: 'The Admin', position: 0 };
+
+        const w = mountLayout();
+        expect(w.get('nav[aria-label="Primary"]').text()).toContain('Master Rota');
+        expect(w.findAll('nav[aria-label="Primary"] a[href="/rota"]')).toHaveLength(1);
+        expect(w.findAll('nav[aria-label="Primary"] a[href="/admin/rota"]')).toHaveLength(1);
+    });
+
     it('shows the signed-in user name and logs out via router.post', async () => {
         store.page.props.auth.can = ['profile.manage'];
         store.page.props.auth.user = { id: 1, member_name: 'jdoe', full_name: 'Jane Doe', position: 1 };

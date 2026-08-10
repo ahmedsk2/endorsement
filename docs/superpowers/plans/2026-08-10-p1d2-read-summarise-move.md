@@ -827,6 +827,77 @@ placeholder, not a starting point. Note that the search and level filter are alr
 SERVER-side by `RotaController` (Task 3 implements them; Task 4 only tests them and adds the
 inputs), so `filters` is populated and correct before any control exists to set it.
 
+**Task 4 (2026-08-10) — the task text contradicts itself about `<select>`, and the contradiction
+is worth resolving in writing rather than silently.** Its opening says *"Read-only means read-only:
+**no `<select>`**, no Split…, no On leave…, no Clear, no form of any kind"*, and its own Vitest
+case 6 repeats it (*"no `<select>` … appears anywhere"*) — while its implementation section, four
+paragraphs later, specifies *"a search input and a level `<select>`"* plus the year picker, which
+MR-05 requires by name. Both cannot hold. The property that actually matters is **no WRITE**: the
+three controls on this screen navigate (`router.get`, query string, GET route), and the whole
+`cap:rota.view` group is GET-only at the router. So the shipped assertion is the honest form of the
+same idea, and it is stronger than the literal one in two ways: the **strip itself** carries no
+`<select>`, `<button>` or `<input>` at all, there is no `<form>` anywhere, and **every button in the
+page's own `main` landmark is clicked** with `router.patch`/`post`/`delete` asserted never called.
+That last part had to be scoped to `main#main-content` after it went red on
+`AppLayout`'s own "Sign out", which is a `router.post` on every screen in the app — a real find,
+but a fact about the layout, not about the rota.
+
+**Task 4 (2026-08-10) — three of the four PHP cases were green on first run; the two that were not
+are the ones this task actually decided.** `test_search_and_filter_narrow_the_rows_but_not_the_
+summary`, `test_a_deactivated_person_..._is_not_on_the_read_view_but_is_counted` and the query
+budget all passed against the committed tree, because Task 3 shipped the server-side filtering and
+Decision D's summary-then-filter ordering together (its own amendment says so). Checked rather than
+assumed that each would have failed before Task 3: `/rota` did not exist as a route, so all three
+404'd. The two that went red — `test_it_lands_on_the_academic_year_that_contains_today` and
+`test_it_falls_back_to_the_most_recent_year_when_today_falls_in_none` — failed with
+*"Failed asserting that null is identical to '2050-2051'"*, i.e. the screen rendering its
+choose-a-year empty state, which is exactly the behaviour they were written to change.
+
+**Task 4 (2026-08-10) — THE LANDING-YEAR DECISION: `/rota` with no `?year=` resolves the year
+CONTAINING TODAY, falling back to the most recent generated.** Task 3 flagged this as a judgment
+call. The editor's "choose an academic year" is right for `/admin/rota` — picking the year to plan
+is the first decision an administrator makes — but a reader has no such decision, and an empty
+screen with a picker asks them a question they did not have. The obvious one-liner (`$years->last()`)
+was rejected as the *wrong* default rather than merely a lazier one: P1b's Periods screen exists so
+a department can generate next year ahead of time, and the day an administrator does that, every
+resident's landing page would silently move onto a mostly-empty future grid while the year the
+department is actually working still had months to run. `RotaController::landingYear()` costs **one
+query**, and only on a request that named no year — a `?year=` request (every link, bookmark and
+filter submission the screen produces) never reaches it, so the measured grid budget is unchanged.
+An unrecognised `?year=` lands the same way; the picker always shows which year is on screen, so
+nothing is silent. Three cases pin it, including
+`test_a_department_with_no_periods_lands_on_no_year_at_all` — the empty-department state still
+renders its empty screen rather than a 500.
+
+**Task 4 (2026-08-10) — measured query budget for `/rota`: 16, bound pinned at 20.** Read from a
+first run against a deliberately unreachable `assertLessThan(1, …)` on the populated fixture (60
+people, 13 periods, 1170 spans, 120 vacations, 30 mid-year promotions, ten stale people), then
+restored. Identical to Task 3's measurement and to `RotaGridTest`'s own figure for the editor, which
+is Decision B's "the summary costs nothing" claim holding at the request level rather than only in
+`AvailabilitySummaryTest::test_it_issues_no_query`.
+
+**Task 4 (2026-08-10) — an EMPTY cell renders "Unassigned", not the plan's day count.** The plan's
+Vitest case 3 says *"a cell with uncovered days renders the count"*, which taken literally would
+print "28 day(s) not yet assigned" on a person with no span at all — a reading that makes nothing
+planned look like a planning error, and one the summary already reports better as
+`unassigned_people`. The count renders on a **partly** covered cell (the split-with-a-gap case it
+was written for); an empty cell says "Unassigned" in words. This is the same disjoint-counts
+argument Task 2's own amendment settled server-side, applied to the screen.
+
+**Task 4 (2026-08-10) — `tests/js/AppLayout.test.js` gained two cases the plan's file list does not
+name.** The task adds a nav entry, and the layout's nav is the one file in this codebase with a
+test per capability-gated link (P1b's and P1c's recon risk: a capability whose only screen is
+unreachable). Both went red first: a resident holding only `rota.view` sees a top-level **Rota**
+entry and **no Administration section**, and somebody holding both `rota.view` and `rota.manage`
+sees two links to two different URLs — Decision A's deliberate duplication, now asserted rather
+than only commented.
+
+**Task 4 (2026-08-10) — counts.** `php artisan test` 1177 → **1183** (six new cases in
+`RotaReadViewTest`). `npm test` 131 → **144** (eleven in the new `tests/js/Rota.test.js`, two in
+`AppLayout.test.js`). `npm run build` green. `npm run test:e2e` not re-measured — Task 6 owns it,
+and no existing spec navigates by nav-link text, so the new entry cannot make one ambiguous
+(checked, not assumed).
+
 ---
 
 ## Standing rules for every task

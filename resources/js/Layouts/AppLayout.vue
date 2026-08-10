@@ -177,6 +177,24 @@ const navClass = (active) => [
                     Missed days
                 </Link>
 
+                <!--
+                  The master rota as the department READS it (Munawib MR-05), P1d-2 Decision A.
+                  Top level, beside the unit channels, because `rota.view` is seeded for every
+                  authenticated position and reading the rota is not an administrative act — the
+                  editor is the entry inside Administration below.
+
+                  An administrator therefore sees TWO rota links, and that is correct rather than
+                  a duplicate to tidy away: reading the department's rota and editing it are two
+                  different acts on two different screens, and hiding the read view from the person
+                  most likely to want to check what residents actually see would be a strange
+                  kindness.
+                -->
+                <Link v-if="can('rota.view')" href="/rota"
+                      :aria-current="isExactly('/rota') ? 'page' : undefined"
+                      :class="navClass(isExactly('/rota'))">
+                    Rota
+                </Link>
+
                 <!-- Administration -->
                 <template v-if="canAdmin">
                     <p class="channel-tag px-3 pb-1 pt-4">Administration</p>

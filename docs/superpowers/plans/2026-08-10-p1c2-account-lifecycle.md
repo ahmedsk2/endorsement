@@ -921,6 +921,113 @@ router-gate test against an extra ungated route in the group. The Decision G pos
 mutation-tested too (writing `$person->position` on the claim path's existing-person branch turns it
 red), because a pin that passes on its first run has proved nothing about what it can detect.
 
+**Task 4 (2026-08-10) — Decision D property 4 contradicts itself, and the tests decide which half
+survives.** It says a person outside the actionable set is *"reported as `skipped_has_account` /
+`skipped_no_email` / `skipped_out_of_scope` from the writer's own return value"* **and** that
+*"the FormRequest validates against exactly that set"*. Those cannot both hold: a `Rule::exists`
+predicate that excludes a claimed person 422s the whole submission, and then nothing is reported as
+skipped. The plan's own cases 6 and 7 demand the skip (*"the rest proceed"*), and they are right —
+a selection made with "select all filtered" routinely contains three of fifty who have already
+claimed, and refusing the batch for them would make the feature unusable. So `person_ids.*` carries
+a **bare** `Rule::exists('people', 'id')` (`PersonBulkRequest`'s shape, for the same reason it has
+it), and `App\Support\Invitations\BulkResend` decides every outcome. `skipped_out_of_scope` does
+not exist: authorization is the one thing that is **not** a skip (case 5 requires a 403 and a
+`user_scope_denied` row), and expressing `ManagerScope` twice — once as capability logic, once as
+SQL inside a `Rule::exists` closure — would be the two-predicates-that-drift shape D9 exists to
+refuse.
+
+**Task 4 — the predicate is a PHP classifier, not a query closure, and there is only one consumer
+either way.** The plan's implementation step 1 gives `InvitationIssue::resendable(?User): \Closure`
+applied to both the offer and the FormRequest. With the FormRequest holding a bare `exists` (above),
+the SQL consumer disappears, and a per-person outcome needs the individual facts anyway — "which of
+inactive / has-account / no-address / never-invited / revoked" — which a membership test cannot
+give. `BulkResend::outcomeFor()` is therefore the one definition, consumed by the preview and by the
+commit's own re-derivation. D9 still holds, and more directly than a closure written once as
+Eloquent and once as raw SQL would have.
+
+**Task 4 — bulk resend is a RESEND, and Decision D property 4's predicate would have made it a
+wider invite door.** As written it is *"active, not trashed, has an email, has no account, and whom
+the viewer may target"* — it says nothing about the invitation, so a selected person with **no
+invitation row** would be minted one, and a **revoked** one would be revived. Both are refusals on
+the single path, deliberately (Task 3's amendment: `none`/`revoked` are an INVITE, from a different
+endpoint). Worse, a person with no invitation has no superseded row to take a position from, and the
+only other source is `people.position` — where 0 and 5 are absent from
+`InvitationController::OFFERABLE` precisely so an invitation cannot be a route to privilege. The
+bulk path therefore acts on `open`/`expired` only, exactly what `resend()` accepts and exactly what
+the People screen offers, and reports `skipped_no_invitation` / `skipped_revoked` for the rest.
+
+**Task 4 — the digest is a `StatePin`, not the "digest of the resolved id set" Decision D asks for,
+and an id-set pin was watched failing before the state pin was trusted.** An id-set digest answers
+"is this the same selection", which is necessary and not sufficient — it is the exact insufficiency
+`StatePin`'s own docblock records against the rota importer. A person who claims their account
+between the preview and the confirm passes an id-set check, and the operator who approved "47
+emails" sends against a roster that moved. `BulkResend::digest()` reuses `StatePin` unchanged: the
+scope is the operation, the identity slot is empty (a resend has no input beyond the people), and
+each "cell" is a PERSON — the second id slot being the one `StatePin` already documents as *"null
+where the concept does not apply"*, the current projection being the account/invitation facts every
+outcome is derived from, and the proposal being the position the fresh invitation would carry.
+`outcome` and `reason` stay out of it for `RotaFill::digest()`'s stated reason: they are a pure
+function of that state, so a change invisible to the hash writes nothing different.
+
+**Task 4 — `ContactFieldsAreProjectedOnceTest` went red on the first run, and the fix was to read
+LESS rather than to allow-list.** `BulkResend` needed a person's address twice: to decide
+`skipped_no_email`, and to address the mail. The second became
+`$result['invitation']->member_email` — the address the credential is actually bound to, frozen at
+mint by the one writer — which is more correct than re-reading the person and cannot disagree with
+what the link says. The first became `Person::hasEmail()`, a predicate on the model that answers
+yes/no and never hands the value out. **No allow-list entry was added**, and the guard is what
+forced the better shape rather than merely recording a worse one.
+
+**Task 4 — the audit shape is the plan's, not the task brief's, and the arithmetic is why.** One
+`invitation_bulk_resend` summary **plus** one `invitation_resent` per person acted on, carrying
+`person`/`invitation`/`superseded`/`mailed`. The alternative reading — a single summary row with
+counts only — loses which people were resent from the one tamper-evident record there is
+(`invitations` is not hash-chained), for a saving that is smaller than it looks: Decision D's own
+point is that this replaces the single path's **pair** per person, halving the appends rather than
+adding them, and `PersonController::bulk()` already writes `person_bulk` + one `person_bulk_item`
+per person at up to **500**. Fifty is well inside what this codebase has already accepted.
+
+**Task 4 — the plan's rehearsal recipe contradicts Decision D property 1.** It says to set
+`MAIL_MAILER=log` and read five links out of `laravel.log`; the endpoint refuses outright unless
+`config('mail.default') === 'smtp'`, so that recipe exercises the refusal and nothing else. The
+rehearsal was run against a throwaway SQLite database and `php artisan serve` with `MAIL_MAILER=smtp`
+pointed at a disposable local SMTP sink instead — which is strictly better evidence, because
+`Mail::fake()` proves the call and a real transport proves the mailable **renders**. Result: five
+selected, preview `will_send=5`, confirm `sent=5 failed=0`, **five messages delivered to five
+distinct recipients carrying five distinct 64-hex tokens**, one summary audit row plus five
+per-person rows with no `@` anywhere in the trail, and replaying the same digest a second time
+refused with *"Something changed since you previewed this resend"* and **no sixth email**. The
+throwaway database, the sink and the driver were deleted; nothing entered the repository.
+
+**Task 4 — the suite crossed PHP's stock 128M CLI ceiling, and `phpunit.xml` now sets it.** At 1,360
+tests `php artisan test` died with `Allowed memory size exhausted` inside `vendor/`, on a different
+test each run. Measured, not assumed: green at 1,338 under 128M, fatal at 1,360, green at both under
+512M. It is environmental rather than a defect — but `php artisan test` runs PHPUnit in a
+**subprocess**, so `php -d memory_limit=… artisan test` does not reach it, which is its own dead end
+worth an hour. Set in `phpunit.xml`'s `<php><ini>` so CI, the container and every developer share one
+ceiling.
+
+**Task 4 — a Task 2 case was a faker-name lottery, and adding tests is what drew the losing
+ticket.** `InvitationStatusTest::test_the_people_screen_carries_the_claim_state_without_paying_per
+_person` asserted on `$captured[0]`, the first row of a list ordered by `full_name` — which is just
+as likely to be the ADMIN's own person, who has no invitation and correctly reads `none`. It passed
+on three consecutive full runs and then went red once twenty-two new tests moved the sequence of
+names faker draws before it. Fixed to look up the row for a person the case itself invited, and
+proved both ways: with the admin's person renamed to sort first, the old assertion goes red and the
+new one stays green. A case that can fail for a reason it does not name is worse than no case, and
+this one would have cost the next person an hour of hunting a defect that is not there.
+
+**Task 4 — measured, not computed.** Suite left at **1360** PHPUnit tests (1338 before the task;
++22 `InvitationBulkResendTest`), 6244 assertions, 0 skipped. Vitest 187, `npm run build` green,
+`npm run test:e2e` 22 passed. Four guards were watched failing against planted offences before being
+trusted: mail moved inside `BulkResend::commit()`'s transaction (the ordering case went red on
+`Mail::assertNothingSent()`), the digest reduced to an id-set pin (the state case went red), the
+`invitation_bulk_preview` share key removed from `HandleInertiaRequests` (the flash-props case went
+red), and an `Invitation::create(`/`'revoked_at' =>` pair planted in `BulkResend`
+(`InvitationWritersAreSingularTest` named the file and both needles). `RosterNeverMintsCredentials
+Test`, `PersonActiveHasOneWriterTest`, `InstitutionProvenanceTest`, `CompiledCssIsLightOnlyTest` and
+`CalendarIsTheOnlyConverterTest` are green untouched.
+
 *(Follow the P0c/P0d/P1a/P1b/P1c/P1d convention: when a task turns up something
 this plan's enumeration missed — a site not listed, a test that goes red for a reason the plan did
 not predict, a behaviour that differs between SQLite and MySQL — record it here, dated, with what was

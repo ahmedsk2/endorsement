@@ -284,8 +284,12 @@ class InvitationStatusTest extends TestCase
     {
         $admin = $this->admin();
 
+        $invited = null;
+
         for ($i = 0; $i < 5; $i++) {
-            Invitation::issue("small{$i}@example.org", 4, $admin, $this->person());
+            $person = $this->person();
+            $invited ??= $person;
+            Invitation::issue("small{$i}@example.org", 4, $admin, $person);
         }
 
         $this->actingAs($admin)->get('/admin/people')->assertOk();
@@ -314,7 +318,23 @@ class InvitationStatusTest extends TestCase
         });
 
         $this->assertNotEmpty($captured);
-        $this->assertSame('open', $captured[0]['invitation']['state'],
+
+        // The row for a person we KNOW was invited — never `$captured[0]`, which is whoever sorts
+        // first by `full_name` and is just as likely to be the ADMIN's own person, who has no
+        // invitation and correctly reads `none`. That is a faker-name lottery: it passed for three
+        // runs and then failed in P1c-2 Task 4 purely because twenty-two new tests moved the
+        // sequence of names drawn before this one. A case that can go red for a reason it does not
+        // name is worse than no case.
+        $row = null;
+
+        foreach ($captured as $person) {
+            if ((int) $person['id'] === (int) $invited->getKey()) {
+                $row = $person;
+            }
+        }
+
+        $this->assertNotNull($row, 'the invited person is missing from the People screen entirely');
+        $this->assertSame('open', $row['invitation']['state'],
             'the People screen did not receive the claim state at all');
     }
 

@@ -58,6 +58,11 @@ const props = defineProps({
     // answers "current level" for all 60 rows in one query; a full span LIST per row is a much
     // larger shape only the expanded row needs).
     history: { type: Object, default: null },
+    // LV-02's bulk resend cap (P1c-2 Task 4). `App\Support\Invitations\BulkResend::CAP` is the ONE
+    // definition — it is stated beside the button, enforced by `InvitationBulkResendRequest`, and
+    // never written as a literal here, because a screen that promised fifty while the endpoint
+    // accepted forty would refuse exactly the selection it invited.
+    invitation_resend_cap: { type: Number, default: 50 },
     // Inertia's shared error bag. The only key this screen reads from it is `invitation`: the
     // Invite/Resend controls post to `InvitationController`, which is not a `useForm()` here, so
     // its refusals have no form object to land on. Without this the endpoint's "that invitation
@@ -321,9 +326,11 @@ const submitEdit = (person) => {
 // Selection is a Set of person ids, independent of search/edit/history state. "Select all
 // filtered" selects only what the search box currently shows — never every row ever LOADED —
 // because selecting rows the search has hidden from view is exactly how a bulk deactivation
-// surprises someone. Bulk "Resend invitations" is not offered here: it is an ACCOUNT action
-// that needs AC-02's resend endpoint (P1c-2), so the control below is shown, disabled, rather
-// than shipping a button that does nothing.
+// surprises someone.
+//
+// "Resend invitations" is the one action on this bar that does NOT post to /admin/people/bulk:
+// it is an ACCOUNT action and goes to InvitationController's own endpoints, which carry
+// ManagerScope's two-tier gate rather than this route's `people.manage`.
 const page = usePage();
 
 const selected = ref(new Set());
@@ -423,6 +430,69 @@ const bulkReport = computed(() => {
         };
     });
 });
+
+// --- LV-02's bulk resend (AC-02, P1c-2 Task 4) --------------------------------------------
+//
+// PREVIEW, THEN CONFIRM, and the confirm carries the preview's own digest. The server pins that
+// digest to the STATE the plan was computed against — each selected person's account and
+// invitation facts — so a roster that moved between the two clicks is a refusal naming the fix,
+// never a silent send against a plan somebody else invalidated. Re-deriving server-side is
+// necessary and not sufficient; without the pin the operator would approve "47 emails" and send
+// whatever the roster now says.
+//
+// EVERY OUTCOME AND EVERY REASON IS THE SERVER'S. This component decides nothing about who is
+// resendable — it renders `row.outcome` and `row.reason` from `App\Support\Invitations\
+// BulkResend`, which is the same analysis the commit re-runs (D9: one predicate offers and
+// accepts). Names come from the roster props this page already holds, because the preview and the
+// report carry person ids and counts ONLY — no address, and above all no link. A bulk path has
+// nowhere to surface fifty one-time bearer credentials and does not try.
+const resendForm = useForm({ person_ids: [], digest: null });
+
+const bulkPreview = computed(() => page.props.flash?.invitation_bulk_preview ?? null);
+const bulkResendReport = computed(() => page.props.flash?.invitation_bulk_report ?? null);
+
+const personName = (id) => props.people.find((p) => p.id === Number(id))?.full_name ?? `Person #${id}`;
+
+const previewResend = () => {
+    resendForm.clearErrors();
+    resendForm
+        .transform(() => ({ person_ids: Array.from(selected.value) }))
+        .post('/admin/invitations/bulk-resend/preview', { preserveScroll: true });
+};
+
+// The selection is sent again rather than trusted from the preview: the endpoint re-resolves and
+// re-authorizes everything, and the digest is what proves the two agree.
+const confirmResend = (plan) => {
+    resendForm.clearErrors();
+    resendForm
+        .transform(() => ({
+            person_ids: plan.rows.map((row) => row.person_id),
+            digest: plan.digest,
+        }))
+        .post('/admin/invitations/bulk-resend', {
+            preserveScroll: true,
+            onSuccess: () => { selected.value = new Set(); },
+        });
+};
+
+const resendOutcomeLabels = {
+    resend: 'Will be sent a new link',
+    sent: 'New link sent',
+    mail_failed: 'Could not be delivered — try again',
+    skipped_has_account: 'Skipped — already claimed',
+    skipped_no_email: 'Skipped — no email address',
+    skipped_inactive: 'Skipped — not on the active roster',
+    skipped_no_invitation: 'Skipped — never invited',
+    skipped_revoked: 'Skipped — invitation revoked',
+};
+
+const resendRows = (plan) => plan.rows.map((row) => ({
+    id: row.person_id,
+    name: personName(row.person_id),
+    label: resendOutcomeLabels[row.outcome] ?? row.outcome,
+    reason: row.reason,
+    failed: row.outcome === 'mail_failed',
+}));
 </script>
 
 <template>
@@ -579,12 +649,71 @@ const bulkReport = computed(() => {
                         @click="submitExport">
                     Export CSV
                 </button>
-                <button type="button" disabled title="Arrives with the invitation work (AC-02)"
-                        class="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm font-semibold text-muted opacity-60">
-                    Resend invitations
-                </button>
+                <!-- LV-02's bulk resend. The cap is stated BESIDE the button, from the server's own
+                     constant, because a batch silently truncated to fifty is a batch whose
+                     fifty-first person never finds out they were not mailed. -->
+                <span class="flex items-center gap-2">
+                    <button type="button" :disabled="resendForm.processing"
+                            class="min-h-11 rounded-md border border-line bg-panel px-3 py-2 text-sm font-semibold text-ink disabled:opacity-60"
+                            data-testid="bulk-resend-preview"
+                            @click="previewResend">
+                        Resend invitations
+                    </button>
+                    <span class="text-xs text-muted">up to {{ invitation_resend_cap }} at a time</span>
+                </span>
 
                 <p v-if="bulkForm.errors.ids" class="w-full text-xs text-critical">{{ bulkForm.errors.ids }}</p>
+                <p v-if="resendForm.errors.person_ids" class="w-full text-xs text-critical" data-testid="bulk-resend-error">
+                    {{ resendForm.errors.person_ids }}
+                </p>
+                <p v-if="resendForm.errors.digest" class="w-full text-xs text-critical" data-testid="bulk-resend-stale">
+                    {{ resendForm.errors.digest }}
+                </p>
+            </div>
+
+            <!-- The plan, before it is made. Nothing has been written or sent at this point. -->
+            <div v-if="bulkPreview" data-testid="bulk-resend-preview-panel"
+                 class="rounded-md border border-line bg-panel p-4">
+                <p class="channel-tag mb-2">Resend invitations — preview</p>
+                <p class="mb-3 text-sm text-body">
+                    {{ bulkPreview.summary.selected }} selected.
+                    <span class="font-semibold text-ink">{{ bulkPreview.summary.will_send }}</span>
+                    {{ bulkPreview.summary.will_send === 1 ? 'email' : 'emails' }} will be sent;
+                    {{ bulkPreview.summary.skipped }} skipped. Each person's previous link stops
+                    working the moment the new one is created.
+                </p>
+                <ul class="mb-4 space-y-1 text-sm text-body">
+                    <li v-for="row in resendRows(bulkPreview)" :key="row.id">
+                        <span class="readout font-semibold text-ink">{{ row.name }}</span> — {{ row.label }}
+                        <span v-if="row.reason" class="text-xs text-muted">({{ row.reason }})</span>
+                    </li>
+                </ul>
+                <button type="button" :disabled="resendForm.processing || bulkPreview.summary.will_send === 0"
+                        class="min-h-11 rounded-md bg-channel px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                        data-testid="bulk-resend-confirm"
+                        @click="confirmResend(bulkPreview)">
+                    Send {{ bulkPreview.summary.will_send }}
+                    {{ bulkPreview.summary.will_send === 1 ? 'invitation' : 'invitations' }}
+                </button>
+            </div>
+
+            <!-- What actually happened, per person. A partial send is an expected outcome, not an
+                 error: the rows exist either way, so the operator can select just the failures and
+                 run it again. -->
+            <div v-if="bulkResendReport" data-testid="bulk-resend-report"
+                 class="rounded-md border border-line bg-panel p-4">
+                <p class="channel-tag mb-2">Resend invitations — result</p>
+                <p class="mb-3 text-sm text-body">
+                    {{ bulkResendReport.summary.sent }} sent,
+                    {{ bulkResendReport.summary.failed }} could not be delivered,
+                    {{ bulkResendReport.summary.skipped }} skipped.
+                </p>
+                <ul class="space-y-1 text-sm text-body">
+                    <li v-for="row in resendRows(bulkResendReport)" :key="row.id">
+                        <span class="readout font-semibold text-ink">{{ row.name }}</span> —
+                        <span :class="row.failed ? 'text-critical' : ''">{{ row.label }}</span>
+                    </li>
+                </ul>
             </div>
 
             <!-- An Invite or Resend the server refused. The controls are offered only where the

@@ -129,6 +129,22 @@ Route::middleware('auth')
         // in-controller via ManagerScope: a Chief Resident may invite Residents alone.
         Route::post('/invitations', [\App\Http\Controllers\Admin\InvitationController::class, 'store'])
             ->name('invitations.store');
+        // LV-02's bulk resend, preview then confirm. Registered BEFORE the `{invitation}` routes
+        // below so the literal segment can never be read as a bound id — the two shapes do not
+        // actually collide today, and stating the order here is cheaper than the day one of them
+        // grows a segment.
+        //
+        // Throttled because this endpoint causes OUTBOUND MAIL, and left wide open a control that
+        // mails fifty people is a small relay. Six a minute matches `admin.settings.test-email`,
+        // the only other endpoint in this application that sends on a button press, and it means a
+        // mis-click cannot be repeated into a mail storm. The PREVIEW writes nothing and sends
+        // nothing, so it gets a looser bound of its own — an operator adjusting a selection and
+        // re-previewing is ordinary work, not abuse.
+        Route::post('/invitations/bulk-resend/preview', [\App\Http\Controllers\Admin\InvitationController::class, 'bulkPreview'])
+            ->middleware('throttle:20,1')->name('invitations.bulk-preview');
+        Route::post('/invitations/bulk-resend', [\App\Http\Controllers\Admin\InvitationController::class, 'bulkResend'])
+            ->middleware('throttle:6,1')->name('invitations.bulk-resend');
+
         // AC-02's "resendable singly". A POST, not a PATCH: it does not amend the bound row, it
         // mints a NEW credential and revokes that one. The gate is the same in-controller
         // ManagerScope check, applied to the bound invitation's own position.

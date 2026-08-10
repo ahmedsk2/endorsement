@@ -13,6 +13,7 @@ use App\Models\Position;
 use App\Support\Calendar;
 use App\Support\ContactVisibility;
 use App\Support\Csv;
+use App\Support\Invitations\BulkResend;
 use App\Support\Invitations\InvitationStatus;
 use App\Support\LevelAssignment;
 use App\Support\LevelPickers;
@@ -115,6 +116,11 @@ class PersonController extends Controller
             'levels' => LevelPickers::bulkAssignable()->get(['id', 'code', 'name']),
             'contact_visibility' => ContactVisibility::current(),
             'contact_visibilities' => Institution::CONTACT_VISIBILITIES,
+            // LV-02's bulk resend cap (P1c-2 Task 4). ONE definition, offered and enforced from
+            // the same constant: `BulkResend::CAP` is what the button states and what
+            // `InvitationBulkResendRequest` validates against, so the screen can never promise a
+            // batch size the endpoint refuses.
+            'invitation_resend_cap' => BulkResend::CAP,
         ];
     }
 
@@ -212,9 +218,13 @@ class PersonController extends Controller
     }
 
     /**
-     * LV-02's bulk operations: set level, set status (active), export. Bulk "resend invitations"
-     * is P1c-2 — it is an ACCOUNT action needing AC-02's resend endpoint, which does not exist
-     * yet, so the screen names it disabled rather than shipping a dead button.
+     * LV-02's bulk operations: set level, set status (active), export.
+     *
+     * Bulk "resend invitations" is deliberately NOT one of them. It is an ACCOUNT action, so it
+     * posts to `InvitationController`'s own bulk endpoints under `ManagerScope`'s two-tier gate
+     * (P1c-2 Task 4) — never here, where the gate is `cap:people.manage`. The selection comes from
+     * this screen; the authorization does not, and routing a credential operation through the
+     * roster's capability would make `people.manage` a path to minting bearer links.
      *
      * THE ORDER IS THE FEATURE (findings 12 and 13):
      *

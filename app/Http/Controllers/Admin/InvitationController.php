@@ -3,14 +3,17 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Admin\InvitationBulkResendRequest;
 use App\Mail\InvitationMail;
 use App\Models\AuditLog;
 use App\Models\Invitation;
 use App\Models\PendingRegistration;
 use App\Models\Person;
 use App\Models\User;
+use App\Support\Invitations\BulkResend;
 use App\Support\Invitations\InvitationIssue;
 use App\Support\Invitations\InvitationStatus;
+use App\Support\Invitations\StaleResendPlanException;
 use App\Support\ManagerScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -160,6 +163,149 @@ class InvitationController extends Controller
         $this->auditIssue($request, $result, $person, self::RESENT);
 
         return $this->deliver($result, $person);
+    }
+
+    /**
+     * LV-02's bulk resend, PREVIEWED. Writes nothing — not a row, not a revocation, not an audit
+     * entry — and the flash shape is `RosterImport`'s (`back()->with(...)`), so the screen never
+     * holds a stale plan across a navigation.
+     *
+     * The plan carries its own `digest`, which the confirm posts back. That is the whole
+     * preview-then-confirm contract in one field.
+     *
+     * THE AUTHORIZATION PASS RUNS HERE TOO, over the same set, for the same reason it runs on the
+     * confirm: everything below it discloses something about specific people — whether they have
+     * claimed, whether they were ever invited — and a viewer outside their tier learns none of it.
+     */
+    public function bulkPreview(InvitationBulkResendRequest $request): RedirectResponse
+    {
+        $ids = array_values(array_unique(array_map('intval', $request->validated('person_ids'))));
+
+        foreach (BulkResend::positionsToAuthorize($ids) as $position) {
+            ManagerScope::assertMayTarget($request, $position);
+        }
+
+        return back()->with('invitation_bulk_preview', BulkResend::plan($ids));
+    }
+
+    /**
+     * The confirm. **COMMIT, THEN MAIL, THEN AUDIT** — stated here because the ordering is the
+     * whole feature and each step is where it is for a named reason.
+     *
+     *  1. **The WHOLE selection is authorized before any mutation**, over every LIVE invitation
+     *     position it will touch. `AccessControlController::updateRoles()` is the model: authorize
+     *     the entire matrix, then mutate. It runs BEFORE the transaction because
+     *     `ManagerScope::assertMayTarget()` audits its refusal and then `abort(403)`s — inside a
+     *     transaction that audit row would unwind with the abort and the attempt would vanish from
+     *     the trail (P1c-1 finding 12).
+     *  2. **One transaction** for the row work (`BulkResend::commit()`), pinned to the plan the
+     *     operator saw and re-derived inside itself rather than trusted from the request.
+     *  3. **Then the mail** — after `commit()` has returned, which IS the commit, so the ordering is
+     *     structural rather than a comment somebody has to keep honouring. **Mail cannot be rolled
+     *     back**: had a send happened inside a transaction that then failed, its recipient would
+     *     hold a live link to an invitation that does not exist while this screen said the whole
+     *     thing was refused, and no test in this process could ever see it. Each send is wrapped
+     *     individually, because a partial send is the EXPECTED outcome of talking to an SMTP relay
+     *     about fifty addresses, not an error state — the operator is shown exactly who did not get
+     *     one so they can resend just those.
+     *  4. **Then the trail**, after the sends, so the summary can carry the counts that actually
+     *     happened. `AuditLog::record()` opens its own transaction and takes `lockForUpdate` on the
+     *     chain tail, so appending from inside step 2 would hold that lock for the operation's whole
+     *     duration for no benefit (P1c-1's post-merge finding 6 — a false ops alert).
+     *
+     * ONE SUMMARY ROW PLUS ONE ROW PER PERSON ACTED ON — never the single path's PAIR
+     * (`invitation_issued` + `invitation_revoked`), which on a cohort of fifty would be a hundred
+     * chain appends carrying the same information at twice the contention. Ids and counts only: no
+     * name, no address, and no link.
+     */
+    public function bulkResend(InvitationBulkResendRequest $request): RedirectResponse
+    {
+        $ids = array_values(array_unique(array_map('intval', $request->validated('person_ids'))));
+
+        foreach (BulkResend::positionsToAuthorize($ids) as $position) {
+            ManagerScope::assertMayTarget($request, $position);
+        }
+
+        try {
+            ['report' => $report, 'deliveries' => $deliveries] = BulkResend::commit(
+                $request,
+                $ids,
+                (string) $request->validated('digest'),
+            );
+        } catch (StaleResendPlanException $e) {
+            throw ValidationException::withMessages(['digest' => $e->getMessage()]);
+        }
+
+        // --- the rows are safe now; only now does anything leave the building.
+        $report = BulkResend::withMailOutcomes($report, $this->mailAll($deliveries));
+
+        $actorId = $request->user()?->getKey();
+        $ip = $request->ip();
+
+        AuditLog::record(
+            'invitation_bulk_resend',
+            'selected='.$report['summary']['selected']
+                .';n='.$report['summary']['resent']
+                .';sent='.$report['summary']['sent']
+                .';failed='.$report['summary']['failed']
+                .';skipped='.$report['summary']['skipped'],
+            $actorId,
+            $ip,
+        );
+
+        foreach ($report['rows'] as $row) {
+            if (! in_array($row['outcome'], [BulkResend::SENT, BulkResend::MAIL_FAILED], true)) {
+                continue;
+            }
+
+            AuditLog::record(
+                'invitation_resent',
+                'person='.$row['person_id']
+                    .';invitation='.$row['invitation_id']
+                    .';superseded='.($row['superseded'] === [] ? 'none' : implode(',', $row['superseded']))
+                    .';mailed='.($row['outcome'] === BulkResend::SENT ? 'yes' : 'no'),
+                $actorId,
+                $ip,
+            );
+        }
+
+        return back()->with('invitation_bulk_report', $report);
+    }
+
+    /**
+     * Send one email per recipient, each in its own `try`, and report the failures rather than
+     * swallowing them.
+     *
+     * THE EXCEPTION MESSAGE IS NEVER LOGGED. SMTP transport errors routinely quote the envelope
+     * recipient back ("... 550 5.1.1 <someone@hospital.example>"), and staff personal data is
+     * covered by the same rule as PHI — the person id, the invitation id and the exception CLASS
+     * are what a diagnosis actually needs, and SMTP itself is proved by Settings → Send test email.
+     *
+     * @param  list<array{person_id:int, invitation_id:int, to:string, link:string, expires_at:mixed}>  $deliveries
+     * @return array<int, string> person id => `BulkResend::SENT` or `BulkResend::MAIL_FAILED`
+     */
+    private function mailAll(array $deliveries): array
+    {
+        $outcomes = [];
+
+        foreach ($deliveries as $delivery) {
+            try {
+                Mail::to($delivery['to'])
+                    ->send(new InvitationMail($delivery['link'], $delivery['expires_at']));
+
+                $outcomes[$delivery['person_id']] = BulkResend::SENT;
+            } catch (\Throwable $e) {
+                Log::warning('A bulk invitation email could not be delivered.', [
+                    'person' => $delivery['person_id'],
+                    'invitation' => $delivery['invitation_id'],
+                    'exception' => $e::class,
+                ]);
+
+                $outcomes[$delivery['person_id']] = BulkResend::MAIL_FAILED;
+            }
+        }
+
+        return $outcomes;
     }
 
     /**

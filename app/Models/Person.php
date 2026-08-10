@@ -300,6 +300,24 @@ class Person extends Model
     }
 
     /**
+     * Is there an address a credential could actually be delivered to?
+     *
+     * A PREDICATE, not a projection — it answers yes/no and never hands the value out, which is
+     * why it belongs on the model rather than in the caller that needs the answer. P1c-2 Task 4's
+     * bulk resend has to report "skipped — no email address" per person, and writing
+     * `Person::normalizeEmail($p->email) !== null` at the call site would make that caller a
+     * second reader of a contact field for `ContactFieldsAreProjectedOnceTest` to allow-list —
+     * for a question that never wanted the address in the first place.
+     *
+     * Blank counts as absent, because `invitations.member_email` is NOT NULL and a blank row would
+     * be a credential addressed to nobody that still redeems.
+     */
+    public function hasEmail(): bool
+    {
+        return self::normalizeEmail($this->email) !== null;
+    }
+
+    /**
      * Find the person an imported or invited address already belongs to. Soft-deleted people are
      * INCLUDED: they still occupy the unique index, and re-inviting someone who left is a
      * reactivation, never a second human. Returns null for a null/blank address — a missing

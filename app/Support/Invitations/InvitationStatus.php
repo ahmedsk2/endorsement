@@ -197,10 +197,17 @@ final class InvitationStatus
      * rule (Decision B) — and it is the normal path rather than a tie-break, because a resend
      * rotates the token and leaves a superseded row behind every single time.
      *
+     * PUBLIC since Task 4, with a second consumer: `BulkResend::analyse()` decides each selected
+     * person's outcome from the same "latest invitation" this screen renders. Sharing the fold
+     * rather than writing a second one is the point — a bulk path that disagreed with the People
+     * screen about which row is current would offer a Resend on one state and act on another (D9),
+     * and the disagreement would only ever show up on a person with several superseded rows, which
+     * is every person a resend has already touched.
+     *
      * @param  list<int>  $ids
      * @return array<int, Invitation>
      */
-    private static function latestPerPerson(array $ids): array
+    public static function latestPerPerson(array $ids): array
     {
         if ($ids === []) {
             return [];

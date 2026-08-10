@@ -51,6 +51,8 @@ final class InvitationIssue
      * resend path. It is never read from a resend request: a resend that could re-position would be
      * a promotion with none of `users.position`'s gate and no trace of having happened.
      *
+     * It is NOT, however, the position this act is authorized against — see the assertion below.
+     *
      * @return array{invitation: Invitation, link: string, superseded: list<int>}
      */
     public static function issue(Request $request, Person $person, int $position): array
@@ -63,6 +65,37 @@ final class InvitationIssue
             // a blank row would be a credential addressed to nobody that still redeems.
             throw new InvalidArgumentException('An invitation needs an address to be delivered to.');
         }
+
+        // THE BOUND PERSON'S POSITION IS THE ONE THIS IS AUTHORIZED AGAINST — not the invitation's.
+        //
+        // Every endpoint above this used to authorize `invitations.position` and nothing else, and
+        // that is the wrong number. Redemption takes `InvitationAcceptController`'s
+        // `person_id !== null` branch for every row this system mints, and that branch does not
+        // write `position` — deliberately: `people.position` has ONE writer (`PositionChange`), and
+        // an invitee must not be able to re-rank the roster row they are claiming. So the account
+        // that comes out resolves its capabilities from the PERSON (`$user->position` is a
+        // read-through accessor onto `people`, and `AccessControl::resolve()` joins
+        // `role_capabilities` on it) while the check that approved it read a column nothing
+        // downstream consults.
+        //
+        // The two disagree without anybody misusing anything: an administrator invites a new joiner
+        // at 4, later corrects that roster row to 0 on the People screen — a correction that must
+        // not reach into `invitations`, and does not — and the live invitation still reads 4. A
+        // Chief Resident may target 4, so resend, bulk resend and (through `Person::matchByEmail()`)
+        // invite would all have handed them a link that mints an Administrator.
+        //
+        // ASSERTED HERE, AT THE ONE WRITER, rather than at the three endpoints: three copies of an
+        // authorization rule that drift is what `ManagerScope`'s own docblock records having cost
+        // once already. On `InvitationController::store()`'s create branch the person is opened at
+        // exactly `$position`, so this is a no-op there — which is what lets one check cover all
+        // three doors without narrowing any of them. `$position` itself stays authorized by the
+        // callers (a request-supplied one on invite, the row's own on resend and bulk).
+        //
+        // BEFORE THE TRANSACTION, like the supersede loop below and for the same reason:
+        // `assertMayTarget()` audits its refusal and then aborts, and inside a transaction that
+        // `user_scope_denied` row would unwind with the abort — the attempt would vanish from the
+        // trail (P1c-1 finding 12).
+        ManagerScope::assertMayTarget($request, (int) $person->position);
 
         $superseded = self::liveFor($person, $email);
 

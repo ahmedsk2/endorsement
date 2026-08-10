@@ -46,11 +46,22 @@ namespace App\Support\Rota;
  * because those cells really are occupied and somebody has to clear them. So they contribute
  * nothing to `by_level_unit`, `assigned_days`, `uncovered_days`, `people_with_a_gap`,
  * `unassigned_people` or the vacation weeks, and every period-cell they still occupy is counted in
- * `stale_assignments` — an administrator's to-do, not a coverage figure.
+ * `stale_people` — an administrator's to-do, not a coverage figure.
+ *
+ * `stale_people`, NOT `stale_assignments` (adversarial review, finding 5). The fold below counts
+ * CELLS, and within one period a cell is exactly one person — but the field was called
+ * `stale_assignments` and rendered as "N assignment(s)", and "assignment" already means a
+ * `master_rota_assignments` ROW everywhere else here (`PeriodController::destroy()` refuses a year
+ * while N "master rota assignment(s)" reference it, and that N is rows). One departed person
+ * holding a three-way split in one block was one cell and three assignments, so the number on
+ * screen was wrong for its own label. The COUNT is the figure worth having and it stayed: it is a
+ * headcount beside two other headcounts, and it is the administrator's unit of work, because
+ * `MasterRota.vue`'s Clear control empties a whole cell, splits and all — a span count would
+ * over-report the job by the number of splits. Only the name moved.
  *
  * THE ORDERING TRAP: this must be handed the FULL grid, stale rows included. A caller that filters
- * rows for display first and summarises afterwards loses `stale_assignments` entirely, silently,
- * and the summary still looks plausible.
+ * rows for display first and summarises afterwards loses `stale_people` entirely, silently, and the
+ * summary still looks plausible.
  *
  * IT NAMES NOBODY. Ids and counts only — no name, no email, no phone, not even a person projection.
  * `rota.view` is seeded for every authenticated position, so both surfaces rendering this are read
@@ -83,7 +94,7 @@ final class AvailabilitySummary
      *     people_with_a_gap: int,
      *     unassigned_people: int,
      *     weeks: list<array{starts_on: string, ends_on: string, clipped_starts_on: string, clipped_ends_on: string, on_vacation: int, person_ids: list<int>}>,
-     *     stale_assignments: int,
+     *     stale_people: int,
      * }> keyed by period id, in the grid's own period order
      */
     public static function forGrid(array $grid): array
@@ -111,7 +122,7 @@ final class AvailabilitySummary
         $uncoveredDays = 0;
         $peopleWithAGap = 0;
         $unassignedPeople = 0;
-        $staleAssignments = 0;
+        $stalePeople = 0;
         $weeks = self::weeksOf($period);
 
         foreach ($rows as $row) {
@@ -125,9 +136,14 @@ final class AvailabilitySummary
 
             // Decision D — a departed person's occupied cells are their own number, and nothing
             // else. Everything below this line is coverage, and they are not part of it.
+            //
+            // ONE PER PERSON, however many spans they hold here: this is a headcount of people to
+            // clear, not a tally of rows (finding 5). The `!== []` is what makes it a count of
+            // OCCUPIED cells — a departed person whose cell in this period is already empty has
+            // nothing left for anybody to do about.
             if ($row['stale'] ?? false) {
                 if ($spans !== []) {
-                    $staleAssignments++;
+                    $stalePeople++;
                 }
 
                 continue;
@@ -198,7 +214,7 @@ final class AvailabilitySummary
             'people_with_a_gap' => $peopleWithAGap,
             'unassigned_people' => $unassignedPeople,
             'weeks' => $weeks,
-            'stale_assignments' => $staleAssignments,
+            'stale_people' => $stalePeople,
         ];
     }
 

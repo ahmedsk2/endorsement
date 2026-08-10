@@ -76,7 +76,7 @@ class RotaController extends Controller
 
         // THE ORDERING TRAP, AND IT IS EASY TO GET BACKWARDS (Decision D). The summary is computed
         // from the FULL grid — stale rows included — and only THEN are the rows filtered for
-        // display. Filter first and `stale_assignments` silently becomes zero while the rest of the
+        // display. Filter first and `stale_people` silently becomes zero while the rest of the
         // summary still looks plausible; worse, `?q=` would narrow the department's availability
         // figures along with the list, making the numbers depend on what the reader typed into a
         // search box. These three statements are in this order on purpose. Do not reorder them.

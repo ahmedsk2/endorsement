@@ -112,7 +112,7 @@ const summary = {
             { starts_on: '2026-07-01', ends_on: '2026-07-07', clipped_starts_on: '2026-07-01', clipped_ends_on: '2026-07-07', on_vacation: 1, person_ids: [6] },
             { starts_on: '2026-07-08', ends_on: '2026-07-14', clipped_starts_on: '2026-07-08', clipped_ends_on: '2026-07-14', on_vacation: 1, person_ids: [6] },
         ],
-        stale_assignments: 2,
+        stale_people: 2,
     },
     102: {
         by_level_unit: { 1: { 10: { people: 1, days: 13 }, 11: { people: 1, days: 11 } }, 2: { 11: { people: 1, days: 28 } } },
@@ -123,7 +123,7 @@ const summary = {
         weeks: [
             { starts_on: '2026-07-29', ends_on: '2026-08-04', clipped_starts_on: '2026-07-29', clipped_ends_on: '2026-08-04', on_vacation: 0, person_ids: [] },
         ],
-        stale_assignments: 0,
+        stale_people: 0,
     },
 };
 

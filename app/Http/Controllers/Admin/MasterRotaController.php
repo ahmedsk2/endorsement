@@ -70,7 +70,7 @@ class MasterRotaController extends Controller
             //
             // The FULL grid, stale rows included — the editor never filters its rows, so the
             // ordering trap Decision D describes cannot bite here, but the argument is the same
-            // one `RotaController` spells out and the same reason `stale_assignments` exists.
+            // one `RotaController` spells out and the same reason `stale_people` exists.
             'summary' => $grid === null ? null : AvailabilitySummary::forGrid($grid),
         ]);
     }

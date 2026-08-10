@@ -254,7 +254,7 @@ class RotaReadViewTest extends TestCase
         $searched = $this->propsFrom($this->actingAs($resident)->get('/rota?year=2026-2027&q=Departed'));
         $this->assertSame([], $searched['grid']['rows']);
 
-        $this->assertGreaterThanOrEqual(1, $props['summary'][$period->getKey()]['stale_assignments'],
+        $this->assertGreaterThanOrEqual(1, $props['summary'][$period->getKey()]['stale_people'],
             'the departed person\'s occupied cell vanished from the summary as well as the list');
     }
 

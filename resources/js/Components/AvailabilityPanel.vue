@@ -235,12 +235,18 @@ const weekOf = (period, index, week) => {
                       zeroed — counting them would overstate availability, and hiding them would
                       leave nobody a reason to clear them. On the EDITOR this number is a to-do
                       with a control beside it; on the read view it is a fact about the year.
+
+                      PEOPLE, not assignments (finding 5). The server counts period-cells, and in
+                      one period a cell is one person; this used to say "N assignment(s)" over that
+                      count, which made one departed person's three-way split read as three. It is
+                      also the number of Clear controls somebody has to press, which a span count
+                      would overstate.
                     -->
-                    <p v-if="summaryFor(period.id).stale_assignments > 0"
+                    <p v-if="summaryFor(period.id).stale_people > 0"
                        class="mt-3 text-xs text-caution"
                        :data-testid="`summary-stale-${period.id}`">
-                        <span class="readout">{{ summaryFor(period.id).stale_assignments }}</span>
-                        assignment(s) here belong to someone no longer on the roster.
+                        <span class="readout">{{ summaryFor(period.id).stale_people }}</span>
+                        person(s) no longer on the roster still hold assignments in this period.
                     </p>
                 </template>
             </article>

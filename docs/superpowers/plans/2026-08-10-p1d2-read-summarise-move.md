@@ -356,7 +356,7 @@ Per **period** (the outer key is `period_id`):
 | `people_with_a_gap` | count of people whose cell has `uncovered_days > 0` | 26 uncovered days is one person's whole block **or** 26 people missing a day each. Those are different facts and reporting only the sum rounds the difference away — which is precisely what §35's *"match reality"* forbids. |
 | `unassigned_people` | count of people with **no** span in the period at all | distinct from a gap: nothing was planned, rather than something was planned incompletely |
 | `weeks` | `[{starts_on, ends_on, clipped_starts_on, clipped_ends_on, on_vacation: n, person_ids: [...]}]` | MR-07's *"including who is on vacation each week"*. Read straight from the period's `weeks` prop. |
-| `stale_assignments` | count of period-cells held by a person who is off the active roster | see Decision D |
+| `stale_people` | count of period-cells held by a person who is off the active roster — one per PERSON, however many spans they hold there | see Decision D. Named `stale_assignments` until the adversarial review: it counted cells and was rendered as "N assignment(s)", and "assignment" already means a `master_rota_assignments` row elsewhere in this codebase. |
 
 **How a week is decided, without any date arithmetic.** A person is on vacation in a week when
 their vacation's `[starts_on, ends_on]` intersects the week's `[clipped_starts_on,
@@ -448,18 +448,18 @@ that surfaces them.
 matters for §35. Counting a departed person's PICU block as coverage **overstates availability**,
 which is the exact failure *"availability summaries match reality"* names. Zeroing them silently
 would be equally dishonest in the other direction — those cells really are occupied, and something
-has to be done about them. So `stale_assignments` is its own per-period count, and a non-zero value
+has to be done about them. So `stale_people` is its own per-period count, and a non-zero value
 is an administrator's to-do: open the editor, clear those cells.
 
 **The ordering trap, stated because it is easy to get backwards.**
 `AvailabilitySummary::forGrid()` must be handed the **full** grid, including stale rows — it is
-what computes `stale_assignments`. The read controller filters `rows` for display **after** calling
+what computes `stale_people`. The read controller filters `rows` for display **after** calling
 it. Filtering first loses the number entirely, silently, and the summary would still look
-plausible. Task 4's test asserts a non-zero `stale_assignments` on a year that has one, from the
+plausible. Task 4's test asserts a non-zero `stale_people` on a year that has one, from the
 read view's own props.
 
 The editor's summary (Task 5) uses the identical computation and so reports the identical
-`stale_assignments`, which is what makes Task 5's parity assertion meaningful rather than tautological.
+`stale_people`, which is what makes Task 5's parity assertion meaningful rather than tautological.
 
 ---
 
@@ -1261,7 +1261,7 @@ all. That is the point of a pure function, and it makes every case readable:
    intersecting weeks 2 and 3 of a five-week period appears in exactly those two, by
    `clipped_*` bounds, with the person's id listed.
 7. `test_a_stale_row_is_excluded_from_coverage_and_counted_separately` — Decision D. Their days do
-   **not** appear in `by_level_unit` or `assigned_days`; `stale_assignments` is the count of their
+   **not** appear in `by_level_unit` or `assigned_days`; `stale_people` is the count of their
    occupied cells.
 8. `test_it_issues_no_query` — wrap the call in `DB::enableQueryLog()` / `assertCount(0,
    DB::getQueryLog())`. This is the test that stops someone "just fetching the unit name" later and
@@ -1397,7 +1397,7 @@ at minimum. If case 3 passes on first run, the institution fixture is not actual
    `MasterRotaController::index()` does, builds the grid, calls
    `AvailabilitySummary::forGrid($grid)` **with the full grid**, then filters `$grid['rows']` for
    display: drop `stale` rows (Decision D), apply the `?q=` name search and `?level=` filter
-   server-side. **In that order** — the summary first, the filter after, or `stale_assignments`
+   server-side. **In that order** — the summary first, the filter after, or `stale_people`
    silently becomes zero and the search narrows the summary along with the list, which would make
    the department's availability figures depend on what the reader typed in a search box.
 
@@ -1624,7 +1624,7 @@ git commit -am "test: a resident really can read the rota, and really cannot cha
       with `contact_visibility = members` and an administrator — and `RotaGrid` no longer takes a
       viewer at all.
 - [x] A deactivated-but-assigned person is absent from the read view, absent from the coverage
-      numbers, and present in `stale_assignments`.
+      numbers, and present in `stale_people`.
 - [x] The read view carries its own **measured** query budget, taken on a populated year with ten
       stale people.
 - [x] Search and filter narrow the rows and leave the summary untouched.

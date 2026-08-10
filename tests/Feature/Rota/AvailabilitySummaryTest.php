@@ -201,7 +201,47 @@ class AvailabilitySummaryTest extends TestCase
 
         // Zeroing them silently would be dishonest the other way — those cells really are
         // occupied, and clearing them is an administrator's to-do.
-        $this->assertSame(1, $summary['stale_assignments']);
+        $this->assertSame(1, $summary['stale_people']);
+    }
+
+    /**
+     * THE FIGURE IS PEOPLE, AND THE NAME NOW SAYS SO (adversarial review, finding 5).
+     *
+     * It was called `stale_assignments` and rendered as "N assignment(s) here belong to someone no
+     * longer on the roster", while the fold counted period-CELLS: one person holding a split with
+     * three spans in one block was one cell and three assignments, so the sentence on screen was
+     * wrong about its own number. "Assignment" already means a `master_rota_assignments` ROW
+     * everywhere else in this codebase — `PeriodController::destroy()` refuses a year while N
+     * "master rota assignment(s)" reference it, and that N is rows — so the old name was not merely
+     * vague, it collided with a term in use.
+     *
+     * PEOPLE IS THE FIGURE WORTH HAVING, so the count stayed and the name moved. It is a headcount
+     * beside two other headcounts (`people_with_a_gap`, `unassigned_people`); it is the
+     * administrator's unit of work, because `MasterRota.vue`'s Clear control empties a whole cell,
+     * splits and all, so a span count would over-report the job by the number of splits; and within
+     * ONE period a cell IS a person, which is what makes the rename exact rather than approximate.
+     *
+     * This case is the one that fails if the two ever disagree again: one departed person, one
+     * period, THREE spans.
+     */
+    public function test_a_departed_person_with_a_split_is_one_person_not_three_assignments(): void
+    {
+        $grid = $this->grid([
+            $this->row(102, self::R1, [self::PERIOD => $this->cell([
+                $this->span(self::PICU, '2026-07-01', '2026-07-09', 9),
+                $this->span(self::NICU, '2026-07-10', '2026-07-19', 10),
+                $this->span(self::PICU, '2026-07-20', '2026-07-28', 9),
+            ], 0, self::R1)], stale: true),
+        ]);
+
+        $summary = AvailabilitySummary::forGrid($grid)[self::PERIOD];
+
+        $this->assertSame(1, $summary['stale_people'],
+            'three spans held by ONE departed person in ONE period were reported as three — the '
+            .'number and the sentence beside it are about different things again');
+        $this->assertArrayNotHasKey('stale_assignments', $summary,
+            'the old key is still shipped, so a consumer can still render a cell count under a '
+            .'label that says assignments');
     }
 
     /**

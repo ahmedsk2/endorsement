@@ -111,7 +111,7 @@ const summary = {
             { starts_on: '2026-06-28', ends_on: '2026-07-04', clipped_starts_on: '2026-07-01', clipped_ends_on: '2026-07-04', on_vacation: 2, person_ids: [5, 6] },
             { starts_on: '2026-07-05', ends_on: '2026-07-11', clipped_starts_on: '2026-07-05', clipped_ends_on: '2026-07-11', on_vacation: 0, person_ids: [] },
         ],
-        stale_assignments: 3,
+        stale_people: 3,
     },
     102: {
         by_level_unit: { 2: { 10: { people: 1, days: 28 }, 11: { people: 1, days: 28 } } },
@@ -122,7 +122,7 @@ const summary = {
         weeks: [
             { starts_on: '2026-07-29', ends_on: '2026-08-04', clipped_starts_on: '2026-07-29', clipped_ends_on: '2026-08-04', on_vacation: 0, person_ids: [] },
         ],
-        stale_assignments: 0,
+        stale_people: 0,
     },
 };
 
@@ -228,6 +228,23 @@ describe('AvailabilityPanel — MR-07, one component, two surfaces', () => {
             expect(panel.get('[data-testid="summary-stale-101"]').text()).toContain('3');
             expect(panel.findAll('[data-testid="summary-stale-102"]')).toHaveLength(0);
         }
+    });
+
+    /**
+     * THE NUMBER AND THE SENTENCE BESIDE IT ARE ABOUT THE SAME THING (adversarial review,
+     * finding 5). `AvailabilitySummary` counts period-CELLS, and within one period a cell is one
+     * person; the panel used to render that count as "N assignment(s)", which is a `master_rota_
+     * assignments` ROW everywhere else in this codebase. One departed person holding a split with
+     * three spans was one cell and three assignments, so the figure was wrong for its own label.
+     * The count is the useful one — it is the number of Clear controls an administrator has to
+     * press — so the wording moved to meet it.
+     */
+    it('describes the stale figure as people, which is what the server counts', () => {
+        const text = panelOf(mountRead()).get('[data-testid="summary-stale-101"]').text();
+
+        expect(text).toContain('3');
+        expect(text).toMatch(/person|people/i);
+        expect(text).not.toMatch(/assignment\(s\)/i);
     });
 
     /**

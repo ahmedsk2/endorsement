@@ -114,7 +114,7 @@ class AvailabilitySummaryParityTest extends TestCase
         $this->assertGreaterThan(0, $first['assigned_days']);
         $this->assertGreaterThan(0, $first['uncovered_days']);
         $this->assertGreaterThan(0, $first['people_with_a_gap']);
-        $this->assertGreaterThan(0, $first['stale_assignments']);
+        $this->assertGreaterThan(0, $first['stale_people']);
         $this->assertGreaterThan(0, $last['unassigned_people']);
         $this->assertGreaterThan(0, array_sum(array_column($first['weeks'], 'on_vacation')));
     }

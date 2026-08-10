@@ -224,10 +224,10 @@ final class RotaGrid
     }
 
     /**
-     * One cell: the spans covering it, the days NONE of them cover (owner decision 3 — a gap is
-     * rendered and counted, never silently absent), the level held at the period's OWN start
-     * (which may differ from the row's group level on a mid-year promotion), and any vacation
-     * intersecting the period.
+     * One cell: the spans covering it (each carrying its OWN day count), the days NONE of them
+     * cover (owner decision 3 — a gap is rendered and counted, never silently absent), the level
+     * held at the period's OWN start (which may differ from the row's group level on a mid-year
+     * promotion), and any vacation intersecting the period.
      *
      * @param  list<MasterRotaAssignment>  $assignments
      * @param  list<Vacation>  $vacations
@@ -242,7 +242,9 @@ final class RotaGrid
     ): array {
         $periodStart = $period->starts_on->format(Calendar::YMD);
         $periodEnd = $period->ends_on->format(Calendar::YMD);
-        $periodDays = $period->starts_on->diffInDays($period->ends_on) + 1;
+        // (int) — Carbon 3's diffInDays() returns a float, and a whole number of days that reaches
+        // the client as 28.0 is one somebody eventually compares against 28 and loses.
+        $periodDays = (int) $period->starts_on->diffInDays($period->ends_on) + 1;
 
         $coveredDays = 0;
         $spansOut = [];
@@ -250,7 +252,8 @@ final class RotaGrid
         foreach ($assignments as $assignment) {
             $from = $assignment->starts_on->format(Calendar::YMD);
             $to = $assignment->ends_on->format(Calendar::YMD);
-            $coveredDays += $assignment->starts_on->diffInDays($assignment->ends_on) + 1;
+            $days = (int) $assignment->starts_on->diffInDays($assignment->ends_on) + 1;
+            $coveredDays += $days;
 
             /** @var Unit|null $unit */
             $unit = $unitsById->get((int) $assignment->unit_id);
@@ -264,6 +267,10 @@ final class RotaGrid
                 'unit_code' => $unit?->code,
                 'starts_on' => $from,
                 'ends_on' => $to,
+                // Counted HERE, where the Carbon objects are already in hand for `uncovered_days`,
+                // so `AvailabilitySummary` can fold this grid into MR-07's figures while handling
+                // no date at all (P1d-2 Decision B). One fewer place a converter could appear.
+                'days' => $days,
                 'starts_label' => Calendar::label($assignment->starts_on),
                 'ends_label' => Calendar::label($assignment->ends_on),
             ];

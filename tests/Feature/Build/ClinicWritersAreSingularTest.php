@@ -211,6 +211,17 @@ class ClinicWritersAreSingularTest extends TestCase
         // which is another table's column too and so cannot be needled by name.
         '$clinic->update(',
         '$attendee->update(',
+        // Property-assign-then-save() ON `unit_id`, added 2026-08-12 with design §14 item 23's fix.
+        // Its sibling in `RotaWritersAreSingularTest` states the reasoning; the same hole was open
+        // here, on the same column, for the same reason — and this guard's own docblock named
+        // `UnitMerge` as the file a real `clinics` writer would most likely appear in. It re-points
+        // `clinics.unit_id` now, through `ClinicWriter::repointUnit()`, so the shape a future
+        // shortcut would reach for is exactly this one. TRAILING SPACE load-bearing: without it,
+        // this matches `(int) $clinic->unit_id`, which `ClinicRoster` and `ClinicController` both
+        // read legitimately (measured: 2 such reads, zero writes).
+        // MEASURED before adding: ZERO matches anywhere, in app/, database/ or routes/ — the
+        // writer sets the column through `fill()`. No allow-list entry bought. Proved by planting.
+        '$clinic->unit_id = ',
     ];
 
     public function test_only_the_clinic_writer_writes_the_clinic_tables(): void

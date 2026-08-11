@@ -135,6 +135,19 @@ class RotaWritersAreSingularTest extends TestCase
         // table's column too and so cannot be needled by name.
         '$assignment->update(',
         '$vacation->update(',
+        // Property-assign-then-save() ON `unit_id`, added 2026-08-12 with design §14 item 23's fix.
+        // This is the shape the fix itself uses (inside the allow-listed writer), and until it
+        // existed the guard's reach over `unit_id` was the variable-qualified `update(` needle
+        // alone — which cannot see `$assignment->unit_id = $x; $assignment->save();` at all. That is
+        // precisely how a merge would re-point a span if it stopped calling
+        // `RotaAssignment::repointUnit()`. The TRAILING SPACE is load-bearing, as it is for
+        // `->attendee_mode = ` next door: without it this also matches
+        // `(int) $assignment->unit_id`, a read `RotaGrid` and `RotaFill` both perform legitimately
+        // (measured: 3 such reads across those two files, zero of them writes).
+        // MEASURED before adding: one match, `app/Support/Rota/RotaAssignment.php`, which is the
+        // control. No allow-list entry bought. Proved by planting a file under `app/` that
+        // re-pointed a span this way — named, red, reverted.
+        '$assignment->unit_id = ',
     ];
 
     public function test_only_the_rota_writers_write_the_rota_tables(): void

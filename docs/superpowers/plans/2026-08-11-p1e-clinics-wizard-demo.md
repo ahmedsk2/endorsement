@@ -1557,6 +1557,125 @@ gains item 23.
     REQUIRED/REVIEW split, the `later` shape, `ReferenceSeeder` seeding levels and units but not
     periods, and WARD as the sole seeded clinic owner all check out as described.
 
+### 2026-08-11 — Task 10
+
+1. **Baseline re-measured clean before touching anything: `php artisan test` → 1557 passed, 0
+   failed**, matching Task 9's recorded number exactly. `npm test` → 216, `npm run build` → green.
+   Task 10 took PHPUnit to **1567** (10 `DepartmentSetupScreenTest`) and Vitest to **224** (8
+   `DepartmentSetup.test.js`). No migration and no e2e file was touched, so the e2e world was not
+   rebuilt at this point.
+2. **THE VITEST PATH IN THE TASK TEXT IS WRONG TWICE OVER — trap 2, third instance in this plan
+   family.** `resources/js/__tests__/DepartmentSetup.spec.js` matches neither half of
+   `vitest.config.js`'s `include: ['tests/js/**/*.test.js']`: wrong directory AND wrong extension
+   pattern. A file written there runs zero tests and reports success. Shipped as
+   `tests/js/DepartmentSetup.test.js`, which is where every one of the other 22 Vitest files lives.
+3. **The GET-only sweep cannot be scoped by capability here, and the task text's "inside the
+   existing structure group or its own — either is fine as long as the group is GET-only" is only
+   half true.** `cap:structure.manage` legitimately guards the write endpoints of every structure
+   screen (units, levels, calendar, periods, holidays, clinics, department), so a capability-scoped
+   sweep can never be GET-only whichever group the route joins. Scoped by URI PREFIX instead —
+   `admin/setup` and `admin/setup/*` — over the router, so it holds for routes nobody has written
+   yet. The route sits in its own group for the same reason.
+4. **TRAP 3 FIRED EXACTLY AS WARNED: `test_every_route_under_admin_setup_is_a_get` PASSED ON ITS
+   FIRST RED RUN.** Nine of ten tests were red and that one was green, against zero matching routes
+   — the P1e-1 Task 4 defect reproduced precisely. The vacuity twin
+   (`test_the_checklist_route_is_registered_behind_the_structure_capability`, which asserts exactly
+   one route, its name and its two middlewares) was red, and it is the only reason the vacuous pass
+   was visible at all.
+5. **Both router guards were then watched failing against plants.** A `POST /admin/setup/progress`
+   — the "somebody started storing wizard state" shape — made the sweep name
+   `admin/setup/progress allows POST` and the twin name a count of 2. Separately, `'admin/setup'`
+   added to `RequireSetup::ALLOWED` made
+   `test_an_administrator_who_has_not_done_their_own_two_factor_setup_is_redirected_away` go red
+   with a 200 where a redirect belonged — which is exactly the "fix" that test exists to refuse.
+   Both plants reverted from copies taken first, re-run green, `git status` back to this task's own
+   working set.
+6. **The step's URL is resolved SERVER-SIDE, which the task text does not specify.**
+   `DepartmentSetup` stores a route NAME; a screen needs a path. The controller adds
+   `route($name, absolute: false)` per step, and `test_every_step_links_to_a_registered_route`
+   compares every emitted `url` against what the router itself builds — so the router stays the one
+   authority on where a step goes, rather than a second table of paths on the client. `later` gains
+   no `url` at all, asserted alongside its absent `route` and `done`.
+7. **`AppLayout.test.js`'s `adminHrefs` sweep is hand-written (Task 8 recorded it), so
+   `/admin/setup` was added to it** — first, matching the nav entry's position — and the
+   `aria-current` property adversarial-review finding 3 restored is now proved for this entry too.
+8. **`isActive('/admin/setup')` does not collide with `/admin/settings`, checked rather than
+   assumed.** `isActive` is `===` or `startsWith(href + '/')`, so neither path matches the other and
+   the sweep's "exactly one current entry" assertion holds on both. Worth stating because the two
+   hrefs share a seven-character prefix and a bare `startsWith` would have announced two entries at
+   once — the failure mode that sweep's second assertion exists to catch.
+9. **The `CalendarWritersFlushTest` trap did NOT fire, exactly as Task 9 amendment 7 predicted.**
+   The controller reads the projection, never the institution row, so it matches none of that
+   guard's needles and needed no allow-list entry. Recorded as a confirmed prediction rather than
+   silence, because the same trap had fired twice in the two preceding tasks.
+10. **Nothing else in the task text was wrong against the tree.** `RequireSetup`'s `ALLOWED` list,
+    `SetupController` rendering `Setup`, the route names `setup.show`/`setup.complete`, the nine
+    step keys and the two `later` entries all check out as described. `FirstLoginSetupTest` stayed
+    green untouched, which is the collision check the task text asks for.
+
+### 2026-08-11 — Task 11
+
+1. **Baseline: `php artisan test` → 1567, matching Task 10's number.** Task 11 took PHPUnit to
+   **1580** (10 `DemoLedgerTest` + 3 `DemoRowsAreLedgeredTest`). Vitest unchanged at 224 — no JS was
+   touched. A migration landed, so the e2e world WAS rebuilt (`rm database/e2e.sqlite`) and
+   Playwright re-run: **24 passed**.
+2. **The reserved migration slot was free**, checked before writing the file as the plan instructs:
+   `2026_08_16_120001_create_clinics_and_attendees_tables` was the last, so `2026_08_16_120002` is
+   the next, exactly as reserved. P1d-1's renumbering did not repeat.
+3. **TRAP 1 FIRED, IN THE MIGRATION'S OWN DOCBLOCK, AND WAS CAUGHT BY A RED RUN RATHER THAN BY
+   INSPECTION.** The paragraph rejecting a second `institutions` row ended *"…would teach the next
+   reader that `where('institution_id', …)` is acceptable here"* — and
+   `InstitutionProvenanceTest::test_no_query_filters_on_institution_id` scans `database/` as source,
+   prose included, with **no allow-list**. So the build failed on the migration's own illustration of
+   the rule it was upholding, naming
+   `database/migrations/2026_08_16_120002_create_demo_rows_table.php (query filter)`. Spelled around
+   rather than deleted, following `ClinicWriter`'s precedent for the identical event against
+   `CalendarWritersFlushTest`, and the reason is stated at the site so the next author does not
+   restore the illustration.
+4. **All five writer shapes were proved with plants, one throwaway file per shape, all deleted
+   immediately after.** `DemoRow::create(` · `DB::table('demo_rows')` · `$r->batch_id = ` (which also
+   fired `->table_name = ` and `->row_id = `) · `->demoRows()->create(` · and both halves of
+   `$model->update([...])`.
+5. **The column-qualified needle's first-key-only property was reproduced here too, on the plant
+   rather than reasoned about.** `$demoRow->update(['batch_id' => $b, 'row_id' => 9])` fired
+   `->update(['batch_id'` and did NOT fire `->update(['row_id'`; a second method's
+   `$other->update(['table_name' => …])` fired the column needle and did NOT fire
+   `$demoRow->update(`. The two halves fail for different reasons, which is what earns keeping both
+   — the same measurement P1e-1's adversarial review recorded for the clinic guard.
+6. **A SIXTH SHAPE WAS FOUND BY PROVING THE VACUITY TWIN, NOT BY WRITING THE NEEDLE LIST.** The
+   offender sweep passes against a tree containing no ledger at all (trap 3 again), so a twin
+   asserts the writer itself matches at least one needle. Mutating `DemoRow::create([` to
+   `DemoRow::query()->create([` left the sweep GREEN and turned the twin RED: the writer still wrote
+   the table, through a shape no needle named. `DemoRow::query()` is now needled whole — which also
+   covers `::query()->…->delete()`, the shape `forgetBatch()` itself uses — measured at ZERO matches
+   outside the writer, and proved on a fresh plant carrying both spellings. **The sibling guards
+   (`ClinicWritersAreSingularTest`, `RotaWritersAreSingularTest`, `PersonLevelsHaveOneWriterTest`)
+   share the original blind spot**; widening them is their own tables' scope, the same line design
+   §14 item 23 draws for `UnitMerge`. This is the second consecutive slice in which a guard's blind
+   spot was found by attacking it rather than by reading it.
+7. **The plan's interface shipped exactly as written** — `record`, `batches`, `rowsFor`, `has`,
+   `forgetBatch` — with no batch-minting method added. The UUID is minted by the creator (Task 12),
+   the `person_levels.promotion_batch_id` precedent, and adding a sixth method here would have been
+   scope the plan did not ask for.
+8. **`record()`'s duplicate refusal is a courtesy; the UNIQUE index is the guarantee, and the tests
+   say both.** A pre-flight `exists()` in PHP is a race and a single writer's promise, so
+   `test_the_unique_pair_is_enforced_by_the_schema_and_not_only_by_the_writer` inserts a duplicate
+   through the query builder and expects a `QueryException` — beside the test that pins the
+   `InvalidArgumentException` the writer raises.
+9. **Trap 5 did not bite, because the schema assertions avoid the call that carries it.**
+   `Schema::hasTable()` / `hasColumn()` / `getColumnListing()` are not schema-qualified on SQLite;
+   `getTableListing()` is, which is why Task 10's write-nothing test compares its map WHOLE rather
+   than by hand-written keys.
+10. **Two indexes, each justified, neither led by `institution_id`** — and the table carries no such
+    column at all, asserted against the live schema by comparing the WHOLE column list rather than
+    one absence. `unique(table_name, row_id)` is the identity of a ledgered row (a row cannot belong
+    to two batches) and doubles as Task 13's per-foreign-key pre-flight lookup; `index(batch_id)` is
+    what every read filters or groups by. A separate `table_name` index would be dead weight — the
+    unique's leading column already serves a prefix lookup.
+11. **Nothing else in Task 11's text was wrong against the tree.** The table shape, the absent
+    foreign key on `row_id`, the three precedents the docblock is asked to name, and the
+    `DemoDepartment`-is-deliberately-absent-from-the-allow-list position all check out.
+
 ---
 
 ## Standing rules for every task

@@ -466,6 +466,31 @@ final class DemoDepartment
      * models: validate the whole set, then mutate, or mutate nothing. A removal that half-applied
      * would tell the operator the demo is still there while half of it was already gone.
      *
+     * IT RUNS TWICE, AND THE SECOND ONE IS THE LOAD-BEARING ONE (P1e-2 review finding 1). The outer
+     * call is the cheap early refusal: it costs one query per referencing table, needs no
+     * transaction, and is what writes `demo_department_remove_refused` for the ordinary case. The
+     * INNER one — first statement inside the transaction, after the parent rows are locked — is what
+     * makes the refusal true. A check made outside the transaction it guards decides against a world
+     * that no longer exists by the time the first DELETE runs, and THE DATABASE IS NOT A BACKSTOP
+     * HERE the way it is for `PeriodController::destroy()`: of the nineteen inbound keys in
+     * `DemoReferences::MAP` only three are RESTRICT. Nine are `ON DELETE SET NULL`, including all
+     * four of `handover_signoffs`' `*_person_id` columns — so the unguarded shape does not raise, it
+     * SUCCEEDS, writes a clean audit row, and leaves a medico-legal attestation naming nobody.
+     * Measured on this tree before the fix: `rows=21`, no refusal, `endorsed_by_person_id` NULLed.
+     *
+     * THE LOCK IS NOT DECORATION, AND SQLITE CANNOT SHOW WHY. A plain re-read is sufficient on
+     * SQLite, which serialises writers and compiles `lockForUpdate()` to the empty string. It is NOT
+     * sufficient on MySQL 8.4: under REPEATABLE READ a DELETE is a *current* read and sees rows a
+     * concurrent session committed after this transaction's snapshot, while a non-locking SELECT
+     * beside it still reads the snapshot — so the re-check would come back clean against a row the
+     * delete is about to orphan. InnoDB's shared lock on the parent row is what blocks a concurrent
+     * FK-child insert; the idiom is `AuditLog::record()`'s and `InvitationAcceptController`'s.
+     *
+     * `Schema::hasTable()` IS ASKED BEFORE THE TRANSACTION OPENS. It compiles to an uncached
+     * `information_schema` query on MySQL (`MySqlGrammar::compileTableExists()`), so asking it once
+     * per ledgered row from inside the transaction body is ~21 catalogue round trips spent holding
+     * locks open for nothing. A table cannot appear or vanish underneath a removal.
+     *
      * DELETION IS GENERIC, BY LEDGER, IN REVERSE CREATION ORDER. `DemoLedger::rowsFor()` returns
      * newest first, so a child is deleted before its parent and no restrict-on-delete key fires
      * part-way through. The delete goes through the QUERY BUILDER with the table name taken from
@@ -498,35 +523,99 @@ final class DemoDepartment
         $blocked = self::preflight($batch);
 
         if ($blocked !== []) {
-            AuditLog::record(
-                'demo_department_remove_refused',
-                "batch={$batch};blocked=".DemoRemovalBlockedException::pairsFor($blocked),
-                $actorId,
-                $ip,
-            );
+            self::auditRefusal($batch, $blocked, $actorId, $ip);
 
             throw new DemoRemovalBlockedException($batch, $blocked);
         }
 
-        DB::transaction(function () use ($rows, $batch): void {
-            foreach ($rows as $row) {
-                // A table that no longer exists took its rows with it, so there is nothing to
-                // delete and nothing to report — the ledger entry is forgotten below either way.
-                if (! Schema::hasTable($row['table'])) {
-                    continue;
+        // A table that no longer exists took its rows with it, so there is nothing to delete and
+        // nothing to report — the ledger entry is forgotten below either way. Asked HERE and not
+        // in the closure: see the docblock.
+        $deletable = array_values(array_filter(
+            $rows,
+            static fn (array $row): bool => Schema::hasTable($row['table']),
+        ));
+
+        try {
+            DB::transaction(function () use ($rows, $deletable, $batch): void {
+                self::lockLedgeredRows($rows);
+
+                // THE LOAD-BEARING CHECK. Same definition as the one above; a second predicate here
+                // would be two answers to one question, which is the drift this codebase keeps
+                // paying for. It throws from inside so a blocker found after the outer check takes
+                // the whole delete down with it.
+                $blocked = self::preflight($batch);
+
+                if ($blocked !== []) {
+                    throw new DemoRemovalBlockedException($batch, $blocked);
                 }
 
-                DB::table($row['table'])->where('id', $row['id'])->delete();
-            }
+                foreach ($deletable as $row) {
+                    DB::table($row['table'])->where('id', $row['id'])->delete();
+                }
 
-            DemoLedger::forgetBatch($batch);
-        });
+                DemoLedger::forgetBatch($batch);
+            });
+        } catch (DemoRemovalBlockedException $e) {
+            // Audited from OUT HERE, after the unwind. A row written from inside would roll back
+            // with the transaction that raised it and the refusal would leave no trace at all —
+            // `RosterImport`'s finding 6, arrived at through a different door.
+            self::auditRefusal($batch, $e->blocked(), $actorId, $ip);
+
+            throw $e;
+        }
 
         $count = count($rows);
 
         AuditLog::record('demo_department_remove', "batch={$batch};rows={$count}", $actorId, $ip);
 
         return ['batch' => $batch, 'rows' => $count];
+    }
+
+    /**
+     * Take a shared lock on every ledgered row before the in-transaction re-check.
+     *
+     * A NO-OP ON SQLITE, ON PURPOSE AND UNAVOIDABLY: `SQLiteGrammar::compileLock()` returns the
+     * empty string, and SQLite serialises writers anyway, so this suite cannot observe it. It is the
+     * whole guard on InnoDB, where a non-locking SELECT reads the transaction's snapshot while the
+     * DELETE beside it reads current rows. Holding the parent row is what blocks a concurrent
+     * session inserting a child that points at it.
+     *
+     * EVERY ledgered row, not only the ones `DemoReferences::MAP` currently shows a child for: the
+     * lock set then follows the map rather than being a second, hand-maintained list of which
+     * tables have inbound keys today. It is tens of rows.
+     *
+     * @param  list<array{table: string, id: int}>  $rows
+     */
+    private static function lockLedgeredRows(array $rows): void
+    {
+        /** @var array<string, list<int>> $byTable */
+        $byTable = [];
+
+        foreach ($rows as $row) {
+            $byTable[$row['table']][] = $row['id'];
+        }
+
+        foreach ($byTable as $table => $ids) {
+            DB::table($table)->whereIn('id', $ids)->lockForUpdate()->get();
+        }
+    }
+
+    /**
+     * ONE definition of the refused-removal audit row, called from both refusal paths — the cheap
+     * early one and the one the transaction raised. Two spellings of this string would be two
+     * `blocked=` formats in one trail.
+     *
+     * @param  list<array{table: string, count: int}>  $blocked
+     */
+    private static function auditRefusal(string $batch, array $blocked, ?int $actorId, ?string $ip): void
+    {
+        AuditLog::record(
+            'demo_department_remove_refused',
+            "batch={$batch};blocked=".DemoRemovalBlockedException::pairsFor($blocked),
+            $actorId,
+            $ip,
+        );
     }
 
     /**

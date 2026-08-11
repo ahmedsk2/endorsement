@@ -22,9 +22,13 @@ use App\Support\Rota\RotaAssignment;
 use App\Support\Rota\VacationBooking;
 use Database\Seeders\AccessControlSeeder;
 use Database\Seeders\ReferenceSeeder;
+use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
+use ReflectionMethod;
 use Tests\Support\TableCounts;
 use Tests\TestCase;
 
@@ -378,6 +382,148 @@ class DemoRemoveTest extends TestCase
                 $this->assertStringNotContainsString($name, $message);
             }
         }
+    }
+
+    // --- The gap between the check and the delete --------------------------------------------------
+
+    /**
+     * THE PRE-FLIGHT MUST RUN INSIDE THE TRANSACTION THAT DELETES, and this is the test that says so
+     * (P1e-2 adversarial review, finding 1).
+     *
+     * A check that runs outside the transaction it guards decides against a world that no longer
+     * exists by the time the first `DELETE` runs. And the database is NOT a backstop here the way it
+     * is for `PeriodController::destroy()`: of the nineteen inbound keys in `DemoReferences::MAP`
+     * only three are `RESTRICT`. Nine are `ON DELETE SET NULL` — including all four of
+     * `handover_signoffs`' `*_person_id` columns, the medico-legal names of record that
+     * `DemoReferences`' own docblock says "must not be reachable from a cleanup button". So the
+     * unguarded shape does not raise: it **succeeds**, writes a clean `demo_department_remove` row,
+     * and leaves an attestation naming nobody.
+     *
+     * `TransactionBeginning` is the seam. It fires immediately after `BEGIN` and before the first
+     * statement of the closure, which is exactly the window a concurrent session writes into — so a
+     * blocker planted from it is invisible to any check made before the transaction opened and
+     * visible to any check made inside it. The one-shot guard matters: `AuditLog::record()` opens a
+     * transaction of its own, and `HandoverSignoff::create()` may too.
+     *
+     * WHAT THIS CAN AND CANNOT PROVE ON SQLITE. It proves the re-check happens inside. It does NOT
+     * prove the lock, and structurally cannot: `SQLiteGrammar::compileLock()` returns the empty
+     * string, so `lockForUpdate()` is a no-op on this connection, and SQLite serialises writers
+     * anyway. On MySQL 8.4 under REPEATABLE READ the gap is wider than this test can even express —
+     * a `DELETE` is a *current* read and sees rows committed after the transaction's snapshot, while
+     * a plain `SELECT` beside it does not — which is why the lock is asserted at source level below
+     * rather than left to a suite that has never run against InnoDB.
+     */
+    public function test_a_blocker_that_lands_after_the_preflight_still_refuses_the_whole_removal(): void
+    {
+        $created = DemoDepartment::create();
+        $person = $this->demoPeople($created['batch'])[1];
+        $rows = DemoLedger::rowsFor($created['batch']);
+
+        // Clear at the moment the operator confirms — which is the whole premise.
+        $this->assertSame([], DemoDepartment::preflight($created['batch']));
+
+        $planted = false;
+
+        Event::listen(TransactionBeginning::class, function () use ($person, &$planted): void {
+            if ($planted) {
+                return;
+            }
+
+            $planted = true;
+
+            HandoverSignoff::create([
+                'unit_id' => Unit::findByCode('WARD')?->getKey(),
+                'handover_date' => Calendar::todayYmd(),
+                'endorsed_by_person_id' => $person->getKey(),
+                'endorsed_by_name' => 'Demo Chief Resident One',
+            ]);
+        });
+
+        try {
+            DemoDepartment::remove($created['batch']);
+            $this->fail('A blocker that landed after the pre-flight must still refuse the removal.');
+        } catch (DemoRemovalBlockedException $e) {
+            $this->assertSame(['handover_signoffs' => 1], $this->blockedByTable($e));
+        }
+
+        $this->assertTrue($planted, 'the seam never fired, so this test proved nothing');
+
+        // Refused WHOLE: every ledgered row is still there and the ledger still names the batch.
+        $survivors = [];
+
+        foreach ($rows as $row) {
+            if (! DB::table($row['table'])->where('id', $row['id'])->exists()) {
+                $survivors[] = $row['table'].' '.$row['id'];
+            }
+        }
+
+        $this->assertSame([], $survivors, 'a refused removal deleted these rows: '.implode(', ', $survivors));
+        $this->assertTrue(DemoLedger::has());
+
+        // THE HARM, STATED AS AN ASSERTION. Without the in-transaction re-check the removal commits
+        // and takes the sign-off's name of record with it — the row survives with
+        // `endorsed_by_person_id` NULLed by `ON DELETE SET NULL`, and nothing anywhere reports it.
+        // With the re-check the whole transaction unwinds, so the planted row is gone too and this
+        // reads zero for the right reason.
+        $this->assertSame(0, DB::table('handover_signoffs')->whereNull('endorsed_by_person_id')->count(),
+            'a sign-off was left in the database with its medico-legal name of record NULLed');
+    }
+
+    /**
+     * THE LOCK, AND THE HOISTED CATALOGUE READ — asserted at SOURCE level, deliberately, because
+     * neither is observable on the connection this suite runs against.
+     *
+     * A plain re-read inside the transaction is sufficient on SQLite and NOT on MySQL: under
+     * REPEATABLE READ a non-locking `SELECT` reads the transaction's snapshot while the `DELETE`
+     * beside it reads current rows, so the re-check can come back clean against a row the delete is
+     * about to orphan. InnoDB's shared lock on the parent row is what blocks a concurrent session
+     * inserting a child that points at it — the same idiom `AuditLog::record()` and
+     * `InvitationAcceptController` already use, and for the same reason.
+     *
+     * `Schema::hasTable()` compiles to an uncached `information_schema` query on MySQL
+     * (`MySqlGrammar::compileTableExists()`), so a loop of them inside the transaction body is one
+     * catalogue round trip per ledgered row spent holding locks open for nothing.
+     */
+    public function test_the_recheck_locks_and_the_catalogue_reads_happen_before_the_transaction(): void
+    {
+        $method = new ReflectionMethod(DemoDepartment::class, 'remove');
+        $lines = file((string) $method->getFileName());
+        $body = implode('', array_slice(
+            (array) $lines,
+            $method->getStartLine() - 1,
+            $method->getEndLine() - $method->getStartLine() + 1,
+        ));
+
+        $transaction = strpos($body, 'DB::transaction(');
+        $this->assertIsInt($transaction, 'remove() no longer opens a transaction at all');
+
+        $hasTable = strpos($body, 'Schema::hasTable(');
+        $this->assertIsInt($hasTable, 'remove() no longer asks whether a ledgered table exists');
+        $this->assertLessThan($transaction, $hasTable,
+            'Schema::hasTable() is an uncached information_schema query on MySQL; asking it once per '
+            .'ledgered row from inside the transaction widens the window for nothing.');
+
+        foreach (['self::preflight(', 'self::lockLedgeredRows('] as $needle) {
+            $at = strpos($body, $needle, $transaction);
+
+            $this->assertIsInt($at,
+                "remove() does not call {$needle} inside its transaction. A check made outside the "
+                .'transaction it guards decides against a world that no longer exists, and only three '
+                .'of the nineteen inbound keys are RESTRICT — the rest SET NULL or CASCADE silently.');
+        }
+
+        // And the locker really locks. Split out so the two claims fail separately: one is "the
+        // re-check happens under a lock", the other is "the lock is a lock".
+        $locker = new ReflectionMethod(DemoDepartment::class, 'lockLedgeredRows');
+        $lockerBody = implode('', array_slice(
+            (array) $lines,
+            $locker->getStartLine() - 1,
+            $locker->getEndLine() - $locker->getStartLine() + 1,
+        ));
+
+        $this->assertStringContainsString('lockForUpdate(', $lockerBody,
+            'lockLedgeredRows() takes no lock, so on InnoDB the re-check reads a snapshot the '
+            .'DELETE beside it does not.');
     }
 
     // --- Audit -----------------------------------------------------------------------------------

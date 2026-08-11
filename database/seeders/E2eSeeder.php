@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Clinic;
 use App\Models\Level;
 use App\Models\MasterRotaAssignment;
 use App\Models\Period;
@@ -9,6 +10,7 @@ use App\Models\Person;
 use App\Models\Unit;
 use App\Models\User;
 use App\Models\Vacation;
+use App\Support\Clinics\ClinicWriter;
 use App\Support\LevelAssignment;
 use App\Support\Rota\RotaAssignment;
 use App\Support\Rota\VacationBooking;
@@ -84,6 +86,57 @@ class E2eSeeder extends Seeder
         }
 
         $this->seedReadableRota();
+        $this->seedReadableClinic();
+    }
+
+    /**
+     * CL-05's world (P1e Task 7): ONE clinic on the department's clinic-owning unit, so `/clinics`
+     * has something in a known cell for a `clinics.view` reader to find.
+     *
+     * WHY THE SPEC DOES NOT JUST USE THE ONE IT CREATES. `clinics.spec.js` has two journeys — an
+     * administrator DEFINING a clinic, and a resident READING the week — and the second must not
+     * depend on the first having run. Playwright's `--grep` runs one test; a reader journey that
+     * only passes when the administrator journey ran before it is a spec that is green for a reason
+     * nobody chose. So the reader asserts THIS clinic and the administrator creates a different one,
+     * on a different day and session (the spec's own comments name both).
+     *
+     * WHY IT GOES THROUGH `ClinicWriter`. `ClinicWritersAreSingularTest` scans `database/` as well
+     * as `app/` (ruling 42): a seeder writing the column directly IS a second writer, merely one
+     * whose blast radius stops at the suite. It is also the honest fixture — one built by a
+     * different route than the app uses can be valid while the app's own path is broken.
+     *
+     * THE WEEKDAY IS ISO-8601, Monday = 1 … Sunday = 7 — the same numbering `Calendar` uses and the
+     * only one `clinics.weekday` ever holds. Tuesday (2) is chosen because it is a weekday under
+     * BOTH plausible weekend settings, so the fixture does not sit in a column a department's own
+     * week might render as a weekend.
+     *
+     * ROTATORS MODE, deliberately: CL-02's default needs no attendee rows, so this fixture adds no
+     * person and cannot disturb the two rota specs, which address their people by name. FICTIONAL,
+     * AND STAYS THAT WAY (CLAUDE.md).
+     */
+    private function seedReadableClinic(): void
+    {
+        $ward = Unit::findByCode('WARD');
+
+        // `ReferenceSeeder` ships WARD as an ACTIVE clinic owner (owner Decision B, P1b), and
+        // `prepare-world.js` runs `migrate:fresh --force --seed`, so the cold-start path is what the
+        // e2e world takes. Asserted rather than assumed: on an upgrade path `clinic_owner` could be
+        // false, and `ClinicWriter::create()` refuses a clinic on a unit that does not own them —
+        // which would surface as a seeding exception rather than a silently empty map.
+        if ($ward === null || ! $ward->clinic_owner || ! $ward->active) {
+            throw new \RuntimeException('E2eSeeder needs an active clinic-owning WARD to seed the clinic map.');
+        }
+
+        if (Clinic::query()->where('name', 'E2E Asthma Clinic')->exists()) {
+            return;
+        }
+
+        ClinicWriter::create($ward, [
+            'name' => 'E2E Asthma Clinic',
+            'weekday' => 2,
+            'session' => 'AM',
+            'location' => 'E2E Clinic Room 3',
+        ]);
     }
 
     /**

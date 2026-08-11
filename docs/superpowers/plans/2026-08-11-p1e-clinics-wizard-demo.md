@@ -1273,6 +1273,94 @@ arithmetic — this plan's own PHPUnit baseline was measured on a dirty tree and
    no-allow-list instruction all check out as described. Item 3 is an offender the task text could
    not have foreseen (it is in a string, not a comment); items 4 and 5 are deliberate widenings.
 
+### 2026-08-11 — Task 7
+
+1. **Baseline: `php artisan test` → 1527, `npm test` → 212, `npm run build` green**, matching Task
+   6's recorded numbers exactly. The e2e suite was then re-run from a genuinely CLEAN world
+   (`rm database/e2e.sqlite && npm run test:e2e`) → **24 passed across 8 spec files** (22 + 2),
+   counted rather than assumed, exactly the figure the task text predicts. Task 7 adds no PHPUnit
+   and no Vitest case, so both of those counts are unchanged at 1527 and 212.
+2. **`ClinicWritersAreSingularTest` needed NO allow-list entry, and that was checked rather than
+   assumed.** `E2eSeeder` writes its clinic through `ClinicWriter::create()`, and none of the
+   guard's forty needles matches the seeder's new code (`Clinic::query()->where(...)->exists()` is a
+   read; `ClinicWriter::create(` is the sanctioned writer). The task text's "only if needed" was
+   correctly hedged, and the answer is: not needed.
+3. **WARD's `clinic_owner` was verified rather than assumed, as the task text insists — and the
+   verification now lives IN the seeder rather than in a run somebody did once.** `ReferenceSeeder`
+   ships WARD as an active clinic owner and `prepare-world.js` runs `migrate:fresh --force --seed`,
+   so the e2e world takes the cold-start path. `seedReadableClinic()` nevertheless throws if WARD is
+   missing, inactive or not a clinic owner: `ClinicWriter::create()` would refuse in that case, and
+   a bare refusal surfaces as an empty map that reads like a screen defect rather than a seeding
+   one.
+4. **THE BROWSER FOUND SOMETHING NO OTHER LAYER COULD, AND IT IS ABOUT THE ASSERTION RATHER THAN
+   THE PRODUCT: THERE IS NO `data-page` ATTRIBUTE TO READ.** The task's "assert no `@` appears in
+   the page's Inertia props" has an obvious implementation — read `#app`'s `data-page` — and it
+   returns **null**, because Inertia's Vue 3 adapter removes that attribute as soon as it has parsed
+   it. The second-obvious implementation, grepping the served HTML for `id="app" data-page="…"`,
+   finds nothing either: this version of `inertia-laravel` emits
+   `<script data-page="app" type="application/json">` with the JSON as the script's BODY, and
+   `data-page` there holds the element id. Neither mistake could pass silently — both throw on a
+   null match, which is why the helper is allowed to be this specific about the markup — but the
+   repair is also the better assertion: the payload is now taken from the **response body** of the
+   navigation, which is literally what the server sent before any client code ran. That is the
+   standard the rest of this suite is held to, and it is what the task actually asked for.
+5. **NO PRODUCT GAP WAS FOUND, and that is a measured result rather than an absence of effort.**
+   P1d-1's e2e found there was no way to clear a rota cell at all; P1d-2a's found six screens
+   dropping `aria-current`. Both classes were specifically looked for here. Both screens are
+   reachable from the nav for the actor holding the capability and absent for the one who does not;
+   every control the administrator needs exists and is labelled; the created clinic survives a
+   reload with its day, session, location and default mode intact; and the map renders the seeded
+   clinic in exactly one cell, on the right unit row and the right weekday column.
+6. **Each of the three load-bearing claims was watched failing against a planted defect.**
+   - *The reader assertion is not vacuous.* `seedReadableClinic()` removed from `run()`, world
+     rebuilt: the map renders its empty state, `map-table` does not exist, and the test fails on the
+     first assertion about the table. A journey asserting a clinic that was never seeded would
+     otherwise look identical to one asserting a clinic that is.
+   - *The contact check really catches a contact leak.*
+     `'lead_contact' => Person::query()->value('email')` planted in
+     `ClinicMapController::present()` — a REAL address out of the database, which is exactly P1d-2
+     Decision C's shape. The test named it, and the failure output doubles as proof that the payload
+     is otherwise `@`-free on a clean tree: the whole dumped page object contains no address
+     anywhere, shared props included.
+   - *The read-only claim is about the rendered page.* A `<button>Book me in</button>` planted in
+     `Map.vue` and rebuilt: `main.locator('button')` went 0 → 1 and named it.
+   All three reverted, rebuilt, re-run green; `git status` back to exactly this task's own working
+   set. The edited files were copied aside and restored from the copies rather than
+   `git checkout`-ed — one carried this task's uncommitted work and one carried Task 6's, and
+   `git checkout` would have reverted the task along with the plant (Task 1 amendment 6 recorded the
+   same hazard).
+7. **`watchForWrites()` and `signInAndWatch()` moved from `rota-read.spec.js` into `fixtures.js`.**
+   The clinic map needs the identical "did anything non-GET leave this page" property, and two
+   copies of that recorder would be two definitions of one fact — the same call Task 6 made about
+   the comment stripper. `signInAndWatch(page, who)` now takes the actor and defaults to `ADMIN`;
+   `rota-read.spec.js` keeps a one-line `signInAsResident` alias so its three call sites read
+   unchanged. Both specs re-run green in the clean whole-suite run.
+8. **The reader asserts the SEEDED clinic and the administrator creates a DIFFERENT one** — a
+   different day (Wednesday vs Tuesday) and a different session (Afternoon vs Morning). The task
+   text's "assert the clinic appears" does not say which, and asserting the one the first test
+   created would make the second test pass only when the first had run — `npx playwright test
+   --grep` runs one. Both were in fact exercised singly during the plants above, which is how the
+   property was confirmed rather than argued.
+9. **The cell assertion sweeps all seven columns rather than checking one.** A positive check on the
+   Tuesday cell alone passes for a clinic rendered into every cell, and for one rendered a column
+   out. The spec collects the `data-cell-key` of every cell in the WARD row whose text contains the
+   clinic and asserts the whole list equals exactly `[unitId-2]` — the same assert-over-the-whole-set
+   discipline the PHP guards keep, in a browser.
+10. **Both screens ship two trees and both were scoped, as the task text warns.** The listing on
+    `Admin/Clinics.vue` is mobile `<article>` cards plus a desktop `<table>`; `Clinics/Map.vue` is
+    `map-cards` plus `map-table`. Every lookup here is scoped to the desktop tree. Worth recording
+    that the CREATE form is NOT duplicated — it sits outside the per-unit groups — so `#new-name`
+    and its siblings are addressed by id with no scoping needed, which is why this one spec carries
+    both idioms.
+11. **The fixture is disjoint from the two rota specs' by construction, not by luck.** The clinic is
+    `rotators` mode, so it needs no attendee rows and names no person at all; it adds nothing to
+    `master_rota_assignments` or `vacations`, so `rota-import.spec.js`'s and `rota-read.spec.js`'s
+    coverage arithmetic (21 assigned, 35 not assigned, one gap, two unassigned) is untouched. The
+    whole-suite run confirms it: those three specs are green in the same clean run as this one.
+12. **Nothing in the task text was wrong against the tree**, and its predicted count (24) was exact.
+    Item 4 is an interaction with the installed Inertia version that the task text could not have
+    foreseen; item 8 is a disambiguation, not a correction.
+
 ---
 
 ## Standing rules for every task
@@ -1866,8 +1954,9 @@ git commit -am "test: a clinic somebody made is a clinic somebody sees"
 - [ ] `clinics.view` appears in `docs/spec/08-foundation.md`.
 - [x] CL-03's and CL-04's absence is guarded by two comment-stripped scans, each watched failing,
       with the stripper pinned in both directions.
-- [ ] `npm run build`, `php artisan test`, `npm test` and `npm run test:e2e` all green, on a **clean
-      tree**, with the counts recorded here as measured numbers.
+- [x] `npm run build`, `php artisan test` (**1527**), `npm test` (**212**) and `npm run test:e2e`
+      (**24 across 8 spec files**, from a world rebuilt with `rm database/e2e.sqlite`) all green, on a
+      **clean tree** — measured, not arithmetic.
 
 ---
 

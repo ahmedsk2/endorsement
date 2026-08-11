@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { assertLocalhost, login, readBack, RESIDENT } from './fixtures.js';
+import { assertLocalhost, login, readBack, signInAndWatch, RESIDENT } from './fixtures.js';
 
 /**
  * MR-05, walked by the person it was written for: a RESIDENT signs in, reads the master rota,
@@ -88,35 +88,12 @@ async function levelUnitCell(card, levelCode, unitCode) {
 }
 
 /**
- * Watch the browser for the rest of the test. A read screen that writes would show up here as a
- * POST/PATCH/DELETE leaving the page — including one fired by a control nobody thought to look for,
- * which is exactly the class of thing the component-level "no <form>" assertion cannot see.
- *
- * Attached BEFORE login on purpose, and that is a non-vacuity device rather than an oversight: an
- * empty list at the end of a test looks identical whether nothing wrote or the recorder never
- * fired. Signing in IS a POST, so {@see signInAndWatch} can prove the recorder works before the
- * journey it is watching begins, and each spec then asserts the list has not grown SINCE.
+ * The write recorder and the sign-in that arms it both live in `fixtures.js` now — `clinics.spec.js`
+ * (P1e Task 7) needs the identical property on the clinic map, and two copies of a
+ * "did anything non-GET leave this page" recorder would be two definitions of one fact. The
+ * non-vacuity argument for attaching it BEFORE login is stated there.
  */
-function watchForWrites(page) {
-    const writes = [];
-
-    page.on('request', (request) => {
-        if (request.method() !== 'GET') writes.push(`${request.method()} ${request.url()}`);
-    });
-
-    return writes;
-}
-
-/** Sign in as the resident with the recorder already running; returns `writes` and the mark to compare against. */
-async function signInAndWatch(page) {
-    const writes = watchForWrites(page);
-    await login(page, RESIDENT);
-
-    expect(writes, 'the write recorder never fired — signing in is itself a POST').not.toEqual([]);
-    expect(writes.every((write) => write.includes('/login'))).toBe(true);
-
-    return { writes, mark: writes.length };
-}
+const signInAsResident = (page) => signInAndWatch(page, RESIDENT);
 
 /* ------------------------------------------------------------------ specs ---- */
 
@@ -124,7 +101,7 @@ test.describe('rota read view — a resident reads it, and cannot change it', ()
     test.beforeAll(({ }, testInfo) => assertLocalhost(testInfo.project.use.baseURL));
 
     test('a resident reaches the rota with no capability to edit it, and no control that writes', async ({ page }) => {
-        const { writes, mark } = await signInAndWatch(page);
+        const { writes, mark } = await signInAsResident(page);
 
         // NO `?year=`, deliberately: this is the landing-year behaviour Task 4 decided (the year
         // containing today, else the most recent generated). The fixture's only academic year is
@@ -177,7 +154,7 @@ test.describe('rota read view — a resident reads it, and cannot change it', ()
     });
 
     test('search and the level filter narrow the rota and survive a reload', async ({ page }) => {
-        const { writes, mark } = await signInAndWatch(page);
+        const { writes, mark } = await signInAsResident(page);
 
         await readBack(page, ROTA);
 

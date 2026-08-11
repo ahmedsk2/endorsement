@@ -930,6 +930,88 @@ arithmetic — this plan's own PHPUnit baseline was measured on a dirty tree and
     structure all check out as described. The two guard collisions above are interactions the task
     text could not reasonably have foreseen, not errors in it.
 
+### 2026-08-11 — Task 3
+
+1. **Baseline re-measured clean before touching anything: `php artisan test` → 1476 passed, 0
+   failed**, matching Task 2's recorded number exactly. `npm test` → 192, `npm run build` → green.
+   Task 3 took PHPUnit to **1488** (12 `ClinicRosterTest`). No migration and no e2e file was
+   touched, so the e2e suite was not re-run.
+2. **`Calendar::ymd()` normalises the date at the entry point — a deliberate deviation from the
+   task's "no `DateTime`, no `Calendar` call".** The prohibition that sentence is really making is
+   about the COMPARISON (do not build date objects to compare bounds), and that half is held in
+   full: nothing below `forDate()`'s first line converts anything. But the ENTRY needed a gate,
+   because leniency here fails silently in the worst possible direction — `'2026-7-3'` sorts below
+   every stored `Y-m-d` bound, so an unnormalised string resolves to an EMPTY clinic and reads as a
+   quiet Tuesday, with no error anywhere. `Calendar::ymd()` costs no query, throws on anything that
+   is not a plain `Y-m-d`, and is the module that owns the question. New case
+   `test_a_date_that_is_not_a_plain_ymd_is_refused`, beyond the plan's ten.
+3. **The span bounds are `whereDate()`, not a raw string comparison in the WHERE clause, and the
+   task text is wrong to imply otherwise.** `MasterRotaAssignment` casts both bounds to `date`, and
+   MySQL 8.4 round-trips such a column as `'Y-m-d 00:00:00'` — which is exactly the caveat
+   `MasterRotaAssignment::booted()` and `Vacation::scopeIntersecting()` each already carry in their
+   own docblocks. P1d-2 Decision B's four-way string comparison is for values ALREADY IN PHP (what
+   `AvailabilitySummary` does, over an array the grid built); it is not a query idiom, and using it
+   as one would have passed under SQLite and failed in production.
+4. **Vacation verdict: neither excluded nor flagged — returned, unmarked, and the leave table is
+   never queried at all.** Decision B says so in terms ("a person on vacation is returned,
+   unmarked"), and CL-04 is P3. The reason it is worth stating as an implementation fact rather
+   than a policy: because no leave is read, `ClinicRoster` imports nothing from the leave side, so
+   Task 6's `availab`/`subtract`/`coverage` scan over `app/Support/Clinics/` passes on its own
+   merits rather than by allow-list. The test asserts the WHOLE key set of a returned row, not a
+   handful of named absences — a named-absence assertion cannot catch a field whose name nobody
+   thought to list.
+5. **Stale verdict: returned and FLAGGED, and the person query carries `withTrashed()`.** The plan
+   names only "a retired person"; in this codebase those are two different states — `active =
+   false` is deactivated and `deleted_at` is retired (`PersonPresenter` projects them as `active`
+   and `retired` separately). Case 8 covers both, and the second is the load-bearing one: a plain
+   `whereIn` on `people` silently DROPS a soft-deleted person between the span query and the person
+   query, so their occupied cell disappears from the clinic with no error while the span is still
+   on the rota. Flagging rather than dropping is P1d-2 Decision D's answer, for its reason — a
+   departed colleague on a clinic list reads as cover that is not there, and an invisible one hides
+   a cell somebody has to clear.
+6. **Retired UNIT verdict: still resolves — an eleventh case beyond the plan's ten.**
+   `ClinicWriter` refuses to create or revive a clinic on a retired unit, but a unit may be retired
+   UNDER a clinic that already exists, and that is a different question. Resolution is not
+   authorization: the same answer case 10 gives an inactive clinic. Pinned as
+   `test_a_clinic_whose_unit_has_since_been_retired_still_resolves`.
+7. **Query cost measured on a populated unit, per MODE, because "the count" is not one number.**
+   Forty people on the ward (ten of them split spans, twenty promoted mid-period, forty on leave,
+   ten deactivated): **`rotators` 2 queries, `levels` 5, `named` 2**, bounds pinned at 4 / 7 / 4.
+   The plan asks for one figure; three modes are three code paths with three query sets, and a
+   single bound would have been the bound of whichever mode the fixture happened to use. **The
+   bound was watched failing:** the set-wise level resolver was replaced with a per-row
+   `$person->levelAt($on)` and the test went red at **83 queries against 7**, then restored.
+8. **Contact-freedom is proved twice, and the second proof is the one that would survive a
+   rewrite.** Behaviourally: the whole key set asserted, plus `email`/`phone`/`notes`/`constraints`
+   asserted ABSENT (not null) with the department on `contact_visibility = members` AND a
+   `people.manage` administrator acting — both branches of `PersonPolicy::viewContact()` true at
+   once, which is the combination P1d-2 found the live disclosure under. At source level: `->email`
+   was planted inside the projection map and `ContactFieldsAreProjectedOnceTest` named the file
+   twice, then reverted and re-run green. Without that second half, "the guard is green" and "the
+   guard cannot see this file" look identical.
+9. **NO SOURCE GUARD COLLIDED, and that was construction rather than luck.** Task 2 amendment 11's
+   lesson was applied before a line was written: the docblock names neither the institution-row
+   accessor (a `CalendarWritersFlushTest` WRITE_NEEDLE, which scans prose) nor any of
+   `->email`/`'phone'`/`'notes'`/`'constraints'` (`ContactFieldsAreProjectedOnceTest`, likewise
+   prose-scanning), and no person-id-plus-null literal appears anywhere.
+   `ClinicWritersAreSingularTest` stayed green over `$clinic->attendee_mode ===`, which is the read
+   its own docblock predicted for this file BY NAME as the reason the `= ` trailing space is
+   load-bearing. Confirmed by the FULL run, per the standing rule — the filtered run the task text
+   gives is green either way, which is what made Task 2's two collisions invisible.
+10. **`via` is two class constants (`ClinicRoster::VIA_ROTATION` / `VIA_NAMED`), not the bare
+    strings the task text writes.** The `Clinic::SESSIONS` / `ATTENDEE_MODES` idiom: a consumer
+    comparing against a constant cannot typo one silently, and Task 5's map is the consumer.
+11. **`atLevels()` has no empty-set short-circuit, on purpose.** One was written first and removed:
+    `Person::levelSpansBetween()` already issues no query for an empty collection, and an empty
+    rule set filters everybody out through `in_array()` anyway — so the clause bought nothing but a
+    second branch, one half of which described a state `ClinicWriter` refuses to create and no test
+    could ever exercise. `Calendar::weekdayStrings()`'s own docblock makes the same call for the
+    same reason.
+12. **Nothing else in the task text was wrong against the tree.** `PersonPresenter::contactFree()`,
+    `Person::levelSpansBetween()`/`levelFromSpans()`, `withExists(['user as has_account'])`,
+    `Clinic::ATTENDEE_MODES` and the `clinic_attendees` shape all check out as described; item 3
+    above is the one factual correction.
+
 ---
 
 ## Standing rules for every task

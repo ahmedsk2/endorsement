@@ -337,6 +337,39 @@ class DemoCreateTest extends TestCase
         }
     }
 
+    /**
+     * THE REFUSAL NAMES ONE REMEDY BECAUSE ONLY ONE WORKS (P1e-2 review, finding 6).
+     *
+     * It used to offer *"rename or retire it"*. `units.code` carries an institution-blind UNIQUE
+     * index and `Unit::findByCode()` consults no `active` column — a retired unit keeps its code
+     * forever, which is the whole point of UN-04 retiring rather than deleting. So half the stated
+     * remedy did nothing at all, and an administrator who followed it would press the button again
+     * and read the same sentence.
+     */
+    public function test_retiring_the_unit_that_holds_the_demo_code_does_not_clear_the_refusal(): void
+    {
+        $unit = Unit::create(['code' => DemoDepartment::UNIT_CODE, 'name' => 'A real unit', 'active' => false]);
+
+        $refusals = DemoDepartment::plan()['refusals'];
+
+        $this->assertCount(1, $refusals, 'a retired unit still holds the code');
+
+        $message = strtolower($refusals[0]);
+
+        // Retiring is named, but as the thing that will NOT work rather than as an offer — an
+        // administrator's natural next move, pre-empted. What must never come back is the offer.
+        $this->assertStringNotContainsString('or retire it', $message,
+            'retiring a unit keeps its code, so offering it as a remedy sends the operator in a circle');
+        $this->assertStringContainsString('rename', $message);
+        $this->assertStringContainsString('will not release the code', $message);
+
+        // And the remedy the sentence DOES name actually clears it — the half that makes this a
+        // correction rather than a deletion.
+        $unit->update(['code' => 'NOTDEMO']);
+
+        $this->assertSame([], DemoDepartment::plan()['refusals']);
+    }
+
     // --- The clinic ------------------------------------------------------------------------------
 
     /**

@@ -254,8 +254,14 @@ final class DemoDepartment
         }
 
         if (Unit::findByCode(self::UNIT_CODE) !== null) {
+            // RENAME ONLY, and retiring is deliberately not offered (P1e-2 review, finding 6).
+            // `units.code` carries an institution-blind UNIQUE index and `Unit::findByCode()`
+            // consults no `active` column, so a retired unit keeps its code forever — that is what
+            // UN-04 retiring instead of deleting MEANS. Naming it as a remedy sent an
+            // administrator round a circle back to this same sentence.
             $refusals[] = 'A unit with the code ['.self::UNIT_CODE.'] already exists and is not part of any '
-                .'demo department. Rename or retire it before creating the demo.';
+                .'demo department. Rename its code before creating the demo — retiring it will not '
+                .'release the code, which a retired unit keeps.';
         }
 
         return $refusals;

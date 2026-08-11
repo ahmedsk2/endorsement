@@ -169,6 +169,25 @@ class DemoRowsAreLedgeredTest extends TestCase
         '::upsert(',
         '->save()',
         'DB::table(',
+        // THE SHAPE THIS FILE'S OWN SIBLING LIST DOCUMENTS AS CLOSED, AND THIS ONE DID NOT COVER
+        // (P1e-2 review, finding 4). `Model::query()->create(` matches none of the `::` needles
+        // above — it is the sixth writer shape `NEEDLES` was widened for, discovered by mutation
+        // rather than by reading, and it slipped straight past this list while the docblock two
+        // hundred lines up said it was handled. `->create(` alone closes both that spelling and the
+        // relation form (`$clinic->attendees()->create(`), which is why it is the bare arrow rather
+        // than a `::query()->`-qualified string.
+        //
+        // MEASURED BEFORE ADDING, per ruling 42: every one of the six matches ZERO files in
+        // `app/Support/Demo` today, in either quote style. So they buy no allow-list entry and
+        // blind no file — the test the clinic guard's withdrawn `->update(['active'` needle failed —
+        // and each was then proved by planting a file of exactly that shape, watching this sweep
+        // name it, and reverting.
+        '->create(',
+        '->insert(',
+        '->firstOrCreate(',
+        '->updateOrCreate(',
+        '->upsert(',
+        '->saveMany(',
         // The writers that own the tables this module is forbidden to write directly. Each one
         // creates rows through a name that contains none of the needles above.
         'ClinicWriter::setAttendees(',

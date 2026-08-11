@@ -13,6 +13,13 @@ import AppLayout from '../../Layouts/AppLayout.vue';
  * "I understand". Nothing signed is ever deleted: a colliding date's patient rows move to the
  * target, but the source's own signed header for that date stays exactly where it is, attached
  * to the retired (never deleted) source unit.
+ *
+ * SEVEN TABLES MOVE, not four. The rota, the clinics and the reminder opt-ins were stranded on the
+ * retired unit for four slices (design §14 item 23) — the reminders worst of all, since nothing
+ * anywhere could repair one — so each is now counted here BEFORE the merge runs. Two lines carry a
+ * consequence rather than a number: a duplicate reminder opt-in is dropped, said plainly because a
+ * count that folded it into "moved" would be a silent delete, and a clinic cannot land on a unit
+ * that does not own clinics, which is a refusal with a tick-box behind it rather than a warning.
  */
 const props = defineProps({
     units: { type: Array, default: () => [] },
@@ -20,6 +27,7 @@ const props = defineProps({
     target_unit_id: { type: [Number, String], default: null },
     plan: { type: Object, default: null },
     field_definition_conflicts: { type: Array, default: () => [] },
+    clinics_the_target_cannot_own: { type: Number, default: 0 },
 });
 
 const inputClass = 'w-full rounded-md border border-line bg-panel px-3 py-2 text-sm text-ink focus:border-channel focus:outline-none';
@@ -54,8 +62,10 @@ watch(() => props.plan, (plan) => {
 const allAcknowledged = computed(() => (props.plan?.collisions ?? []).every((date) => acknowledged[date]));
 
 const hasConflicts = computed(() => props.field_definition_conflicts.length > 0);
+const hasHomelessClinics = computed(() => props.clinics_the_target_cannot_own > 0);
 
 const canMerge = computed(() => sourceUnit.value && targetUnit.value && props.plan && !hasConflicts.value
+    && !hasHomelessClinics.value
     && (props.plan.collisions.length === 0 || allAcknowledged.value));
 
 const mergeForm = useForm({
@@ -141,7 +151,17 @@ const cancelMerge = () => {
                     <li><span class="readout font-semibold text-ink">{{ plan.signoffs }}</span> sign-off day(s) move to {{ targetUnit.code }}</li>
                     <li><span class="readout font-semibold text-ink">{{ plan.field_definitions }}</span> custom field definition(s) move</li>
                     <li><span class="readout font-semibold text-ink">{{ plan.preferred_unit_users }}</span> account(s)' remembered unit updates</li>
+                    <li><span class="readout font-semibold text-ink">{{ plan.rota_assignments }}</span> master rota span(s) move to {{ targetUnit.code }}</li>
+                    <li><span class="readout font-semibold text-ink">{{ plan.clinics }}</span> clinic(s) move to {{ targetUnit.code }}</li>
+                    <li><span class="readout font-semibold text-ink">{{ plan.reminders }}</span> reminder opt-in(s) move to {{ targetUnit.code }}</li>
                 </ul>
+
+                <p v-if="plan.reminders_dropped" class="mt-3 text-sm text-body">
+                    <span class="readout font-semibold text-ink">{{ plan.reminders_dropped }}</span>
+                    account(s) already ask for {{ targetUnit.code }}'s reminders as well, so their
+                    {{ sourceUnit.code }} opt-in is <strong class="text-ink">dropped</strong> rather than
+                    duplicated. They keep receiving {{ targetUnit.code }}'s reminders exactly as before.
+                </p>
 
                 <p class="mt-4 text-sm text-body">
                     <strong class="text-ink">{{ sourceUnit.code }}</strong> is then retired (never deleted) and
@@ -152,6 +172,12 @@ const cancelMerge = () => {
                     Both units already define a custom field with the same key
                     (<span class="readout">{{ field_definition_conflicts.join(', ') }}</span>). Rename or
                     retire one of them before this merge can proceed.
+                </div>
+
+                <div v-if="hasHomelessClinics" class="mt-4 channel-bar-critical channel-bar rounded-md bg-critical-soft p-3 text-sm text-critical">
+                    <span class="readout">{{ clinics_the_target_cannot_own }}</span> clinic(s) on
+                    {{ sourceUnit.code }} have nowhere to go: {{ targetUnit.code }} does not own clinics.
+                    Tick &ldquo;owns clinics&rdquo; on {{ targetUnit.code }} in Structure &rarr; Units first.
                 </div>
 
                 <div v-if="plan.collisions.length" class="mt-5 border-t border-line-soft pt-4">

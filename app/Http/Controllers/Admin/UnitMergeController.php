@@ -31,6 +31,7 @@ class UnitMergeController extends Controller
 
         $plan = null;
         $fieldDefinitionConflicts = [];
+        $clinicsTheTargetCannotOwn = 0;
 
         if ($sourceId !== null && $targetId !== null && $sourceId !== $targetId) {
             $source = $units->firstWhere('id', $sourceId);
@@ -39,6 +40,7 @@ class UnitMergeController extends Controller
             if ($source !== null && $target !== null) {
                 $plan = UnitMerge::plan($source, $target);
                 $fieldDefinitionConflicts = UnitMerge::conflictingFieldDefinitionKeys($source, $target);
+                $clinicsTheTargetCannotOwn = UnitMerge::clinicsTheTargetCannotOwn($source, $target);
             }
         }
 
@@ -53,6 +55,7 @@ class UnitMergeController extends Controller
             'target_unit_id' => $targetId,
             'plan' => $plan,
             'field_definition_conflicts' => $fieldDefinitionConflicts,
+            'clinics_the_target_cannot_own' => $clinicsTheTargetCannotOwn,
         ]);
     }
 
@@ -115,6 +118,19 @@ class UnitMergeController extends Controller
             throw ValidationException::withMessages([
                 'target_unit_id' => 'Both units define a custom field with the same key ('
                     .implode(', ', $conflicts).'). Rename or retire one before merging.',
+            ]);
+        }
+
+        // `commit()` refuses this too, inside its transaction. It is asked here as well so the
+        // operator reads a sentence naming the tick-box rather than a 500 — the same two-layer
+        // shape the custom-field conflict above already has.
+        $homelessClinics = UnitMerge::clinicsTheTargetCannotOwn($source, $target);
+
+        if ($homelessClinics > 0) {
+            throw ValidationException::withMessages([
+                'target_unit_id' => $homelessClinics.' clinic(s) on '.$source->code.' have nowhere '
+                    .'to go: '.$target->code.' does not own clinics. Tick "owns clinics" on it in '
+                    .'Admin → Structure → Units first.',
             ]);
         }
 

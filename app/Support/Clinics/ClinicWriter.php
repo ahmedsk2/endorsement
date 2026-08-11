@@ -135,6 +135,58 @@ final class ClinicWriter
     }
 
     /**
+     * UN-01's merge, re-pointing every clinic from a retiring unit onto its survivor.
+     *
+     * IT LIVES HERE BECAUSE THIS IS THE ONLY WRITER — `UnitMerge` calls it instead of reaching into
+     * the table, so `ClinicWritersAreSingularTest` needs no allow-list entry for that file. That is
+     * not a formality: this guard's own docblock records withdrawing a needle rather than exempt
+     * `UnitMerge`, on the grounds that it "re-points four unit-owned tables today and does not
+     * re-point `clinics.unit_id`, so an allow-list entry there would blind this guard on the exact
+     * file the next real offender arrives in". It was the offender (design §14 item 23), and the
+     * repair goes through this door for exactly that reason.
+     *
+     * NOTHING CAN COLLIDE. `clinics` carries no unique key a merge could violate — the migration
+     * deliberately omits one on `(unit_id, weekday, session)` because two rooms may run one session,
+     * and `ClinicWriterTest` pins that absence — so every clinic simply moves, duplicates included.
+     * The refusal is upstream instead: a clinic cannot land on a unit that does not own clinics, so
+     * `assertOwns()` is asked of the TARGET before a single row is touched. `UnitMerge::plan()`
+     * surfaces that same question to the operator through `clinicsTheTargetCannotOwn()`, so the
+     * refusal is normally read on the preview screen rather than thrown here.
+     *
+     * A UNIT WITH NO CLINICS SKIPS THE QUESTION ENTIRELY. Merging into a target that does not own
+     * clinics is completely ordinary — WARD is the only clinic owner at QCH — and asking `assertOwns`
+     * anyway would refuse almost every merge in the product over a table with nothing in it.
+     *
+     * RETIRED CLINICS MOVE TOO, `active` untouched. A deactivated clinic left on a retired unit is
+     * the exact state that made this defect visible: `setActive()` re-checks the owning unit as it
+     * stands now, so a stranded clinic can never be revived again.
+     *
+     * @return int clinics re-pointed
+     *
+     * @throws InvalidArgumentException when the source has clinics and the target cannot own them
+     */
+    public static function repointUnit(Unit $source, Unit $target): int
+    {
+        $clinics = Clinic::query()->where('unit_id', $source->getKey())->orderBy('id')->get();
+
+        if ($clinics->isEmpty()) {
+            return 0;
+        }
+
+        self::assertOwns($target);
+
+        $moved = 0;
+
+        foreach ($clinics as $clinic) {
+            $clinic->fill(['unit_id' => $target->getKey()]);
+            $clinic->save();
+            $moved++;
+        }
+
+        return $moved;
+    }
+
+    /**
      * CL-02's refinement, set WHOLE. The mode and the rows move together, always.
      *
      * REPLACE, NEVER APPEND — `RotaAssignment::split()`'s semantics and for its reason: a second

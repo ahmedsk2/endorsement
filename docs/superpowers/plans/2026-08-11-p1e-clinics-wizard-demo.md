@@ -1104,6 +1104,105 @@ arithmetic — this plan's own PHPUnit baseline was measured on a dirty tree and
     GROUPED structure the task asks for (`[{unit, clinics[]}]`), which is worth stating because the
     name reads like a flat list.
 
+### 2026-08-11 — Task 5
+
+1. **Baseline re-measured clean before touching anything: `php artisan test` → 1508 passed, 0
+   failed**, matching Task 4's recorded number exactly. `npm test` → 202, `npm run build` → green.
+   Task 5 took PHPUnit to **1524** (16 `ClinicMapTest`) and Vitest to **212** (9
+   `ClinicMap.test.js` + 1 new `AppLayout.test.js` case). No migration was added, but the e2e world
+   was rebuilt and re-run anyway (`rm database/e2e.sqlite && npm run test:e2e` → **22 passed**): the
+   capability catalog is seeded data in that file, so a stale world would have run against a
+   department that had never heard of `clinics.view`.
+2. **A GUARD IN A FILE THE TASK TEXT NEVER NAMES WENT RED, AND ONLY THE FULL RUN SAW IT.**
+   `AccessControlParityTest` pins each position's EFFECTIVE capability set by hand
+   (`expectedByPosition()`), so a new default-to-everybody key fails two of its cases —
+   `test_each_role_effective_set_matches_the_documented_server_gates` and
+   `test_seeder_is_idempotent`. The task's own `--filter "ClinicMapTest|RotaAccessTest|
+   AccessControl"` would in fact have caught this one by luck of the word "AccessControl", but the
+   run that actually found it was the unfiltered one, and the general lesson stands from Task 2
+   amendment 11: **a capability is added in four places, not three** — `CATALOG`, `DESCRIPTIONS`,
+   `ROLE_DEFAULTS`, and the parity test's `$anyAuth`. Fixed by adding `clinics.view` to `$anyAuth`
+   beside `rota.view`, with the reason stated at the site.
+3. **THE MAP SHIPS NO PERSON-SHAPED VALUE AT ALL — a deliberate deviation from the task's *"if a
+   count or a name list is shown at all it comes from `ClinicRoster` through `contactFree()`"*.**
+   The task offers that as a conditional and the condition is not met, for a reason worth recording
+   because it is not obvious: **`ClinicRoster::forDate()` answers for a DAY, and the map has no
+   day.** A clinic is a weekly recurrence with no date of its own, so resolving a Tuesday cell as of
+   today (a Thursday) reports Thursday's rota with complete confidence and no error anywhere — the
+   answer would be wrong for six of the seven columns. Only `named` mode is date-independent, and
+   using the resolver for one mode out of three is a third definition of "who attends". So the map
+   shows the RULE: the mode label, plus the training-level CODES for a `levels` refinement, which
+   are department structure and not people. That is the strongest available form of contact-free —
+   there is nothing on this surface to gate, no viewer passed anywhere, and no second projection.
+   Owner binding *"the map shows clinics and sessions"* is satisfied literally.
+4. **Consequently there is NO `today` prop either**, and that is the same decision rather than an
+   omission. A first draft sent `Calendar::label(Calendar::todayYmd())` for context and it was
+   removed: the moment a date appears on this surface somebody resolves a cell as of it. Stated in
+   the controller at the site where the prop would go, so the next reader adds it deliberately or
+   not at all.
+5. **TRAP 2 CONFIRMED AGAIN, AND THE PLAN IS STILL WRONG.** Task 5's Files list says
+   `resources/js/__tests__/ClinicMap.spec.js`; `vitest.config.js` includes exactly
+   `tests/js/**/*.test.js`, so a spec at that path is collected by nothing and `npm test` reports
+   the same 202 it always did. The file is `tests/js/ClinicMap.test.js`, as Task 4 amendment 2
+   already recorded for its own.
+6. **TRAP 1 DID NOT FIRE, and that was construction rather than luck.** Task 2 amendment 11's and
+   Task 4 amendment 4's lesson was applied before a line was written: `Map.vue`'s docblock explains
+   that the file names no day of the week, uses the raw-markup directive nowhere and carries no
+   dark-mode utility — **without spelling any of the three tokens**, because
+   `CalendarIsTheOnlyConverterTest`'s weekday needle and `ClinicMap.test.js`'s own source
+   assertions all scan prose. Likewise `ClinicMapController`'s docblock names neither the
+   institution-row accessor (a `CalendarWritersFlushTest` WRITE_NEEDLE) nor any of the four contact
+   field names in quotes or arrow form (`ContactFieldsAreProjectedOnceTest`), and no
+   property-assignment shape `ClinicWritersAreSingularTest` looks for. All four guards green with
+   no allow-list entry added anywhere.
+7. **The weekday guard was watched failing on THIS file.** A literal seven-name array was planted
+   in `Map.vue` and used for the column header; the repo-wide scan named the file and all seven
+   strings, and `ClinicMap.test.js`'s behavioural half named the wrong labels in the same run — the
+   two fail for different reasons, which is why both ship. Reverted, re-run, green.
+8. **Query cost measured on a POPULATED department, then checked against a plant.** Three
+   clinic-owning units, twenty-four clinics (six level-refined) and thirty people on the ward's
+   rota: **10 queries**. Replacing the one page-wide level lookup with a per-clinic one took it to
+   **16**. The bound written is **12** — two queries of slack against a regression worth six — and
+   it was watched failing at 16 before being trusted. The cost is flat in both the roster and the
+   clinic count by construction: the units are one query, their clinics one, the refinement rules
+   one eager load, and the level vocabulary one for the whole page.
+9. **Contact-freedom proved TWICE, and each half was watched failing.** At source level: `->email`
+   planted inside the projection map, and `ContactFieldsAreProjectedOnceTest` named
+   `app/Http/Controllers/ClinicMapController.php` by path — without that half, "green" and "the
+   guard cannot see this file" are indistinguishable. Behaviourally: the obvious implementation was
+   planted whole (`PersonPresenter::many($people, $request->user())` hung off each clinic, which is
+   exactly what `RotaGrid` once did), and
+   `test_the_map_carries_no_contact_field_for_any_viewer` named the precise prop paths —
+   `resolved.1.0.phone`, `resolved.1.0.email` — **at position 4**, a resident, on a department set
+   to `contact_visibility = members`. Both plants reverted; `git status` back to exactly the
+   untracked set this task created.
+10. **TWO OF THE SIXTEEN PASSED ON THE FIRST RED RUN, VACUOUSLY, AND THEIR TWINS WERE RED AT THAT
+    MOMENT** — which is the whole point of shipping them in pairs, and exactly what Task 4
+    amendment 11 warned about. `test_every_route_behind_cap_clinics_view_is_a_get` iterated an
+    empty router set, and `test_the_retired_nurse_position_gains_no_default` asserted the absence
+    of a capability that did not exist. `test_the_map_route_is_actually_registered_behind_cap_
+    clinics_view` and `test_clinics_view_is_in_the_catalog` were red beside them and are what make
+    the other two mean anything. A third, `test_posting_to_the_map_is_a_plain_method_not_allowed`,
+    asserts the read-only property at RUNTIME as well as over the router.
+11. **Six cases beyond the plan's ten**, each closing something the ten leave open: the vacuity
+    twin above; the runtime 405; `test_managing_clinics_still_needs_structure_manage` (Decision C's
+    "one new key, not two" — a resident reaches the map and is refused the structure screen, in one
+    test); `test_a_reader_sees_the_map_with_its_clinics` (the whole cell shape asserted, so a
+    future key cannot be added to the payload unnoticed); `test_a_refined_clinic_shows_its_rule_
+    and_not_its_roster` (item 3's decision as behaviour, both branches); and the `auth`-over-the-
+    router half of the D7 case, so the guest redirect cannot be some other middleware's doing.
+12. **`docs/spec/08-foundation.md` needed TWO edits, not one.** Finding 11 names the "Capability
+    catalog (complete)" list; the **Role defaults** paragraph immediately below it is the one that
+    actually records what a key defaults TO, and a key added only to the first would have left the
+    document self-contradictory while
+    `ClinicMapTest::test_the_catalog_document_lists_the_key` stayed green. Both are updated, and
+    the second also records the D7 override of Munawib §5's link-public footnote and the
+    `applied_role_defaults` once-only behaviour the task text calls out.
+13. **Nothing else in the task text was wrong against the tree.** The route, the capability key,
+    the seeded positions, `Calendar::weekdayColumns()`, the `Unit::BAR_CLASSES` colouring, the nav
+    placement and finding 11 all check out as described. Item 3 is a deviation taken deliberately,
+    not a correction; item 2 is an interaction the task text could not reasonably have foreseen.
+
 ---
 
 ## Standing rules for every task

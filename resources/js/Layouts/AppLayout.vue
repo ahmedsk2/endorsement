@@ -234,6 +234,20 @@ const navClass = (active) => [
                     Rota
                 </Link>
 
+                <!--
+                  The department's week of clinics (Munawib CL-05), P1e Decision C. Beside the rota
+                  read view and for its reason: `clinics.view` is seeded for every authenticated
+                  position, and a resident checking when their unit's clinic runs is not doing
+                  administration. Defining a clinic is the Administration entry below, behind
+                  `structure.manage` — an administrator sees both, which is correct rather than a
+                  duplicate to tidy away.
+                -->
+                <Link v-if="can('clinics.view')" href="/clinics"
+                      :aria-current="ariaCurrent(isExactly('/clinics'))"
+                      :class="navClass(isExactly('/clinics'))">
+                    Clinics
+                </Link>
+
                 <!-- Administration -->
                 <!--
                   Administration. EVERY link here binds `:aria-current` (adversarial review,

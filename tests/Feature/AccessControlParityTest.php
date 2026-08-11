@@ -29,8 +29,11 @@ class AccessControlParityTest extends TestCase
     private function expectedByPosition(): array
     {
         // rota.view (P1d) defaults to EVERY seeded position — MR-05's point is that a resident
-        // can see which unit they rotate through next.
-        $anyAuth = ['profile.manage', 'rota.view'];
+        // can see which unit they rotate through next. clinics.view (P1e) joins it on the same
+        // reasoning one requirement along (CL-05): a resident needs to know when their unit's
+        // clinic runs. Both are READ keys; the matching write keys (rota.manage, and for clinics
+        // the existing structure.manage) stay Administrator-only below.
+        $anyAuth = ['profile.manage', 'rota.view', 'clinics.view'];
         $endorsement = ['endorsement.view', 'endorsement.edit'];
         // Reopen reverses a signed attestation (medico-legal); compliance exposes the
         // missed-days page; settings edits runtime config; structure.manage (P1b) edits the

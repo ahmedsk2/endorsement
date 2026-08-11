@@ -152,10 +152,25 @@ class InvitationController extends Controller
         // The ONE predicate for "already an account" (`Person::accountEmailRule()`), applied here
         // exactly as the invite path applies it — not a second `hasAccount()` check written out
         // again beside it. A person who claimed an account through some other door since this row
-        // was minted is refused with the same message and the same key, and nothing is written.
+        // was minted is refused with the same message, and nothing is written.
+        //
+        // KEYED `invitation`, NOT `member_email` (review F7). All four of this endpoint's refusals
+        // must land on one key, because Admin → People renders exactly one — `errors.invitation`,
+        // stated in that screen's own props docblock — and People is where the per-person Resend
+        // button lives. This refusal alone arrived under `member_email` for a purely mechanical
+        // reason: a Validator names its errors after the field it was handed, and the field this
+        // shared rule is normally handed is the invite form's address input. So pressing Resend
+        // against a since-claimed address flashed nothing at all — no error, no link, no change —
+        // which is the silently-does-nothing shape this programme has refused twice already.
+        // (Admin → Users loops the whole bag and did render it; the two screens disagreeing is
+        // exactly what made the defect survive review.)
+        //
+        // The KEY moves, the PREDICATE does not: D9's offer-matches-write rule is about the rule,
+        // and re-typing `hasAccount()` here to get a different error key would be the drift it
+        // exists to prevent.
         Validator::make(
-            ['member_email' => $person->email],
-            ['member_email' => [Person::accountEmailRule()]],
+            ['invitation' => $person->email],
+            ['invitation' => [Person::accountEmailRule()]],
         )->validate();
 
         $result = InvitationIssue::issue($request, $person, (int) $invitation->position);

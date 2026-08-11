@@ -10,6 +10,7 @@ use Database\Seeders\AccessControlSeeder;
 use Database\Seeders\ReferenceSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
@@ -220,10 +221,75 @@ class InvitationResendTest extends TestCase
 
         $this->actingAs($admin)
             ->post("/admin/invitations/{$invitation->id}/resend")
-            ->assertSessionHasErrors('member_email');
+            ->assertSessionHasErrors('invitation');
 
         $this->assertSame(1, Invitation::count(), 'A refusal writes nothing.');
         $this->assertNull($invitation->refresh()->revoked_at);
+    }
+
+    /**
+     * A REFUSAL THE OPERATOR CANNOT SEE IS A BUTTON THAT DOES NOTHING (review F7).
+     *
+     * This endpoint has four refusals and they used to land on two different keys. Three said
+     * `invitation`; the fourth — "somebody claimed this address through another door" — reused the
+     * `member_email` key of the Validator it happens to be expressed through, because the rule is
+     * shared with the invite path (`Person::accountEmailRule()`, D9's one predicate) and a
+     * validator names its errors after the field it was handed.
+     *
+     * That key is rendered on Admin → Users, which loops the whole `errors` bag — but NOT on
+     * Admin → People, which reads exactly one key (`errors.invitation`) and says so in its own
+     * props docblock. People is where the per-person Resend button lives, so pressing it against
+     * a since-claimed address flashed nothing at all: no error, no link, no change. The review
+     * named Admin → Users as the silent screen; it is the other one.
+     *
+     * The fix is the KEY, not a second render site: a screen that had to enumerate the keys an
+     * endpoint might use would drift the next time one was added. This case is the pairing —
+     * every refusal this endpoint can produce, against the one key the screen reads.
+     */
+    public function test_every_resend_refusal_lands_on_the_one_key_the_people_screen_renders(): void
+    {
+        $admin = $this->admin();
+
+        // 1. Claimed — the account exists.
+        [$claimed] = $this->inviteVia($admin, 'claimed@example.org');
+        $claimed->forceFill(['accepted_at' => now()])->save();
+
+        // 2. Revoked — a deliberate administrator act meaning "this link must not work".
+        [$revoked] = $this->inviteVia($admin, 'revoked@example.org');
+        $this->actingAs($admin)->delete("/admin/invitations/{$revoked->id}")->assertRedirect();
+
+        // 3. The roster row is gone, so there is nothing to address the resend to.
+        [$orphaned] = $this->inviteVia($admin, 'orphaned@example.org');
+        Person::query()->where('email', 'orphaned@example.org')->firstOrFail()->delete();
+
+        // 4. Somebody claimed this address through another door since the row was minted.
+        [$overtaken] = $this->inviteVia($admin, 'overtaken@example.org');
+        User::factory()->create([
+            'person_id' => Person::query()->where('email', 'overtaken@example.org')->firstOrFail()->getKey(),
+        ]);
+
+        // The four setup invitations above already spent four of this operator's six sends a
+        // minute, and that bucket is SHARED across every `throttle:6,1` route (Laravel keys an
+        // authenticated request's signature on the user id alone, not on the route) — so without
+        // this the seventh request below would be a 429 and the case would fail for a reason that
+        // has nothing to do with what it is about. The sharing itself is asserted separately, in
+        // `test_the_send_bucket_is_shared_across_every_invitation_endpoint_that_sends()`.
+        RateLimiter::clear(sha1((string) $admin->getAuthIdentifier()));
+
+        foreach ([$claimed, $revoked, $orphaned, $overtaken] as $invitation) {
+            $this->actingAs($admin)
+                ->from('/admin/people')
+                ->post("/admin/invitations/{$invitation->id}/resend")
+                ->assertSessionHasErrors('invitation');
+        }
+
+        // ... and that key is the one the People screen actually renders. Asserted against the
+        // source, because the render site is what makes the key load-bearing: if this template
+        // ever stops reading `errors.invitation`, all four refusals go silent together and the
+        // four assertions above would still pass.
+        $screen = (string) file_get_contents(resource_path('js/Pages/Admin/People.vue'));
+        $this->assertStringContainsString('errors.invitation', $screen,
+            'Admin → People no longer renders `errors.invitation` — the resend refusals are silent again.');
     }
 
     public function test_a_claimed_invitation_cannot_be_resent(): void
@@ -256,6 +322,53 @@ class InvitationResendTest extends TestCase
             ->assertSessionHasErrors('invitation');
 
         $this->assertSame(1, Invitation::count());
+    }
+
+    // ------------------------------------------------------------------ the send bound
+
+    /**
+     * THE THROTTLE ACTUALLY FIRES, AND ITS BUCKET IS PER OPERATOR RATHER THAN PER ROUTE
+     * (review F6). `MailSendingRoutesAreThrottledTest` proves every sending endpoint DECLARES a
+     * bound; this proves the bound refuses, and it pins the shape of the bound.
+     *
+     * Laravel resolves an authenticated request's throttle signature from the user id alone —
+     * not from the route — so `store`, `resend` and `bulk-resend`, all `throttle:6,1`, draw on
+     * ONE bucket of six sends a minute per operator. That is the right semantics here and is
+     * asserted rather than assumed: the thing being rationed is access to the SMTP relay and to
+     * the minting of bearer credentials, and an attacker who could spend six on each of three
+     * endpoints would have eighteen.
+     */
+    public function test_the_send_bucket_is_shared_across_every_invitation_endpoint_that_sends(): void
+    {
+        $admin = $this->admin();
+        RateLimiter::clear(sha1((string) $admin->getAuthIdentifier()));
+
+        // Six invitations — the whole minute's allowance, spent on one endpoint.
+        for ($i = 1; $i <= 6; $i++) {
+            $this->actingAs($admin)
+                ->post('/admin/invitations', ['member_email' => "joiner{$i}@example.org", 'position' => 4])
+                ->assertRedirect();
+        }
+
+        $this->assertSame(6, Invitation::count());
+
+        // The seventh is refused on the SAME endpoint ...
+        $this->actingAs($admin)
+            ->post('/admin/invitations', ['member_email' => 'joiner7@example.org', 'position' => 4])
+            ->assertStatus(429);
+
+        // ... and, because the bucket is the operator's rather than the route's, the sibling
+        // endpoint is refused too, without a single request having reached it.
+        $resendable = Invitation::query()->orderByDesc('id')->firstOrFail();
+
+        $this->actingAs($admin)
+            ->post("/admin/invitations/{$resendable->id}/resend")
+            ->assertStatus(429);
+
+        // A refusal writes nothing: the seventh invitation was never minted, and the resend
+        // neither rotated a token nor revoked the row it would have superseded.
+        $this->assertSame(6, Invitation::count());
+        $this->assertNull($resendable->refresh()->revoked_at);
     }
 
     // ------------------------------------------------------------------ the trail

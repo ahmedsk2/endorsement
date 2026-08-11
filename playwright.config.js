@@ -44,7 +44,10 @@ export default defineConfig({
     timeout: 60_000,
     expect: { timeout: 10_000 },
     reporter: [['list']],
-    globalSetup: './tests/e2e/global-setup.js',
+    // No `globalSetup`: Playwright starts `webServer` and waits for its URL BEFORE global
+    // setup runs, so a setup step that builds the database can never reach a server that
+    // cannot boot without one. The world is built by the first half of the webServer command
+    // instead — see tests/e2e/prepare-world.js for the deadlock this replaced.
     use: {
         baseURL,
         // Light only — the design system has no dark mode (docs/DESIGN-TOKENS.md).
@@ -55,10 +58,15 @@ export default defineConfig({
         actionTimeout: 15_000,
     },
     webServer: {
-        command: 'php artisan serve --host=127.0.0.1 --port=8001',
+        // Build the world, THEN serve it. Both halves are one command because Playwright will
+        // not run anything of ours before this one answers on `url`.
+        command: 'node tests/e2e/prepare-world.js && php artisan serve --host=127.0.0.1 --port=8001',
         url: baseURL,
         reuseExistingServer: false,
-        timeout: 60_000,
+        // Generous because the first half migrates and seeds from nothing on a cold checkout —
+        // the case the old 60s bound never actually exercised, since a leftover sqlite file
+        // made every local run skip the work it was timing.
+        timeout: 180_000,
         env: serverEnv,
     },
     projects: [

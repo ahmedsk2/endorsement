@@ -2206,3 +2206,91 @@ finding's own reproduction walks through, already scopes each row on `people.pos
 one invitation row's existence and expiry on a different screen, not an escalation: every write path
 now refuses. Left as-is rather than widened into scope creep, and recorded here so it is not
 rediscovered as new.
+
+### The remaining six (2026-08-11, same review)
+
+Suite **1421 → 1429** PHPUnit (+2 `AccountUnbindTest`, +2
+`MailSendingRoutesAreThrottledTest`, +2 `InvitationResendTest`, +2 rewritten in place with no
+count change), 6588 assertions. Vitest 192, e2e 22, `npm run build` green.
+
+**F5 (IMPORTANT) — the detail panel and the picker disagreed about which accounts exist.**
+`index()`'s picker inner-joins `people`; `selectedUser()` resolved `?user_id=N` through a raw
+`User::find()` and projected `(int) $user->position`, which is **0 — the Administrator id** — once
+`AccountUnbind` has nulled the link, because `position` is a read-through accessor. The panel then
+titled itself with the login name (`full_name || member_name`) and `AccessControl.vue:216` rendered
+`positionName(0)` as **"Administrator"**. Every other read of that link fails toward a blank; this
+one failed toward the top of the ladder, on the screen whose whole subject is privilege. Fixed with
+`whereNotNull('person_id')`, stated as one predicate on both sides. Returning null rather than
+throwing is deliberate — already this method's answer for an unknown or array-shaped `user_id`, so
+no Vue change was needed. **Red first:** the failure printed the defect verbatim
+(`'full_name' => null, … 'position' => 0`). Ruling 38.
+
+**The fifth path the search turned up, and it is a WRITE.**
+`UserManagementController::updateProfile()` writes `member_name` on `users` and
+`full_name`/`member_email` through `$user->person?->update(...)`. On an unbound account that
+null-safe call is a **no-op that raises nothing**: two of three submitted corrections evaporated, a
+`user_profile_update` audit row was appended, and the screen flashed "Account details updated."
+Refused now, mirroring its sibling `setPosition()`, which already refuses an unbound account by
+name. Ruling 39. The full survey of that link — every read that resolves a name, position or email
+through `users.person_id` — is summarised under F5 in the report; the remainder are either blanks
+(`invited_by` → "—", `PersonPresenter::history()`'s `by`, `printed_by`) or are unreachable because
+an unbound account is inactive by construction and cannot authenticate.
+
+**F6 (IMPORTANT) — two mailing endpoints carried no throttle, and the comment said otherwise.**
+`admin.invitations.store` and `admin.invitations.resend` both end in `Mail::to(...)`, both sat in
+an `auth`-only group with no bound at all, while `bulk-resend`'s comment three lines away named
+`admin.settings.test-email` as "the only other endpoint in this application that sends on a button
+press". Both now `throttle:6,1`, and the property is **derived rather than asserted**:
+`MailSendingRoutesAreThrottledTest` walks the router and follows one level of same-class call, so
+a new mailing endpoint is covered the day it registers. That indirection is the whole design —
+`store()` contains no `Mail::` at all, so a handler-body scan would have been green on this exact
+defect, and a whole-file scan would have named `bulkPreview()`/`revoke()` and bought an allow-list
+to excuse them. A behavioural case proves the bound refuses **and** pins its shape: Laravel keys an
+authenticated request's throttle signature on the user id alone, so all three sending endpoints
+draw on ONE bucket of six a minute per operator. Ruling 40.
+
+**F7 (MINOR) — one of four refusals landed on a key no screen was reading.** The
+"somebody claimed this address through another door" refusal was keyed `member_email`, because a
+Validator names its errors after the field it was handed and the field this shared rule
+(`Person::accountEmailRule()`) is normally handed is the invite form's address input. Admin →
+People renders **exactly one** key, `errors.invitation`, and says so in its own props docblock — so
+the per-person Resend button flashed nothing at all. The key moves; the predicate does not. **The
+review named the wrong screen**: Admin → Users loops the whole bag and did render it, and the two
+screens disagreeing is what let this survive review. Ruling 41.
+
+**F8 (MINOR) — three guards could not see three ways of writing a row.** Property assignment then
+`->save()`, four of five relation-write spellings, and `find()` then `destroy()`/`delete()`. Every
+new needle was proved by planting a writer of exactly its shape, watching the guard name the file,
+and reverting — plus a negative control per guard proving a plain READ still passes, which is what
+keeps the `= ` trailing space load-bearing rather than decorative. Two needles were **tried and
+withdrawn on measurement**: `User::find(` completes the third shape on paper but named four files
+on this tree, three of them auth controllers resolving the session's own pending user and one that
+merely QUOTES the expression in a comment about an unrelated defect. The remaining gap
+(`$model->delete()` on a bound instance, invisible to any substring) is now stated in each docblock
+rather than implied away.
+
+**F9 (MINOR) — the prose was wrong and the code was right.** All three claimed
+`database/factories/` was not scanned; `base_path('database')` contains it, and the two established
+siblings (`PersonLevelsHaveOneWriterTest`, `RotaWritersAreSingularTest`) both scan factories and
+NAME the offending factory in the allow-list. Scanning is the better discipline: a factory writing
+the column directly IS a second writer of this shape, merely one whose blast radius stops at the
+suite, and naming it costs a line where excluding the directory exempts every future factory
+invisibly. It mattered most on the capability guard, where `database/` also holds
+`AccessControlSeeder`, which runs in **production**. Proved by planting a factory under each guard.
+
+**F10 (MINOR) — the two-doors test never opened the second door.** Both halves posted to
+`/admin/access-control/person`. Every case now goes through both endpoints and the answers are
+compared as values — status, the `overrides`-shaped error keys, and the rows each actually wrote —
+with a fourth case for a well-formed grant, because two doors that both refuse everything also
+"agree". Proved by planting three divergences in `updatePerson()` alone (a narrowed effect rule, a
+dropped payload, a rewritten effect) so that each part of the projection is shown to be
+load-bearing. One incidental finding: `session('errors')` answers with the store's raw pre-start
+array rather than a `ViewErrorBag`, on which `->getBag()` is a fatal — the test reads it the way
+`TestResponse` does, session start included.
+
+**What the review got wrong, in this batch.** F7 says the silent screen is Admin → Users. It is
+Admin → People. Users.vue renders `v-for="(message, key) in errors"` over the whole bag, so
+`member_email` surfaced there; People.vue reads `errors.invitation` alone. The defect is real and
+the fix is the same one, but the reproduction as written would not have shown it. F9's premise —
+that the guards contradict their docblocks — is right, and the direction it left open resolves
+against the prose rather than the code.

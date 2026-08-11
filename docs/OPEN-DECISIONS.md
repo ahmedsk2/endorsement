@@ -339,10 +339,16 @@ retention rule (design §14 item 7) and rows now accumulate *faster*, because a 
 token and keeps the superseded row — a data-disposal decision on a table holding staff email
 addresses belongs in a plan reviewing the whole retention policy. And a **pre-existing** security
 gap was measured rather than inferred: `assertNoSelfLockout()` guards the role matrix only and never
-runs on the per-user capability path, so an `access.manage` holder can deny it to the last holder
-and lock the security console out, recoverable only with database access. Recorded as design §14
-open item 20, with the test that pins both doors in agreement so a future fix is proved to reach
-each of them.
+runs on the per-user capability path, so an `access.manage` holder could deny it to the last holder
+and lock the security console out, recoverable only with database access.
+
+**That gap (design §14 open item 20) was closed on 2026-08-11 and turned out to be six doors, not
+one.** Beyond the two override screens, deactivating an account, unbinding one, demoting somebody
+off Administrator from either console, and a bulk "set inactive" each emptied `access.manage` with a
+302 — all of them guarding on a predicate that asked about the Administrator **role**, which a
+second position-0 account holding a *deny* satisfied while holding nothing. One capability-shaped
+guard (`App\Support\AccessManageGuard`) now covers all six, and the role-shaped predicates were
+deleted rather than kept beside it. See ruling 45.
 
 ---
 

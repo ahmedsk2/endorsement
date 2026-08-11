@@ -13,7 +13,8 @@ use Illuminate\Validation\ValidationException;
  *
  * `people.position` drives the capability set: `AccessControl::resolve()` reads
  * `$user->position`, a read-through accessor onto this column, and `capabilitiesFor()` caches
- * the result for CACHE_TTL (600s). It is also what `isLastActiveAdministrator()` guards.
+ * the result for CACHE_TTL (600s). A position change can therefore take `access.manage` away from
+ * its last holder, which is why `write()` runs through `App\Support\AccessManageGuard` (ruling 45).
  *
  * Before P1c there was one writer (`UserManagementController::setPosition()`) and it handled
  * both. P1c adds a second surface — the People screen — and a second writer would be a
@@ -117,8 +118,8 @@ final class PositionChange
     }
 
     /**
-     * @throws ValidationException when this would demote the last active Administrator, or when
-     *                             the actor may not place somebody at Administrator
+     * @throws ValidationException when this would leave `access.manage` with no active holder, or
+     *                             when the actor may not place somebody at Administrator
      */
     private static function write(Person $person, int $position, ?User $actor, string $field): ?User
     {
@@ -126,13 +127,21 @@ final class PositionChange
 
         $user = $person->user()->first();
 
-        if ($position !== 0 && self::isLastActiveAdministrator($user)) {
-            throw ValidationException::withMessages([
-                $field => 'This is the last active Administrator — grant another account the Administrator role first.',
-            ]);
-        }
-
-        $person->update(['position' => $position]);
+        // THE GUARD IS ASKED ON EVERY POSITION CHANGE, in either direction, and that is
+        // deliberate (ruling 45). Its predecessor `isLastActiveAdministrator()` skipped the check
+        // whenever the target position was 0, reasoning that arriving at Administrator cannot cost
+        // anybody the role. True of the role, and not the question: what must survive is
+        // `access.manage`, whose holders are computed from role defaults AND per-user overrides,
+        // so "position 0 always holds it" is a property of `role_capabilities` rows that a seeder
+        // or a future migration could differ on. A guard that fires only on some writes is the
+        // shape this whole fix exists to remove, and it costs the same either way.
+        //
+        // `$user` is null for a roster-only person, which the guard reads as "this write cannot
+        // remove a holder" — see AccessManageGuard::guarding(). That is what keeps RosterImport's
+        // per-row loop free of the oracle entirely.
+        AccessManageGuard::guarding($user, $field, static function () use ($person, $position): void {
+            $person->update(['position' => $position]);
+        });
 
         // Only a claimed account has a cached capability set to bust.
         if ($user !== null) {
@@ -159,8 +168,8 @@ final class PositionChange
      *
      * NO AUDIT ROW. It throws, and a throw from inside `PersonController`'s transaction (or
      * `RosterImport`'s) rolls back — an audit row written here would unwind with it and the attempt
-     * would vanish from the trail, which is the exact defect P1c-1 finding 12 records. The
-     * last-administrator guard below has always refused the same way and for the same reason.
+     * would vanish from the trail, which is the exact defect P1c-1 finding 12 records.
+     * `App\Support\AccessManageGuard` refuses the same way and for the same reason.
      *
      * @throws ValidationException
      */
@@ -189,57 +198,27 @@ final class PositionChange
         ]);
     }
 
-    /**
-     * True when this account is an ACTIVE Administrator and no OTHER active Administrator exists.
+    /*
+     * `isLastActiveAdministrator()` AND `wouldLeaveNoActiveAdministrator()` WERE REMOVED HERE
+     * (ruling 45, 2026-08-11) — do not reintroduce either, nor a third predicate shaped like them.
      *
-     * `whereKeyNot` is avoided: it filters the unqualified `id`, ambiguous once `people` is
-     * joined (both tables have one). Moved here verbatim from UserManagementController, which now
-     * calls through — see PositionChangeTest's delegation assertion.
+     * Both asked about the Administrator ROLE: "is another active `people.position = 0` account
+     * left", per-row and per-batch respectively. That question implied "somebody holds
+     * `access.manage`" only until the capability became deniable per account (P1c-2, owner
+     * decision 2), after which a second administrator denied the capability was cover to the role
+     * question and no cover at all to the real one. Five doors guarded on them and all five were
+     * measured emptying `holdersOf('access.manage')` with a 302.
+     *
+     * They are gone rather than kept beside `App\Support\AccessManageGuard` because there was no
+     * remaining consumer that wanted the role question for its own sake — every caller was a
+     * lockout guard asking the wrong one — and two predicates answering NEARLY the same question
+     * is the drift this codebase keeps paying for (the audit canonical string, the picker
+     * predicates). A role-shaped check left lying about is also an invitation for the next door to
+     * ask it again, which is exactly how this became five.
+     *
+     * `assertMayPlaceAtAdministrator()` above is NOT that check and stays: it is an authorization
+     * question about the ACTOR (who may hand out position 0), not a survival question about the
+     * set. `AccessControlController::assertNoSelfLockout()` also stays, guarding a third thing
+     * again — that the position-0 role DEFAULT keeps `access.manage` — on the role matrix.
      */
-    public static function isLastActiveAdministrator(?User $user): bool
-    {
-        if ($user === null || (int) $user->position !== 0 || ! $user->active) {
-            return false;
-        }
-
-        return ! User::query()
-            ->join('people', 'people.id', '=', 'users.person_id')
-            ->where('users.id', '!=', $user->getKey())
-            ->where('people.position', 0)
-            ->where('users.active', true)
-            ->exists();
-    }
-
-    /**
-     * The SET-AWARE sibling of {@see isLastActiveAdministrator()} (P1c finding 13) — extending
-     * the one definition rather than writing a second, per Decision B.
-     *
-     * The per-row check asks "is there ANOTHER active Administrator besides THIS ONE" — true for
-     * every one of the last two Administrators checked individually, so a loop that applies
-     * `isLastActiveAdministrator()` row by row lets a bulk deactivation of the last N accounts
-     * through one row at a time, each seeing the others as cover, and empties the Administrator
-     * set permanently. This asks the question for the WHOLE batch at once, in one query, called
-     * BEFORE any row in the batch is written: excluding every account this one batch is about to
-     * deactivate, does any active Administrator remain?
-     *
-     * @param  list<int>  $userIds  every account this one batch is about to deactivate — accounts
-     *                              only; a person with no linked account has none to exclude and
-     *                              carries no capability set to lose
-     */
-    public static function wouldLeaveNoActiveAdministrator(array $userIds): bool
-    {
-        if ($userIds === []) {
-            return false;
-        }
-
-        // `position` was moved off `users` onto `people` (2026_08_10_120003) — `$user->position`
-        // is a read-through accessor, not a real column, so a raw query predicate must join
-        // `people` the same way `isLastActiveAdministrator()` above does.
-        return ! User::query()
-            ->join('people', 'people.id', '=', 'users.person_id')
-            ->whereNotIn('users.id', $userIds)
-            ->where('people.position', 0)
-            ->where('users.active', true)
-            ->exists();
-    }
 }

@@ -324,16 +324,19 @@ stays on every seeded position: reading the rota is not editing it.
 Two things arrived with the 2026-08-10 account-lifecycle release (P1c-2). Neither needs a command;
 both are yours to decide.
 
-**A. More than one `access.manage` holder, always.** The self-lockout guard on Admin → Access
-Control protects the Administrator **role's** default set — it stops position 0 giving up
-`access.manage` on the role matrix. It does **not** run on the per-account grant/deny path, on either
-screen. So an administrator can deny `access.manage` to the last account holding it, and the security
-console then answers to nobody: no screen can grant it back, and recovery means a database console.
-This is pre-existing, measured rather than guessed, and deliberately not patched in a release whose
-job was to extract one writer without changing behaviour (design §14 open item 20; a test already
-pins both screens in agreement so a future fix is proved to reach each of them). **Until it is fixed,
-the mitigation is entirely procedural: keep at least two active accounts holding `access.manage`, and
-do not experiment with denying it to yourself.**
+**A. More than one `access.manage` holder, always — now enforced, and still worth doing.** As of
+2026-08-11 the system refuses any operation that would leave nobody holding `access.manage`: denying
+it on either screen, deactivating or unbinding that account, demoting them off Administrator from
+either console, or including them in a bulk "set inactive". The refusal names the remedy and nothing
+is written. That closes what was recorded here as an open gap (design §14 open item 20): six separate
+doors, each measured emptying the capability before the fix, all now behind one guard.
+
+**The procedural advice stands anyway,** for the parts software cannot refuse: a single holder is
+still a single lost password, a single departure, a single locked-out TOTP device. Keep at least two
+active accounts holding `access.manage`. Note also that the guard is deliberately blunt in the
+already-broken direction — if an instance somehow reaches zero holders, deactivations and demotions
+are refused until one exists again. Promoting somebody to Administrator and reactivating an account
+both remain available, which is how you get out.
 
 **B. "Link lifetime (days)" on Admin → Settings.** How long an invitation link stays usable, default
 **7**, maximum **30**. Munawib's own figure is 14; 7 is the deliberate choice here, because redeeming

@@ -73,11 +73,16 @@ let its holder grant themselves the security console. Both doors share one body,
 drift. **A colleague who leaves and returns on a new account does not regain old roles; an
 administrator grants them again.**
 
-**Known gap, pre-existing and recorded rather than quietly carried:** the self-lockout guard covers
-the **role matrix only** and never runs on the per-user override path, so a holder of
-`access.manage` can deny it to the last account holding it and make the console unreachable without
-database access. Design §14 open item 20 carries it, along with the test that pins the two doors in
-agreement so a future fix is proved to reach both.
+**`access.manage` must always have an active holder, and one guard enforces it everywhere**
+(rulings 44 and 45, 2026-08-11). `App\Support\AccessManageGuard::guarding()` wraps every write that
+could remove a holder — both override surfaces, plus deactivate, unbind, and demotion from either
+the account or the roster console, including the bulk selection — in a transaction, asks
+`AccessControl::holdersOf('access.manage')` **after** the write, and throws if the answer is nobody,
+which unwinds it. It replaced `PositionChange::isLastActiveAdministrator()`, which asked about the
+Administrator **role**: a second position-0 account that had been *denied* the capability satisfied
+that question while holding nothing, and all six doors were measured emptying the capability with a
+302 before this. `AccessControlController::assertNoSelfLockout()` still guards the position-0 role
+DEFAULT on the matrix, which is a separate question. Design §14 open item 20 is discharged.
 
 **Capability catalog (complete):** `endorsement.view`, `endorsement.edit`, `endorsement.reopen`, `endorsement.compliance`, `profile.manage`, `users.manage`, `users.manage_residents`, `access.manage`, `settings.manage`, `structure.manage`, `people.manage`, `rota.view`, `rota.manage`.
 

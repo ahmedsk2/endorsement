@@ -10,6 +10,7 @@ use App\Models\UserCapability;
 use App\Support\AccessControl;
 use Database\Seeders\AccessControlSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\ViewErrorBag;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -339,31 +340,98 @@ class PersonRolesTest extends TestCase
     }
 
     /**
-     * The second door must not be WIDER than the first. Both validate the submitted capability
-     * ids against the same catalog and refuse the same unknown effect.
+     * The second door must not be WIDER OR NARROWER than the first: both validate the submitted
+     * capability ids against the same catalog and refuse the same unknown effect.
+     *
+     * IT USED TO NAME THAT PROPERTY AND NEVER TEST IT (review F10). Both halves posted to
+     * `/admin/access-control/person` — the People panel, twice — so the access-control screen it
+     * claims parity WITH was never opened, and a refusal added to one door alone would have left
+     * this green. It is the same defect P1c-2 finding 4 recorded elsewhere in this codebase:
+     * something declared and never exercised, which reads in review exactly like something
+     * enforced.
+     *
+     * Every case now goes through BOTH endpoints and the two outcomes are compared as values —
+     * status, error keys, and the rows each actually wrote — rather than asserted separately
+     * against a hand-written expectation each side could drift from independently. Proved by
+     * planting a refusal in `updatePerson()` alone and watching this go red.
      */
     public function test_the_people_panel_refuses_exactly_what_the_access_control_screen_refuses(): void
+    {
+        $reopen = $this->capId('endorsement.reopen');
+
+        foreach ([
+            'an unknown capability id' => [999999 => 'grant'],
+            'an unknown effect' => [$reopen => 'sometimes'],
+            'a known id with an empty effect' => [$reopen => ''],
+            'a well-formed grant, which BOTH must accept' => [$reopen => 'grant'],
+        ] as $label => $overrides) {
+            $viaAccountConsole = $this->submit('user', $overrides);
+            $viaPeoplePanel = $this->submit('person', $overrides);
+
+            $this->assertSame($viaAccountConsole, $viaPeoplePanel,
+                "The two doors disagree about {$label}.");
+        }
+    }
+
+    /**
+     * Put one override map through ONE of the two doors and project what came back, in a shape
+     * the other door's answer can be compared to.
+     *
+     * A fresh target per call, and the rows are read back by (capability_id, effect) rather than
+     * by row id: the two doors write through the same writer to the same account, but they write
+     * DIFFERENT accounts here, and `user_capabilities.id` would differ on every comparison for a
+     * reason that has nothing to do with the property.
+     *
+     * @param  'user'|'person'  $door
+     * @param  array<int, string>  $overrides
+     * @return array{status: int, errors: list<string>, rows: list<array{capability_id: int, effect: string}>}
+     */
+    private function submit(string $door, array $overrides): array
     {
         $admin = $this->admin();
         $target = User::factory()->create(['position' => 4]);
 
-        $this->actingAs($admin)
-            ->from('/admin/people')
-            ->put('/admin/access-control/person', [
-                'person_id' => $target->person_id,
-                'overrides' => [999999 => 'grant'],
-            ])
-            ->assertSessionHasErrors('overrides');
+        $payload = $door === 'user'
+            ? ['user_id' => $target->id, 'overrides' => $overrides]
+            : ['person_id' => $target->person_id, 'overrides' => $overrides];
 
-        $this->actingAs($admin)
-            ->from('/admin/people')
-            ->put('/admin/access-control/person', [
-                'person_id' => $target->person_id,
-                'overrides' => [$this->capId('endorsement.reopen') => 'sometimes'],
-            ])
-            ->assertSessionHasErrors('overrides.'.$this->capId('endorsement.reopen'));
+        $response = $this->actingAs($admin)
+            ->from($door === 'user' ? '/admin/access-control' : '/admin/people')
+            ->put('/admin/access-control/'.$door, $payload);
 
-        $this->assertDatabaseCount('user_capabilities', 0);
+        // Read the bag the way `TestResponse::assertSessionHasErrors()` does, START INCLUDED.
+        // `session('errors')` and a bare `app('session.store')->get('errors')` both answer here
+        // with the store's raw pre-start array (`['default' => ['format' => …, 'messages' => …]]`)
+        // rather than a `ViewErrorBag`, and `->getBag()` on that is a fatal, not a failure —
+        // measured, not assumed. The framework's own accessor starts the store first, which is
+        // what deserialises it.
+        $session = app('session.store');
+
+        if (! $session->isStarted()) {
+            $session->start();
+        }
+
+        $bag = $session->get('errors');
+
+        // The BOUND key differs by construction (`user_id` vs `person_id`) and is not part of the
+        // property — only the keys describing the submitted MAP are, which is what both doors
+        // validate identically.
+        $errors = array_values(array_filter(
+            array_keys($bag instanceof ViewErrorBag ? $bag->getBag('default')->getMessages() : []),
+            static fn (string $key): bool => $key === 'overrides' || str_starts_with($key, 'overrides.'),
+        ));
+        sort($errors);
+
+        $rows = UserCapability::where('user_id', $target->id)
+            ->orderBy('capability_id')
+            ->get(['capability_id', 'effect'])
+            ->map(static fn (UserCapability $row): array => [
+                'capability_id' => (int) $row->capability_id,
+                'effect' => (string) $row->effect,
+            ])
+            ->all();
+
+        return ['status' => $response->status(), 'errors' => $errors, 'rows' => $rows];
     }
 
     // ------------------------------------------------------------------ the escalation surface

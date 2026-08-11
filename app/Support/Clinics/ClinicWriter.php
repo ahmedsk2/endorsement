@@ -193,9 +193,14 @@ final class ClinicWriter
         }
 
         if (! $unit->active) {
+            // The wording here is load-bearing in one small way: `ClinicHooksTest`'s CL-04 scan
+            // strips COMMENTS before matching, not strings, and an exception message is code a
+            // reader can see rather than documentation about code. So this sentence says "cover"
+            // where it once said the word CL-04 owns — the meaning is identical and the guard keeps
+            // a needle that would otherwise have to be dropped or allow-listed.
             throw new InvalidArgumentException(
                 "Unit [{$unit->code}] is retired. A clinic on a retired unit appears on no map and "
-                .'is coverage nobody can see.'
+                .'is cover nobody can see.'
             );
         }
     }

@@ -1268,6 +1268,38 @@ None block starting P0.
     `ManagerScope::` — coarse, and honest about being coarse; the alternative is a hand-written list
     covering only the routes somebody remembered. Any route added to that group needs the same
     in-controller gate.
+22. **CL-03 and CL-04 are unbuilt, their hooks are recorded rather than built, and the absence is
+    asserted rather than merely unimplemented (P1e Task 6).** Item 18's treatment, applied to
+    clinics, for the same reason: *"we have not built it"* and *"we have decided not to build it"*
+    are different states and only the second is safe to build on top of.
+    - **CL-03 — "clinics feed conditions" — is a P2 condition type.** `conditions` exists in this
+      tree as neither a table, a class nor a concept, and §6.3 lists `slots`, `coverage_templates`
+      and `conditions` together as unbuilt. **The hook, when it arrives:** the P2 condition reads
+      `clinics.weekday` and `clinics.unit_id` against a date and a person's current unit. It needs
+      no schema change here and it is not a clinic-module concern when it lands.
+    - **CL-04 — personal schedules, feeds, the on-now board, morning cover — is P3.** **The hook,
+      when it arrives:** it reads `App\Support\Clinics\ClinicRoster::forDate()`, which already
+      answers *"who does this clinic come down to on this day"* from the master rota at read time,
+      and deliberately answers nothing else. Also no schema change.
+    `tests/Feature/Clinics/ClinicHooksTest.php` runs two case-insensitive needle scans (CL-03:
+    `post_call`, `postcall`, `condition`, `severity`, `violation`, `hard_block`, `soft_block`,
+    `rank_order`; CL-04: `availab`, `coverage`, `on_now`, `onnow`, `subtract`, `personal_schedule`,
+    `unavailable`) over `app/Support/Clinics/` in full — a glob, so a class added there joins both
+    scans unasked — plus the two clinic controllers, both form requests, both models and both Vue
+    screens, each named path asserted to EXIST so a rename cannot silently empty the set. **It
+    strips comments before matching**, exactly as item 18's second scan does and for the same
+    reason: `ClinicRoster` and `Clinics/Map.vue` both state this rule in their own docblocks, in the
+    vocabulary the scan hunts for, because those are the two files a future implementer would reach
+    into first — and a guard that fails the build on the documentation of its own rule teaches
+    people to delete the documentation. **The stripper now has ONE definition**
+    (`Tests\Support\SourceScanner::withoutComments()`, extracted from `RotaAccessTest` in P1e Task
+    6, since two copies would be two definitions of one fact), and each caller pins it in both
+    directions against real files of its own choosing: a stripper that over-reached would return
+    comment-free *and code-free* source, every needle would miss, and the guard would be silently
+    vacuous while looking identical to a clean tree. **The absence is real rather than allow-listed**
+    — `ClinicRoster` never queries the leave tables at all (P1e Task 3, Decision B: a person on
+    vacation is returned, unmarked), so the CL-04 scan passes on the module's own merits, and there
+    is no allow-list on either scan.
 
 ---
 

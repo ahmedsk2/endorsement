@@ -1203,6 +1203,76 @@ arithmetic — this plan's own PHPUnit baseline was measured on a dirty tree and
     placement and finding 11 all check out as described. Item 3 is a deviation taken deliberately,
     not a correction; item 2 is an interaction the task text could not reasonably have foreseen.
 
+### 2026-08-11 — Task 6
+
+1. **Baseline re-measured clean before touching anything: `php artisan test` → 1524 passed, 0
+   failed**, matching Task 5's recorded number exactly. `npm test` → 212, `npm run build` → green.
+   Task 6 took PHPUnit to **1527** (3 `ClinicHooksTest`). Vitest unchanged. No migration and no e2e
+   file was touched, so the e2e world was not rebuilt for this task.
+2. **The stripper was EXTRACTED, as the task text permits, to `tests/Support/SourceScanner.php`
+   (`Tests\Support\SourceScanner::withoutComments()`).** `RotaAccessTest`'s private
+   `sourceWithoutComments()` now delegates to it in one line and keeps its own name, so nothing that
+   called it had to change. `tests/Support/` is collected by no test suite (`phpunit.xml` names only
+   `tests/Unit` and `tests/Feature`), and `Tests\` already maps to `tests/` in `autoload-dev`, so
+   this cost no configuration. Both callers keep their OWN two-way calibration against their OWN
+   files — a proof that the stripper handles `AvailabilitySummary`'s docblock is not a proof that it
+   handles `Map.vue`'s.
+3. **THE CL-04 SCAN WENT RED ON A REAL OFFENDER ON ITS FIRST RUN, IN CODE RATHER THAN IN PROSE, AND
+   THE STRIPPER COULD NOT HELP.** `ClinicWriter::assertOwns()` refuses a clinic on a retired unit
+   with *"…appears on no map and is coverage nobody can see."* — an exception MESSAGE, which is a
+   string literal, and the stripper removes comments only. The message now reads *"is cover nobody
+   can see"*: identical meaning, one needle preserved. The alternative was to drop `coverage` from
+   the needle set (it is the word design §6.3's unbuilt `coverage_templates` is named for, and CL-04's
+   own *"morning cover"* requirement) or to allow-list the module's own writer, which is precisely
+   the file where a second implementation would appear. The reason is stated at the site so nobody
+   "improves" the wording back. **Deliberate rule, worth generalising:** strings are NOT stripped,
+   by either path — an exception message or a rendered label carrying a forbidden word is code a
+   user can see, not documentation about code, and a scan that ignored strings would miss a real
+   surface. `SourceScanner`'s docblock says so.
+4. **`Clinics/Map.vue` gained a paragraph naming CL-04's vocabulary out loud, and that is a
+   deliberate addition beyond the task's "`ClinicRoster.php` (modify — docblock only, if needed)".**
+   Two reasons. First, a wall chart of the department's week is the single most tempting place in
+   the product to add a "who is free" column, and the person tempted is reading that file, not the
+   plan. Second, and the reason it is load-bearing rather than decorative: without it **no `.vue`
+   comment in the clinic module contained any needle at all**, so the `.vue` half of the stripper
+   calibration could only be pinned on an arbitrary phrase (which is all `RotaAccessTest` can do —
+   it calibrates on `MR-06`, not on a needle). It is now calibrated on the real thing: `availab` and
+   `coverage` are asserted present in the raw file and absent from the stripped one, so a `.vue`
+   stripper that stopped working fails the build on that sentence rather than silently disabling the
+   scan.
+5. **Both scans cover the two MODELS as well**, which the task text's *"`app/Support/Clinics/` in
+   full, plus the clinic controllers, form requests and Vue screens"* does not name: `Clinic` is
+   where a `conditions()` relation or a `severity` cast would land, and a guard blind to the model
+   is a guard around three quarters of a module. Eleven files, the support half a glob and the other
+   eight each `assertFileExists`'d, with a count floor on both halves.
+6. **`test_nothing_in_the_clinic_module_evaluates_a_condition` PASSED ON THE FIRST RED RUN** — trap
+   4 exactly, for the third time in this slice. What makes it non-vacuous is not another assertion
+   in the same test but the two structural twins inside `clinicSurfaceFiles()` (a floor on the glob,
+   a floor on the total, and `assertFileExists` per named path) plus the plant below; a scan that
+   iterated an empty set would fail on the floors before it could be green for the wrong reason.
+7. **Both scans were watched failing against planted offenders in BOTH languages, and the stripper
+   was then watched staying GREEN on the same words in comments.** The positive half:
+   `app/Support/Clinics/PlantedHookOffender.php` (a condition evaluator carrying every shape at
+   once) plus one planted line in `Map.vue`. It named `PlantedHookOffender.php` on six CL-03 needles
+   and five CL-04 needles, and `Map.vue` on `severity`, `availab`, `coverage` and `unavailable`. The
+   negative half — the one that makes the positive half mean anything — was
+   `app/Support/Clinics/PlantedCommentOnly.php` carrying **all sixteen needles in prose** across a
+   docblock, a `//` comment, a `#` comment and a trailing `/* */`, plus a `//` line and an HTML
+   comment in `Map.vue` carrying the same words: **all three tests stayed green**. Both plants
+   reverted, re-run green, `git status` back to exactly the untracked set this task created. Note
+   for the next planter: `Map.vue` carried this task's own uncommitted work, so it was copied aside
+   and restored from the copy — `git checkout` would have reverted the task with the plant (Task 1
+   amendment 6 recorded the same hazard for the fixture).
+8. **Design §14 gains item 22**, in item 18's shape, stating what each hook IS (CL-03 reads
+   `clinics.weekday` + `clinics.unit_id` against a date and a person's current unit; CL-04 reads
+   `ClinicRoster::forDate()`), that neither needs a schema change when it arrives, and that the
+   absence is real rather than allow-listed — Task 3 built `ClinicRoster` so it never reads the
+   leave tables, and neither scan has an allow-list at all.
+9. **Nothing in the task text was wrong against the tree.** The needle sets, the comment-stripping
+   requirement, the `RotaAccessTest` precedent, the both-directions calibration and the
+   no-allow-list instruction all check out as described. Item 3 is an offender the task text could
+   not have foreseen (it is in a string, not a comment); items 4 and 5 are deliberate widenings.
+
 ---
 
 ## Standing rules for every task
@@ -1794,7 +1864,7 @@ git commit -am "test: a clinic somebody made is a clinic somebody sees"
 - [ ] `/clinics` is `cap:clinics.view`, seeded to every position, asserted **GET-only over the
       router**, and carries no contact field for any viewer.
 - [ ] `clinics.view` appears in `docs/spec/08-foundation.md`.
-- [ ] CL-03's and CL-04's absence is guarded by two comment-stripped scans, each watched failing,
+- [x] CL-03's and CL-04's absence is guarded by two comment-stripped scans, each watched failing,
       with the stripper pinned in both directions.
 - [ ] `npm run build`, `php artisan test`, `npm test` and `npm run test:e2e` all green, on a **clean
       tree**, with the counts recorded here as measured numbers.

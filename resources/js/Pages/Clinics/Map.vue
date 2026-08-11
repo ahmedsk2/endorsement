@@ -30,6 +30,16 @@ import AppLayout from '../../Layouts/AppLayout.vue';
  * IT NAMES NO UNIT EITHER. `rows` is the units that own clinics, from the units table, so a fifth
  * department appears here with no frontend change and its channel hue comes from its own row.
  *
+ * IT ANSWERS NO QUESTION ABOUT AVAILABILITY OR COVERAGE, AND MUST NOT LEARN TO. CL-04 — personal
+ * schedules, feeds, the on-now board, "who can cover Tuesday morning" — is P3, and MR-04 (the rota
+ * driving on-call) is Stage 2. This screen says what the department's week IS; it never says who is
+ * free, and it subtracts no leave from anything. It is worth saying here rather than only in the
+ * plan because a weekly wall chart is the single most tempting place in the product to add a "who
+ * is free" column, and the person tempted will be reading this file. ClinicHooksTest asserts the
+ * absence over this file's own source with the comments stripped — which is the only reason this
+ * paragraph is allowed to name what it is ruling out, and it is calibrated against these very
+ * words: a stripper that stopped working would fail the build on this sentence.
+ *
  * FREE TEXT IS INTERPOLATED, AND ONLY INTERPOLATED. A clinic's name, location and note are plain
  * text stored verbatim — never purified server-side, exactly like handovers.extra_fields — so
  * escaping is this file's job and the double-brace form is how it is done. The raw-markup

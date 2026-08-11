@@ -824,6 +824,112 @@ arithmetic — this plan's own PHPUnit baseline was measured on a dirty tree and
    (`grep week_start database/migrations app/Models/Institution.php` → nothing).
    `Calendar::weekStartIsoDay()` derives it. Finding 6 is correct.
 
+### 2026-08-11 — Task 2
+
+1. **Baseline re-measured clean before touching anything: `php artisan test` → 1460 passed, 0
+   failed**, matching Task 1's recorded number exactly. `npm test` → 192, `npm run build` → green.
+   Task 2 took PHPUnit to **1476** (14 `ClinicWriterTest` + 2 `ClinicWritersAreSingularTest`). The
+   migration slot was checked first as instructed and **was free** — `ls database/migrations/ |
+   tail -5` ended at P1d's `2026_08_15_120004_create_vacations_table.php`, so unlike P1d-1 no
+   renumbering was needed. **The e2e suite was re-run clean** (`rm database/e2e.sqlite && npm run
+   test:e2e` → **22 passed**) even though no e2e file was touched: a new migration changes the
+   schema that self-contained world is built from, so the stale sqlite file would have been a
+   green run against a database that no longer matches the tree.
+2. **Three of the guard's needles were written, measured against what Task 4 must contain, and
+   then WITHDRAWN — ruling 42's "a needle whose cost exceeds its reach is withdrawn on
+   measurement, not taste".** The array-key twins `'weekday' =>`, `'attendee_mode' =>` and
+   `'clinic_id' =>` all have zero pre-existing matches across app/ + database/ + routes/, so they
+   looked free. They are not: Task 4's clinics screen builds Inertia props in this codebase's house
+   style, and `'weekday' => $clinic->weekday` inside a `present()` map is a **read**. Keeping the
+   needle would force `ClinicController` onto `ALLOW_LIST` — blinding the guard at precisely the
+   file where a second writer is most likely to appear. The **property-assignment twins are kept**
+   (`->weekday = `, `->attendee_mode = `, `->clinic_id = `, `->session = `), because those are
+   unambiguously writes and the `= ` trailing space is what keeps them so. Consequence, stated in
+   the guard's own docblock rather than implied away: `$clinic->name = 'x'; $clinic->save();` is
+   invisible to this scan, because `->name = ` is also `units`', `levels`', `people`' and
+   `holidays`' column.
+3. **No `test_every_allow_listed_file_still_matches_a_needle` twin, deliberately, and the reason
+   generalises.** One was written first and immediately flagged `ClinicFactory` as stale — because
+   `Clinic::factory()->create()` inserts through `Factory::create()`, which appears nowhere in the
+   factory's own source. The distinction is real and worth recording: `CalendarWritersFlushTest`
+   and `InstitutionProvenanceTest` allow-list **incidental matches**, so an entry matching nothing
+   there is definitionally stale; a single-writer guard allow-lists **writers**, and a writer the
+   substring scan cannot see is still an honest entry. `RotaWritersAreSingularTest` and
+   `PersonLevelsHaveOneWriterTest` both allow-list their factories on exactly that silent basis.
+   The `test_every_allow_listed_file_still_exists` twin the plan asks for is present.
+4. **`ClinicWriter` takes `institution_id` from the CALLER (`?int $institutionId`), and that is a
+   `CalendarWritersFlushTest` avoidance, not a style choice.** Deriving it inside the writer would
+   mean `Institution::current()`, which is a `WRITE_NEEDLE` — the file would fail the build unless
+   allow-listed for a column with nothing to do with the calendar (invariant 15's trap, arriving
+   two tasks earlier than Decision G predicted it). The caller-supplied form is also the existing
+   precedent: `LevelController`, `PeriodController` and `HolidayController` all write
+   `$request->user()?->institution_id`, and `HolidayController` says in a comment that it does so
+   *"not `Institution::current()`"*.
+5. **The plan gives `update()` no signature; it is `update(Clinic $clinic, Unit $unit, array
+   $attributes)`** — the unit arrives as a MODEL, so resolving it from user input stays the
+   caller's job through route-model binding or `Unit::findByCode()` (D2). A `unit_id` key inside
+   `$attributes` would have made this writer the place a raw code string gets looked up.
+6. **`attendee_mode` is deliberately NOT settable through `create()` or `update()`.** It moves only
+   through `setAttendees()`, together with the rows, in one transaction — so `levels` mode can
+   never briefly hold a person row, which is one of the three states no engine can refuse.
+   `create()` always opens a clinic on CL-02's default, `rotators`, which needs no rows to express.
+7. **Four extra tests beyond the plan's ten (14 total):** moving a clinic to another unit is
+   allowed but never onto a non-owning one; deactivate-never-delete plus the refusal to revive onto
+   a since-retired unit; an attendee id that names nothing is refused in the writer rather than
+   surfacing as a raw FK 500 from inside a caller's transaction; and `institution_id` provenance.
+   The FK check matters more than it looks — `config/database.php` sets
+   `foreign_key_constraints => env('DB_FOREIGN_KEYS', true)`, so SQLite **does** enforce them under
+   test, and the failure without this check is an `QueryException`, which is neither of the two
+   exception types a controller's catches will be written for.
+8. **The guard was watched failing against a planted second writer carrying all four shapes at
+   once** (`app/Support/Clinics/PlantedSecondWriter.php`, deleted immediately after): it named
+   `Clinic::create(`, `DB::table('clinic_attendees')`, `->attendees()->create(`, and all three
+   property assignments, on the one file. Then reverted, re-run, green. Note for the next planter,
+   since the file was new rather than edited: `rm` is the revert here, and `git status` must come
+   back to exactly the untracked set the task created — there is no `git checkout` to get wrong.
+9. **`$table->index('clinic_id')` on `clinic_attendees` duplicates the index MySQL creates
+   automatically for the foreign key.** Kept anyway, because `master_rota_assignments` already
+   states its own `index('unit_id')` explicitly beside a `constrained()` FK, and a read path should
+   not depend on one engine's incidental behaviour. Flagged here so it reads as a decision rather
+   than an oversight.
+10. **The negative control ruling 42 requires was run too, and it is what makes the property
+    needles trustworthy.** A throwaway reader (`$clinic->attendee_mode === Clinic::MODE_NAMED`,
+    `$clinic->weekday > 0`, `$clinic->session === 'AM'`, `$clinic->attendees()->get()`) was planted
+    and the guard stayed GREEN — so the `= ` trailing space is doing its job and
+    `->attendees()->get(` is correctly not a write. Without this half, a needle set that matched
+    every mention of a column would look identical to one that matched only writes.
+11. **TWO EXISTING SOURCE GUARDS FIRED ON THIS TASK'S FILES, AND BOTH WERE CORRECT TO. Neither was
+    predicted by the plan, and both were found only by running the FULL suite** — the targeted
+    `--filter` the task text gives (`ClinicWriterTest|ClinicWritersAreSingular|
+    InstitutionProvenance`) is green with both defects present, which is the whole argument for the
+    unfiltered run the standing rules require.
+    - **`AccountLinkHasOneWriterTest`** matched `ClinicWriter` on the array-key-plus-null literal
+      for the person column. Its subject is `users.person_id`, where nulling the link makes an
+      account nameless on every screen with no error; `clinic_attendees.person_id` is a different
+      column on a different table that merely shares a name. Fixed by building the attendee row
+      with VARIABLE keys (`[$column => $id, $other => null]`) rather than two literal branches —
+      which is also less code — with the reason stated at the site so nobody "clarifies" it back.
+    - **`CalendarWritersFlushTest`** matched `ClinicWriter`'s DOCBLOCK, because the paragraph
+      explaining that this writer deliberately does **not** resolve the institution row named that
+      static with its parentheses, and `WRITE_NEEDLES` scans prose. This is invariant 15's trap
+      arriving six tasks earlier than Decision G expects it, through the opposite door: not a file
+      that reads the row, but a file that says it doesn't. Fixed by spelling around the call rather
+      than deleting the reasoning — the `RotaAccessTest` comment-stripper exists precisely because
+      a literal scan otherwise "would fail the build on the rule's own statement and teach people
+      to delete it", and `CalendarWritersFlushTest` deliberately has no stripper. **Adding
+      `ClinicWriter` to that guard's ALLOW_LIST would have been the wrong repair and would have
+      LOOKED right**: its `test_the_allow_list_is_not_stale` twin only checks that an entry still
+      matches a needle, so an exemption earned purely by a comment would have survived forever.
+    - The generalisable lesson for Tasks 3–15: **a docblock in this codebase is scanned source.**
+      Three separate guards (`CalendarIsTheOnlyConverterTest`, `CalendarWritersFlushTest`,
+      `AccountLinkHasOneWriterTest`) match prose, and only `RotaAccessTest`'s narrow scan strips
+      comments. Naming a forbidden call in order to reject it is a build failure.
+12. **Nothing in the task text was wrong against the tree.** The migration slot, the
+    `person_levels` precedent it quotes (`2026_08_14_120002`), `Unit`'s `clinic_owner` column,
+    `Clinic::SESSIONS`-as-constant, ruling 42's three shapes and `RotaWritersAreSingularTest`'s
+    structure all check out as described. The two guard collisions above are interactions the task
+    text could not reasonably have foreseen, not errors in it.
+
 ---
 
 ## Standing rules for every task
@@ -1399,11 +1505,11 @@ git commit -am "test: a clinic somebody made is a clinic somebody sees"
 
 ## Definition of done — P1e-1
 
-- [ ] `clinics` and `clinic_attendees` exist; neither soft-deletes; no index is led by
+- [x] `clinics` and `clinic_attendees` exist; neither soft-deletes; no index is led by
       `institution_id`; `InstitutionProvenanceTest` is green untouched.
-- [ ] `ClinicWriter` is the only writer of both, proved by a guard that was watched failing on a
+- [x] `ClinicWriter` is the only writer of both, proved by a guard that was watched failing on a
       planted violation and carries a staleness twin.
-- [ ] `clinics.weekday` is ISO-8601, documented as such in three places, and no Carbon `dayOfWeek`
+- [x] `clinics.weekday` is ISO-8601, documented as such in three places, and no Carbon `dayOfWeek`
       appears anywhere near it.
 - [ ] `Calendar::weekdayColumns()` is the only source of the department's week order;
       `CalendarIsTheOnlyConverterTest` is green with **no allow-list change**;

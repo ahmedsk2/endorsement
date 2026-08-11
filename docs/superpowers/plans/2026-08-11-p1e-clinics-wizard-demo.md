@@ -1676,6 +1676,186 @@ gains item 23.
     foreign key on `row_id`, the three precedents the docblock is asked to name, and the
     `DemoDepartment`-is-deliberately-absent-from-the-allow-list position all check out.
 
+### 2026-08-11 — Task 12
+
+1. **Baseline re-measured clean before touching anything: `php artisan test` → 1580 passed, 0
+   failed**, matching Task 11's recorded number exactly; `npm run build` green. Task 12 took PHPUnit
+   to **1600** (16 `DemoCreateTest` + 4 new `DemoRowsAreLedgeredTest` cases). Vitest unchanged at
+   224 and no e2e file or migration was touched, so neither was re-run. One stray file was found in
+   the tree first and deleted: `tests/Feature/Demo/DumpFkTest.php`, a Task 11 scratch test that
+   `require`d a script from a temp directory — it would have failed the suite on any other machine.
+2. **`create()` returns `{batch, rows, skipped}`, not the bare batch id the task text specifies.**
+   The period step legitimately SKIPS on a department that already generated its academic year, and
+   the task text itself asks for "a note in the result" — which a `string` return cannot carry. Two
+   further skips exist for the same reason (an empty training ladder, and no period to place the
+   rota in).
+3. **THE RESULT KEY IS `skipped` AND NOT THE OBVIOUS WORD, AND THAT IS TRAP 1 IN ITS MOST MOBILE
+   FORM.** The obvious name is also a `people` column, and `ContactFieldsAreProjectedOnceTest`
+   needles it as a quoted array key. Unlike every previous instance of this trap, THE COLLISION
+   TRAVELS: the key appears in the support class, in Task 13's console command and in Task 14's
+   controller, so allow-listing would have blinded three files to a real contact-field guard for the
+   sake of a name. It was in fact observed twice — once on `DemoDepartment`, then again on
+   `DemoSeedCommand` a task later, which is what made the propagation visible. Renaming costs one
+   word. **Generalisable: when trap 1 fires on an IDENTIFIER rather than on prose, rename it;
+   spelling around only works for words that stay in one file.**
+4. **`ContactFieldsAreProjectedOnceTest` and `CalendarWritersFlushTest` both fired, and both entries
+   were watched earning their place.** The first on `'email'` (write-only — the address is generated
+   from the demo's own short name, rendered back to nobody; the `CreateAdmin`/`InvitationIssue`
+   precedent). The second because `create()` resolves the institution row for `institution_id`
+   provenance when the caller supplies none — `ClinicWriter` takes the opposite branch deliberately,
+   and the difference is real: that writer runs only inside a request where an actor always exists,
+   while this one is also driven from the console, where the alternative to reading the row here is
+   a second definition of "the current institution" in a command. Each entry was removed and the
+   guard watched naming the file before it was restored.
+5. **`ClinicWritersAreSingularTest` needed NO allow-list entry, contradicting the task's own "Files
+   touched" list, and `RotaWritersAreSingularTest` needed none either — which is the task's own test
+   that no writer was bypassed.** Creation goes through `ClinicWriter::create()`/`setAttendees()`,
+   `RotaAssignment::set()`/`split()`, `VacationBooking::book()` and `LevelAssignment::assign()`, none
+   of which matches a needle in either guard. Measured, not assumed: the full suite was run with the
+   file present and both stayed green. (Task 13 revisits this from the DELETE side.)
+6. **THE DEMO MINTS NO ACCOUNT, and that is the property that makes the owner's
+   run-it-in-production ruling safe rather than merely ledgered.** A roster-only person has no
+   `users` row and therefore cannot authenticate BY CONSTRUCTION (P0c) — so pressing this on a live
+   instance holding children's PHI creates no working login, which is the specific harm
+   `DemoSeeder`'s throw exists to prevent. `test_it_creates_no_account_and_therefore_no_way_in` pins
+   it, and the class docblock states it as a design constraint so nobody "completes" the fixture with
+   a demo login later.
+7. **Addresses sit on `demo.invalid`, not on `DemoSeeder`'s `demo.example.org`.** `.invalid` is
+   reserved by RFC 2606 and guaranteed never to resolve; `example.org` resolves to a real
+   IANA-operated host. On a live instance that difference is the difference between an invitation
+   that bounces and one that is delivered somewhere.
+8. **The demo generates its periods under the academic year label `Demo`, and only when the
+   department has none.** A derived `2026-2027`-shaped label would block the Periods screen from
+   generating the department's real year (generating twice for one label is refused outright) and
+   would be indistinguishable from it in the rota year picker. When periods DO exist the demo uses
+   the one containing today, falling back to the next one to end — so the clinic still resolves —
+   and says which branch it took.
+9. **`test_every_row_it_creates_is_in_the_ledger` had to excuse `demo_rows` as well as `audit_log`,
+   and the reason is worth stating because Task 13 does the opposite.** The ledger cannot ledger
+   itself — a row recording the row would be an infinite regress — so its growth is bookkeeping
+   about the rows rather than one of them. Its RETURN to the pre-seed count is a different question
+   and Task 13's round trip does not excuse it.
+10. **The new source guard went into the existing `DemoRowsAreLedgeredTest` rather than a new file,
+    because Task 11 already created that file with a different subject.** Task 12's text lists it as
+    "(new)". It now carries two scans: "only `DemoLedger` writes `demo_rows`" (Task 11) and "a file
+    in `app/Support/Demo/` that CREATES a row also RECORDS it" (Task 12), with its own allow-list,
+    staleness twin and vacuity twin.
+11. **The creation scan runs over COMMENT-STRIPPED source, and the reason was found on a plant
+    rather than reasoned about.** The first version scanned raw text, and a plant carrying a
+    COMMENTED-OUT `DemoLedger::record(` satisfied the escape while creating rows in code — a false
+    negative, which is the direction a guard must never fail in. `Tests\Support\SourceScanner` (Task
+    6's extraction) fixes both directions at once: a docblock naming a creation shape no longer
+    flags its own file either. Calibrated in both directions on this guard's own files.
+12. **The creation scan was watched failing on three separate plants and staying green on two.**
+    Red: a plain `Person::create(` (named `::create(`); a file carrying all five sanctioned-writer
+    needles at once (named every one); and the comment-only escape above. Green: the same file once
+    a real `DemoLedger::record(` call was present, and `DemoDepartment` itself. Every plant deleted
+    immediately after, `git status` back to exactly the task's own working set.
+13. **The central claim was watched failing against a MUTATION of the writer, not only against a
+    plant beside it.** `DemoLedger::record('vacations', …)` was deleted from `leave()` and
+    `test_every_row_it_creates_is_in_the_ledger` went red naming `'vacations' => 1` present on one
+    side and absent on the other. Restored from a copy taken first — the file is untracked, so
+    `git checkout` is not available as a revert here at all.
+14. **Nothing else in the task text was wrong against the tree.** `Unit::RESERVED_CODES`,
+    `Unit::BAR_CLASSES`, the four writers' signatures, `Clinic::SESSIONS`/`ATTENDEE_MODES`,
+    `Calendar::weekdayColumns()` and the no-production-throw instruction all check out as described.
+    Items 2, 5 and 10 are the three corrections.
+
+### 2026-08-11 — Task 13
+
+1. **Baseline: `php artisan test` → 1600**, matching Task 12's number. Task 13 took PHPUnit to
+   **1627** (12 `DemoRemoveTest` + 9 `DemoRoundTripTest` + 6 `DemoCommandsTest`). `npm test` → 224
+   and `npm run build` green; no migration and no JS was touched.
+2. **`DemoCommandsTest` is a sixth file the task's list does not name.** The task ships two console
+   commands and tests neither; its verification block runs them by hand instead. A command nothing
+   asserts is the shape that produced twelve silent nav links once already, and the by-hand run
+   proves one machine's `.env`, not the behaviour.
+3. **The refusal is its own exception type, `DemoRemovalBlockedException`, carrying the `(table,
+   count)` list as DATA.** `StaleRotaStateException`'s precedent and its reason: a caller has to tell
+   "blocked by real rows" from "no such batch" by TYPE, not by matching message text, because the two
+   remedies differ. The screen renders the list, the audit row is built from the same list, and the
+   message is built from it too — one definition, three consumers.
+4. **The refusal audit detail is `blocked=a:1,b:2`, comma-separated inside ONE value, not the task's
+   `blocked=<table>:<count>;…`.** The house convention is semicolon-delimited `key=value`; the task's
+   shape makes every pair after the first read as a bare key. Pinned by `assertSame` on a two-table
+   refusal, which is the only case where the two spellings differ.
+5. **THE PRE-FLIGHT'S LOAD-BEARING CLAUSE IS "AND NOT ITSELF LEDGERED", AND WITHOUT IT EVERY REFUSAL
+   TEST STILL PASSES.** The demo's own clinic sits on the demo's own unit; its own rota spans name
+   its own people and its own periods. A pre-flight that merely counted inbound references would
+   refuse every removal forever — a department nobody could ever delete — with all six refusal cases
+   green. `test_the_demos_own_rows_do_not_block_its_own_removal` is the twin that pins it, and it is
+   the single most important assertion in the file.
+6. **Counting is per referencing ROW, not per reference.** One `handover_signoffs` row can name demo
+   people in as many as four of its columns; summing per column would report four blockers where an
+   operator has one row to deal with. The conditions for a table are OR-ed into one query.
+7. **Soft deletes are deliberately not filtered out of the pre-flight, and `TableCounts` counts
+   through the query builder for the same reason.** A tombstoned handover still holds its foreign key
+   and still makes the demo unit undeletable at the database level; a count that skipped it would
+   call a removal complete while the row was still there.
+8. **Deletion is generic — `DB::table($table)` with the name taken from the ledger row — and that
+   makes it INVISIBLE to `ClinicWritersAreSingularTest`, `RotaWritersAreSingularTest` and
+   `PersonLevelsHaveOneWriterTest`.** Two things follow, and the second is a deviation from the task
+   text. It has to be generic: a hard delete is required (`people` soft-deletes, and a tombstoned
+   demo person would hold its unique email and short name forever), and a switch of eight branches
+   would go stale the moment a ninth table joined. And **`DemoDepartment` was NOT added to any of the
+   three allow-lists**, contradicting the task's "(modify — allow-list `DemoDepartment`)": an entry
+   exempts the file from every needle while buying no green — it matches none of them either way —
+   and it would blind those guards at the one file that legitimately reaches all eight demo tables.
+   Each guard's DOCBLOCK now records the path instead, which costs no exemption, and
+   `DemoRoundTripTest` is what actually holds the line.
+9. **`demo_rows` is NOT on the round trip's exclusion list, correcting the task text, which lists
+   it.** Excusing the ledger would excuse the one failure mode nothing else catches — rows deleted
+   while their entries survive, or the reverse. It returns to its pre-seed count like every other
+   table. (Task 12's ledger-completeness test excuses it for the opposite and compatible reason: a
+   ledger cannot ledger itself.)
+10. **The exclusion list is a `table => reason` map and is asserted three ways**: every entry has a
+    non-empty reason; every entry still exists in the live schema; and no entry is a table
+    `DemoReferences::MAP` names, so a table the demo writes can never be excused. A fourth test asks
+    the question from the other side — create, and assert the only excluded table that MOVED is
+    `audit_log`.
+11. **THE NEGATIVE CONTROL WAS RUN TWICE, WITH TWO DIFFERENT MUTATIONS, AND THEY WERE CAUGHT BY TWO
+    DIFFERENT MECHANISMS — which the plan does not anticipate and which is the most useful thing this
+    task found.**
+    - Dropping `DemoLedger::record('clinic_attendees', …)` from `create()` made removal **refuse**:
+      the two unledgered attendee rows reference the demo clinic, so the PRE-FLIGHT saw them. Red,
+      naming `clinic_attendees` — but by the reference check, not by the count comparison.
+    - Dropping `DemoLedger::record('people', …)` made removal **succeed and leave five rows behind**,
+      because an unledgered row in a table that is only ever REFERENCED has nothing pointing at it
+      for the pre-flight to see. `test_removal_returns_every_table_to_its_pre_seed_row_count` went
+      red naming `'main.people' => 0` against `5`.
+    **The lesson: the pre-flight catches an unledgered CHILD and only the round trip catches an
+    unledgered PARENT.** A negative control planted in a child table would have "proved" the round
+    trip while never exercising it. The shipped control (`test_a_row_created_outside_the_ledger_
+    makes_the_round_trip_fail`) therefore plants an extra unledgered PERSON, and it was itself
+    watched failing with the plant removed — without that step, a control that asserted the count
+    comparison notices nothing would look identical to one that does.
+    A consequence worth recording: a `create()` that forgot to ledger a child row would make the
+    demo **permanently unremovable through the product**, since the unledgered child blocks the
+    pre-flight and no screen can delete it. Conservative, correct, and a reason the Task 12 guard
+    exists as an early warning.
+12. **The plan's "throwaway subclass" is not available: `DemoDepartment` is `final`**, in this
+    codebase's house style for support classes, and un-finalising a production class so a test can
+    subclass it weakens the class to suit the test. Planting the row beside the creator reproduces
+    the same state; the mutations in item 11 cover the inside-`create()` half.
+13. **`Tests\Support\TableCounts` was extracted, the `SourceScanner` precedent.** Three test classes
+    needed the same whole-schema snapshot, and three copies would have been three chances to forget
+    that SQLite qualifies its table names. It also owns `qualify()`, for the two places a test
+    legitimately names one table, and `delta()`.
+14. **Every refusal test compares the snapshot MINUS `audit_log`.** "Nothing was deleted" is the
+    claim; "nothing was written" is not — a refused removal is an operator action the hash-chained
+    trail records, and asserting the full snapshot made all five refusal cases fail on the trail
+    working correctly. `preflight()` on its own is held to the FULL snapshot, because asking is a
+    query and audits nothing.
+15. **Both commands were run for real against the local sqlite database**, as the task's
+    verification block asks: `demo:seed --force` created 15 rows (that database has no seeded level
+    ladder, so the empty-ladder branch was exercised in production conditions rather than only in a
+    fixture), `demo:remove --force` removed all 15, and every table the demo writes came back to
+    zero with the two audit rows retained.
+16. **Nothing else in the task text was wrong against the tree.** The `PeriodController::destroy()`
+    shape, the five refusal cases, the introspection precedent, the reverse-ledger delete order and
+    the no-env-guard instruction all check out. Items 4, 8, 9 and 12 are the corrections; items 2
+    and 13 are additions.
+
 ---
 
 ## Standing rules for every task

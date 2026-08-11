@@ -147,10 +147,31 @@ class Invitation extends Model
 
         return static::query()
             ->where('token_hash', hash('sha256', $token))
-            ->whereNull('accepted_at')
-            ->whereNull('revoked_at')
-            ->where('expires_at', '>', now())
+            ->open()
             ->first();
+    }
+
+    /**
+     * STILL REDEEMABLE — the query-side definition of {@see isOpen()}, and the ONE place the three
+     * conditions are spelled.
+     *
+     * `redeemable()` resolves through it above, so the predicate that decides whether a token can
+     * mint an account and the predicate a projection asks about that same row cannot drift apart.
+     * It was extracted for `DepartmentSetup`'s invitations step (P1e-2 review, finding 7), which had
+     * been counting `invitations` whole — so a link issued and immediately revoked, or one that aged
+     * past its seven days unclaimed, ticked the wizard's last box.
+     *
+     * "OPEN" DOES NOT MEAN "SOMEBODY GOT IN". An accepted invitation is not open, deliberately:
+     * this is the set a token can still be presented against. A caller asking whether anybody can
+     * reach the system has to add the redeemed ones itself, which `DepartmentSetup` does and says so.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<self>  $query
+     */
+    public function scopeOpen(\Illuminate\Database\Eloquent\Builder $query): void
+    {
+        $query->whereNull('accepted_at')
+            ->whereNull('revoked_at')
+            ->where('expires_at', '>', now());
     }
 
     public function isOpen(): bool

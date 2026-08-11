@@ -131,7 +131,20 @@ class DepartmentSetup
             'units',
         )->exists();
 
-        $invitations = Invitation::query()->count();
+        // "CAN ANYBODY GET IN" — still redeemable, OR already redeemed (P1e-2 review, finding 7).
+        // A bare `count()` here read a link issued and immediately REVOKED, or one that quietly
+        // aged past its seven days with nobody claiming it, as the last box on the wizard ticked:
+        // the state where the door is shut wearing the state where it is open. The open half is
+        // the model's own `open()` scope, which `Invitation::redeemable()` also resolves through,
+        // so the predicate that decides whether a token still works and the one this step reports
+        // cannot drift. The accepted half is not decoration — an accepted invitation is NOT open,
+        // and a department whose whole roster has claimed its links is the most configured a
+        // department gets, so an `open()`-only step would UN-tick at exactly the wrong moment.
+        // One query, one table: `invitations` is the only path from a roster row to an account.
+        $invitations = Invitation::query()
+            ->where(fn ($open) => $open->open())
+            ->orWhereNotNull('accepted_at')
+            ->count();
 
         $yearStart = Calendar::academicYearStart();
 
@@ -241,9 +254,13 @@ class DepartmentSetup
                     'route' => 'admin.people',
                     'done' => $invitations > 0,
                     'blocked_by' => $roster > 0 ? null : 'There is nobody on the roster to invite.',
+                    // The summary says what was counted. "N invitations issued" over a set that
+                    // excludes the revoked and the expired would be a number nobody could
+                    // reconcile with the invitations screen.
                     'summary' => $invitations > 0
-                        ? $invitations.' invitations issued.'
-                        : 'No invitation issued yet — the only path from a roster entry to an account.',
+                        ? $invitations.' invitations are live or have been claimed.'
+                        : 'No live or claimed invitation — the only path from a roster entry to an '
+                            .'account. A revoked or expired one leaves nobody able to get in.',
                 ],
             ],
             // STATED, never rendered as a step: no route, no `done`, nothing to click or tick.

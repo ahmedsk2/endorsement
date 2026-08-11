@@ -20,6 +20,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 /**
@@ -280,6 +281,70 @@ class DepartmentSetupTest extends TestCase
         Clinic::factory()->create(['unit_id' => Unit::findByCode('WARD')->getKey()]);
 
         $this->assertTrue($this->stepsByKey()['clinics']['done']);
+    }
+
+    // --- What the invitations step actually asserts ---------------------------------------------
+
+    /**
+     * THE STEP ASKS WHETHER ANYBODY CAN GET IN (P1e-2 review, finding 7).
+     *
+     * It used to count `invitations` whole, so an invitation issued and immediately REVOKED, or one
+     * that quietly aged past its seven days with nobody claiming it, ticked the last box on the
+     * wizard — the state where the door is shut reading as the state where it is open.
+     *
+     * AND IT MUST NOT UN-TICK ONCE EVERYBODY HAS CLAIMED, which is why the predicate is not simply
+     * the model's `open()` scope: an accepted invitation is not open, and a department whose whole
+     * roster has redeemed its links is the most configured a department gets. So: still redeemable,
+     * OR redeemed. One query, one table, and `open()` is the model's own definition of the first
+     * half — the same one `Invitation::redeemable()` resolves through.
+     *
+     * The provider names STATES rather than column values: it is evaluated before the application
+     * boots, so `Calendar::now()` is not available to it and a date built any other way would be
+     * this suite writing its own (AR-08).
+     */
+    #[DataProvider('invitationStates')]
+    public function test_the_invitations_step_asks_whether_anybody_can_get_in(string $state, bool $done): void
+    {
+        $person = $this->addRosterPerson();
+        $now = Calendar::now();
+
+        $columns = match ($state) {
+            'live' => [],
+            'revoked' => ['revoked_at' => $now],
+            'expired, never claimed' => ['expires_at' => $now->subDay()],
+            // Claimed. The account exists, the link is spent, and the step stays done — the case
+            // an `open()`-only predicate would have read as unfinished.
+            'accepted' => ['accepted_at' => $now],
+            // Redeemed BEFORE it expired: the account is still there.
+            'accepted, then expired' => [
+                'accepted_at' => $now->subDays(2),
+                'expires_at' => $now->subDay(),
+            ],
+        };
+
+        // array_merge, not `+`: the union operator keeps the LEFT side's value for a duplicate key,
+        // so the expired case would have been created live and passed for the wrong reason.
+        Invitation::query()->create(array_merge([
+            'person_id' => $person->getKey(),
+            'member_email' => 'invited-'.Str::random(6).'@example.test',
+            'position' => 4,
+            'token_hash' => hash('sha256', Str::random(40)),
+            'expires_at' => $now->addDays(Invitation::LIFETIME_DAYS),
+        ], $columns));
+
+        $this->assertSame($done, $this->stepsByKey()['invitations']['done']);
+    }
+
+    /** @return array<string, array{0: string, 1: bool}> */
+    public static function invitationStates(): array
+    {
+        return [
+            'live' => ['live', true],
+            'revoked' => ['revoked', false],
+            'expired, never claimed' => ['expired, never claimed', false],
+            'accepted' => ['accepted', true],
+            'accepted, then expired' => ['accepted, then expired', true],
+        ];
     }
 
     // --- The demo department is not configuration ----------------------------------------------

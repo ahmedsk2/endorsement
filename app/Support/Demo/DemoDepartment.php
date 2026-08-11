@@ -17,6 +17,7 @@ use App\Support\LevelAssignment;
 use App\Support\Rota\RotaAssignment;
 use App\Support\Rota\VacationBooking;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -140,14 +141,20 @@ final class DemoDepartment
     /**
      * Build the demo department. One transaction, one batch, every row ledgered.
      *
-     * Returns `{batch, rows, notes}` rather than the bare batch id the plan sketched: the period
+     * Returns `{batch, rows, skipped}` rather than the bare batch id the plan sketched: the period
      * step legitimately SKIPS on a department that has already generated its academic year, and a
      * skip nobody is told about is a demo that quietly differs from the one the last person saw.
+     *
+     * The key is `skipped` and not the obvious word for it, deliberately and for a reason worth
+     * recording: that word is also a `people` column, and `ContactFieldsAreProjectedOnceTest`
+     * scans for it as a quoted array key. The key TRAVELS — into this class, into the console
+     * command, into the controller — so an allow-list entry per consumer would blind three files
+     * to a real contact-field guard for the sake of a name. Renaming costs one word.
      *
      * @param  int|null  $institutionId  D11 provenance. Resolved from the single active institution
      *                                   row when absent — never a filter, never a key.
      * @param  int|null  $actorId        The operator, for the audit row. Absent from the console.
-     * @return array{batch: string, rows: int, notes: list<string>}
+     * @return array{batch: string, rows: int, skipped: list<string>}
      *
      * @throws InvalidArgumentException when a demo department already exists, or the demo unit
      *                                  code is already taken by a real unit
@@ -173,9 +180,9 @@ final class DemoDepartment
         $institutionId ??= Institution::current()?->getKey();
 
         $batch = (string) Str::uuid();
-        $notes = [];
+        $skipped = [];
 
-        DB::transaction(function () use ($batch, $institutionId, &$notes): void {
+        DB::transaction(function () use ($batch, $institutionId, &$skipped): void {
             $unit = self::unit();
             DemoLedger::record('units', (int) $unit->getKey(), $batch);
 
@@ -184,7 +191,7 @@ final class DemoDepartment
             $levels = self::ladder();
 
             if ($levels === []) {
-                $notes[] = 'No active training level exists yet, so the demo people carry no level '
+                $skipped[] = 'No active training level exists yet, so the demo people carry no level '
                     .'history and the demo clinic attaches everyone rotating on its unit.';
             } else {
                 self::levelHistory($people, $levels, $batch);
@@ -193,7 +200,7 @@ final class DemoDepartment
             [$period, $generated] = self::period($institutionId, $batch);
 
             if (! $generated) {
-                $notes[] = 'This department already has periods, so the demo used the existing '
+                $skipped[] = 'This department already has periods, so the demo used the existing '
                     .'academic year instead of generating one of its own.';
             }
 
@@ -201,7 +208,7 @@ final class DemoDepartment
                 // Only reachable when the department's own periods all sit in the past or the
                 // future AND none could be chosen — stated rather than silently producing a
                 // department with an empty rota nobody can explain.
-                $notes[] = 'No period could be found to place the demo rota in, so the demo unit '
+                $skipped[] = 'No period could be found to place the demo rota in, so the demo unit '
                     .'has no rota and its clinic resolves to nobody.';
             } else {
                 self::rota($people, $period, $unit, $batch);
@@ -217,7 +224,147 @@ final class DemoDepartment
         // chain tail for the whole build and unwind its own trail on a rollback.
         AuditLog::record('demo_department_create', "batch={$batch};rows={$rows}", $actorId, $ip);
 
-        return ['batch' => $batch, 'rows' => $rows, 'notes' => array_values($notes)];
+        return ['batch' => $batch, 'rows' => $rows, 'skipped' => array_values($skipped)];
+    }
+
+    /**
+     * WHAT WOULD STOP THIS BATCH BEING REMOVED — `(table, count)` pairs, read-only, and safe to run
+     * as often as anybody likes. Empty means removal would go through.
+     *
+     * It walks `DemoReferences::MAP` and counts, per referencing table, the rows that point at a
+     * LEDGERED row and are NOT THEMSELVES LEDGERED. That second clause is the whole trick and the
+     * easiest thing in this class to get wrong: the demo's own clinic sits on the demo's own unit
+     * and its own rota spans name its own people, so a pre-flight that merely counted inbound
+     * references would block every removal forever — a department nobody could delete, with every
+     * refusal test still passing. `DemoRemoveTest::test_the_demos_own_rows_do_not_block_its_own_
+     * removal` is the twin that pins it.
+     *
+     * DISTINCT ROWS, NOT REFERENCES. One `handover_signoffs` row can name demo people in as many as
+     * four of its columns; counting each column separately would report four blockers where an
+     * operator has one row to deal with. So the conditions for a referencing table are OR-ed into a
+     * single query per table.
+     *
+     * Soft deletes are deliberately NOT filtered out. A tombstoned handover still holds its foreign
+     * key, still occupies its table's unique indexes, and still makes the demo unit undeletable at
+     * the database level — the query builder is used precisely so a global scope cannot hide one.
+     *
+     * @return list<array{table: string, count: int}> ordered by table name
+     */
+    public static function preflight(string $batch): array
+    {
+        /** @var array<string, list<int>> $ledgered */
+        $ledgered = [];
+
+        foreach (DemoLedger::rowsFor($batch) as $row) {
+            $ledgered[$row['table']][] = $row['id'];
+        }
+
+        /** @var array<string, list<array{column: string, ids: list<int>}>> $conditions */
+        $conditions = [];
+
+        foreach ($ledgered as $table => $ids) {
+            foreach (DemoReferences::MAP[$table] ?? [] as $reference) {
+                $conditions[$reference['table']][] = ['column' => $reference['column'], 'ids' => $ids];
+            }
+        }
+
+        $blocked = [];
+
+        foreach ($conditions as $table => $clauses) {
+            $query = DB::table($table)->where(static function ($group) use ($clauses): void {
+                foreach ($clauses as $clause) {
+                    $group->orWhereIn($clause['column'], $clause['ids']);
+                }
+            });
+
+            // Only applied for a table the demo itself writes. Every such table has an `id`
+            // primary key; a foreign table might not, and this way the question is never asked
+            // of one.
+            if (($ledgered[$table] ?? []) !== []) {
+                $query->whereNotIn('id', $ledgered[$table]);
+            }
+
+            $count = $query->count();
+
+            if ($count > 0) {
+                $blocked[] = ['table' => $table, 'count' => $count];
+            }
+        }
+
+        usort($blocked, static fn (array $a, array $b): int => $a['table'] <=> $b['table']);
+
+        return $blocked;
+    }
+
+    /**
+     * Remove one batch — WHOLE, or not at all.
+     *
+     * The pre-flight runs first and a single blocking row refuses the entire operation. That is the
+     * bulk-operation discipline invariant 12 requires and `PeriodController::destroy()` already
+     * models: validate the whole set, then mutate, or mutate nothing. A removal that half-applied
+     * would tell the operator the demo is still there while half of it was already gone.
+     *
+     * DELETION IS GENERIC, BY LEDGER, IN REVERSE CREATION ORDER. `DemoLedger::rowsFor()` returns
+     * newest first, so a child is deleted before its parent and no restrict-on-delete key fires
+     * part-way through. The delete goes through the QUERY BUILDER with the table name taken from
+     * the ledger row, which does two things deliberately: it HARD-deletes (`people` soft-deletes,
+     * and a tombstoned demo person would still hold its unique email and short name forever), and it
+     * enumerates from one place instead of a switch of eight branches that would go stale the moment
+     * a ninth table joined. The cost is that no substring guard can see these deletes; the
+     * single-writer guards say so in their own docblocks, and `DemoRoundTripTest` is what actually
+     * proves the delete reaches every ledgered row and nothing else.
+     *
+     * The ledger is forgotten LAST, inside the same transaction. An interruption between the two
+     * would otherwise leave rows nobody can find again; this way it leaves a ledger naming rows that
+     * are already gone, which a re-run treats as already-removed.
+     *
+     * @return array{batch: string, rows: int}
+     *
+     * @throws InvalidArgumentException when no such batch exists
+     * @throws DemoRemovalBlockedException when a real row references the demo. Nothing is deleted.
+     */
+    public static function remove(string $batch, ?int $actorId = null, ?string $ip = null): array
+    {
+        $rows = DemoLedger::rowsFor($batch);
+
+        if ($rows === []) {
+            throw new InvalidArgumentException(
+                "No demo department was recorded under batch [{$batch}]. Nothing was removed."
+            );
+        }
+
+        $blocked = self::preflight($batch);
+
+        if ($blocked !== []) {
+            AuditLog::record(
+                'demo_department_remove_refused',
+                "batch={$batch};blocked=".DemoRemovalBlockedException::pairsFor($blocked),
+                $actorId,
+                $ip,
+            );
+
+            throw new DemoRemovalBlockedException($batch, $blocked);
+        }
+
+        DB::transaction(function () use ($rows, $batch): void {
+            foreach ($rows as $row) {
+                // A table that no longer exists took its rows with it, so there is nothing to
+                // delete and nothing to report — the ledger entry is forgotten below either way.
+                if (! Schema::hasTable($row['table'])) {
+                    continue;
+                }
+
+                DB::table($row['table'])->where('id', $row['id'])->delete();
+            }
+
+            DemoLedger::forgetBatch($batch);
+        });
+
+        $count = count($rows);
+
+        AuditLog::record('demo_department_remove', "batch={$batch};rows={$count}", $actorId, $ip);
+
+        return ['batch' => $batch, 'rows' => $count];
     }
 
     /**

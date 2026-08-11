@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 use RuntimeException;
+use Tests\Support\TableCounts;
 use Tests\TestCase;
 
 /**
@@ -77,31 +78,9 @@ class DemoCreateTest extends TestCase
     }
 
     /**
-     * Row counts for every table in the live schema, keyed by the name the database itself gives.
-     *
-     * SQLite returns SCHEMA-QUALIFIED names from `getTableListing()` (`main.units`), which is
-     * exactly why this returns the map whole and callers compare it whole: an assertion written
-     * against a hand-keyed `'units'` would find nothing on either side and pass forever (Task 10
-     * amendment 10 recorded the same trap on the same call).
-     *
-     * @return array<string, int>
-     */
-    private function rowCounts(): array
-    {
-        $counts = [];
-
-        foreach (Schema::getTableListing() as $qualified) {
-            $bare = str_contains($qualified, '.') ? substr($qualified, (int) strrpos($qualified, '.') + 1) : $qualified;
-            $counts[$qualified] = DB::table($bare)->count();
-        }
-
-        ksort($counts);
-
-        return $counts;
-    }
-
-    /**
-     * The per-table DELTA a create produced, bare table names, zero deltas dropped.
+     * The per-table delta a create produced, minus the tables it is expected to grow outside the
+     * ledger. `Tests\Support\TableCounts` derives the table list from the live schema and compares
+     * the map whole, which is what keeps this honest across engines and across migrations.
      *
      * @param  array<string, int>  $before
      * @param  array<string, int>  $after
@@ -109,18 +88,11 @@ class DemoCreateTest extends TestCase
      */
     private function delta(array $before, array $after): array
     {
-        $delta = [];
+        $delta = TableCounts::delta($before, $after);
 
-        foreach ($after as $qualified => $count) {
-            $bare = str_contains($qualified, '.') ? substr($qualified, (int) strrpos($qualified, '.') + 1) : $qualified;
-            $grew = $count - ($before[$qualified] ?? 0);
-
-            if ($grew !== 0 && ! in_array($bare, self::NOT_LEDGERED, true)) {
-                $delta[$bare] = $grew;
-            }
+        foreach (self::NOT_LEDGERED as $table) {
+            unset($delta[$table]);
         }
-
-        ksort($delta);
 
         return $delta;
     }
@@ -149,11 +121,11 @@ class DemoCreateTest extends TestCase
      */
     public function test_every_row_it_creates_is_in_the_ledger(): void
     {
-        $before = $this->rowCounts();
+        $before = TableCounts::snapshot();
 
         $result = DemoDepartment::create();
 
-        $after = $this->rowCounts();
+        $after = TableCounts::snapshot();
 
         $this->assertSame(
             $this->delta($before, $after),
@@ -190,7 +162,7 @@ class DemoCreateTest extends TestCase
     {
         DemoDepartment::create();
 
-        $before = $this->rowCounts();
+        $before = TableCounts::snapshot();
 
         try {
             DemoDepartment::create();
@@ -199,7 +171,7 @@ class DemoCreateTest extends TestCase
             $this->assertStringContainsString('remove', strtolower($e->getMessage()));
         }
 
-        $this->assertSame($before, $this->rowCounts(), 'A refused create writes nothing at all.');
+        $this->assertSame($before, TableCounts::snapshot(), 'A refused create writes nothing at all.');
         $this->assertCount(1, DemoLedger::batches());
     }
 
@@ -216,7 +188,7 @@ class DemoCreateTest extends TestCase
      */
     public function test_it_runs_in_one_transaction_and_a_failure_leaves_nothing_behind(): void
     {
-        $before = $this->rowCounts();
+        $before = TableCounts::snapshot();
 
         Clinic::creating(function (): void {
             throw new RuntimeException('planted: the clinic step fails');
@@ -229,7 +201,7 @@ class DemoCreateTest extends TestCase
             $this->assertStringContainsString('planted', $e->getMessage());
         }
 
-        $this->assertSame($before, $this->rowCounts(), 'The whole transaction rolled back.');
+        $this->assertSame($before, TableCounts::snapshot(), 'The whole transaction rolled back.');
         $this->assertFalse(DemoLedger::has(), 'The ledger rolled back with the rows it names.');
         $this->assertSame(0, AuditLog::query()->where('action', 'demo_department_create')->count());
     }
@@ -353,14 +325,14 @@ class DemoCreateTest extends TestCase
     {
         Unit::create(['code' => DemoDepartment::UNIT_CODE, 'name' => 'A real unit', 'active' => true]);
 
-        $before = $this->rowCounts();
+        $before = TableCounts::snapshot();
 
         $this->expectException(InvalidArgumentException::class);
 
         try {
             DemoDepartment::create();
         } finally {
-            $this->assertSame($before, $this->rowCounts());
+            $this->assertSame($before, TableCounts::snapshot());
             $this->assertFalse(DemoLedger::has());
         }
     }
@@ -416,8 +388,8 @@ class DemoCreateTest extends TestCase
         $result = DemoDepartment::create();
 
         $this->assertSame(1, Period::query()->count(), 'No second academic year was generated.');
-        $this->assertNotSame([], $result['notes']);
-        $this->assertStringContainsString('period', strtolower(implode(' ', $result['notes'])));
+        $this->assertNotSame([], $result['skipped']);
+        $this->assertStringContainsString('period', strtolower(implode(' ', $result['skipped'])));
 
         // And the rota it wrote landed in the department's OWN period, so the clinic still resolves.
         $clinic = Clinic::query()->firstOrFail();
@@ -438,7 +410,7 @@ class DemoCreateTest extends TestCase
         }
 
         $this->assertNotNull(Calendar::periodFor(Calendar::todayYmd()));
-        $this->assertSame([], $result['notes'], 'Nothing was skipped, so there is nothing to report.');
+        $this->assertSame([], $result['skipped'], 'Nothing was skipped, so there is nothing to report.');
     }
 
     // --- Audit -----------------------------------------------------------------------------------
@@ -522,7 +494,7 @@ class DemoCreateTest extends TestCase
 
         $result = DemoDepartment::create();
 
-        $this->assertNotSame([], $result['notes']);
+        $this->assertNotSame([], $result['skipped']);
         $this->assertNotNull(Unit::findByCode(DemoDepartment::UNIT_CODE));
 
         $clinic = Clinic::query()->firstOrFail();

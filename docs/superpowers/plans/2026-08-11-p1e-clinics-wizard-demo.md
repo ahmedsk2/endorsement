@@ -1856,6 +1856,103 @@ gains item 23.
     the no-env-guard instruction all check out. Items 4, 8, 9 and 12 are the corrections; items 2
     and 13 are additions.
 
+### 2026-08-11 — Task 14
+
+1. **Baseline re-measured clean before touching anything: `php artisan test` → 1627 passed, 0
+   failed**, matching Task 13's recorded number exactly. `npm test` → 224, `npm run test:e2e` → 24,
+   `npm run build` → green. Task 14 took PHPUnit to **1643** (16 `DemoScreenTest`) and Vitest to
+   **232** (8 `DemoDepartment.test.js`). No migration was added and the capability catalog is
+   unchanged, so the e2e world was not rebuilt; the suite was re-run anyway and is **24**.
+2. **THERE IS NO `POST /admin/structure/demo/preview`, correcting the task text's three-route list.
+   The GET *is* the preview, and the reason generalises.** Every other preview-then-confirm surface
+   in this codebase previews with a POST because its preview takes operator INPUT — a file to parse
+   (`RotaImport`), a cohort to select (`BulkResend`), a source cell to fill from (`RotaFill`). This
+   one takes none: neither action has a single field beyond the confirmation itself. A `POST
+   /preview` would therefore be a button whose only job is to show what the page already shows, and
+   it would sit one boolean away from the destructive path — the exact hazard `routes/web.php`'s own
+   comment gives for splitting the fill into two routes. Both pins travel as ordinary props on the
+   GET instead, which makes "the operator saw it" structural: neither confirm control can be reached
+   without the request that computed one. Four routes became three (GET, POST, DELETE).
+3. **`StatePin` WAS REUSED FOR BOTH, and each reuse was proved by mutation rather than argued.**
+   Removing the two `assertPinned()` calls made exactly three cases go red, and *how* they failed is
+   the evidence: `test_creating_is_pinned_to_what_the_operator_saw` and
+   `test_removal_is_pinned_to_what_the_operator_saw` both failed with **"Session is missing expected
+   key [errors]"** — the operations SUCCEEDED, silently, which is precisely the failure a pin exists
+   for and which no other assertion in the tree could see. The third failed differently
+   (`remove_pin` absent while `confirm_demo` was present), showing the blocked-removal path
+   correctly falling through to the writer's own refusal. Restored from a copy taken first;
+   `git checkout` was not available, the file being untracked (Task 12 amendment 13's hazard).
+4. **What each pin catches that its operation's own re-derivation cannot — measured, not assumed.**
+   Both `create()` and `remove()` re-derive everything inside their own transaction and are right
+   to; `StatePin`'s docblock says that is necessary and NOT sufficient, and here is what it misses.
+   *Creation:* the preview says "this department has no periods, so the demo will generate its own
+   academic year"; somebody generates the department's real year in another tab; `create()` computes
+   a fresh answer and quietly places the demo rota in the REAL year. No error, no refusal, and a
+   department different from the one approved. *Removal:* two administrators — the first opens the
+   screen, the second removes the demo and creates a fresh one, the first presses Remove. Without
+   the batch in `identity` that DELETE removes a department this operator never previewed, and every
+   table still returns to its pre-seed count, so neither `DemoRoundTripTest`, nor the pre-flight, nor
+   the audit trail shows anything amiss.
+5. **The removal pin uses BOTH of `StatePin`'s cell identity slots as `null`, which is the strained
+   fit and is stated at the site rather than papered over.** A ledger row's identity is
+   `(table, id)`; neither a person nor a period applies to it. `null` is exactly what that parameter
+   documents for a concept that does not apply (`BulkResend` already uses one of the two that way),
+   and the identity lives in the `current` map beside what the row is. `proposed` is `[]` because
+   the operation writes nothing anywhere — after it, the row is not there. **The creation pin's
+   `cells` is `[]` outright**, for the honest reason that a creation touches no existing row: there
+   is no current-versus-proposed pair to project, so the whole projection is `identity` (the world
+   facts that decide what gets built) plus `errors` (the refusals). Writing a second digest class
+   for either would have been the near-copy that drifts; the hash rule is not re-typed anywhere.
+6. **`refusals()` was EXTRACTED so the screen and `create()` cannot disagree.** The two refusal
+   messages were inline `throw`s; the screen has to render them BEFORE offering the button, and a
+   screen deciding for itself when to grey a control out is a second copy of that rule. One
+   definition, two consumers — `PeriodGenerator::assertMonthAligned()`'s shape. Same call for the
+   two `skipped` sentences, which are now constants read by `plan()` (predicting) and `create()`
+   (reporting): one string, present tense in both directions, because a preview and a receipt of
+   the same fact drifting apart is how an operator concludes the button is broken. One word changed
+   — *"the demo used the existing academic year"* → *"uses"*.
+7. **TRAP 1 WAS AVOIDED BY CONSTRUCTION, AND THE NEAR-MISS IS WORTH RECORDING: the obvious name for
+   `plan()`'s second key is `notes`, which is a `people` column and a
+   `ContactFieldsAreProjectedOnceTest` needle in quoted form.** Task 12 amendment 3 hit this exact
+   shape on `skipped` and its lesson — *"when trap 1 fires on an IDENTIFIER rather than on prose,
+   rename it; spelling around only works for words that stay in one file"* — was applied before a
+   line was written. The key is `skipped`, the same word `create()` already returns, so preview and
+   result read identically and nothing new needed allow-listing. `address_domain` rather than
+   `email_domain` for the same reason, one needle away.
+8. **`demo_result` was added to `HandleInertiaRequests::share()` IN THIS TASK, not in an amendment
+   after it.** A session key no `share()` names is invisible to every page in the app — the trap
+   that has now cost this plan family three features whose tests were green and whose screens showed
+   nothing (P1c-1 Tasks 7/9/10, P1d-2 Task 8). `test_creating_reports_what_it_skipped_rather_than_
+   skipping_it_silently` reads the flash back through a real second request rather than trusting the
+   redirect.
+9. **NO NAV ENTRY WAS ADDED, deliberately, so `AppLayout.test.js`'s hand-written `adminHrefs` sweep
+   needed no change — stated rather than left silent, because "the sweep is unchanged" and "the
+   sweep was forgotten" look identical in a diff.** A demo department is not a routine configuration
+   surface, and a permanent entry beside Units and Levels on a live clinical instance would read as
+   part of the department. It is linked from `/admin/setup`, which IS in the nav and is where
+   somebody setting a department up looks for somewhere to practise. The link is a section rather
+   than a checklist step, for a reason stated in the markup: a department is fully configured
+   without a demo, and a demo that could be ticked off a checklist invites leaving it in place.
+10. **The refusal reaches the screen twice, and the second is the one that makes it actionable.**
+    `DemoRemovalBlockedException`'s message goes under `confirm_demo` (a rendered key — ruling 49's
+    subject), and the pre-flight's `(table, count)` list is rendered from a FRESH read on every page
+    load rather than only after a failed attempt. So an operator who has never pressed the button
+    still sees what is holding the removal, and while anything holds it the confirmation box and the
+    button are not rendered at all. `test_a_blocked_removal_is_refused_whole_and_the_screen_says_
+    what_holds_it` asserts the blocked list on the page the operator lands back on, not merely the
+    error string.
+11. **Two cases beyond the plan's seven, plus a vacuity twin.** The twin
+    (`test_the_three_routes_are_registered_behind_the_structure_capability`) is not optional: the
+    verb sweep beside it iterates an empty set and passes, which is the same defect P1e-1 Task 4 and
+    Task 10 each shipped. The verb sweep also asserts the write routes are inside the `web` group,
+    because CSRF is what that group carries and `ValidateCsrfToken` is skipped under test, so "POST +
+    CSRF" is otherwise unassertable. The two extra cases are the audited refusal being its own
+    action, and the pre-flight payload naming no person, no address and no patient anything.
+12. **Nothing in the task text was wrong against the tree** beyond item 2's route list and the
+    absence of a GET route from its own "Files touched" implication. `StatePin`'s signature, the
+    `PeriodController::destroy()` typed-word idiom, `create()`'s `{batch, rows, skipped}` return and
+    the `cap:structure.manage` group's shape all check out as described.
+
 ---
 
 ## Standing rules for every task

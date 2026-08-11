@@ -120,6 +120,26 @@ const barClass = (step) => {
                 </li>
             </ol>
 
+            <!--
+                ST-05. It is not a step: a department is fully configured without one, and a demo
+                that could be ticked off a checklist would invite an administrator to leave it in
+                place. It lives here rather than in the navigation for the same reason — this is
+                where somebody setting a department up looks for somewhere to practise, and a
+                permanent entry beside Units and Levels would read as part of the department.
+            -->
+            <section class="rounded-md border border-line bg-panel p-4" data-testid="demo-department">
+                <h3 class="text-sm font-semibold text-ink">Somewhere to practise</h3>
+                <p class="mt-1 text-sm text-body">
+                    A small, clearly-labelled demo department can be created for training and
+                    removed again afterwards. It creates no account, so it adds no way in, and
+                    removal is refused if real work has attached itself to it.
+                </p>
+                <Link href="/admin/structure/demo" data-testid="demo-link"
+                      class="mt-3 inline-block rounded-md border border-line px-3 py-1.5 text-sm font-medium text-channel-ink transition hover:bg-channel-soft">
+                    Open
+                </Link>
+            </section>
+
             <section class="rounded-md border border-line bg-panel p-4">
                 <h3 class="text-sm font-semibold text-ink">Arriving later</h3>
                 <p class="mt-1 text-sm text-muted">

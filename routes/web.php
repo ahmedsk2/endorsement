@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AccessControlController;
 use App\Http\Controllers\Admin\CalendarSettingsController;
 use App\Http\Controllers\Admin\ClinicController;
+use App\Http\Controllers\Admin\DemoDepartmentController;
 use App\Http\Controllers\Admin\DepartmentProfileController;
 use App\Http\Controllers\Admin\DepartmentSetupController;
 use App\Http\Controllers\Admin\HolidayController;
@@ -322,6 +323,22 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
         // PUT: the refinement rule set is REPLACED whole, mode and rows together, so a re-submitted
         // form converges instead of duplicating.
         Route::put('/clinics/{clinic}/attendees', [ClinicController::class, 'setAttendees'])->name('clinics.attendees');
+
+        // Munawib ST-05's one-click, clearly-labelled, REMOVABLE demo department (P1e Decision F).
+        // THREE routes and no preview POST: neither action takes any operator input, so the GET is
+        // the preview and both pins (App\Support\Rota\StatePin) travel back with the confirmation.
+        // A fourth route whose only job was to show what the GET already shows would sit one
+        // boolean away from the destructive path.
+        //
+        // It carries NO environment guard, unlike DemoSeeder/E2eSeeder, on the owner's ruling of
+        // 2026-08-11: this one ledgers every row it writes, is provably removable, and mints no
+        // account, so pressing it on the live instance creates no way into a system holding
+        // children's records. Removal shipped before this route existed, deliberately.
+        Route::get('/demo', [DemoDepartmentController::class, 'index'])->name('demo');
+        Route::post('/demo', [DemoDepartmentController::class, 'store'])->name('demo.store');
+        // DELETE, not POST: it is a hard delete with no undo in the UI — neither rota table nor
+        // `clinics` soft-deletes — and the word is typed, PeriodController::destroy()'s idiom.
+        Route::delete('/demo', [DemoDepartmentController::class, 'destroy'])->name('demo.destroy');
     });
 
 /*

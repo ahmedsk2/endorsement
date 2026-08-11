@@ -15,6 +15,7 @@ use App\Support\Calendar;
 use App\Support\Clinics\ClinicWriter;
 use App\Support\LevelAssignment;
 use App\Support\Rota\RotaAssignment;
+use App\Support\Rota\StatePin;
 use App\Support\Rota\VacationBooking;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -139,6 +140,21 @@ final class DemoDepartment
     ];
 
     /**
+     * The two things a demo department does DIFFERENTLY depending on the department it lands in,
+     * written once and read by both `plan()` (which predicts them) and `create()` (which reports
+     * them afterwards). Present tense in both directions deliberately: a preview and a receipt of
+     * the same fact should not be two strings that can drift apart in meaning.
+     */
+    private const SKIP_NO_LADDER = 'No active training level exists yet, so the demo people carry no '
+        .'level history and the demo clinic attaches everyone rotating on its unit.';
+
+    private const SKIP_EXISTING_PERIODS = 'This department already has periods, so the demo uses the '
+        .'existing academic year instead of generating one of its own.';
+
+    private const SKIP_NO_PERIOD = 'No period could be found to place the demo rota in, so the demo '
+        .'unit has no rota and its clinic resolves to nobody.';
+
+    /**
      * Build the demo department. One transaction, one batch, every row ledgered.
      *
      * Returns `{batch, rows, skipped}` rather than the bare batch id the plan sketched: the period
@@ -162,19 +178,12 @@ final class DemoDepartment
     public static function create(?int $institutionId = null, ?int $actorId = null, ?string $ip = null): array
     {
         // REFUSE BEFORE WRITING, always — `ClinicWriter`'s discipline, and the reason a refusal is
-        // never a half-built department. Both checks below are read-only and both name the remedy.
-        if (DemoLedger::has()) {
-            throw new InvalidArgumentException(
-                'A demo department already exists. Remove it first, then create a new one — two of '
-                .'them cannot be told apart on screen, and only one can hold the demo unit code.'
-            );
-        }
+        // never a half-built department. `refusals()` is read-only, names the remedy, and is the
+        // SAME list the screen renders before offering the button, so the two cannot disagree.
+        $refusals = self::refusals();
 
-        if (Unit::findByCode(self::UNIT_CODE) !== null) {
-            throw new InvalidArgumentException(
-                'A unit with the code ['.self::UNIT_CODE.'] already exists and is not part of any '
-                .'demo department. Rename or retire it before creating the demo.'
-            );
+        if ($refusals !== []) {
+            throw new InvalidArgumentException($refusals[0]);
         }
 
         $institutionId ??= Institution::current()?->getKey();
@@ -191,8 +200,7 @@ final class DemoDepartment
             $levels = self::ladder();
 
             if ($levels === []) {
-                $skipped[] = 'No active training level exists yet, so the demo people carry no level '
-                    .'history and the demo clinic attaches everyone rotating on its unit.';
+                $skipped[] = self::SKIP_NO_LADDER;
             } else {
                 self::levelHistory($people, $levels, $batch);
             }
@@ -200,16 +208,14 @@ final class DemoDepartment
             [$period, $generated] = self::period($institutionId, $batch);
 
             if (! $generated) {
-                $skipped[] = 'This department already has periods, so the demo used the existing '
-                    .'academic year instead of generating one of its own.';
+                $skipped[] = self::SKIP_EXISTING_PERIODS;
             }
 
             if ($period === null) {
                 // Only reachable when the department's own periods all sit in the past or the
                 // future AND none could be chosen — stated rather than silently producing a
                 // department with an empty rota nobody can explain.
-                $skipped[] = 'No period could be found to place the demo rota in, so the demo unit '
-                    .'has no rota and its clinic resolves to nobody.';
+                $skipped[] = self::SKIP_NO_PERIOD;
             } else {
                 self::rota($people, $period, $unit, $batch);
                 self::leave($people, $period, $batch);
@@ -225,6 +231,162 @@ final class DemoDepartment
         AuditLog::record('demo_department_create', "batch={$batch};rows={$rows}", $actorId, $ip);
 
         return ['batch' => $batch, 'rows' => $rows, 'skipped' => array_values($skipped)];
+    }
+
+    /**
+     * WHY A DEMO DEPARTMENT COULD NOT BE CREATED RIGHT NOW — a list of sentences, each naming its
+     * own remedy. Empty means the button may be offered.
+     *
+     * ONE DEFINITION, TWO CONSUMERS, the `PeriodGenerator::assertMonthAligned()` shape: `create()`
+     * throws the first of these and the screen renders all of them BEFORE offering the control. A
+     * screen that decided for itself when to grey a button out would be a second copy of this rule,
+     * and the two would disagree the first time either changed.
+     *
+     * @return list<string>
+     */
+    private static function refusals(): array
+    {
+        $refusals = [];
+
+        if (DemoLedger::has()) {
+            $refusals[] = 'A demo department already exists. Remove it first, then create a new one — two of '
+                .'them cannot be told apart on screen, and only one can hold the demo unit code.';
+        }
+
+        if (Unit::findByCode(self::UNIT_CODE) !== null) {
+            $refusals[] = 'A unit with the code ['.self::UNIT_CODE.'] already exists and is not part of any '
+                .'demo department. Rename or retire it before creating the demo.';
+        }
+
+        return $refusals;
+    }
+
+    /**
+     * WHAT PRESSING CREATE WOULD DO, read-only — the preview half of ST-05's one click.
+     *
+     * `refusals` is why it cannot be pressed; `skipped` is what a demo department will NOT do in
+     * THIS department, in the same words `create()` reports afterwards. `facts` is what those two
+     * are derived from, and it exists so the pin below can be taken over the inputs rather than
+     * over their rendering: two different worlds can produce the same sentence, and the sentence is
+     * not what decides the outcome.
+     *
+     * @return array{refusals: list<string>, skipped: list<string>, facts: array<string, mixed>}
+     */
+    public static function plan(): array
+    {
+        $ladder = array_map(static fn (Level $level): int => (int) $level->getKey(), self::ladder());
+        $hasPeriods = Period::query()->exists();
+
+        $skipped = [];
+
+        if ($ladder === []) {
+            $skipped[] = self::SKIP_NO_LADDER;
+        }
+
+        if ($hasPeriods) {
+            $skipped[] = self::SKIP_EXISTING_PERIODS;
+        }
+
+        return [
+            'refusals' => self::refusals(),
+            'skipped' => $skipped,
+            'facts' => ['ladder' => $ladder, 'has_periods' => $hasPeriods],
+        ];
+    }
+
+    /**
+     * WHAT A CREATION IS PINNED TO.
+     *
+     * {@see StatePin} is the one definition of a preview-then-confirm pin, and this operation has
+     * its shape with one slot legitimately empty. `identity` carries the operation's own inputs —
+     * and a creation's inputs are ENTIRELY the state of the department it lands in, because the
+     * operator supplies nothing at all. `errors` carries the whole-operation refusals, which are
+     * part of what the operator was shown. `cells` is empty BY CONSTRUCTION rather than by
+     * omission: there is no existing row this writes over, so there is no current-versus-proposed
+     * pair to project.
+     *
+     * WHAT IT CATCHES THAT `create()` CANNOT. `create()` re-derives everything inside its own
+     * transaction and is right to — but re-deriving means it computes a FRESH answer, so a
+     * department that generated its academic year between the preview and the confirm gets a demo
+     * placed in the REAL year, silently, when the operator was told a demo year would be generated.
+     * Same for a training ladder appearing: the demo's clinic goes from "everyone on the unit" to a
+     * level-refined rule. Neither is an error and neither can be noticed after the fact.
+     *
+     * @param  array{refusals: list<string>, skipped: list<string>, facts: array<string, mixed>}  $plan
+     */
+    public static function planDigest(array $plan): string
+    {
+        return StatePin::of('demo_department_create', $plan['facts'], $plan['refusals'], []);
+    }
+
+    /**
+     * WHAT A REMOVAL WOULD DELETE AND WHAT WOULD STOP IT — read-only, and the whole payload the
+     * screen renders before it asks for the word to be typed.
+     *
+     * `rows` is the ledger's own list, which is what the delete walks; `counts` is that list per
+     * table, which is what a human can actually check ("one unit, five people, one clinic") where a
+     * bare total is a number nobody can verify.
+     *
+     * @return array{batch: string, rows: list<array{table: string, id: int}>, counts: list<array{table: string, count: int}>, blocked: list<array{table: string, count: int}>}
+     */
+    public static function removalState(string $batch): array
+    {
+        $rows = DemoLedger::rowsFor($batch);
+
+        $counts = [];
+
+        foreach ($rows as $row) {
+            $counts[$row['table']] = ($counts[$row['table']] ?? 0) + 1;
+        }
+
+        ksort($counts);
+
+        return [
+            'batch' => $batch,
+            'rows' => $rows,
+            'counts' => array_values(array_map(
+                static fn (string $table, int $count): array => ['table' => $table, 'count' => $count],
+                array_keys($counts),
+                $counts,
+            )),
+            'blocked' => $rows === [] ? [] : self::preflight($batch),
+        ];
+    }
+
+    /**
+     * WHAT A REMOVAL IS PINNED TO.
+     *
+     * Same one definition ({@see StatePin}), and here the cell shape is the strained one, stated
+     * rather than papered over: a ledger row's identity is `(table, id)`, and NEITHER of StatePin's
+     * two identity slots — a person and a period — applies to it. Both are therefore `null`, which
+     * is exactly what that parameter documents for a concept that does not apply, and the identity
+     * lives in the `current` map beside what the row is. `proposed` is empty because this operation
+     * writes nothing anywhere: after it, the row is not there.
+     *
+     * WHAT IT CATCHES THAT `remove()` CANNOT. Two administrators: the first opens the screen, the
+     * second removes the demo and creates a fresh one, the first presses Remove. `remove()` takes
+     * the batch it is given, re-runs its pre-flight, finds nothing in the way and removes a
+     * department this operator never previewed — and every table returns to its pre-seed count, so
+     * not the round trip, not the pre-flight and not the audit trail shows anything amiss. The
+     * batch in `identity` is what refuses it. The blockers ride in `errors` for the ordinary case:
+     * a removal previewed as clear, confirmed after real work landed on it.
+     *
+     * @param  array{batch: string, rows: list<array{table: string, id: int}>, counts: list<array{table: string, count: int}>, blocked: list<array{table: string, count: int}>}  $state
+     */
+    public static function removalDigest(array $state): string
+    {
+        return StatePin::of(
+            'demo_department_remove',
+            ['batch' => $state['batch']],
+            array_map(
+                static fn (array $row): string => $row['table'].':'.$row['count'],
+                $state['blocked'],
+            ),
+            array_map(
+                static fn (array $row): array => [null, null, [['table' => $row['table'], 'id' => $row['id']]], []],
+                $state['rows'],
+            ),
+        );
     }
 
     /**

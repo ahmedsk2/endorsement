@@ -1431,6 +1431,55 @@ gains item 23.
    sibling guards that do not share it. The `update(`-qualified form is the narrowing that recovers
    the coverage without the cost, which Task 2's measurement had no reason to anticipate.
 
+### 2026-08-11 — Task 8
+
+1. **Baseline re-measured clean before touching anything: `php artisan test` → 1532 passed, 0
+   failed**, matching the figure P1e-1 finished on. `npm test` → 216, `npm run build` → green.
+   Task 8 took PHPUnit to **1541** (9 `DepartmentProfileTest`); Vitest is unchanged at 216 — the
+   two `AppLayout.test.js` edits below extend existing cases rather than adding one. No migration
+   and no e2e file was touched, so the e2e world was not rebuilt.
+2. **The `CalendarWritersFlushTest` trap fired exactly as Decision G predicts, and the allow-list
+   entry was WATCHED EARNING ITS PLACE rather than added on faith.** With the entry removed the
+   guard named `DepartmentProfileController.php` on its own; restored, green. Worth recording
+   because the entry is otherwise indistinguishable from a decorative one: `test_the_allow_list_is_
+   not_stale` only checks that an entry still matches a needle, so an exemption nobody ever saw
+   fire would survive forever.
+3. **The audit detail is `fields=name` with NO subject id, deliberately** — the sibling screen
+   (`CalendarSettingsController`, `keys=…`) sets the precedent, and D11 means there is exactly one
+   institution row, so an id identifies nothing an action name does not. `test_a_submission_that_
+   changes_nothing_names_no_field` pins `fields=none` by `assertSame`, which is only possible
+   because the string carries nothing else.
+4. **Two plants, both watched naming their own defect.** `'code' => ['sometimes', …]` added to
+   `DepartmentProfileRequest::rules()` — `test_the_code_is_not_writable` went red with
+   `'QCH'` → `'HIJACKED'`, which is the whole point of validating `name` alone rather than
+   trusting a `disabled` attribute. And `ReferenceSeeder`'s `if (! $institution->exists)` guard
+   removed — `test_a_rename_survives_db_seed_force` went red with the administrator's name
+   reverted to the env default, which is the defect
+   `2026_08_15_120002_correct_ward_clinic_owner` had to exist to repair for the unit profile
+   columns. Both reverted, re-run green, `git status` back to exactly this task's own working set.
+   The two edited files were copied aside and restored from the copies — `git checkout` on
+   `CalendarWritersFlushTest.php` would have reverted this task's own allow-list entry with the
+   plant (Task 1 amendment 6 recorded the same hazard).
+5. **`AppLayout.test.js`'s `adminHrefs` sweep is a HAND-WRITTEN list and a new nav link is
+   unswept until it is added to it.** `/admin/structure/department` is now in it, so the
+   `aria-current` property adversarial-review finding 3 restored is proved for this entry too.
+   The Vitest file is not in Task 8's "Files touched" list; the alternative was a nav link nothing
+   asserts, which is the shape that produced twelve silent links once already.
+6. **The `code` verdict, stated because the task text invites the opposite finding.** `code` stays
+   env-only, and it is not a UI omission: it is `ReferenceSeeder`'s `firstOrNew` key, so re-coding
+   a live institution makes the next `db:seed --force` — a mandatory step of every deploy —
+   CREATE a second `institutions` row rather than update the first, at which point
+   `Institution::current()` returns null (two active rows means no right answer, D11) and every
+   screen reading the department's configuration goes blank. It is also provenance already
+   stamped on `users`, `people`, `levels`, `periods` and `clinics` rows. That is a provisioning
+   operation with a migration behind it, not a settings change.
+7. **Nothing in the task text was wrong against the tree.** The route names, the `ALLOW_LIST`
+   precedent it quotes verbatim (`PersonController`) turned out to be `ContactVisibility.php` in
+   the current tree carrying that exact sentence — the reason is identical and the file moved
+   since Decision G was written, which is a stale quotation rather than a wrong instruction.
+   `ReferenceSeeder`'s create-only `name` write, `institutions.name`'s `string` (255) column and
+   the `INSTANCE_SLUG`/`INSTITUTION_CODE` distinction all check out as described.
+
 ---
 
 ## Standing rules for every task

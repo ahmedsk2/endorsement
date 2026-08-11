@@ -54,6 +54,12 @@ class CalendarWritersFlushTest extends TestCase
         // the model, so there is nothing stale here for flush() to clear. Matched only because
         // WRITE_NEEDLES includes `Institution::current()`, which any reader of that row calls.
         'app/Support/ContactVisibility.php',
+        // Reads and writes `institutions.name`, and reads `institutions.code` to render it
+        // read-only — display columns, not calendar ones, exactly as ContactVisibility above
+        // is a policy column. Calendar::settings() memoises the six calendar values as an
+        // array and holds neither, so flushing on a rename would imply a relationship that
+        // does not exist. Matched only because WRITE_NEEDLES includes `Institution::current()`.
+        'app/Http/Controllers/Admin/DepartmentProfileController.php',
     ];
 
     /** Tokens that mean "this file reads or writes calendar configuration". */

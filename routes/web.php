@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AccessControlController;
 use App\Http\Controllers\Admin\CalendarSettingsController;
 use App\Http\Controllers\Admin\ClinicController;
+use App\Http\Controllers\Admin\DepartmentProfileController;
 use App\Http\Controllers\Admin\HolidayController;
 use App\Http\Controllers\Admin\LevelController;
 use App\Http\Controllers\Admin\MasterRotaController;
@@ -237,6 +238,15 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
     ->prefix('admin/structure')
     ->name('admin.structure.')
     ->group(function () {
+        // Munawib ST-01's first step (P1e Decision G). `institutions.name` only — there is no
+        // endpoint that writes `institutions.code`, deliberately: it is ReferenceSeeder's
+        // firstOrNew key, so re-coding a live institution makes the next `db:seed --force`
+        // create a second institution row instead of updating the first. That is a
+        // provisioning operation, not a settings change; the screen says so and
+        // DepartmentProfileRequest validates `name` alone.
+        Route::get('/department', [DepartmentProfileController::class, 'index'])->name('department');
+        Route::patch('/department', [DepartmentProfileController::class, 'update'])->name('department.update');
+
         Route::get('/units', [UnitController::class, 'index'])->name('units');
         Route::post('/units', [UnitController::class, 'store'])->name('units.store');
         // Declared BEFORE {unit} so `merge` never binds as a unit id — the same discipline the

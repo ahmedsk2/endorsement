@@ -100,12 +100,14 @@ describe('AppLayout — role-gated navigation', () => {
     // leave that user with no way in at all. Task 8 adds a second structure.manage-gated
     // entry (Levels); Task 10 a third (Calendar); Task 11 a fourth (Periods); Task 12 a fifth
     // (Holidays) — all belong beside Units here.
-    it('shows the admin section with structure.manage alone, with Units, Levels, Calendar, Periods and Holidays links', () => {
+    it('shows the admin section with structure.manage alone, with Department, Units, Levels, Calendar, Periods and Holidays links', () => {
         store.page.props.auth.can = ['structure.manage'];
         store.page.props.auth.user = { id: 4, member_name: 'sm', full_name: 'Structure Manager', position: 0 };
 
         const text = navText(mountLayout());
         expect(text).toContain('Administration');
+        // P1e Task 8: ST-01's first step, the department's own name.
+        expect(text).toContain('Department');
         expect(text).toContain('Units');
         expect(text).toContain('Levels');
         expect(text).toContain('Calendar');
@@ -325,7 +327,8 @@ describe('AppLayout — role-gated navigation', () => {
     it('announces the current Administration entry on every one of its links', () => {
         const adminHrefs = [
             '/admin/users', '/admin/people', '/admin/promotion', '/admin/roster-import',
-            '/admin/access-control', '/admin/structure/units', '/admin/structure/levels',
+            '/admin/access-control', '/admin/structure/department',
+            '/admin/structure/units', '/admin/structure/levels',
             '/admin/structure/calendar', '/admin/structure/periods', '/admin/structure/holidays',
             '/admin/structure/clinics', '/admin/rota', '/admin/settings',
         ];

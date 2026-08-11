@@ -284,6 +284,11 @@ const navClass = (active) => [
                           :class="navClass(isActive('/admin/access-control'))">
                         Access Control
                     </Link>
+                    <Link v-if="can('structure.manage')" href="/admin/structure/department"
+                          :aria-current="ariaCurrent(isActive('/admin/structure/department'))"
+                          :class="navClass(isActive('/admin/structure/department'))">
+                        Department
+                    </Link>
                     <Link v-if="can('structure.manage')" href="/admin/structure/units"
                           :aria-current="ariaCurrent(isActive('/admin/structure/units'))"
                           :class="navClass(isActive('/admin/structure/units'))">

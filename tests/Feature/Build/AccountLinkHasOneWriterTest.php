@@ -26,9 +26,11 @@ use Tests\TestCase;
  *
  * A second writer gets one of the three right and looks correct in review.
  *
- * `tests/` and `database/factories/` are NOT scanned — the carve-out
- * `PersonLevelsHaveOneWriterTest` states: a fixture seeding rows for its own test's purposes is
- * not the production integrity surface this guard exists to close.
+ * `tests/` IS NOT SCANNED; `database/` IS, factories included (review F9) — see
+ * `InvitationWritersAreSingularTest`'s docblock for why the code was right and this prose was
+ * wrong. Two established siblings settle it by example: `PersonLevelsHaveOneWriterTest` and
+ * `RotaWritersAreSingularTest` both scan factories and both NAME the offending factory in the
+ * allow-list, which is a reviewable exemption where excluding the directory is a blanket one.
  */
 class AccountLinkHasOneWriterTest extends TestCase
 {
@@ -65,7 +67,37 @@ class AccountLinkHasOneWriterTest extends TestCase
      *
      * `->person_id = ` keeps its trailing space on purpose: without it the needle also matches
      * `->person_id === null`, which is a READ (the claim path and the reactivation refusal both
-     * do it) and not the write this guard is about.
+     * do it) and not the write this guard is about. That property was measured, not assumed —
+     * the bare needle was tried and it named the readers — and review F8 asks that it survive
+     * every later widening of this list, so it does.
+     *
+     * THE THREE SHAPES F8 FOUND MISSING, and what each means for THIS column:
+     *
+     *  - Property assignment was already covered by `->person_id = `, and is the reason that
+     *    needle exists at all. Nothing to add.
+     *  - RELATION WRITES. The link column lives on `users`, so it is reachable from either end:
+     *    `$person->user()->create([...])` and its `updateOrCreate`/`firstOrCreate`/`save`
+     *    siblings set it from the person's side, and `$user->person()->associate($person)` /
+     *    `->dissociate()` set it from the account's — and `dissociate()` in particular is
+     *    EXACTLY the unbind, written in one line, with no snapshot, no deactivation and no cache
+     *    flush. It is the most plausible second writer this table will ever see.
+     *  - `find()` THEN `destroy()`/`delete()`. Removing the account row removes the link with it,
+     *    and account deletion was WITHDRAWN as a capability (owner ruling, 2026-07-19) — the
+     *    route was deleted, not just the button. `User::destroy(` is how it comes back, and it
+     *    matches no existing needle.
+     *
+     * Each was proved by planting a writer of exactly that shape and watching this test name the
+     * file, then reverting.
+     *
+     * `User::find(` WAS TRIED AND WITHDRAWN, which is the other half of that measurement. It is
+     * the front of `User::find($id)->delete()`, so on paper it completes the third shape — but run
+     * against this tree it named four files, three of them auth challenge controllers resolving
+     * the session's own pending user (a read this guard has no business touching) and the fourth
+     * only because `AccessControlController` QUOTES the expression in a comment explaining an
+     * array-shaped-query defect. That is both failure modes at once: an allow-list of files that
+     * need no entry, and a guard that fails on prose describing a bug it is not about. The
+     * unspelt-out gap is stated instead: `$user->delete()` on a bound instance is invisible to a
+     * substring scan, here as everywhere.
      */
     private const NEEDLES = [
         "'person_id' => null",
@@ -75,6 +107,22 @@ class AccountLinkHasOneWriterTest extends TestCase
         'forceFill(["person_id"',
         "->update(['person_id'",
         '->update(["person_id"',
+        // From the account's side. `associate()`/`dissociate()` write the FK directly and are the
+        // one-line spelling of this whole writer.
+        '->person()->associate(',
+        '->person()->dissociate(',
+        // From the person's side. `->user()->create(` mints an account already bound to them.
+        '->user()->create(',
+        '->user()->insert(',
+        '->user()->updateOrCreate(',
+        '->user()->firstOrCreate(',
+        '->user()->save(',
+        '->user()->update(',
+        '->user()->delete(',
+        // Removing the account row takes the link with it, and account DELETION is a withdrawn
+        // capability rather than an unimplemented one — these are how it returns.
+        'User::destroy(',
+        'User::truncate(',
         // A raw builder over the accounts table can write any column of it, including this one,
         // without matching any of the shapes above.
         "DB::table('users')",

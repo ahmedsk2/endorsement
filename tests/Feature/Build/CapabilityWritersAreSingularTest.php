@@ -30,9 +30,11 @@ use Tests\TestCase;
  * A second writer that grants correctly and forgets the flush looks completely correct in
  * review, and the failure surfaces ten minutes later on somebody else's screen.
  *
- * `tests/` and `database/factories/` are NOT scanned — the carve-out
- * `PersonLevelsHaveOneWriterTest` states: a fixture seeding rows for its own test's purposes is
- * not the production integrity surface this guard exists to close.
+ * `tests/` IS NOT SCANNED; `database/` IS, factories AND seeders included (review F9) — see
+ * `InvitationWritersAreSingularTest`'s docblock for why the code was right and this prose was
+ * wrong. It matters more here than in either sibling: `AccessControlSeeder` runs in PRODUCTION,
+ * on every deploy, so "database/ is test scaffolding" was not merely inaccurate about this guard,
+ * it was inaccurate about this table.
  */
 class CapabilityWritersAreSingularTest extends TestCase
 {
@@ -63,6 +65,27 @@ class CapabilityWritersAreSingularTest extends TestCase
      *
      * `'effect' =>` is the payload shape: it catches a write assembled somewhere this list did
      * not anticipate, including through a relation or a raw upsert.
+     *
+     * OF THE THREE SHAPES REVIEW F8 FOUND MISSING, this set already had one and a half:
+     *
+     *  - RELATION WRITES were covered, and deliberately at the widest possible point.
+     *    `->userCapabilities()->` matches every call on that relation — `updateOrCreate`,
+     *    `firstOrCreate`, `save`, `delete`, `sync` — rather than enumerating five spellings and
+     *    missing the sixth. Nothing to add, and the wideness is the reason.
+     *  - `find()` THEN `destroy()`/`delete()` was HALF covered: `UserCapability::where(` and
+     *    `::query(` see `->delete()` at the end of a fluent chain, but neither sees
+     *    `UserCapability::destroy($id)` or `UserCapability::find($id)->delete()`, which reach the
+     *    same rows without a `where` anywhere. Revoking an override by deleting its row and
+     *    forgetting `AccessControl::flush()` leaves the account holding a capability the database
+     *    says it lost, for up to CACHE_TTL — the failure this guard is entirely about.
+     *  - PROPERTY ASSIGNMENT was missed completely. `$row->effect = 'grant';` then `->save()`
+     *    matches no array-key needle, and `effect` is the one column whose VALUE is the decision.
+     *
+     * Each new needle was proved by planting a writer of exactly its shape and watching this test
+     * name the file, then reverting.
+     *
+     * `->effect = ` keeps its trailing space for `AccountLinkHasOneWriterTest`'s reason: the bare
+     * form also matches `->effect === 'deny'`, which is a read.
      */
     private const NEEDLES = [
         'UserCapability::create(',
@@ -72,6 +95,9 @@ class CapabilityWritersAreSingularTest extends TestCase
         'UserCapability::upsert(',
         'UserCapability::query(',
         'UserCapability::where(',
+        'UserCapability::find(',
+        'UserCapability::destroy(',
+        'UserCapability::truncate(',
         'new UserCapability(',
         '->userCapabilities()->',
         // A raw builder over the overrides table can write any column of it without matching any
@@ -80,6 +106,7 @@ class CapabilityWritersAreSingularTest extends TestCase
         'DB::table("user_capabilities")',
         "'effect' =>",
         '"effect" =>',
+        '->effect = ',
     ];
 
     public function test_only_the_capability_writer_touches_per_account_overrides(): void

@@ -18,9 +18,17 @@ use Tests\TestCase;
  * looked like without this guard: `accepted_at`/`revoked_at` were written at three separate
  * controller sites via `forceFill([...])->save()`, and a fourth was one resend away.
  *
- * `tests/` and `database/factories/` are NOT scanned — the same carve-out
- * `PersonLevelsHaveOneWriterTest` states: a fixture seeding rows for its own test's purposes is not
- * the production integrity surface this guard exists to close.
+ * `tests/` IS NOT SCANNED; `database/` IS, factories included (review F9). The docblock here used
+ * to claim otherwise, copying a sentence from `PersonLevelsHaveOneWriterTest` that was about that
+ * guard's ALLOW-LIST ENTRY rather than about its scan roots — and the code never agreed with it,
+ * because `base_path('database')` contains `factories/`. The code is what is right, and the two
+ * established siblings settle it: `PersonLevelsHaveOneWriterTest` and `RotaWritersAreSingularTest`
+ * both scan factories and both name the offending factory in the allow-list with a reason. A
+ * factory that writes the column directly IS a second writer of the shape this guard is about; it
+ * is merely one whose blast radius stops at the suite. Naming it costs one line and makes the
+ * exemption reviewable, where excluding the directory makes every future factory exempt in
+ * advance, invisibly. `tests/` stays out because a guard that named its own fixtures would be
+ * unusable.
  */
 class InvitationWritersAreSingularTest extends TestCase
 {
@@ -39,25 +47,72 @@ class InvitationWritersAreSingularTest extends TestCase
         'app/Http/Controllers/Auth/InvitationAcceptController.php',
     ];
 
+    /**
+     * THREE WRITER SHAPES THIS SET USED TO MISS ENTIRELY (review F8). The original needles caught
+     * `Model::create(`, `DB::table(` and the array-literal payload, which is one way of three to
+     * write a row:
+     *
+     *  - PROPERTY ASSIGNMENT then `->save()`. `$invitation->revoked_at = now();` matches no
+     *    array-key needle at all, and it is the shape `revoke()` is one refactor away from —
+     *    finding 3 recorded three sites already writing `accepted_at`/`revoked_at` through
+     *    `forceFill([...])->save()`, and dropping the `forceFill` is how that becomes invisible.
+     *  - RELATION `updateOrCreate`/`firstOrCreate`/`save`. `->invitations()->create(` was covered
+     *    and its four siblings were not, which is an arbitrary line through one API.
+     *  - `find()` FOLLOWED BY `destroy()`/`delete()`. Deleting an invitation is not a supported
+     *    act at all — a superseded row is KEPT, with `revoked_at` set, because the claim-status
+     *    projection reads it — so the destructive shapes are needles rather than allow-list
+     *    candidates.
+     *
+     * Each new needle was proved by PLANTING a writer of exactly its shape and watching this test
+     * name the file, then reverting. A needle nobody has seen fail is a comment.
+     *
+     * The `= ` trailing space on every property needle is load-bearing, the same way
+     * `AccountLinkHasOneWriterTest` records for `->person_id = `: without it `->revoked_at` also
+     * matches `->revoked_at === null`, which is a READ that `InvitationStatus` and `isOpen()` both
+     * perform legitimately.
+     */
     private const NEEDLES = [
         'Invitation::issue(',
         'Invitation::create(',
         'Invitation::insert(',
         'Invitation::updateOrCreate(',
         'Invitation::firstOrCreate(',
+        'Invitation::destroy(',
+        'Invitation::truncate(',
+        // The front half of `find()->delete()`. Every legitimate single-row read in this codebase
+        // arrives by route-model binding or through `InvitationIssue`/`InvitationStatus`, so
+        // nothing needs this today and a future caller that thinks it does should be named here.
+        'Invitation::find(',
         '->invitations()->create(',
+        '->invitations()->insert(',
+        '->invitations()->updateOrCreate(',
+        '->invitations()->firstOrCreate(',
+        '->invitations()->save(',
+        '->invitations()->update(',
+        '->invitations()->delete(',
         "DB::table('invitations')",
         'DB::table("invitations")',
         "'revoked_at' =>",
         "'accepted_at' =>",
         "'revoked_by_user_id' =>",
         "'invited_by_user_id' =>",
-        // DELIBERATELY ABSENT: `'expires_at' =>` and `'token_hash' =>`. Both are real columns of
-        // this table and both are also columns of tables that have nothing to do with it
-        // (`login_otps`, `email_otps`, `trusted_devices`), so either needle would buy three
-        // allow-list entries for files this guard has no business naming — and an allow-list
-        // carrying files that need no entry is the stale-allow-list failure the companion test
-        // below exists to catch, installed on purpose.
+        '->revoked_at = ',
+        '->accepted_at = ',
+        '->revoked_by_user_id = ',
+        '->invited_by_user_id = ',
+        // DELIBERATELY ABSENT: `'expires_at' =>` and `'token_hash' =>` (and their property
+        // twins). All are real columns of this table and all are also columns of tables that have
+        // nothing to do with it (`login_otps`, `email_otps`, `trusted_devices`), so any of them
+        // would buy three allow-list entries for files this guard has no business naming — and an
+        // allow-list carrying files that need no entry is the stale-allow-list failure the
+        // companion test below exists to catch, installed on purpose.
+        //
+        // ALSO ABSENT, and honestly so: `$invitation->delete()` on an already-bound instance. No
+        // substring distinguishes it from every other model's `->delete()`, so this guard does not
+        // see it. `Invitation::destroy(`, `Invitation::find(` and the relation shapes above cover
+        // every route TO such an instance that does not go through route-model binding, which is
+        // as far as a substring scan reaches. Stated rather than implied: the gap is the reason
+        // `InvitationController` is allow-listed by name rather than trusted.
     ];
 
     public function test_only_the_invitation_writer_writes_invitations(): void

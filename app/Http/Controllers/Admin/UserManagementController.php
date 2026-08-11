@@ -387,6 +387,20 @@ class UserManagementController extends Controller
             ],
         ]);
 
+        // AN UNBOUND ACCOUNT HAS NOWHERE TO PUT TWO OF THESE THREE FIELDS (review F5's fifth
+        // path). `full_name` and `member_email` are read-through accessors onto the linked Person
+        // and are written below through `$user->person?->update(...)` — which, once `AccountUnbind`
+        // has cleared the link, is a no-op that raises nothing. Without this the operator submitted
+        // three corrections, one landed, two evaporated, an audit row said the profile was updated
+        // and the screen flashed "Account details updated." A control that silently does nothing is
+        // the shape this programme has refused twice already; `setPosition()` above already refuses
+        // an unbound account by name, and this is the same refusal on the same console.
+        if ($user->person === null) {
+            throw ValidationException::withMessages([
+                'full_name' => 'This account is not linked to a person on the roster. Its name and email live on that roster row, so there is nothing here to correct.',
+            ]);
+        }
+
         // One email column now, on `people` (owner decision 2026-08-08, overriding the plan's
         // original dual-column draft). `member_email` is a read-through accessor on User, not a
         // column — writing it here would silently do nothing.

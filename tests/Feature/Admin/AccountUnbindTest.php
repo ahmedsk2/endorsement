@@ -314,6 +314,73 @@ class AccountUnbindTest extends TestCase
                 ->where('users.0.id', $this->admin->id));
     }
 
+    // ------------------------------------------- the read paths through `users.person_id`
+    //
+    // `full_name`, `position` and `member_email` are read-through accessors onto the linked
+    // Person, so EVERY read of one on an unbound account answers null. The cases below are the
+    // sites where null does not stay null: `(int) null === 0` is the ADMINISTRATOR role id, and
+    // `$user->person?->update(...)` is a write that silently does not happen. Both fail toward
+    // something plausible, which is why neither was visible in review.
+
+    /**
+     * THE DETAIL PANEL AND THE PICKER MUST AGREE ABOUT WHICH ACCOUNTS EXIST (review F5).
+     *
+     * `index()`'s picker inner-joins `people`, so an unbound account is not listed — but
+     * `selectedUser()` resolved `?user_id=N` through a raw `User::find()` and projected
+     * `(int) $user->position`. `position` is null for an unbound account and `(int) null` is 0,
+     * which `AccessControl.vue`'s `positionName()` renders as **"Administrator"** beside the
+     * account's login name. A page reachable only by holders of `access.manage` announced a dead,
+     * nameless account as the most privileged role this system has.
+     */
+    public function test_the_access_control_detail_panel_does_not_reach_an_unbound_account(): void
+    {
+        $account = $this->resident();
+
+        $this->actingAs($this->admin)->patch('/admin/users/'.$account->id.'/unbind')->assertRedirect();
+
+        $this->actingAs($this->admin)->get('/admin/access-control?user_id='.$account->id)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                // Null, not a projection carrying position 0 — the page's existing no-selection
+                // state, which is already what an unknown or array-shaped `user_id` produces.
+                ->where('selectedUser', null)
+                // ... and the picker never offered it either, which is the agreement being pinned.
+                ->has('users', 1)
+                ->where('users.0.id', $this->admin->id));
+    }
+
+    /**
+     * THE FIFTH PATH the F5 search turned up, and the only one that is a WRITE.
+     *
+     * `UserManagementController::updateProfile()` writes `member_name` on `users` and
+     * `full_name`/`email` through `$user->person?->update(...)`. On an unbound account that
+     * null-safe call is a no-op, so two of the three submitted fields evaporate, an audit row is
+     * appended saying the profile was updated, and the screen flashes "Account details updated."
+     *
+     * Its sibling `setPosition()` already refuses an unbound account by name — this is the same
+     * refusal, on the same console, for the same reason.
+     */
+    public function test_correcting_an_unbound_accounts_profile_is_refused_rather_than_half_applied(): void
+    {
+        $account = $this->resident('Zed Resident');
+        $originalMemberName = $account->member_name;
+
+        $this->actingAs($this->admin)->patch('/admin/users/'.$account->id.'/unbind')->assertRedirect();
+
+        $this->actingAs($this->admin)
+            ->from('/admin/users')
+            ->patch('/admin/users/'.$account->id.'/profile', [
+                'full_name' => 'Renamed Person',
+                'member_name' => 'renamed.login',
+                'member_email' => 'renamed@example.test',
+            ])
+            ->assertSessionHasErrors('full_name');
+
+        // Nothing half-applied: the one column that IS on `users` must not move either.
+        $this->assertSame($originalMemberName, $account->fresh()->member_name);
+        $this->assertDatabaseMissing('audit_log', ['action' => 'user_profile_update']);
+    }
+
     // ----------------------------------------------------------------- refusals
 
     public function test_an_unbound_account_cannot_be_reactivated(): void

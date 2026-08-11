@@ -351,7 +351,24 @@ class AccessControlController extends Controller
             return null;
         }
 
-        $user = User::find($userId);
+        // AN UNBOUND ACCOUNT IS NOT A SELECTABLE ACCOUNT (review F5), and this
+        // `whereNotNull('person_id')` is the same set `index()`'s picker above already produces
+        // with its inner join on `people` — stated as one predicate on both sides so the list and
+        // the detail panel cannot disagree about which accounts exist.
+        //
+        // It is not a cosmetic disagreement. `full_name` and `position` are read-through
+        // accessors onto the linked Person (P0c), so both answer NULL once `AccountUnbind` has
+        // cleared the link — and the projection below casts `(int) $user->position`, where
+        // `(int) null` is 0, the ADMINISTRATOR role id. `AccessControl.vue` renders
+        // `positionName(0)` as "Administrator" beside the login name the panel falls back to, so
+        // a dead, nameless account was announced as the most privileged role this system has, on
+        // the one screen whose whole subject is privilege. Every other read of this link fails
+        // toward a blank; this one failed toward the top of the ladder.
+        //
+        // Returning null rather than throwing is deliberate: it is already this method's answer
+        // for an unknown or array-shaped `user_id`, so the page renders its existing
+        // no-selection state and no Vue change is needed to describe a new refusal.
+        $user = User::query()->whereNotNull('person_id')->find($userId);
         if ($user === null) {
             return null;
         }

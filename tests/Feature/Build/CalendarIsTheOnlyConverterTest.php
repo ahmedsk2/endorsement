@@ -355,4 +355,52 @@ class CalendarIsTheOnlyConverterTest extends TestCase
             "labels and enumerated ranges instead. Found:\n".implode("\n", $offenders)
         );
     }
+
+    /**
+     * THE OTHER HALF OF DECISION A, AND THE HALF THE NEEDLE SET ABOVE CANNOT SEE. Those ten needles
+     * all match date CONSTRUCTION, so a component that writes the seven day names down and orders
+     * them itself passes every one of them while being exactly the second answer to "what order does
+     * this department's week run in" that AR-08 forbids. `Calendar::weekdayColumns()` sends that
+     * array already labelled and already rotated to `weekStartIsoDay()`; a screen consumes it.
+     *
+     * Task 1 flagged the gap and left the decision to the task where the offence first becomes
+     * possible — P1e Task 4's clinic form and Task 5's clinic map, both of which have a weekday
+     * `<select>` or seven column headers. This is that decision, and it was taken on MEASUREMENT
+     * rather than taste (ruling 42): the pattern below matched ZERO files across the whole of
+     * `resources/js` before the clinics screen was written, so it costs no allow-list entry and
+     * blinds no file. The bare substrings were rejected in the same measurement — `Mon` matches
+     * `Month`, which the holidays screen legitimately says twice.
+     *
+     * ALLOW-LIST DELIBERATELY ABSENT, exactly like the check above and for its reason: a screen that
+     * wants to name a day asks the server for the name. It is also why this needle is here rather
+     * than only in `tests/js/Clinics.test.js` — a per-file assertion protects the one file somebody
+     * remembered to write it in, and the next clinic surface would be unguarded by default.
+     *
+     * The pattern is a QUOTED WHOLE WORD in any of the three JavaScript string delimiters, which is
+     * how such a list is actually spelled. Prose in a comment is matched too, deliberately: a
+     * docblock is scanned source everywhere else in this suite, and a file explaining the array it
+     * is about to build is not a file this guard should let past.
+     */
+    public function test_no_hardcoded_weekday_vocabulary_appears_under_resources_js(): void
+    {
+        $pattern = '/([\'"`])(Mon(day)?|Tue(sday)?|Wed(nesday)?|Thu(rsday)?|Fri(day)?|Sat(urday)?|Sun(day)?)\1/';
+
+        $offenders = [];
+
+        foreach ($this->jsFilesUnderResources() as $file) {
+            $relative = $this->relativePath($file);
+            $contents = (string) file_get_contents($file->getPathname());
+
+            if (preg_match_all($pattern, $contents, $matches) > 0) {
+                $offenders[] = "{$relative} names ".implode(', ', array_unique($matches[0]));
+            }
+        }
+
+        $this->assertSame(
+            [],
+            $offenders,
+            "Decision A: the day names and the order the week runs in are Calendar::weekdayColumns()'s, ".
+            "and reach the client as a prop. Found:\n".implode("\n", $offenders)
+        );
+    }
 }

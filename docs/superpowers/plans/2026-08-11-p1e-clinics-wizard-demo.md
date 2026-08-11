@@ -1012,6 +1012,98 @@ arithmetic — this plan's own PHPUnit baseline was measured on a dirty tree and
     `Clinic::ATTENDEE_MODES` and the `clinic_attendees` shape all check out as described; item 3
     above is the one factual correction.
 
+### 2026-08-11 — Task 4
+
+1. **Baseline re-measured clean before touching anything: `php artisan test` → 1488 passed, 0
+   failed**, matching Task 3's recorded number exactly. `npm test` → 192, `npm run build` → green.
+   Task 4 took PHPUnit to **1508** (19 `ClinicScreenTest` + 1 new
+   `CalendarIsTheOnlyConverterTest` case) and Vitest to **202** (10 `Clinics.test.js`). No
+   migration and no e2e file was touched, so the e2e suite was not re-run.
+2. **The Vitest file is `tests/js/Clinics.test.js`, not the plan's
+   `resources/js/__tests__/Clinics.spec.js` — the plan's path would never have run.**
+   `vitest.config.js` includes exactly `tests/js/**/*.test.js`; there is no `__tests__` directory
+   anywhere in the tree and no `.spec.js` outside `tests/e2e/` (which is Playwright's). A spec at
+   the path the task gives would have been silently collected by nothing, and `npm test` would
+   have reported the same 192 it always did.
+3. **THE HARDCODED-WEEKDAY NEEDLE: ADDED, AND PROMOTED REPO-WIDE rather than kept per file.** Task
+   1 amendment 7 flagged the gap and left the call to this task. Measured first, as ruling 42
+   requires: a QUOTED WHOLE WORD pattern over all of `resources/js` — the seven names, full or
+   three-letter, wrapped in any of the three JavaScript string delimiters — matched **zero files**
+   before the clinics screen existed,
+   so it costs no allow-list entry and blinds no file — and the bare substrings were rejected in
+   the same measurement, because `Mon` matches `Month`, which `Holidays.vue` legitimately says
+   twice. It lives in `CalendarIsTheOnlyConverterTest` beside the ten date-construction needles,
+   with **no allow-list**, deliberately: a per-file Vitest assertion protects the one file somebody
+   remembered to write it in, and Task 5's map would be unguarded by default. Watched failing
+   against a plant in a DIFFERENT file (`Holidays.vue`, three day names in two quote styles); it
+   named the file and the three strings, then reverted and re-run green. The behavioural half —
+   "the picker's options are the prop's labels, in the prop's order" — stays in Vitest, because the
+   two fail for different reasons: a component can consume the labels honestly and still sort them
+   itself.
+4. **TRAP 1 CAUGHT THIS TASK TWICE, IN ITS OWN NEW GUARD.** The first run of `Clinics.test.js` went
+   red on `Clinics.vue` for `'Sun','Mon'` and for the raw-markup directive — both from the
+   component's own DOCBLOCK, which was explaining that it does not do those things. Spelled around
+   (the docblock now says "a literal array of seven day names" and "the raw-markup directive"), not
+   allow-listed, per Task 2 amendment 11's lesson. Worth recording that the trap fires on brand-new
+   guards written in the same commit as the file they scan, not only on pre-existing ones.
+5. **`App\Support\Clinics\ClinicPickers` is a new file the task's "Files touched" list does not
+   name, and D9 is why.** Test 3 asks for offer-and-accept parity as a matrix; that needs ONE
+   predicate per field consumed by both the props and the FormRequest. `Rule::exists` runs on the
+   raw query builder and never sees SoftDeletes' global scope, so a predicate written once as
+   Eloquent and once as raw SQL is two predicates — `SignoffPickers`' whole reason for existing.
+   Three predicates (`unitPredicate`, `levelPredicate`, `personPredicate`), each applied to the
+   rule directly and to the offer query through `getQuery()`. The parity matrix is asserted for
+   units (4 fixtures), people (3) and levels (2).
+6. **`ClinicRequest` has a sibling, `ClinicAttendeesRequest`.** The mode and the rule set are ONE
+   act and travel together (Task 2 amendment 6's reason: splitting them admits a moment where
+   `levels` mode holds person rows), so the attendee endpoint has its own payload shape and its own
+   request class rather than optional keys bolted onto the CL-01 one.
+7. **Every `ClinicWriter` refusal is caught and flashed, and that is load-bearing rather than
+   polite.** The writer throws `InvalidArgumentException` for every rule the database cannot hold;
+   uncaught, an administrator ticking "levels" with nothing selected gets a 500.
+   `test_a_writer_refusal_reaches_the_screen_as_an_error_not_a_500` pins it, and also asserts the
+   clinic is unchanged afterwards — the writer throws before its transaction opens, so a refusal
+   must leave the row exactly as it was.
+8. **An attached level or person the pickers no longer offer is NAMED, not silently dropped.**
+   `SignoffPickers`' `$keep` problem in a different shape: the attendee editor replaces the set
+   whole, so a checkbox that disappears because its subject was deactivated takes the rule with it
+   on the next save. The controller resolves those subjects (`withTrashed()` on the person side —
+   a plain lookup drops precisely the row that most needs naming) into an `unlisted` list per
+   clinic, and the screen says "no longer offered, and saving will drop them". They are NOT made
+   acceptable to the rule again: parity is per offered-and-selectable option.
+9. **Found by the query-cost test, not by inspection: the two picker offers were being built
+   TWICE per page load** — once for the props and once inside the listing's unlisted-attendee
+   lookup, which re-ran the whole roster query. Fixed by building them once in `index()` and
+   passing them down. `test_the_listing_cost_does_not_grow_with_the_roster` pins the result on a
+   populated department (30 people on the rota, 3 clinics): a bound measured on an empty one only
+   ever proves the empty case. **And the bound itself had to be tightened before it meant
+   anything** — measured **18**; re-planting the per-clinic offer rebuild took it to **23**, which
+   the first bound written (25) passed. A bound with more headroom than the regression it exists to
+   catch is decoration. Twenty, watched failing against the plant, then reverted and green.
+10. **`AuditLog`'s column is `detail`, singular.** A first draft of the audit assertions read
+    `$row->details`, which is not an attribute — Eloquent returns `null` for it silently, so the
+    assertion compared against `''`. It failed here rather than passing vacuously only because the
+    test asserts `assertStringContainsString` (a positive claim) alongside the negative ones. A
+    file that had asserted ONLY `assertStringNotContainsString('Renal Clinic', $row->details)`
+    would have been green forever against a column that does not exist.
+11. **`test_there_is_no_destroy_route_for_a_clinic` passed on the FIRST red run**, which is exactly
+    what its vacuity twin is for: with no clinic routes registered at all, a sweep for DELETE verbs
+    over routes whose URI contains "clinic" iterates an empty set.
+    `test_the_clinic_routes_are_actually_registered` was red at that moment and is what makes the
+    sweep mean anything. A third case, `test_deleting_a_clinic_is_a_plain_method_not_allowed`,
+    asserts the 405 at runtime and that the row survives.
+12. **`ReferenceSeeder`'s WARD is an active clinic owner**, so any assertion of the form
+    `->where('units', [])` is asserting the seeder rather than the rule. The retired-unit case
+    asserts the specific code's ABSENCE from the offered list instead.
+13. **The Vitest `useForm` mock returns `reactive()`, unlike the two existing ones.** A plain
+    object mutates without notifying Vue, so `setValue` on the mode `<select>` changed the form and
+    re-rendered nothing — the two picker-visibility assertions would have been checking the initial
+    render twice and passing for the wrong reason. Found by the tests going red, not by review.
+14. **Nothing else in the task text was wrong against the tree**, and the prescribed props, routes,
+    audit actions and no-destroy rule are all implemented as written. The `clinics` prop is the
+    GROUPED structure the task asks for (`[{unit, clinics[]}]`), which is worth stating because the
+    name reads like a flat list.
+
 ---
 
 ## Standing rules for every task
@@ -1598,7 +1690,7 @@ git commit -am "test: a clinic somebody made is a clinic somebody sees"
       `tests/fixtures/calendar/golden.json` carries the new block.
 - [ ] `ClinicRoster` resolves at read time, issues a bounded and measured number of queries, and
       returns `contactFree()` projections in which `email` and `phone` are **absent**.
-- [ ] `/admin/structure/clinics` is `cap:structure.manage`, has **no destroy route** (asserted over
+- [x] `/admin/structure/clinics` is `cap:structure.manage`, has **no destroy route** (asserted over
       the router), and audits by id.
 - [ ] `/clinics` is `cap:clinics.view`, seeded to every position, asserted **GET-only over the
       router**, and carries no contact field for any viewer.

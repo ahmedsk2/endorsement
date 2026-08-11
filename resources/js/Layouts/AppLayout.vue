@@ -295,6 +295,11 @@ const navClass = (active) => [
                           :class="navClass(isActive('/admin/structure/holidays'))">
                         Holidays
                     </Link>
+                    <Link v-if="can('structure.manage')" href="/admin/structure/clinics"
+                          :aria-current="ariaCurrent(isActive('/admin/structure/clinics'))"
+                          :class="navClass(isActive('/admin/structure/clinics'))">
+                        Clinics
+                    </Link>
                     <Link v-if="can('rota.manage')" href="/admin/rota"
                           :aria-current="ariaCurrent(isActive('/admin/rota'))"
                           :class="navClass(isActive('/admin/rota'))">

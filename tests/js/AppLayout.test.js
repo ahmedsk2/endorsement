@@ -310,7 +310,7 @@ describe('AppLayout — role-gated navigation', () => {
             '/admin/users', '/admin/people', '/admin/promotion', '/admin/roster-import',
             '/admin/access-control', '/admin/structure/units', '/admin/structure/levels',
             '/admin/structure/calendar', '/admin/structure/periods', '/admin/structure/holidays',
-            '/admin/rota', '/admin/settings',
+            '/admin/structure/clinics', '/admin/rota', '/admin/settings',
         ];
 
         store.page.props.auth.can = ['users.manage', 'people.manage', 'access.manage',

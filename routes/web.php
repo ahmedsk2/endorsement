@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AccessControlController;
 use App\Http\Controllers\Admin\CalendarSettingsController;
+use App\Http\Controllers\Admin\ClinicController;
 use App\Http\Controllers\Admin\HolidayController;
 use App\Http\Controllers\Admin\LevelController;
 use App\Http\Controllers\Admin\MasterRotaController;
@@ -270,6 +271,20 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
         Route::post('/holidays', [HolidayController::class, 'store'])->name('holidays.store');
         Route::patch('/holidays/{holiday}', [HolidayController::class, 'update'])->name('holidays.update');
         Route::patch('/holidays/{holiday}/active', [HolidayController::class, 'setActive'])->name('holidays.active');
+
+        // Munawib CL-01/CL-02. NO DELETE, and deliberately so: a clinic that stopped running is
+        // DEACTIVATED (UN-04's "hides forward, never deletes history"), which is the same shape
+        // Units, Levels and Holidays above already take. A P2 condition will reference a clinic by
+        // id, and a deleted row takes that reference with it — `ClinicWriter` offers `setActive()`
+        // and no delete path at all, so there is nothing a destroy action could even call.
+        // `ClinicScreenTest` asserts the absence over the ROUTER, not by the absence of a method.
+        Route::get('/clinics', [ClinicController::class, 'index'])->name('clinics');
+        Route::post('/clinics', [ClinicController::class, 'store'])->name('clinics.store');
+        Route::patch('/clinics/{clinic}', [ClinicController::class, 'update'])->name('clinics.update');
+        Route::patch('/clinics/{clinic}/active', [ClinicController::class, 'setActive'])->name('clinics.active');
+        // PUT: the refinement rule set is REPLACED whole, mode and rows together, so a re-submitted
+        // form converges instead of duplicating.
+        Route::put('/clinics/{clinic}/attendees', [ClinicController::class, 'setAttendees'])->name('clinics.attendees');
     });
 
 /*

@@ -190,6 +190,23 @@ describe('AppLayout — role-gated navigation', () => {
         expect(w.findAll('nav[aria-label="Primary"] a[href="/admin/rota"]')).toHaveLength(1);
     });
 
+    // P1e Decision C, the same shape one requirement along: CL-05's clinic map is a TOP-LEVEL
+    // entry, because `clinics.view` is likewise seeded for every authenticated position and a
+    // resident checking when their unit's clinic runs is not doing administration. Holding it
+    // must not conjure an Administration section, and it must not conjure the structure screen
+    // that DEFINES a clinic either — that one stays behind `structure.manage`.
+    it('shows a top-level Clinics link for clinics.view, with no admin section', () => {
+        store.page.props.auth.can = ['clinics.view'];
+        store.page.props.auth.user = { id: 11, member_name: 'res2', full_name: 'Another Resident', position: 4 };
+
+        const w = mountLayout();
+
+        expect(navText(w)).toContain('Clinics');
+        expect(navText(w)).not.toContain('Administration');
+        expect(w.findAll('nav[aria-label="Primary"] a[href="/clinics"]')).toHaveLength(1);
+        expect(w.findAll('nav[aria-label="Primary"] a[href="/admin/structure/clinics"]')).toHaveLength(0);
+    });
+
     /**
      * A QUERY STRING DOES NOT CHANGE WHICH SCREEN YOU ARE ON — and until P1d-2 Task 6 this layout
      * thought it did. Inertia's `page.url` carries the full path AND query, and both nav helpers
@@ -310,7 +327,7 @@ describe('AppLayout — role-gated navigation', () => {
             '/admin/users', '/admin/people', '/admin/promotion', '/admin/roster-import',
             '/admin/access-control', '/admin/structure/units', '/admin/structure/levels',
             '/admin/structure/calendar', '/admin/structure/periods', '/admin/structure/holidays',
-            '/admin/rota', '/admin/settings',
+            '/admin/structure/clinics', '/admin/rota', '/admin/settings',
         ];
 
         store.page.props.auth.can = ['users.manage', 'people.manage', 'access.manage',

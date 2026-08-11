@@ -774,6 +774,663 @@ plan is wrong somewhere too**, and in particular: run `php artisan test` on a cl
 touching any file at the start of each task, and trust the measured baseline over this document's
 arithmetic — this plan's own PHPUnit baseline was measured on a dirty tree and says so.*
 
+### 2026-08-11 — Task 1
+
+1. **Baseline re-measured on a clean tree, as instructed: `php artisan test` → 1451 passed, 0
+   failed** (the plan's contaminated reading said 1446/75-failed). `npm test` → 192, `npm run
+   build` → green. Task 1 took it to **1460** (8 `WeekdayVocabularyTest` + 1 `GoldenFixtureTest`).
+2. **The weekday names went into `lang/en/calendar.php`, not into a `const` on `Calendar` — a
+   deliberate deviation from Task 1's "are plain constants".** The prohibition that sentence is
+   really making (*"no `IntlDateFormatter`, no `IntlCalendar`, no date construction"*) is held in
+   full: a weekday name is a vocabulary lookup and nothing constructs a date to obtain one. But
+   the tree already has exactly one calendar-vocabulary table, `lang/en/calendar.php`'s
+   `hijri_months`, whose own docblock states the reason — *"Munawib AR-07: strings are
+   externalized from launch so a future locale is translation work, not a rewrite"* — and
+   `golden.json`'s `hijri_labels` block already names that file as the source a mirror checks
+   itself against. A second calendar vocabulary in a different place, with a different translation
+   story, is the "one fact in two places" this codebase keeps paying for; Task 1's own
+   justification cites AR-07 while prescribing the shape AR-07 exists to avoid. `label` and
+   `short` sit in ONE entry per day rather than two parallel arrays, because two arrays are two
+   lengths that can drift and an abbreviation is not always the first three characters of a name
+   in another language. **If the owner prefers the constant, it is a one-function change**
+   (`Calendar::weekdayStrings()`); the public signatures, the Inertia prop shape and the fixture
+   are identical either way.
+3. **`golden.json`'s `version` went 1 → 2.** Its marker exists so *"a future shape change is
+   visible to BOTH independent consumers … rather than one silently drifting onto a JSON shape the
+   other has never seen"* — a whole new top-level block is such a shape, additive or not. The
+   mirror is unwritten, so nothing breaks; `GoldenFixtureTest::test_fixture_declares_a_version`
+   now pins 2 and records why.
+4. **The new block is `weekday_columns: {_description, cases[]}`, not a bare list**, matching
+   `parse_rejects`/`hijri_labels` rather than `weeks` — it needed a paragraph of contract prose
+   (why CL-03 makes it contractual at all) that a bare list has nowhere to put.
+5. **Empirical, and the reason the fixture assertion is `assertSame` on the whole `columns`
+   array:** `assertSame` on a PHP array compares key ORDER too. A first draft of
+   `test_every_column_says_whether_it_is_a_weekend_day` built its map in *column* order and failed
+   against an ISO-ordered expectation that was correct in content — fixed with a `ksort()` and a
+   comment, since ORDER is the previous test's subject. The same property is what makes the
+   fixture assertion strong: it pins key order and value types, and the array ships to
+   `resources/js` verbatim.
+6. **The fixture assertion was watched failing against planted drift** (one `weekend` flag flipped
+   in the `[5, 6]` case) before being trusted; it named the exact column. Note for whoever plants
+   the next one: `git checkout <fixture>` to revert a plant also reverts the task's own
+   uncommitted work on that file. Copy the file aside instead.
+7. **`CalendarIsTheOnlyConverterTest` stayed green with no allow-list change**, as Task 1 requires
+   — but note its JS scan needles for date CONSTRUCTION (`new Date(`, `toLocaleDateString(`, …),
+   so it would **not** catch a `.vue` file that hardcoded `['Sun', 'Mon', …]` instead of consuming
+   the `weekdayColumns()` prop. Tasks 4 and 5 are where that could actually happen; if it is worth
+   guarding, the needle is a weekday-name list under `resources/js`, and it belongs there rather
+   than here.
+8. Verified against the tree, as instructed: **there is no `institutions.week_start` column**
+   (`grep week_start database/migrations app/Models/Institution.php` → nothing).
+   `Calendar::weekStartIsoDay()` derives it. Finding 6 is correct.
+
+### 2026-08-11 — Task 2
+
+1. **Baseline re-measured clean before touching anything: `php artisan test` → 1460 passed, 0
+   failed**, matching Task 1's recorded number exactly. `npm test` → 192, `npm run build` → green.
+   Task 2 took PHPUnit to **1476** (14 `ClinicWriterTest` + 2 `ClinicWritersAreSingularTest`). The
+   migration slot was checked first as instructed and **was free** — `ls database/migrations/ |
+   tail -5` ended at P1d's `2026_08_15_120004_create_vacations_table.php`, so unlike P1d-1 no
+   renumbering was needed. **The e2e suite was re-run clean** (`rm database/e2e.sqlite && npm run
+   test:e2e` → **22 passed**) even though no e2e file was touched: a new migration changes the
+   schema that self-contained world is built from, so the stale sqlite file would have been a
+   green run against a database that no longer matches the tree.
+2. **Three of the guard's needles were written, measured against what Task 4 must contain, and
+   then WITHDRAWN — ruling 42's "a needle whose cost exceeds its reach is withdrawn on
+   measurement, not taste".** The array-key twins `'weekday' =>`, `'attendee_mode' =>` and
+   `'clinic_id' =>` all have zero pre-existing matches across app/ + database/ + routes/, so they
+   looked free. They are not: Task 4's clinics screen builds Inertia props in this codebase's house
+   style, and `'weekday' => $clinic->weekday` inside a `present()` map is a **read**. Keeping the
+   needle would force `ClinicController` onto `ALLOW_LIST` — blinding the guard at precisely the
+   file where a second writer is most likely to appear. The **property-assignment twins are kept**
+   (`->weekday = `, `->attendee_mode = `, `->clinic_id = `, `->session = `), because those are
+   unambiguously writes and the `= ` trailing space is what keeps them so. Consequence, stated in
+   the guard's own docblock rather than implied away: `$clinic->name = 'x'; $clinic->save();` is
+   invisible to this scan, because `->name = ` is also `units`', `levels`', `people`' and
+   `holidays`' column.
+3. **No `test_every_allow_listed_file_still_matches_a_needle` twin, deliberately, and the reason
+   generalises.** One was written first and immediately flagged `ClinicFactory` as stale — because
+   `Clinic::factory()->create()` inserts through `Factory::create()`, which appears nowhere in the
+   factory's own source. The distinction is real and worth recording: `CalendarWritersFlushTest`
+   and `InstitutionProvenanceTest` allow-list **incidental matches**, so an entry matching nothing
+   there is definitionally stale; a single-writer guard allow-lists **writers**, and a writer the
+   substring scan cannot see is still an honest entry. `RotaWritersAreSingularTest` and
+   `PersonLevelsHaveOneWriterTest` both allow-list their factories on exactly that silent basis.
+   The `test_every_allow_listed_file_still_exists` twin the plan asks for is present.
+4. **`ClinicWriter` takes `institution_id` from the CALLER (`?int $institutionId`), and that is a
+   `CalendarWritersFlushTest` avoidance, not a style choice.** Deriving it inside the writer would
+   mean `Institution::current()`, which is a `WRITE_NEEDLE` — the file would fail the build unless
+   allow-listed for a column with nothing to do with the calendar (invariant 15's trap, arriving
+   two tasks earlier than Decision G predicted it). The caller-supplied form is also the existing
+   precedent: `LevelController`, `PeriodController` and `HolidayController` all write
+   `$request->user()?->institution_id`, and `HolidayController` says in a comment that it does so
+   *"not `Institution::current()`"*.
+5. **The plan gives `update()` no signature; it is `update(Clinic $clinic, Unit $unit, array
+   $attributes)`** — the unit arrives as a MODEL, so resolving it from user input stays the
+   caller's job through route-model binding or `Unit::findByCode()` (D2). A `unit_id` key inside
+   `$attributes` would have made this writer the place a raw code string gets looked up.
+6. **`attendee_mode` is deliberately NOT settable through `create()` or `update()`.** It moves only
+   through `setAttendees()`, together with the rows, in one transaction — so `levels` mode can
+   never briefly hold a person row, which is one of the three states no engine can refuse.
+   `create()` always opens a clinic on CL-02's default, `rotators`, which needs no rows to express.
+7. **Four extra tests beyond the plan's ten (14 total):** moving a clinic to another unit is
+   allowed but never onto a non-owning one; deactivate-never-delete plus the refusal to revive onto
+   a since-retired unit; an attendee id that names nothing is refused in the writer rather than
+   surfacing as a raw FK 500 from inside a caller's transaction; and `institution_id` provenance.
+   The FK check matters more than it looks — `config/database.php` sets
+   `foreign_key_constraints => env('DB_FOREIGN_KEYS', true)`, so SQLite **does** enforce them under
+   test, and the failure without this check is an `QueryException`, which is neither of the two
+   exception types a controller's catches will be written for.
+8. **The guard was watched failing against a planted second writer carrying all four shapes at
+   once** (`app/Support/Clinics/PlantedSecondWriter.php`, deleted immediately after): it named
+   `Clinic::create(`, `DB::table('clinic_attendees')`, `->attendees()->create(`, and all three
+   property assignments, on the one file. Then reverted, re-run, green. Note for the next planter,
+   since the file was new rather than edited: `rm` is the revert here, and `git status` must come
+   back to exactly the untracked set the task created — there is no `git checkout` to get wrong.
+9. **`$table->index('clinic_id')` on `clinic_attendees` duplicates the index MySQL creates
+   automatically for the foreign key.** Kept anyway, because `master_rota_assignments` already
+   states its own `index('unit_id')` explicitly beside a `constrained()` FK, and a read path should
+   not depend on one engine's incidental behaviour. Flagged here so it reads as a decision rather
+   than an oversight.
+10. **The negative control ruling 42 requires was run too, and it is what makes the property
+    needles trustworthy.** A throwaway reader (`$clinic->attendee_mode === Clinic::MODE_NAMED`,
+    `$clinic->weekday > 0`, `$clinic->session === 'AM'`, `$clinic->attendees()->get()`) was planted
+    and the guard stayed GREEN — so the `= ` trailing space is doing its job and
+    `->attendees()->get(` is correctly not a write. Without this half, a needle set that matched
+    every mention of a column would look identical to one that matched only writes.
+11. **TWO EXISTING SOURCE GUARDS FIRED ON THIS TASK'S FILES, AND BOTH WERE CORRECT TO. Neither was
+    predicted by the plan, and both were found only by running the FULL suite** — the targeted
+    `--filter` the task text gives (`ClinicWriterTest|ClinicWritersAreSingular|
+    InstitutionProvenance`) is green with both defects present, which is the whole argument for the
+    unfiltered run the standing rules require.
+    - **`AccountLinkHasOneWriterTest`** matched `ClinicWriter` on the array-key-plus-null literal
+      for the person column. Its subject is `users.person_id`, where nulling the link makes an
+      account nameless on every screen with no error; `clinic_attendees.person_id` is a different
+      column on a different table that merely shares a name. Fixed by building the attendee row
+      with VARIABLE keys (`[$column => $id, $other => null]`) rather than two literal branches —
+      which is also less code — with the reason stated at the site so nobody "clarifies" it back.
+    - **`CalendarWritersFlushTest`** matched `ClinicWriter`'s DOCBLOCK, because the paragraph
+      explaining that this writer deliberately does **not** resolve the institution row named that
+      static with its parentheses, and `WRITE_NEEDLES` scans prose. This is invariant 15's trap
+      arriving six tasks earlier than Decision G expects it, through the opposite door: not a file
+      that reads the row, but a file that says it doesn't. Fixed by spelling around the call rather
+      than deleting the reasoning — the `RotaAccessTest` comment-stripper exists precisely because
+      a literal scan otherwise "would fail the build on the rule's own statement and teach people
+      to delete it", and `CalendarWritersFlushTest` deliberately has no stripper. **Adding
+      `ClinicWriter` to that guard's ALLOW_LIST would have been the wrong repair and would have
+      LOOKED right**: its `test_the_allow_list_is_not_stale` twin only checks that an entry still
+      matches a needle, so an exemption earned purely by a comment would have survived forever.
+    - The generalisable lesson for Tasks 3–15: **a docblock in this codebase is scanned source.**
+      Three separate guards (`CalendarIsTheOnlyConverterTest`, `CalendarWritersFlushTest`,
+      `AccountLinkHasOneWriterTest`) match prose, and only `RotaAccessTest`'s narrow scan strips
+      comments. Naming a forbidden call in order to reject it is a build failure.
+12. **Nothing in the task text was wrong against the tree.** The migration slot, the
+    `person_levels` precedent it quotes (`2026_08_14_120002`), `Unit`'s `clinic_owner` column,
+    `Clinic::SESSIONS`-as-constant, ruling 42's three shapes and `RotaWritersAreSingularTest`'s
+    structure all check out as described. The two guard collisions above are interactions the task
+    text could not reasonably have foreseen, not errors in it.
+
+### 2026-08-11 — Task 3
+
+1. **Baseline re-measured clean before touching anything: `php artisan test` → 1476 passed, 0
+   failed**, matching Task 2's recorded number exactly. `npm test` → 192, `npm run build` → green.
+   Task 3 took PHPUnit to **1488** (12 `ClinicRosterTest`). No migration and no e2e file was
+   touched, so the e2e suite was not re-run.
+2. **`Calendar::ymd()` normalises the date at the entry point — a deliberate deviation from the
+   task's "no `DateTime`, no `Calendar` call".** The prohibition that sentence is really making is
+   about the COMPARISON (do not build date objects to compare bounds), and that half is held in
+   full: nothing below `forDate()`'s first line converts anything. But the ENTRY needed a gate,
+   because leniency here fails silently in the worst possible direction — `'2026-7-3'` sorts below
+   every stored `Y-m-d` bound, so an unnormalised string resolves to an EMPTY clinic and reads as a
+   quiet Tuesday, with no error anywhere. `Calendar::ymd()` costs no query, throws on anything that
+   is not a plain `Y-m-d`, and is the module that owns the question. New case
+   `test_a_date_that_is_not_a_plain_ymd_is_refused`, beyond the plan's ten.
+3. **The span bounds are `whereDate()`, not a raw string comparison in the WHERE clause, and the
+   task text is wrong to imply otherwise.** `MasterRotaAssignment` casts both bounds to `date`, and
+   MySQL 8.4 round-trips such a column as `'Y-m-d 00:00:00'` — which is exactly the caveat
+   `MasterRotaAssignment::booted()` and `Vacation::scopeIntersecting()` each already carry in their
+   own docblocks. P1d-2 Decision B's four-way string comparison is for values ALREADY IN PHP (what
+   `AvailabilitySummary` does, over an array the grid built); it is not a query idiom, and using it
+   as one would have passed under SQLite and failed in production.
+4. **Vacation verdict: neither excluded nor flagged — returned, unmarked, and the leave table is
+   never queried at all.** Decision B says so in terms ("a person on vacation is returned,
+   unmarked"), and CL-04 is P3. The reason it is worth stating as an implementation fact rather
+   than a policy: because no leave is read, `ClinicRoster` imports nothing from the leave side, so
+   Task 6's `availab`/`subtract`/`coverage` scan over `app/Support/Clinics/` passes on its own
+   merits rather than by allow-list. The test asserts the WHOLE key set of a returned row, not a
+   handful of named absences — a named-absence assertion cannot catch a field whose name nobody
+   thought to list.
+5. **Stale verdict: returned and FLAGGED, and the person query carries `withTrashed()`.** The plan
+   names only "a retired person"; in this codebase those are two different states — `active =
+   false` is deactivated and `deleted_at` is retired (`PersonPresenter` projects them as `active`
+   and `retired` separately). Case 8 covers both, and the second is the load-bearing one: a plain
+   `whereIn` on `people` silently DROPS a soft-deleted person between the span query and the person
+   query, so their occupied cell disappears from the clinic with no error while the span is still
+   on the rota. Flagging rather than dropping is P1d-2 Decision D's answer, for its reason — a
+   departed colleague on a clinic list reads as cover that is not there, and an invisible one hides
+   a cell somebody has to clear.
+6. **Retired UNIT verdict: still resolves — an eleventh case beyond the plan's ten.**
+   `ClinicWriter` refuses to create or revive a clinic on a retired unit, but a unit may be retired
+   UNDER a clinic that already exists, and that is a different question. Resolution is not
+   authorization: the same answer case 10 gives an inactive clinic. Pinned as
+   `test_a_clinic_whose_unit_has_since_been_retired_still_resolves`.
+7. **Query cost measured on a populated unit, per MODE, because "the count" is not one number.**
+   Forty people on the ward (ten of them split spans, twenty promoted mid-period, forty on leave,
+   ten deactivated): **`rotators` 2 queries, `levels` 5, `named` 2**, bounds pinned at 4 / 7 / 4.
+   The plan asks for one figure; three modes are three code paths with three query sets, and a
+   single bound would have been the bound of whichever mode the fixture happened to use. **The
+   bound was watched failing:** the set-wise level resolver was replaced with a per-row
+   `$person->levelAt($on)` and the test went red at **83 queries against 7**, then restored.
+8. **Contact-freedom is proved twice, and the second proof is the one that would survive a
+   rewrite.** Behaviourally: the whole key set asserted, plus `email`/`phone`/`notes`/`constraints`
+   asserted ABSENT (not null) with the department on `contact_visibility = members` AND a
+   `people.manage` administrator acting — both branches of `PersonPolicy::viewContact()` true at
+   once, which is the combination P1d-2 found the live disclosure under. At source level: `->email`
+   was planted inside the projection map and `ContactFieldsAreProjectedOnceTest` named the file
+   twice, then reverted and re-run green. Without that second half, "the guard is green" and "the
+   guard cannot see this file" look identical.
+9. **NO SOURCE GUARD COLLIDED, and that was construction rather than luck.** Task 2 amendment 11's
+   lesson was applied before a line was written: the docblock names neither the institution-row
+   accessor (a `CalendarWritersFlushTest` WRITE_NEEDLE, which scans prose) nor any of
+   `->email`/`'phone'`/`'notes'`/`'constraints'` (`ContactFieldsAreProjectedOnceTest`, likewise
+   prose-scanning), and no person-id-plus-null literal appears anywhere.
+   `ClinicWritersAreSingularTest` stayed green over `$clinic->attendee_mode ===`, which is the read
+   its own docblock predicted for this file BY NAME as the reason the `= ` trailing space is
+   load-bearing. Confirmed by the FULL run, per the standing rule — the filtered run the task text
+   gives is green either way, which is what made Task 2's two collisions invisible.
+10. **`via` is two class constants (`ClinicRoster::VIA_ROTATION` / `VIA_NAMED`), not the bare
+    strings the task text writes.** The `Clinic::SESSIONS` / `ATTENDEE_MODES` idiom: a consumer
+    comparing against a constant cannot typo one silently, and Task 5's map is the consumer.
+11. **`atLevels()` has no empty-set short-circuit, on purpose.** One was written first and removed:
+    `Person::levelSpansBetween()` already issues no query for an empty collection, and an empty
+    rule set filters everybody out through `in_array()` anyway — so the clause bought nothing but a
+    second branch, one half of which described a state `ClinicWriter` refuses to create and no test
+    could ever exercise. `Calendar::weekdayStrings()`'s own docblock makes the same call for the
+    same reason.
+12. **Nothing else in the task text was wrong against the tree.** `PersonPresenter::contactFree()`,
+    `Person::levelSpansBetween()`/`levelFromSpans()`, `withExists(['user as has_account'])`,
+    `Clinic::ATTENDEE_MODES` and the `clinic_attendees` shape all check out as described; item 3
+    above is the one factual correction.
+
+### 2026-08-11 — Task 4
+
+1. **Baseline re-measured clean before touching anything: `php artisan test` → 1488 passed, 0
+   failed**, matching Task 3's recorded number exactly. `npm test` → 192, `npm run build` → green.
+   Task 4 took PHPUnit to **1508** (19 `ClinicScreenTest` + 1 new
+   `CalendarIsTheOnlyConverterTest` case) and Vitest to **202** (10 `Clinics.test.js`). No
+   migration and no e2e file was touched, so the e2e suite was not re-run.
+2. **The Vitest file is `tests/js/Clinics.test.js`, not the plan's
+   `resources/js/__tests__/Clinics.spec.js` — the plan's path would never have run.**
+   `vitest.config.js` includes exactly `tests/js/**/*.test.js`; there is no `__tests__` directory
+   anywhere in the tree and no `.spec.js` outside `tests/e2e/` (which is Playwright's). A spec at
+   the path the task gives would have been silently collected by nothing, and `npm test` would
+   have reported the same 192 it always did.
+3. **THE HARDCODED-WEEKDAY NEEDLE: ADDED, AND PROMOTED REPO-WIDE rather than kept per file.** Task
+   1 amendment 7 flagged the gap and left the call to this task. Measured first, as ruling 42
+   requires: a QUOTED WHOLE WORD pattern over all of `resources/js` — the seven names, full or
+   three-letter, wrapped in any of the three JavaScript string delimiters — matched **zero files**
+   before the clinics screen existed,
+   so it costs no allow-list entry and blinds no file — and the bare substrings were rejected in
+   the same measurement, because `Mon` matches `Month`, which `Holidays.vue` legitimately says
+   twice. It lives in `CalendarIsTheOnlyConverterTest` beside the ten date-construction needles,
+   with **no allow-list**, deliberately: a per-file Vitest assertion protects the one file somebody
+   remembered to write it in, and Task 5's map would be unguarded by default. Watched failing
+   against a plant in a DIFFERENT file (`Holidays.vue`, three day names in two quote styles); it
+   named the file and the three strings, then reverted and re-run green. The behavioural half —
+   "the picker's options are the prop's labels, in the prop's order" — stays in Vitest, because the
+   two fail for different reasons: a component can consume the labels honestly and still sort them
+   itself.
+4. **TRAP 1 CAUGHT THIS TASK TWICE, IN ITS OWN NEW GUARD.** The first run of `Clinics.test.js` went
+   red on `Clinics.vue` for `'Sun','Mon'` and for the raw-markup directive — both from the
+   component's own DOCBLOCK, which was explaining that it does not do those things. Spelled around
+   (the docblock now says "a literal array of seven day names" and "the raw-markup directive"), not
+   allow-listed, per Task 2 amendment 11's lesson. Worth recording that the trap fires on brand-new
+   guards written in the same commit as the file they scan, not only on pre-existing ones.
+5. **`App\Support\Clinics\ClinicPickers` is a new file the task's "Files touched" list does not
+   name, and D9 is why.** Test 3 asks for offer-and-accept parity as a matrix; that needs ONE
+   predicate per field consumed by both the props and the FormRequest. `Rule::exists` runs on the
+   raw query builder and never sees SoftDeletes' global scope, so a predicate written once as
+   Eloquent and once as raw SQL is two predicates — `SignoffPickers`' whole reason for existing.
+   Three predicates (`unitPredicate`, `levelPredicate`, `personPredicate`), each applied to the
+   rule directly and to the offer query through `getQuery()`. The parity matrix is asserted for
+   units (4 fixtures), people (3) and levels (2).
+6. **`ClinicRequest` has a sibling, `ClinicAttendeesRequest`.** The mode and the rule set are ONE
+   act and travel together (Task 2 amendment 6's reason: splitting them admits a moment where
+   `levels` mode holds person rows), so the attendee endpoint has its own payload shape and its own
+   request class rather than optional keys bolted onto the CL-01 one.
+7. **Every `ClinicWriter` refusal is caught and flashed, and that is load-bearing rather than
+   polite.** The writer throws `InvalidArgumentException` for every rule the database cannot hold;
+   uncaught, an administrator ticking "levels" with nothing selected gets a 500.
+   `test_a_writer_refusal_reaches_the_screen_as_an_error_not_a_500` pins it, and also asserts the
+   clinic is unchanged afterwards — the writer throws before its transaction opens, so a refusal
+   must leave the row exactly as it was.
+8. **An attached level or person the pickers no longer offer is NAMED, not silently dropped.**
+   `SignoffPickers`' `$keep` problem in a different shape: the attendee editor replaces the set
+   whole, so a checkbox that disappears because its subject was deactivated takes the rule with it
+   on the next save. The controller resolves those subjects (`withTrashed()` on the person side —
+   a plain lookup drops precisely the row that most needs naming) into an `unlisted` list per
+   clinic, and the screen says "no longer offered, and saving will drop them". They are NOT made
+   acceptable to the rule again: parity is per offered-and-selectable option.
+9. **Found by the query-cost test, not by inspection: the two picker offers were being built
+   TWICE per page load** — once for the props and once inside the listing's unlisted-attendee
+   lookup, which re-ran the whole roster query. Fixed by building them once in `index()` and
+   passing them down. `test_the_listing_cost_does_not_grow_with_the_roster` pins the result on a
+   populated department (30 people on the rota, 3 clinics): a bound measured on an empty one only
+   ever proves the empty case. **And the bound itself had to be tightened before it meant
+   anything** — measured **18**; re-planting the per-clinic offer rebuild took it to **23**, which
+   the first bound written (25) passed. A bound with more headroom than the regression it exists to
+   catch is decoration. Twenty, watched failing against the plant, then reverted and green.
+10. **`AuditLog`'s column is `detail`, singular.** A first draft of the audit assertions read
+    `$row->details`, which is not an attribute — Eloquent returns `null` for it silently, so the
+    assertion compared against `''`. It failed here rather than passing vacuously only because the
+    test asserts `assertStringContainsString` (a positive claim) alongside the negative ones. A
+    file that had asserted ONLY `assertStringNotContainsString('Renal Clinic', $row->details)`
+    would have been green forever against a column that does not exist.
+11. **`test_there_is_no_destroy_route_for_a_clinic` passed on the FIRST red run**, which is exactly
+    what its vacuity twin is for: with no clinic routes registered at all, a sweep for DELETE verbs
+    over routes whose URI contains "clinic" iterates an empty set.
+    `test_the_clinic_routes_are_actually_registered` was red at that moment and is what makes the
+    sweep mean anything. A third case, `test_deleting_a_clinic_is_a_plain_method_not_allowed`,
+    asserts the 405 at runtime and that the row survives.
+12. **`ReferenceSeeder`'s WARD is an active clinic owner**, so any assertion of the form
+    `->where('units', [])` is asserting the seeder rather than the rule. The retired-unit case
+    asserts the specific code's ABSENCE from the offered list instead.
+13. **The Vitest `useForm` mock returns `reactive()`, unlike the two existing ones.** A plain
+    object mutates without notifying Vue, so `setValue` on the mode `<select>` changed the form and
+    re-rendered nothing — the two picker-visibility assertions would have been checking the initial
+    render twice and passing for the wrong reason. Found by the tests going red, not by review.
+14. **Nothing else in the task text was wrong against the tree**, and the prescribed props, routes,
+    audit actions and no-destroy rule are all implemented as written. The `clinics` prop is the
+    GROUPED structure the task asks for (`[{unit, clinics[]}]`), which is worth stating because the
+    name reads like a flat list.
+
+### 2026-08-11 — Task 5
+
+1. **Baseline re-measured clean before touching anything: `php artisan test` → 1508 passed, 0
+   failed**, matching Task 4's recorded number exactly. `npm test` → 202, `npm run build` → green.
+   Task 5 took PHPUnit to **1524** (16 `ClinicMapTest`) and Vitest to **212** (9
+   `ClinicMap.test.js` + 1 new `AppLayout.test.js` case). No migration was added, but the e2e world
+   was rebuilt and re-run anyway (`rm database/e2e.sqlite && npm run test:e2e` → **22 passed**): the
+   capability catalog is seeded data in that file, so a stale world would have run against a
+   department that had never heard of `clinics.view`.
+2. **A GUARD IN A FILE THE TASK TEXT NEVER NAMES WENT RED, AND ONLY THE FULL RUN SAW IT.**
+   `AccessControlParityTest` pins each position's EFFECTIVE capability set by hand
+   (`expectedByPosition()`), so a new default-to-everybody key fails two of its cases —
+   `test_each_role_effective_set_matches_the_documented_server_gates` and
+   `test_seeder_is_idempotent`. The task's own `--filter "ClinicMapTest|RotaAccessTest|
+   AccessControl"` would in fact have caught this one by luck of the word "AccessControl", but the
+   run that actually found it was the unfiltered one, and the general lesson stands from Task 2
+   amendment 11: **a capability is added in four places, not three** — `CATALOG`, `DESCRIPTIONS`,
+   `ROLE_DEFAULTS`, and the parity test's `$anyAuth`. Fixed by adding `clinics.view` to `$anyAuth`
+   beside `rota.view`, with the reason stated at the site.
+3. **THE MAP SHIPS NO PERSON-SHAPED VALUE AT ALL — a deliberate deviation from the task's *"if a
+   count or a name list is shown at all it comes from `ClinicRoster` through `contactFree()`"*.**
+   The task offers that as a conditional and the condition is not met, for a reason worth recording
+   because it is not obvious: **`ClinicRoster::forDate()` answers for a DAY, and the map has no
+   day.** A clinic is a weekly recurrence with no date of its own, so resolving a Tuesday cell as of
+   today (a Thursday) reports Thursday's rota with complete confidence and no error anywhere — the
+   answer would be wrong for six of the seven columns. Only `named` mode is date-independent, and
+   using the resolver for one mode out of three is a third definition of "who attends". So the map
+   shows the RULE: the mode label, plus the training-level CODES for a `levels` refinement, which
+   are department structure and not people. That is the strongest available form of contact-free —
+   there is nothing on this surface to gate, no viewer passed anywhere, and no second projection.
+   Owner binding *"the map shows clinics and sessions"* is satisfied literally.
+4. **Consequently there is NO `today` prop either**, and that is the same decision rather than an
+   omission. A first draft sent `Calendar::label(Calendar::todayYmd())` for context and it was
+   removed: the moment a date appears on this surface somebody resolves a cell as of it. Stated in
+   the controller at the site where the prop would go, so the next reader adds it deliberately or
+   not at all.
+5. **TRAP 2 CONFIRMED AGAIN, AND THE PLAN IS STILL WRONG.** Task 5's Files list says
+   `resources/js/__tests__/ClinicMap.spec.js`; `vitest.config.js` includes exactly
+   `tests/js/**/*.test.js`, so a spec at that path is collected by nothing and `npm test` reports
+   the same 202 it always did. The file is `tests/js/ClinicMap.test.js`, as Task 4 amendment 2
+   already recorded for its own.
+6. **TRAP 1 DID NOT FIRE, and that was construction rather than luck.** Task 2 amendment 11's and
+   Task 4 amendment 4's lesson was applied before a line was written: `Map.vue`'s docblock explains
+   that the file names no day of the week, uses the raw-markup directive nowhere and carries no
+   dark-mode utility — **without spelling any of the three tokens**, because
+   `CalendarIsTheOnlyConverterTest`'s weekday needle and `ClinicMap.test.js`'s own source
+   assertions all scan prose. Likewise `ClinicMapController`'s docblock names neither the
+   institution-row accessor (a `CalendarWritersFlushTest` WRITE_NEEDLE) nor any of the four contact
+   field names in quotes or arrow form (`ContactFieldsAreProjectedOnceTest`), and no
+   property-assignment shape `ClinicWritersAreSingularTest` looks for. All four guards green with
+   no allow-list entry added anywhere.
+7. **The weekday guard was watched failing on THIS file.** A literal seven-name array was planted
+   in `Map.vue` and used for the column header; the repo-wide scan named the file and all seven
+   strings, and `ClinicMap.test.js`'s behavioural half named the wrong labels in the same run — the
+   two fail for different reasons, which is why both ship. Reverted, re-run, green.
+8. **Query cost measured on a POPULATED department, then checked against a plant.** Three
+   clinic-owning units, twenty-four clinics (six level-refined) and thirty people on the ward's
+   rota: **10 queries**. Replacing the one page-wide level lookup with a per-clinic one took it to
+   **16**. The bound written is **12** — two queries of slack against a regression worth six — and
+   it was watched failing at 16 before being trusted. The cost is flat in both the roster and the
+   clinic count by construction: the units are one query, their clinics one, the refinement rules
+   one eager load, and the level vocabulary one for the whole page.
+9. **Contact-freedom proved TWICE, and each half was watched failing.** At source level: `->email`
+   planted inside the projection map, and `ContactFieldsAreProjectedOnceTest` named
+   `app/Http/Controllers/ClinicMapController.php` by path — without that half, "green" and "the
+   guard cannot see this file" are indistinguishable. Behaviourally: the obvious implementation was
+   planted whole (`PersonPresenter::many($people, $request->user())` hung off each clinic, which is
+   exactly what `RotaGrid` once did), and
+   `test_the_map_carries_no_contact_field_for_any_viewer` named the precise prop paths —
+   `resolved.1.0.phone`, `resolved.1.0.email` — **at position 4**, a resident, on a department set
+   to `contact_visibility = members`. Both plants reverted; `git status` back to exactly the
+   untracked set this task created.
+10. **TWO OF THE SIXTEEN PASSED ON THE FIRST RED RUN, VACUOUSLY, AND THEIR TWINS WERE RED AT THAT
+    MOMENT** — which is the whole point of shipping them in pairs, and exactly what Task 4
+    amendment 11 warned about. `test_every_route_behind_cap_clinics_view_is_a_get` iterated an
+    empty router set, and `test_the_retired_nurse_position_gains_no_default` asserted the absence
+    of a capability that did not exist. `test_the_map_route_is_actually_registered_behind_cap_
+    clinics_view` and `test_clinics_view_is_in_the_catalog` were red beside them and are what make
+    the other two mean anything. A third, `test_posting_to_the_map_is_a_plain_method_not_allowed`,
+    asserts the read-only property at RUNTIME as well as over the router.
+11. **Six cases beyond the plan's ten**, each closing something the ten leave open: the vacuity
+    twin above; the runtime 405; `test_managing_clinics_still_needs_structure_manage` (Decision C's
+    "one new key, not two" — a resident reaches the map and is refused the structure screen, in one
+    test); `test_a_reader_sees_the_map_with_its_clinics` (the whole cell shape asserted, so a
+    future key cannot be added to the payload unnoticed); `test_a_refined_clinic_shows_its_rule_
+    and_not_its_roster` (item 3's decision as behaviour, both branches); and the `auth`-over-the-
+    router half of the D7 case, so the guest redirect cannot be some other middleware's doing.
+12. **`docs/spec/08-foundation.md` needed TWO edits, not one.** Finding 11 names the "Capability
+    catalog (complete)" list; the **Role defaults** paragraph immediately below it is the one that
+    actually records what a key defaults TO, and a key added only to the first would have left the
+    document self-contradictory while
+    `ClinicMapTest::test_the_catalog_document_lists_the_key` stayed green. Both are updated, and
+    the second also records the D7 override of Munawib §5's link-public footnote and the
+    `applied_role_defaults` once-only behaviour the task text calls out.
+13. **Nothing else in the task text was wrong against the tree.** The route, the capability key,
+    the seeded positions, `Calendar::weekdayColumns()`, the `Unit::BAR_CLASSES` colouring, the nav
+    placement and finding 11 all check out as described. Item 3 is a deviation taken deliberately,
+    not a correction; item 2 is an interaction the task text could not reasonably have foreseen.
+
+### 2026-08-11 — Task 6
+
+1. **Baseline re-measured clean before touching anything: `php artisan test` → 1524 passed, 0
+   failed**, matching Task 5's recorded number exactly. `npm test` → 212, `npm run build` → green.
+   Task 6 took PHPUnit to **1527** (3 `ClinicHooksTest`). Vitest unchanged. No migration and no e2e
+   file was touched, so the e2e world was not rebuilt for this task.
+2. **The stripper was EXTRACTED, as the task text permits, to `tests/Support/SourceScanner.php`
+   (`Tests\Support\SourceScanner::withoutComments()`).** `RotaAccessTest`'s private
+   `sourceWithoutComments()` now delegates to it in one line and keeps its own name, so nothing that
+   called it had to change. `tests/Support/` is collected by no test suite (`phpunit.xml` names only
+   `tests/Unit` and `tests/Feature`), and `Tests\` already maps to `tests/` in `autoload-dev`, so
+   this cost no configuration. Both callers keep their OWN two-way calibration against their OWN
+   files — a proof that the stripper handles `AvailabilitySummary`'s docblock is not a proof that it
+   handles `Map.vue`'s.
+3. **THE CL-04 SCAN WENT RED ON A REAL OFFENDER ON ITS FIRST RUN, IN CODE RATHER THAN IN PROSE, AND
+   THE STRIPPER COULD NOT HELP.** `ClinicWriter::assertOwns()` refuses a clinic on a retired unit
+   with *"…appears on no map and is coverage nobody can see."* — an exception MESSAGE, which is a
+   string literal, and the stripper removes comments only. The message now reads *"is cover nobody
+   can see"*: identical meaning, one needle preserved. The alternative was to drop `coverage` from
+   the needle set (it is the word design §6.3's unbuilt `coverage_templates` is named for, and CL-04's
+   own *"morning cover"* requirement) or to allow-list the module's own writer, which is precisely
+   the file where a second implementation would appear. The reason is stated at the site so nobody
+   "improves" the wording back. **Deliberate rule, worth generalising:** strings are NOT stripped,
+   by either path — an exception message or a rendered label carrying a forbidden word is code a
+   user can see, not documentation about code, and a scan that ignored strings would miss a real
+   surface. `SourceScanner`'s docblock says so.
+4. **`Clinics/Map.vue` gained a paragraph naming CL-04's vocabulary out loud, and that is a
+   deliberate addition beyond the task's "`ClinicRoster.php` (modify — docblock only, if needed)".**
+   Two reasons. First, a wall chart of the department's week is the single most tempting place in
+   the product to add a "who is free" column, and the person tempted is reading that file, not the
+   plan. Second, and the reason it is load-bearing rather than decorative: without it **no `.vue`
+   comment in the clinic module contained any needle at all**, so the `.vue` half of the stripper
+   calibration could only be pinned on an arbitrary phrase (which is all `RotaAccessTest` can do —
+   it calibrates on `MR-06`, not on a needle). It is now calibrated on the real thing: `availab` and
+   `coverage` are asserted present in the raw file and absent from the stripped one, so a `.vue`
+   stripper that stopped working fails the build on that sentence rather than silently disabling the
+   scan.
+5. **Both scans cover the two MODELS as well**, which the task text's *"`app/Support/Clinics/` in
+   full, plus the clinic controllers, form requests and Vue screens"* does not name: `Clinic` is
+   where a `conditions()` relation or a `severity` cast would land, and a guard blind to the model
+   is a guard around three quarters of a module. Eleven files, the support half a glob and the other
+   eight each `assertFileExists`'d, with a count floor on both halves.
+6. **`test_nothing_in_the_clinic_module_evaluates_a_condition` PASSED ON THE FIRST RED RUN** — trap
+   4 exactly, for the third time in this slice. What makes it non-vacuous is not another assertion
+   in the same test but the two structural twins inside `clinicSurfaceFiles()` (a floor on the glob,
+   a floor on the total, and `assertFileExists` per named path) plus the plant below; a scan that
+   iterated an empty set would fail on the floors before it could be green for the wrong reason.
+7. **Both scans were watched failing against planted offenders in BOTH languages, and the stripper
+   was then watched staying GREEN on the same words in comments.** The positive half:
+   `app/Support/Clinics/PlantedHookOffender.php` (a condition evaluator carrying every shape at
+   once) plus one planted line in `Map.vue`. It named `PlantedHookOffender.php` on six CL-03 needles
+   and five CL-04 needles, and `Map.vue` on `severity`, `availab`, `coverage` and `unavailable`. The
+   negative half — the one that makes the positive half mean anything — was
+   `app/Support/Clinics/PlantedCommentOnly.php` carrying **all sixteen needles in prose** across a
+   docblock, a `//` comment, a `#` comment and a trailing `/* */`, plus a `//` line and an HTML
+   comment in `Map.vue` carrying the same words: **all three tests stayed green**. Both plants
+   reverted, re-run green, `git status` back to exactly the untracked set this task created. Note
+   for the next planter: `Map.vue` carried this task's own uncommitted work, so it was copied aside
+   and restored from the copy — `git checkout` would have reverted the task with the plant (Task 1
+   amendment 6 recorded the same hazard for the fixture).
+8. **Design §14 gains item 22**, in item 18's shape, stating what each hook IS (CL-03 reads
+   `clinics.weekday` + `clinics.unit_id` against a date and a person's current unit; CL-04 reads
+   `ClinicRoster::forDate()`), that neither needs a schema change when it arrives, and that the
+   absence is real rather than allow-listed — Task 3 built `ClinicRoster` so it never reads the
+   leave tables, and neither scan has an allow-list at all.
+9. **Nothing in the task text was wrong against the tree.** The needle sets, the comment-stripping
+   requirement, the `RotaAccessTest` precedent, the both-directions calibration and the
+   no-allow-list instruction all check out as described. Item 3 is an offender the task text could
+   not have foreseen (it is in a string, not a comment); items 4 and 5 are deliberate widenings.
+
+### 2026-08-11 — Task 7
+
+1. **Baseline: `php artisan test` → 1527, `npm test` → 212, `npm run build` green**, matching Task
+   6's recorded numbers exactly. The e2e suite was then re-run from a genuinely CLEAN world
+   (`rm database/e2e.sqlite && npm run test:e2e`) → **24 passed across 8 spec files** (22 + 2),
+   counted rather than assumed, exactly the figure the task text predicts. Task 7 adds no PHPUnit
+   and no Vitest case, so both of those counts are unchanged at 1527 and 212.
+2. **`ClinicWritersAreSingularTest` needed NO allow-list entry, and that was checked rather than
+   assumed.** `E2eSeeder` writes its clinic through `ClinicWriter::create()`, and none of the
+   guard's forty needles matches the seeder's new code (`Clinic::query()->where(...)->exists()` is a
+   read; `ClinicWriter::create(` is the sanctioned writer). The task text's "only if needed" was
+   correctly hedged, and the answer is: not needed.
+3. **WARD's `clinic_owner` was verified rather than assumed, as the task text insists — and the
+   verification now lives IN the seeder rather than in a run somebody did once.** `ReferenceSeeder`
+   ships WARD as an active clinic owner and `prepare-world.js` runs `migrate:fresh --force --seed`,
+   so the e2e world takes the cold-start path. `seedReadableClinic()` nevertheless throws if WARD is
+   missing, inactive or not a clinic owner: `ClinicWriter::create()` would refuse in that case, and
+   a bare refusal surfaces as an empty map that reads like a screen defect rather than a seeding
+   one.
+4. **THE BROWSER FOUND SOMETHING NO OTHER LAYER COULD, AND IT IS ABOUT THE ASSERTION RATHER THAN
+   THE PRODUCT: THERE IS NO `data-page` ATTRIBUTE TO READ.** The task's "assert no `@` appears in
+   the page's Inertia props" has an obvious implementation — read `#app`'s `data-page` — and it
+   returns **null**, because Inertia's Vue 3 adapter removes that attribute as soon as it has parsed
+   it. The second-obvious implementation, grepping the served HTML for `id="app" data-page="…"`,
+   finds nothing either: this version of `inertia-laravel` emits
+   `<script data-page="app" type="application/json">` with the JSON as the script's BODY, and
+   `data-page` there holds the element id. Neither mistake could pass silently — both throw on a
+   null match, which is why the helper is allowed to be this specific about the markup — but the
+   repair is also the better assertion: the payload is now taken from the **response body** of the
+   navigation, which is literally what the server sent before any client code ran. That is the
+   standard the rest of this suite is held to, and it is what the task actually asked for.
+5. **NO PRODUCT GAP WAS FOUND, and that is a measured result rather than an absence of effort.**
+   P1d-1's e2e found there was no way to clear a rota cell at all; P1d-2a's found six screens
+   dropping `aria-current`. Both classes were specifically looked for here. Both screens are
+   reachable from the nav for the actor holding the capability and absent for the one who does not;
+   every control the administrator needs exists and is labelled; the created clinic survives a
+   reload with its day, session, location and default mode intact; and the map renders the seeded
+   clinic in exactly one cell, on the right unit row and the right weekday column.
+6. **Each of the three load-bearing claims was watched failing against a planted defect.**
+   - *The reader assertion is not vacuous.* `seedReadableClinic()` removed from `run()`, world
+     rebuilt: the map renders its empty state, `map-table` does not exist, and the test fails on the
+     first assertion about the table. A journey asserting a clinic that was never seeded would
+     otherwise look identical to one asserting a clinic that is.
+   - *The contact check really catches a contact leak.*
+     `'lead_contact' => Person::query()->value('email')` planted in
+     `ClinicMapController::present()` — a REAL address out of the database, which is exactly P1d-2
+     Decision C's shape. The test named it, and the failure output doubles as proof that the payload
+     is otherwise `@`-free on a clean tree: the whole dumped page object contains no address
+     anywhere, shared props included.
+   - *The read-only claim is about the rendered page.* A `<button>Book me in</button>` planted in
+     `Map.vue` and rebuilt: `main.locator('button')` went 0 → 1 and named it.
+   All three reverted, rebuilt, re-run green; `git status` back to exactly this task's own working
+   set. The edited files were copied aside and restored from the copies rather than
+   `git checkout`-ed — one carried this task's uncommitted work and one carried Task 6's, and
+   `git checkout` would have reverted the task along with the plant (Task 1 amendment 6 recorded the
+   same hazard).
+7. **`watchForWrites()` and `signInAndWatch()` moved from `rota-read.spec.js` into `fixtures.js`.**
+   The clinic map needs the identical "did anything non-GET leave this page" property, and two
+   copies of that recorder would be two definitions of one fact — the same call Task 6 made about
+   the comment stripper. `signInAndWatch(page, who)` now takes the actor and defaults to `ADMIN`;
+   `rota-read.spec.js` keeps a one-line `signInAsResident` alias so its three call sites read
+   unchanged. Both specs re-run green in the clean whole-suite run.
+8. **The reader asserts the SEEDED clinic and the administrator creates a DIFFERENT one** — a
+   different day (Wednesday vs Tuesday) and a different session (Afternoon vs Morning). The task
+   text's "assert the clinic appears" does not say which, and asserting the one the first test
+   created would make the second test pass only when the first had run — `npx playwright test
+   --grep` runs one. Both were in fact exercised singly during the plants above, which is how the
+   property was confirmed rather than argued.
+9. **The cell assertion sweeps all seven columns rather than checking one.** A positive check on the
+   Tuesday cell alone passes for a clinic rendered into every cell, and for one rendered a column
+   out. The spec collects the `data-cell-key` of every cell in the WARD row whose text contains the
+   clinic and asserts the whole list equals exactly `[unitId-2]` — the same assert-over-the-whole-set
+   discipline the PHP guards keep, in a browser.
+10. **Both screens ship two trees and both were scoped, as the task text warns.** The listing on
+    `Admin/Clinics.vue` is mobile `<article>` cards plus a desktop `<table>`; `Clinics/Map.vue` is
+    `map-cards` plus `map-table`. Every lookup here is scoped to the desktop tree. Worth recording
+    that the CREATE form is NOT duplicated — it sits outside the per-unit groups — so `#new-name`
+    and its siblings are addressed by id with no scoping needed, which is why this one spec carries
+    both idioms.
+11. **The fixture is disjoint from the two rota specs' by construction, not by luck.** The clinic is
+    `rotators` mode, so it needs no attendee rows and names no person at all; it adds nothing to
+    `master_rota_assignments` or `vacations`, so `rota-import.spec.js`'s and `rota-read.spec.js`'s
+    coverage arithmetic (21 assigned, 35 not assigned, one gap, two unassigned) is untouched. The
+    whole-suite run confirms it: those three specs are green in the same clean run as this one.
+12. **Nothing in the task text was wrong against the tree**, and its predicted count (24) was exact.
+    Item 4 is an interaction with the installed Inertia version that the task text could not have
+    foreseen; item 8 is a disambiguation, not a correction.
+
+### 2026-08-11 — P1e-1 adversarial review, findings 1–4
+
+Baseline re-measured clean before touching anything: `php artisan test` → **1527 passed, 0 failed**,
+matching the review's stated baseline exactly; `npm test` → **212**, `npm run test:e2e` → **24**,
+`npm run build` → green. Three findings fixed, one recorded. Rulings 48, 49 and 50 added; design §14
+gains item 23.
+
+1. **Finding 1 was reproduced exactly as reported, and the RED run named the two keys the report
+   predicted** — `The selected person_ids.0 is invalid.` on the switch-to-`rotators` escape, and
+   `The selected level_ids.0 is invalid.` on the named-mode save. Both fixed halves are needed and
+   neither is sufficient: the server narrowing stops a stale or hand-edited payload, the client
+   seeding stops the screen generating one. Recorded as ruling 48.
+2. **The client half is asserted on the SUBMITTED PAYLOAD, not the DOM, and that forced a change to
+   the Vitest mock.** Inertia's `useForm` sends `form.data()`, which never appears in the
+   `put(url, options)` arguments — so the existing spy could prove which endpoint a control reached
+   and nothing about what it sent, which is where this entire defect lived. The mock's `put` is now
+   a `function` (not an arrow) that records `this.mode`/`level_ids`/`person_ids`. Stated because it
+   generalises: **a form holding `[5, 99]` and one holding `[5]` render byte-identical markup when
+   99 has no checkbox**, so no DOM assertion of any kind could have caught this.
+3. **`patch` gained a refusal mode for finding 3** (`store.refuseWith` → populates `form.errors` and
+   fires `onError`). Without it there is no way to exercise a refusal path from the client side, and
+   "the control calls the endpoint" — which is what the existing test asserted — cannot distinguish
+   a rendered refusal from a silent one. The finding-3 test mounts **two** clinics deliberately:
+   `activeForm` is one `useForm` shared by every row's button, so the naive `v-if` renders the same
+   refusal under clinics nobody touched. That is a second, quieter defect the obvious fix would have
+   shipped, and the second assertion is what refuses it.
+4. **The flash-key source guard was designed, measured and REJECTED** — the full reasoning is
+   ruling 49, and the decisive number is that `errors.person_ids` is rendered by Admin → People's
+   bulk-resend panel, so "every flashed key is rendered by SOME screen" is **green on finding 1**.
+   Measured, not argued: 4 `withErrors` keys + 10 `withMessages` keys + ~70 FormRequest rule keys
+   against ~55 rendered keys. Recorded as a measurement so the fourth instance of this shape does
+   not re-derive it from scratch.
+5. **Finding 2's hole was measured before it was closed, and the guard was green against a plant
+   rewriting six columns on both tables.** `app/Support/Clinics/PlantedUpdateWriter.php`, deleted
+   immediately after; the plant carried both a `$clinic->update([...])` and a `$c->update([...])`
+   so the two needle families could be told apart. After the fix it named the file on four needles.
+   **Observed on the plant rather than reasoned about:** the column-qualified needle matches only
+   the array's FIRST key, so `update(['weekday' => 3, 'session' => 'PM'])` fires
+   `->update(['weekday'` and not `->update(['session'` — which is exactly why the variable-qualified
+   half is not redundant, and it is stated in the guard's own docblock.
+6. **`->update(['active'` was written, measured and withdrawn** (ruling 42's discipline). Six files,
+   five tables, and the two most dangerous allow-list entries it would buy are `UnitController` and
+   `UnitMerge` — `UnitMerge` being the file finding 4 shows *should* be writing `clinics.unit_id` and
+   is not. An allow-list entry there would blind the guard at the exact point the next real offender
+   arrives.
+7. **The sibling guards were PROBED, not read.** One `$model->update([...])` per guarded table in a
+   single throwaway file, then five filtered runs: `RotaWritersAreSingularTest` **green** (shares the
+   hole — `master_rota_assignments`, `vacations`), `PersonLevelsHaveOneWriterTest` **green** (shares
+   it — and `LevelAssignment` writes `effective_to` that way twice, so it is the live idiom for that
+   table), `InvitationWritersAreSingularTest` / `AccountLinkHasOneWriterTest` /
+   `CapabilityWritersAreSingularTest` **red** (do not share it). Reading the needle lists would have
+   got the last three right and is not the same as knowing. Left open deliberately: they guard P1c's
+   and P1d's tables, the same scope line design §14 item 23 draws for `UnitMerge`.
+8. **Finding 4 verified from the SCHEMA rather than from the report.** Every migration declaring a
+   `unit_id`/`preferred_unit_id` column was enumerated and compared against `UnitMerge::plan()`:
+   four covered, three stranded (`reminder_preferences`, `master_rota_assignments`, `clinics`). The
+   report is correct, and its refutation is correct too — `UnitMerge`'s docblock enumerates what a
+   merge does and never claims exhaustiveness over `unit_id`. Recorded as design §14 item 23 with
+   one addition the review did not state: **a clinic-only fix would be actively wrong**, because
+   re-pointing `clinics.unit_id` while the rota rows stayed behind resolves every migrated clinic
+   to nobody.
+9. **What the review got wrong: nothing material.** Every claim checked out against the tree,
+   including the two line references and the "both files are new on this branch" scoping. One
+   refinement: finding 2's list of shapes the guard catches says "property-assign-then-`save()` and
+   relation writes", which is right, but the *reason* the hole exists is recorded in this plan's own
+   Task 2 amendment 2 — the array-key twins (`'weekday' =>`, …) were deliberately withdrawn to avoid
+   allow-listing `ClinicController`, and those are precisely what closes this shape in the three
+   sibling guards that do not share it. The `update(`-qualified form is the narrowing that recovers
+   the coverage without the cost, which Task 2's measurement had no reason to anticipate.
+
 ---
 
 ## Standing rules for every task
@@ -1349,26 +2006,27 @@ git commit -am "test: a clinic somebody made is a clinic somebody sees"
 
 ## Definition of done — P1e-1
 
-- [ ] `clinics` and `clinic_attendees` exist; neither soft-deletes; no index is led by
+- [x] `clinics` and `clinic_attendees` exist; neither soft-deletes; no index is led by
       `institution_id`; `InstitutionProvenanceTest` is green untouched.
-- [ ] `ClinicWriter` is the only writer of both, proved by a guard that was watched failing on a
+- [x] `ClinicWriter` is the only writer of both, proved by a guard that was watched failing on a
       planted violation and carries a staleness twin.
-- [ ] `clinics.weekday` is ISO-8601, documented as such in three places, and no Carbon `dayOfWeek`
+- [x] `clinics.weekday` is ISO-8601, documented as such in three places, and no Carbon `dayOfWeek`
       appears anywhere near it.
 - [ ] `Calendar::weekdayColumns()` is the only source of the department's week order;
       `CalendarIsTheOnlyConverterTest` is green with **no allow-list change**;
       `tests/fixtures/calendar/golden.json` carries the new block.
 - [ ] `ClinicRoster` resolves at read time, issues a bounded and measured number of queries, and
       returns `contactFree()` projections in which `email` and `phone` are **absent**.
-- [ ] `/admin/structure/clinics` is `cap:structure.manage`, has **no destroy route** (asserted over
+- [x] `/admin/structure/clinics` is `cap:structure.manage`, has **no destroy route** (asserted over
       the router), and audits by id.
 - [ ] `/clinics` is `cap:clinics.view`, seeded to every position, asserted **GET-only over the
       router**, and carries no contact field for any viewer.
 - [ ] `clinics.view` appears in `docs/spec/08-foundation.md`.
-- [ ] CL-03's and CL-04's absence is guarded by two comment-stripped scans, each watched failing,
+- [x] CL-03's and CL-04's absence is guarded by two comment-stripped scans, each watched failing,
       with the stripper pinned in both directions.
-- [ ] `npm run build`, `php artisan test`, `npm test` and `npm run test:e2e` all green, on a **clean
-      tree**, with the counts recorded here as measured numbers.
+- [x] `npm run build`, `php artisan test` (**1527**), `npm test` (**212**) and `npm run test:e2e`
+      (**24 across 8 spec files**, from a world rebuilt with `rm database/e2e.sqlite`) all green, on a
+      **clean tree** — measured, not arithmetic.
 
 ---
 

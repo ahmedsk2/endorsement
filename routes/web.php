@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\AccessControlController;
 use App\Http\Controllers\Admin\CalendarSettingsController;
+use App\Http\Controllers\Admin\ClinicController;
 use App\Http\Controllers\Admin\HolidayController;
 use App\Http\Controllers\Admin\LevelController;
 use App\Http\Controllers\Admin\MasterRotaController;
@@ -14,6 +15,7 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\UnitController;
 use App\Http\Controllers\Admin\UnitMergeController;
 use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\ClinicMapController;
 use App\Http\Controllers\EndorsementController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PushSubscriptionController;
@@ -270,6 +272,20 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
         Route::post('/holidays', [HolidayController::class, 'store'])->name('holidays.store');
         Route::patch('/holidays/{holiday}', [HolidayController::class, 'update'])->name('holidays.update');
         Route::patch('/holidays/{holiday}/active', [HolidayController::class, 'setActive'])->name('holidays.active');
+
+        // Munawib CL-01/CL-02. NO DELETE, and deliberately so: a clinic that stopped running is
+        // DEACTIVATED (UN-04's "hides forward, never deletes history"), which is the same shape
+        // Units, Levels and Holidays above already take. A P2 condition will reference a clinic by
+        // id, and a deleted row takes that reference with it — `ClinicWriter` offers `setActive()`
+        // and no delete path at all, so there is nothing a destroy action could even call.
+        // `ClinicScreenTest` asserts the absence over the ROUTER, not by the absence of a method.
+        Route::get('/clinics', [ClinicController::class, 'index'])->name('clinics');
+        Route::post('/clinics', [ClinicController::class, 'store'])->name('clinics.store');
+        Route::patch('/clinics/{clinic}', [ClinicController::class, 'update'])->name('clinics.update');
+        Route::patch('/clinics/{clinic}/active', [ClinicController::class, 'setActive'])->name('clinics.active');
+        // PUT: the refinement rule set is REPLACED whole, mode and rows together, so a re-submitted
+        // form converges instead of duplicating.
+        Route::put('/clinics/{clinic}/attendees', [ClinicController::class, 'setAttendees'])->name('clinics.attendees');
     });
 
 /*
@@ -418,6 +434,37 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:rota.manage'])
 Route::middleware(['auth', 'throttle:clinical', 'cap:rota.view'])
     ->group(function () {
         Route::get('/rota', [RotaController::class, 'index'])->name('rota');
+    });
+
+/*
+ * The department's week of clinics (Munawib CL-05). `cap:clinics.view` — a NEW capability seeded
+ * to every authenticated position (P1e Decision C), the `rota.view` shape and for the `rota.view`
+ * reason: a resident needs to know when their unit's clinic runs. DEFINING a clinic is department
+ * structure and stays inside the `cap:structure.manage` group above; one new key, not two.
+ *
+ * ITS OWN GROUP AND ITS OWN CONTROLLER, not a method on `Admin\ClinicController` (the P1d-2
+ * Decision A shape): that class sits wholly behind `cap:structure.manage`, and a `cap:clinics.view`
+ * method on it would put one class behind two capabilities. A read surface whose group contains no
+ * write route cannot grow one by accident.
+ *
+ * ONE ROUTE, AND IT IS A GET. Because this capability reaches the whole department, a write
+ * endpoint hung off this group would be writable by every member of it — do not add one;
+ * `ClinicMapTest::test_every_route_behind_cap_clinics_view_is_a_get` asserts the property over the
+ * ROUTER, so it holds for routes nobody has written yet, and its vacuity twin asserts the group is
+ * not simply empty (Task 4's DELETE sweep passed on its first red run against no routes at all).
+ *
+ * NEVER LINK-PUBLIC. Munawib §5's footnote lists the clinic map among three surfaces that could be
+ * exposed without a login; D7 overrides it, this route carries `auth` like every other, and
+ * `docs/spec/08-foundation.md` records the override.
+ *
+ * Deliberately NOT under `/endorsement`, so Unit::RESERVED_CODES is untouched. Do NOT add
+ * `CLINICS` to that list — ReservedUnitCodesTest derives it from the literal segments under that
+ * prefix alone, bidirectionally, so an unnecessary entry fails the build just as a missing one
+ * does.
+ */
+Route::middleware(['auth', 'throttle:clinical', 'cap:clinics.view'])
+    ->group(function () {
+        Route::get('/clinics', [ClinicMapController::class, 'index'])->name('clinics');
     });
 
 /*

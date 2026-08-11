@@ -47,6 +47,43 @@ export async function login(page, who = ADMIN) {
     await page.waitForURL(/\/endorsement/);
 }
 
+/* ------------------------------------------------------------ read-only ------- */
+
+/**
+ * Watch the browser for the rest of the test. A read screen that writes shows up here as a
+ * POST/PATCH/DELETE leaving the page — including one fired by a control nobody thought to look for,
+ * which is exactly the class of thing a component-level "no <form>" assertion cannot see.
+ *
+ * ONE DEFINITION, shared by `rota-read.spec.js` and `clinics.spec.js` (P1e Task 7). It was the
+ * former's private helper until the clinic map needed the identical property; two copies would be
+ * two definitions of one fact.
+ *
+ * Attach BEFORE login, and that is a non-vacuity device rather than an oversight: an empty list at
+ * the end of a test looks identical whether nothing wrote or the recorder never fired. Signing in IS
+ * a POST, so {@see signInAndWatch} proves the recorder works before the journey it is watching
+ * begins, and each spec then asserts the list has not grown SINCE.
+ */
+export function watchForWrites(page) {
+    const writes = [];
+
+    page.on('request', (request) => {
+        if (request.method() !== 'GET') writes.push(`${request.method()} ${request.url()}`);
+    });
+
+    return writes;
+}
+
+/** Sign in with the recorder already running; returns `writes` and the mark to compare against. */
+export async function signInAndWatch(page, who = ADMIN) {
+    const writes = watchForWrites(page);
+    await login(page, who);
+
+    expect(writes, 'the write recorder never fired — signing in is itself a POST').not.toEqual([]);
+    expect(writes.every((write) => write.includes('/login'))).toBe(true);
+
+    return { writes, mark: writes.length };
+}
+
 /* ------------------------------------------------------------ persistence ----- */
 
 /**

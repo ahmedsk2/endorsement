@@ -360,39 +360,14 @@ class RotaAccessTest extends TestCase
     }
 
     /**
-     * PHP through the tokenizer (exact, and it cannot mistake a `//` inside a string for a
-     * comment); `.vue` through three conservative patterns — HTML comments, block comments, and
-     * lines whose first non-space characters are `//`. Conservative on purpose: leaving a comment
-     * behind produces a false POSITIVE, which is noisy but visible, whereas eating code produces a
-     * false negative, which is invisible. The calibration test above pins both ends.
+     * ONE stripper, shared with `ClinicHooksTest` (P1e Task 6) — it used to be a private method
+     * here, and a second copy over there would have been two definitions of one fact, drifting the
+     * first time either learned about a new comment shape. Its own docblock carries the
+     * conservative-by-design argument; both callers pin it in both directions against real files of
+     * their own choosing, because a proof about one file's comments is not a proof about another's.
      */
     private static function sourceWithoutComments(string $path): string
     {
-        $source = (string) file_get_contents($path);
-
-        if (str_ends_with($path, '.php')) {
-            $code = '';
-
-            foreach (token_get_all($source) as $token) {
-                if (is_array($token)) {
-                    if ($token[0] === T_COMMENT || $token[0] === T_DOC_COMMENT) {
-                        continue;
-                    }
-
-                    $code .= $token[1];
-
-                    continue;
-                }
-
-                $code .= $token;
-            }
-
-            return $code;
-        }
-
-        $source = (string) preg_replace('/<!--.*?-->/s', '', $source);
-        $source = (string) preg_replace('#/\*.*?\*/#s', '', $source);
-
-        return (string) preg_replace('#^\s*//.*$#m', '', $source);
+        return \Tests\Support\SourceScanner::withoutComments($path);
     }
 }

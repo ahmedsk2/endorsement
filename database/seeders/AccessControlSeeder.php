@@ -87,6 +87,14 @@ class AccessControlSeeder extends Seeder
             .'grants it to its Scheduler persona, which maps to no role here; Chief Resident is '
             .'the nearest fit, and a department that wants it there grants it — per role or per '
             .'named user, like any capability.',
+
+        'clinics.view' => 'View the weekly clinic map: which unit runs which clinic, on which day '
+            .'of the week, in the morning or the afternoon. Read-only, and it names nobody — the '
+            .'map shows the clinics and their sessions, never a roster and never anyone\'s contact '
+            .'details. Default: every role — a resident needs to know when their unit\'s clinic '
+            .'runs (Munawib CL-05), which is the same reasoning “rota.view” ships on. DEFINING a '
+            .'clinic is separate and stays on “structure.manage”, beside units, levels and the '
+            .'calendar, because a clinic\'s whole payload is department structure.',
     ];
 
     /**
@@ -119,6 +127,11 @@ class AccessControlSeeder extends Seeder
         // Master rota (Munawib MR-02/MR-03/MR-05, P1d).
         'rota.view' => 'View the master rota',
         'rota.manage' => 'Create and edit master rota assignments and vacations',
+
+        // Clinics (Munawib CL-05, P1e). ONE new key, not two: DEFINING a clinic is department
+        // structure and stays on `structure.manage`; only the department-wide MAP is read by
+        // everybody and needs a key of its own.
+        'clinics.view' => 'View the weekly clinic map',
     ];
 
     /**
@@ -129,26 +142,28 @@ class AccessControlSeeder extends Seeder
     private const ROLE_DEFAULTS = [
         // Administrator (0): every capability.
         0 => [
-            'profile.manage', 'rota.view',
+            'profile.manage', 'rota.view', 'clinics.view',
             'endorsement.view', 'endorsement.edit', 'endorsement.reopen', 'endorsement.compliance',
             'users.manage', 'users.manage_residents', 'access.manage', 'settings.manage',
             'structure.manage', 'people.manage', 'rota.manage',
         ],
         // Position 1 (Nurse) is RETIRED — no defaults exist for it.
-        // Charge Nurse (2): endorsement + read the master rota (owner decision 2, P1d).
+        // Charge Nurse (2): endorsement + read the master rota (owner decision 2, P1d) + read the
+        // weekly clinic map (P1e Decision C).
         2 => [
-            'profile.manage', 'rota.view',
+            'profile.manage', 'rota.view', 'clinics.view',
             'endorsement.view', 'endorsement.edit',
         ],
-        // Consultant (3): endorsement + read the master rota.
+        // Consultant (3): endorsement + read the master rota + read the clinic map.
         3 => [
-            'profile.manage', 'rota.view',
+            'profile.manage', 'rota.view', 'clinics.view',
             'endorsement.view', 'endorsement.edit',
         ],
         // Resident (4): endorsement + read the master rota — MR-05's point is that a resident
-        // can see which unit they rotate through next.
+        // can see which unit they rotate through next — and read the clinic map, which is CL-05's
+        // point for exactly the same reason: they need to know when their unit's clinic runs.
         4 => [
-            'profile.manage', 'rota.view',
+            'profile.manage', 'rota.view', 'clinics.view',
             'endorsement.view', 'endorsement.edit',
         ],
         // Chief Resident (5): a Resident clinically, plus the scoped admin powers. `rota.manage` is
@@ -157,7 +172,7 @@ class AccessControlSeeder extends Seeder
         // department from Admin -> Access Control, the same shape `structure.manage` and
         // `people.manage` already ship in.
         5 => [
-            'profile.manage', 'rota.view',
+            'profile.manage', 'rota.view', 'clinics.view',
             'endorsement.view', 'endorsement.edit',
             'users.manage_residents',
         ],

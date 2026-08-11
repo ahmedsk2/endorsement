@@ -1,6 +1,6 @@
 {
   "_purpose": "The shared contract between App\\Support\\Calendar (PHP, this repo, P1a) and the packages/engine calendar mirror P2 will build (Decision A, design doc §7). Every value below was produced by RUNNING the code, not derived by hand — see GoldenFixtureTest.php. A change here that is not matched by an equivalent change in P2's mirror is exactly the drift this file exists to catch.",
-  "version": 1,
+  "version": 2,
   "timezone": "Asia/Riyadh",
 
   "cases": [
@@ -38,6 +38,68 @@
       "weekend_days": [5], "week_start_iso_day": 6,
       "of": "2026-08-12", "starts_on": "2026-08-08", "ends_on": "2026-08-14" }
   ],
+
+  "weekday_columns": {
+    "_description": "Added at version 2 (P1e Task 1, Decision A): the department's week ORDER and its ISO-8601 weekday vocabulary. A weekday is stored as a plain ISO integer (Monday = 1 ... Sunday = 7 — the same numbering as `weekend_days` and `week_start_iso_day` above; Carbon's dayOfWeek, where Sunday is 0, is a DIFFERENT scheme and must never reach it), so nothing stored depends on where the week begins: only presentation rotates, and changing `weekend_days` re-orders every column with no stored value changing and no migration. There is no `institutions.week_start` column — the start is derived from the weekend. This block is contractual because CL-03 (\"no post-call on a day with a clinic of the resident's current specialty\") is a P2 condition that must map a date to an ISO weekday and compare it to `clinics.weekday` client-side with no round trip (UX-05), so P2's packages/engine mirror needs this exact function. `weekend` is read from `weekend_days`, never recomputed from the rotation. `label`/`short` come from lang/en/calendar.php's `weekdays` table (English-only at launch, AR-07) — a mirror checks its own table against these rather than transcribing by hand. Every value below was produced by RUNNING Calendar::weekdayColumns(), not written out by hand. The four cases are: the QCH default, a Saturday-Sunday weekend, a one-day weekend, and no weekend at all (which weekend_days can genuinely be, and which falls back to a Monday start).",
+    "cases": [
+      {
+        "_description": "QCH's default. Friday(5) + Saturday(6) off, so the week begins on Sunday(7) and the two weekend columns land last.",
+        "weekend_days": [5, 6],
+        "week_start_iso_day": 7,
+        "columns": [
+          { "iso": 7, "label": "Sunday",    "short": "Sun", "weekend": false },
+          { "iso": 1, "label": "Monday",    "short": "Mon", "weekend": false },
+          { "iso": 2, "label": "Tuesday",   "short": "Tue", "weekend": false },
+          { "iso": 3, "label": "Wednesday", "short": "Wed", "weekend": false },
+          { "iso": 4, "label": "Thursday",  "short": "Thu", "weekend": false },
+          { "iso": 5, "label": "Friday",    "short": "Fri", "weekend": true  },
+          { "iso": 6, "label": "Saturday",  "short": "Sat", "weekend": true  }
+        ]
+      },
+      {
+        "_description": "A Saturday(6) + Sunday(7) weekend begins its week on Monday(1). Same seven ISO days, same seven labels, different order and different weekend flags — the whole survival property.",
+        "weekend_days": [6, 7],
+        "week_start_iso_day": 1,
+        "columns": [
+          { "iso": 1, "label": "Monday",    "short": "Mon", "weekend": false },
+          { "iso": 2, "label": "Tuesday",   "short": "Tue", "weekend": false },
+          { "iso": 3, "label": "Wednesday", "short": "Wed", "weekend": false },
+          { "iso": 4, "label": "Thursday",  "short": "Thu", "weekend": false },
+          { "iso": 5, "label": "Friday",    "short": "Fri", "weekend": false },
+          { "iso": 6, "label": "Saturday",  "short": "Sat", "weekend": true  },
+          { "iso": 7, "label": "Sunday",    "short": "Sun", "weekend": true  }
+        ]
+      },
+      {
+        "_description": "A one-day (Friday) weekend still resolves: the week begins on Saturday(6), matching this file's `weeks` case for the same configuration.",
+        "weekend_days": [5],
+        "week_start_iso_day": 6,
+        "columns": [
+          { "iso": 6, "label": "Saturday",  "short": "Sat", "weekend": false },
+          { "iso": 7, "label": "Sunday",    "short": "Sun", "weekend": false },
+          { "iso": 1, "label": "Monday",    "short": "Mon", "weekend": false },
+          { "iso": 2, "label": "Tuesday",   "short": "Tue", "weekend": false },
+          { "iso": 3, "label": "Wednesday", "short": "Wed", "weekend": false },
+          { "iso": 4, "label": "Thursday",  "short": "Thu", "weekend": false },
+          { "iso": 5, "label": "Friday",    "short": "Fri", "weekend": true  }
+        ]
+      },
+      {
+        "_description": "No weekend configured at all. `weekend_days` can genuinely be an empty list (the admin form refuses one, but the column is nullable and `[]` is an explicit configuration rather than \"unset\"), and the week start falls back to Monday rather than dividing by zero. No column is flagged as a weekend day.",
+        "weekend_days": [],
+        "week_start_iso_day": 1,
+        "columns": [
+          { "iso": 1, "label": "Monday",    "short": "Mon", "weekend": false },
+          { "iso": 2, "label": "Tuesday",   "short": "Tue", "weekend": false },
+          { "iso": 3, "label": "Wednesday", "short": "Wed", "weekend": false },
+          { "iso": 4, "label": "Thursday",  "short": "Thu", "weekend": false },
+          { "iso": 5, "label": "Friday",    "short": "Fri", "weekend": false },
+          { "iso": 6, "label": "Saturday",  "short": "Sat", "weekend": false },
+          { "iso": 7, "label": "Sunday",    "short": "Sun", "weekend": false }
+        ]
+      }
+    ]
+  },
 
   "hijri_month_boundary": {
     "_description": "THE reason the offset is applied to the GREGORIAN instant before conversion, never by decrementing the resulting Hijri day number: doing the latter produces the impossible 1448-02-00 at this exact boundary. 2026-07-15 is the FIRST day of Hijri month 2 (Safar) at offset 0, and the LAST day of Hijri month 1 (Muharram) at offset -1 — see `cases` above for the paired values (2026-07-15 -> 1448-02-01 at offset 0, -> 1448-01-29 at offset -1; 2026-07-16 -> 1448-02-02 at offset 0, -> 1448-02-01 at offset -1).",

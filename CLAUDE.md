@@ -425,6 +425,38 @@ SCBU and WARD are seed data for the QCH institution.
   columns actually filtered/compared on (see `periods_year_position_unique` on
   `(academic_year, position)` and `holidays`' `(active, calendar, month, day)` index for the
   corrected shape), and never with `institution_id` itself.
+- **A REFUSAL MUST BE FLASHED UNDER A KEY THE RECEIVING SCREEN ACTUALLY RENDERS, and the two halves
+  are asserted TOGETHER** (rulings 41 and 49). Three instances in two slices: P1c-2's single resend
+  keyed `member_email`; P1e-1's clinic attendee lists keyed `level_ids.N`/`person_ids.N`; and
+  `ClinicController::setActive()`'s restart refusal keyed `active`. Each looked correct in review and
+  each was a control that appeared to do nothing. Every refusal therefore gets a PAIR of tests — the
+  key in PHPUnit, the render site in Vitest — because either alone stays green while the other rots.
+  **There is deliberately NO source-level guard for this and the measurement is why** (ruling 49):
+  "every flashed key is rendered by SOME screen" is green on the very defect it would exist to catch,
+  since `errors.person_ids` is rendered by an unrelated panel on Admin → People; the sound version is
+  per-SCREEN, and `back()` chooses its screen from the referrer at runtime, so no substring scan has
+  the edge to follow. Do not rebuild it without re-measuring.
+- **A validation rule is asked only of the input the chosen MODE reads** (ruling 48). Applying a
+  picker rule to a list the request will discard reads as belt-and-braces and is a lockout: the
+  discarded list refuses over ids that reach neither the writer, the database, nor any element on
+  the screen, and the mode that needs no lists at all (`rotators`) gets refused too — which removes
+  the state the row could have been repaired from. Its client twin is the same invariant one layer
+  along: **a form seeds from the intersection of what is STORED and what the pickers OFFER, never
+  from the stored list alone.** An id with no checkbox is an id nobody can untick. D9 is untouched by
+  either — one predicate per field, and the list a mode DOES read still refuses everything that list
+  never offered.
+- **A single-writer guard must needle `$model->update([...])`** (ruling 50) — it is this codebase's
+  house idiom (`UnitController`, `LevelController`, `HolidayController` all write `setActive()` that
+  way) and `ClinicWritersAreSingularTest` shipped blind to it, measured green against a plant
+  rewriting six columns on both guarded tables. Two families, kept because they fail differently:
+  column-qualified (`->update(['weekday'` — catches any variable name, but matches only the array's
+  FIRST key) and variable-qualified (`$clinic->update(` — catches any column, which is the only
+  reach available over `name`/`active`/`location`/`note`/`unit_id`, each being another table's
+  column too). Measure before adding, per ruling 42: `->update(['active'` was written and WITHDRAWN
+  because it names six files across five tables and would allow-list `UnitController` and
+  `UnitMerge`, the two most likely to grow a real offender. **`RotaWritersAreSingularTest` and
+  `PersonLevelsHaveOneWriterTest` still share this hole** (probed, not read); the other three
+  single-writer guards close it incidentally.
 
 ## Toolchain (this machine)
 

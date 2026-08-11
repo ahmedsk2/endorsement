@@ -61,7 +61,7 @@ class ClinicWritersAreSingularTest extends TestCase
     ];
 
     /**
-     * THE FOUR WRITER SHAPES. Each was proved by planting a writer of exactly that shape in a
+     * THE FIVE WRITER SHAPES. Each was proved by planting a writer of exactly that shape in a
      * throwaway file under `app/`, watching this test name it, then reverting — review F8's rule
      * that a needle nobody has seen fail is a comment, and P1c-2's finding that a guard scanning
      * only for `::create(` missed three of the four ways this codebase actually writes a row.
@@ -79,27 +79,67 @@ class ClinicWritersAreSingularTest extends TestCase
      *     is covered although no such relation exists yet — a `Unit::clinics()` hasMany is the
      *     natural next addition and would be a second writer the moment somebody called `create()`
      *     on it.
+     *  5. `$model->update([...])` — THE HOUSE IDIOM, and the one this guard shipped blind to
+     *     (P1e-1 adversarial review finding 2). It is not a hypothetical shape here: it is how
+     *     `UnitController`, `LevelController` and `HolidayController` each write their own
+     *     `setActive()`, so it is precisely what a fourth controller written beside them would
+     *     reach for. Measured before the fix by planting a file that rewrote `weekday`, `session`,
+     *     `attendee_mode`, `clinic_id`, `name` and `active` across both tables through nothing but
+     *     `update([...])` — this test stayed GREEN. An entire endpoint could have bypassed
+     *     `ClinicWriter` with the build passing.
      *
      * Plus `find()`-then-`delete()`, `destroy(` and `truncate(`. There is deliberately no destroy
      * path for a clinic anywhere (invariant 7 — a clinic that stopped running is DEACTIVATED,
      * UN-04's "hides forward, never deletes history"), so the destructive shapes are needles rather
      * than allow-list candidates.
      *
-     * COLUMN NEEDLES ARE PROPERTY-ONLY, AND THAT IS A DELIBERATE NARROWING. The array-key twins
-     * (`'weekday' =>`, `'attendee_mode' =>`, `'clinic_id' =>`) were written first and removed after
-     * checking what Task 4 must contain: an Inertia `present()` map emitting
-     * `'weekday' => $clinic->weekday` is a READ, and needling it would force `ClinicController`
-     * onto the allow-list — blinding this guard at precisely the file where a second writer is
-     * most likely to appear. A needle that makes you exempt the risky file is worse than no needle.
+     * COLUMN NEEDLES ARE PROPERTY-ONLY OR `update(`-QUALIFIED, AND THAT IS A DELIBERATE NARROWING.
+     * The BARE array-key twins (`'weekday' =>`, `'attendee_mode' =>`, `'clinic_id' =>`) were
+     * written first and removed after checking what Task 4 must contain: an Inertia `present()`
+     * map emitting `'weekday' => $clinic->weekday` is a READ, and needling it would force
+     * `ClinicController` onto the allow-list — blinding this guard at precisely the file where a
+     * second writer is most likely to appear. A needle that makes you exempt the risky file is
+     * worse than no needle. `->update(['weekday'` is the narrowing that recovers the coverage
+     * without the cost: it cannot match a projection map, because the key is inside a call whose
+     * only meaning is a write. It is `AccountLinkHasOneWriterTest`'s `->update(['person_id'` and
+     * `PersonActiveHasOneWriterTest`'s `$person->update(['active'`, applied to these two tables.
+     *
+     * MEASURED, per ruling 42, over app/ + database/ + routes/ before anything was added:
+     *   - `->update(['weekday'`, `['session'`, `['attendee_mode'`, `['clinic_id'` — ZERO matches,
+     *     in either quote style. No allow-list entry, no incidental match.
+     *   - `$clinic->update(`, `$attendee->update(` — ZERO matches. These reach the columns the
+     *     column-qualified set deliberately cannot (`name`, `active`, `location`, `note`,
+     *     `unit_id`), which shrinks the honest gap stated below rather than closing it.
+     *   - `->update(['active'` was written, MEASURED AND WITHDRAWN. It matches six files
+     *     (`UnitController`, `LevelController`, `HolidayController`, `UserManagementController`,
+     *     `PersonStatus`, `UnitMerge`), every one of them writing a DIFFERENT table's `active`
+     *     column. That is five or six allow-list entries bought for one column — and
+     *     `UnitController` and `UnitMerge` are the two files most likely to grow a real clinic
+     *     writer, `UnitMerge` especially: it re-points four unit-owned tables today and does not
+     *     re-point `clinics.unit_id` (design §14), so an allow-list entry there would blind this
+     *     guard on the exact file the next real offender arrives in. Withdrawn on the measurement,
+     *     not on taste.
+     *   - `$row->update(` was rejected for the opposite reason: `$row` is a general-purpose local
+     *     throughout this codebase, so the needle is fragile toward FALSE positives rather than
+     *     cheap. `$clinic`/`$attendee` name these two models and nothing else in the tree.
+     *
+     * WHAT THE COLUMN-QUALIFIED HALF CANNOT SEE, observed on the plant rather than reasoned about:
+     * it matches only the FIRST key of the array. `$clinic->update(['weekday' => 3, 'session' =>
+     * 'PM'])` fired `->update(['weekday'` and did NOT fire `->update(['session'`. That is inherent
+     * to a substring scan over a multi-key literal and is why the variable-qualified half is not
+     * redundant with it — on that same plant, `$clinic->update(` named the file for the write the
+     * column needles were blind to. The two halves fail for different reasons, which is the
+     * property that makes keeping both worth the four extra strings.
      *
      * ALSO DELIBERATELY ABSENT, and honestly so: `->name = `, `->location = `, `->note = `,
      * `->active = `. Every one is a column of `units`, `levels`, `people` or `holidays` as well, so
-     * each would buy allow-list entries for unrelated files. The consequence is a real gap —
-     * `$clinic->name = 'x'; $clinic->save();` is invisible to this scan — stated rather than
-     * implied, the same way `InvitationWritersAreSingularTest` states its `$invitation->delete()`
-     * blind spot. `weekday`, `session`, `attendee_mode` and `clinic_id` belong to these two tables
-     * and to nothing else in the schema (verified by grep over app/ + database/ + routes/ before
-     * this list was written: zero pre-existing matches for any of them, in either spelling).
+     * each would buy allow-list entries for unrelated files. The residual gap is therefore
+     * `$c->name = 'x'; $c->save();` where the variable is named anything but `$clinic` — stated
+     * rather than implied, the same way `InvitationWritersAreSingularTest` states its
+     * `$invitation->delete()` blind spot. `weekday`, `session`, `attendee_mode` and `clinic_id`
+     * belong to these two tables and to nothing else in the schema (verified by grep over app/ +
+     * database/ + routes/ before this list was written: zero pre-existing matches for any of them,
+     * in either spelling).
      */
     private const NEEDLES = [
         'Clinic::create(',
@@ -142,6 +182,20 @@ class ClinicWritersAreSingularTest extends TestCase
         '->clinic_id = ',
         '->weekday = ',
         '->session = ',
+        // Shape 5, column-qualified: catches the idiom whatever the variable is called.
+        "->update(['attendee_mode'",
+        '->update(["attendee_mode"',
+        "->update(['clinic_id'",
+        '->update(["clinic_id"',
+        "->update(['weekday'",
+        '->update(["weekday"',
+        "->update(['session'",
+        '->update(["session"',
+        // Shape 5, variable-qualified: catches it whatever the COLUMN is, which is the only reach
+        // this guard has over `name`, `active`, `location`, `note` and `unit_id` — every one of
+        // which is another table's column too and so cannot be needled by name.
+        '$clinic->update(',
+        '$attendee->update(',
     ];
 
     public function test_only_the_clinic_writer_writes_the_clinic_tables(): void

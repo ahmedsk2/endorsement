@@ -57,10 +57,24 @@ use Illuminate\Validation\ValidationException;
  * same capability so the control is not offered where the endpoint would refuse it, but the
  * boundary is the route group's, in one place.
  *
+ * AND THE WRITER GUARDS, which is the other thing one body buys. `access.manage` must always have
+ * an active holder; `AccessControlController::assertNoSelfLockout()` only ever enforced that on
+ * the ROLE MATRIX, and never ran here at all. See {@see assertAccessManageStillHeld()}.
+ *
  * Guarded at source level by `tests/Feature/Build/CapabilityWritersAreSingularTest.php`.
  */
 final class CapabilityGrant
 {
+    /**
+     * The capability that must never run out of holders — the one that reaches this writer.
+     *
+     * Denying it to the last account holding it makes Admin -> Access Control unreachable, and
+     * access control can then never be edited again without opening the database by hand. There
+     * is no "break glass" path in this system and deliberately so, which is what makes the
+     * refusal below the whole recovery story.
+     */
+    private const LOCKOUT_CAPABILITY = 'access.manage';
+
     /**
      * The capability catalog, in the shape both screens render.
      *
@@ -142,7 +156,8 @@ final class CapabilityGrant
      * @param  array<array-key, string>  $overrides  capability id => 'grant' | 'deny'
      * @return array<int, string> capability id => 'grant' | 'deny' | 'clear', for every override that CHANGED
      *
-     * @throws ValidationException when a submitted key is not a known capability id
+     * @throws ValidationException when a submitted key is not a known capability id, or when the
+     *                             write would leave `access.manage` with no active holder
      */
     public static function applyForUser(User $user, array $overrides, User $actor, ?string $ip): array
     {
@@ -179,6 +194,10 @@ final class CapabilityGrant
                     ['effect' => $effect],
                 );
             }
+
+            // The rows are now the rows this request is asking for, but nothing is committed —
+            // so this is the one moment the oracle can be asked about the world as it WOULD be.
+            self::assertAccessManageStillHeld();
 
             // capability_id => 'grant' | 'deny' | 'clear' for every override that CHANGED.
             $changes = [];
@@ -223,6 +242,60 @@ final class CapabilityGrant
         }
 
         return $changes;
+    }
+
+    /**
+     * REFUSE A WRITE THAT WOULD LEAVE `access.manage` WITH NO ACTIVE HOLDER.
+     *
+     * WHAT WAS MEASURED. `assertNoSelfLockout()` in `AccessControlController` keeps the
+     * Administrator ROLE from giving up `access.manage` on the role matrix, and it does not run on
+     * the per-user override path at all. So an administrator could deny the capability to
+     * themselves — the last holder — get a 302, and afterwards `AccessControl::holdersOf()`
+     * answered nobody: the console unreachable, access control uneditable, no way back except the
+     * database. AC-04's People panel inherited it exactly, because both surfaces are this one body.
+     *
+     * WHY IT LIVES IN THE WRITER. A refusal in `updateUser()` leaves `updatePerson()` open, and a
+     * refusal written into both is two copies of one rule — the shape that has already cost this
+     * codebase an audit chain that declared itself tampered and a picker that offered what its
+     * validator refused. `tests/Feature/Admin/PersonRolesTest::test_the_two_doors_agree_about_
+     * denying_the_last_access_manage_holder` is what proves the guard reached both doors rather
+     * than one.
+     *
+     * WHY IT IS ASKED AFTER THE WRITE RATHER THAN DERIVED BEFORE IT. `holdersOf()` already knows
+     * the answer — role default, then per-user grant, then per-user deny, in `resolve()`'s order —
+     * and is deliberately uncached, so inside this transaction it reads the world this request is
+     * proposing. Predicting the same answer from the submitted map would be a fourth copy of the
+     * resolution rules, and it would get the hazard wrong: THE DANGER IS NOT THE WORD "deny".
+     * Clearing a per-user grant that was somebody's only claim strips the capability just as
+     * completely, and an omitted key is how this API spells that.
+     *
+     * THE THROW IS THE ROLLBACK. It unwinds `applyForUser()`'s transaction, so a refused write
+     * leaves no override row and no `access_user_*` audit row claiming one happened — the audit is
+     * written after the commit for exactly this reason, and `PositionChange::
+     * assertMayPlaceAtAdministrator()` records the same reasoning for the same shape.
+     *
+     * IT ASKS ABOUT THE HOLDER SET, NOT ABOUT THE ACTOR. Any actor reaching this writer has passed
+     * `cap:access.manage` and `EnsureAccountActive`, so today they are themselves a holder and
+     * "nobody is left" and "I am not left" happen to coincide. They coincide because
+     * `capabilitiesFor()` (which consults neither `users.active` nor the person link) and
+     * `holdersOf()` (which consults both) agree, and nothing enforces that agreement. Phrased as
+     * the set, the guard keeps covering A-denies-B the day they diverge, for the same one query.
+     *
+     * @throws ValidationException
+     */
+    private static function assertAccessManageStillHeld(): void
+    {
+        if (AccessControl::holdersOf(self::LOCKOUT_CAPABILITY) !== []) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            // Named on `overrides`, the key both surfaces already bind their capability errors to,
+            // and naming the unlock rather than only saying no.
+            'overrides' => "This would leave nobody holding '".self::LOCKOUT_CAPABILITY
+                ."' — Admin → Access Control would be unreachable and access control could never be "
+                .'edited again. Grant it to another active account first.',
+        ]);
     }
 
     /**

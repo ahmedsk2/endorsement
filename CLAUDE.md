@@ -202,6 +202,31 @@ SCBU and WARD are seed data for the QCH institution.
   `week`-granularity leave snaps through `VacationBooking::snap()` — the same code path as the
   booking screen, never a parallel rule re-typed in the importer (owner decision, 2026-08-10) — and
   the preview reports the adjustment.
+- **`access.manage` must always have an active holder, and the guard is in
+  `App\Support\CapabilityGrant::applyForUser()`** — the one writer both override surfaces reach
+  (ruling 44). `AccessControlController::assertNoSelfLockout()` guards only the ROLE MATRIX and
+  never ran on the per-user path, so an administrator could deny themselves the capability, get a
+  302, and leave `holdersOf('access.manage')` answering nobody — the console unreachable with no
+  recovery but the database. The guard **asks the oracle rather than deriving the answer**:
+  `holdersOf()` is consulted INSIDE the transaction, after the rows are written, and an empty
+  answer throws (which unwinds the write, and the audit rows are written after the commit, so
+  nothing claims it happened). Never re-derive it from the submitted map — **the danger is not the
+  word `deny`**: clearing a per-user *grant* that was somebody's only claim strips the capability
+  just as completely, and an omitted key is how that API spells it. Phrased over the HOLDER SET,
+  never over the actor. Do **not** shorten it to "you may not deny yourself": that is only
+  equivalent while `capabilitiesFor()` (which consults neither `users.active` nor the person link)
+  and `holdersOf()` (which consults both) agree, and nothing enforces that.
+  `PersonRolesTest::test_the_two_doors_agree_about_denying_the_last_access_manage_holder` is what
+  proves the guard reached both doors — verified by planting a one-door-only guard and watching it
+  go red.
+- **The same lockout is still OPEN on the account-lifecycle doors** (ruling 45) — measured, not
+  assumed. `users/{u}/active` (deactivate), `users/{u}/unbind`, `users/{u}/position` and
+  `people/{p}` (both demoting off position 0) each empty `access.manage` with a 302 once one
+  administrator has denied another the capability. All four guard on
+  `PositionChange::isLastActiveAdministrator()`, which asks about the **Administrator ROLE** and
+  stopped implying "somebody holds `access.manage`" the day that capability became deniable per
+  account. Anyone closing this must close all of them at once (plus the bulk path and
+  `RosterImport`'s per-row loop) — two of four fixed reads as closed and is not.
 - **`PersonPresenter` gates BOTH `email` and `phone` behind `viewContact`.** `email` shipped
   ungated until P1d's rota grid became the first consumer holding a narrower capability
   (`rota.view`, every seeded position) than every prior caller (`people.manage`, which also grants

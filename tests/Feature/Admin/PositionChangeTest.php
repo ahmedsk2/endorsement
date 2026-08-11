@@ -82,24 +82,67 @@ class PositionChangeTest extends TestCase
     }
 
     /**
-     * Two writers of `people.position` is two chances to forget the cache flush or the last-admin
+     * Two writers of `people.position` is two chances to forget the cache flush or the lockout
      * guard. This asserts there is one DEFINITION, not two that happen to agree today.
      *
-     * Not a blanket `assertStringNotContainsString('isLastActiveAdministrator', $source)`: the
-     * refactored `setActive()` still legitimately CALLS `PositionChange::isLastActiveAdministrator(
-     * $user)` — the shared, single definition — and that qualified call still contains the bare
-     * word "isLastActiveAdministrator" as a substring. A blanket ban would therefore fail against
-     * the exact code this task's own plan text asks for. What must be absent is a SECOND
-     * DECLARATION of the method (`function isLastActiveAdministrator(`), which is what would make
-     * this two definitions that happen to agree today rather than one.
+     * IT USED TO NAME `PositionChange::isLastActiveAdministrator` AS THE SHARED GUARD, and ruling
+     * 45 deleted that method: it asked about the Administrator ROLE, which stopped implying
+     * "somebody holds `access.manage`" once the capability became deniable per account, and five
+     * doors guarding on it were measured emptying the capability with a 302. The account console
+     * now calls `App\Support\AccessManageGuard::guarding()`, which is the shared definition.
+     *
+     * THE NEEDLES ARE CODE SHAPES, NOT WORDS, and that matters more than it did before. When this
+     * file was first written the two happened to coincide; while the fix was being made, the
+     * controller's PROSE mentioned the deleted method (explaining what replaced it) and the old
+     * `assertStringContainsString('PositionChange::isLastActiveAdministrator', ...)` went on
+     * passing against a method that no longer existed — a guard satisfied by a comment. So the
+     * DECLARATION bans below are matched against source with its comments stripped, and the
+     * positive assertions name calls that must really be there.
      */
     public function test_the_account_console_delegates_to_the_one_definition(): void
     {
-        $source = file_get_contents(app_path('Http/Controllers/Admin/UserManagementController.php'));
+        $source = (string) file_get_contents(app_path('Http/Controllers/Admin/UserManagementController.php'));
+        $code = $this->withoutComments($source);
 
-        $this->assertStringContainsString('PositionChange::apply', $source);
-        $this->assertStringContainsString('PositionChange::isLastActiveAdministrator', $source);
-        $this->assertStringNotContainsString('function isLastActiveAdministrator(', $source);
+        $this->assertStringContainsString('PositionChange::apply', $code,
+            'the account console no longer routes a position change through the one writer');
+        $this->assertStringContainsString('AccessManageGuard::guarding', $code,
+            'the account console no longer routes its deactivation through the one lockout guard');
+
+        // Neither predicate may come back, here or anywhere: a role-shaped answer to the
+        // capability question is what ruling 45 removed.
+        foreach ([
+            app_path('Http/Controllers/Admin/UserManagementController.php'),
+            app_path('Http/Controllers/Admin/PersonController.php'),
+            app_path('Support/PositionChange.php'),
+            app_path('Support/PersonStatus.php'),
+            app_path('Support/AccountUnbind.php'),
+        ] as $path) {
+            $body = $this->withoutComments((string) file_get_contents($path));
+
+            $this->assertStringNotContainsString('isLastActiveAdministrator', $body, basename($path));
+            $this->assertStringNotContainsString('wouldLeaveNoActiveAdministrator', $body, basename($path));
+        }
+    }
+
+    /**
+     * Source with comments and docblocks removed, so a source-level assertion cannot be satisfied
+     * by prose about the thing it is looking for. Same technique `RotaAccessTest`'s narrow scan
+     * uses, and for the same reason.
+     */
+    private function withoutComments(string $source): string
+    {
+        $code = '';
+
+        foreach (token_get_all($source) as $token) {
+            if (is_array($token) && in_array($token[0], [T_COMMENT, T_DOC_COMMENT], true)) {
+                continue;
+            }
+
+            $code .= is_array($token) ? $token[1] : $token;
+        }
+
+        return $code;
     }
 
     public function test_the_audit_row_names_ids_only(): void

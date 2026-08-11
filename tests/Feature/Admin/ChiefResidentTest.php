@@ -101,8 +101,23 @@ class ChiefResidentTest extends TestCase
             });
     }
 
+    /**
+     * THE FIXTURE NEEDS AN ADMINISTRATOR IN IT, and that is a real property of the system rather
+     * than a workaround (ruling 45). `App\Support\AccessManageGuard` refuses any deactivation that
+     * leaves `access.manage` unheld, and it is a POSTCONDITION — it asks whether the capability is
+     * held afterwards, not whether this particular write is what took it away. Every other case in
+     * this file builds a world of chiefs and residents alone, where `access.manage` was never held
+     * by anybody, so a deactivation of an unrelated resident is refused for want of an
+     * administrator who was never there.
+     *
+     * No deployment is in that state: `php artisan user:create-admin` is the bootstrap and makes a
+     * position-0 account before anything else exists. An administrator is added here rather than
+     * to `setUp()` so the scoped-visibility cases above keep asserting against exactly the roster
+     * they were written for.
+     */
     public function test_a_chief_can_deactivate_and_reactivate_a_resident(): void
     {
+        $this->admin();
         $resident = User::factory()->create(['position' => 4, 'active' => true]);
         $chief = $this->chief();
 

@@ -31,7 +31,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -301,23 +300,29 @@ class PersonController extends Controller
      *     fails the whole request with NO write attempted for the valid ones — the
      *     `InvitationController::store()` ordering finding 12 names, without a second copy of
      *     the mechanism;
-     *  3. for `set_active` with `active = false`, the SET-AWARE last-administrator guard
-     *     (finding 13, `PositionChange::wouldLeaveNoActiveAdministrator()`) — computed ONCE,
-     *     outside any loop, over the whole selection, before the transaction opens. A per-row
-     *     `isLastActiveAdministrator()` check here would let the last two Administrators through
-     *     one at a time, each seeing the other as cover;
-     *  4. one `DB::transaction` applying every change and collecting each person's own outcome
-     *     from the writer's own return value, never from a guess made before the write;
-     *  5. AFTER the commit, one audit summary row plus one row per person (Decision H's
+     *  3. one `DB::transaction` applying every change and collecting each person's own outcome
+     *     from the writer's own return value, never from a guess made before the write. THE
+     *     LOCKOUT GUARD IS INSIDE IT, per row, and that is what makes it set-aware rather than
+     *     what makes it blind (ruling 45): `App\Support\PersonStatus::apply()` asks
+     *     `AccessManageGuard` after each write, and because the whole loop shares one transaction
+     *     each row's write is visible to the next row's question — so deactivating the last two
+     *     holders together is refused at the second, and the throw unwinds the entire batch. This
+     *     REPLACED an up-front `PositionChange::wouldLeaveNoActiveAdministrator()` computed over
+     *     the whole selection before the transaction opened. That was the right shape for the
+     *     wrong question (it counted Administrators, not holders of `access.manage`), and asking
+     *     the oracle cannot be done up front at all: it answers about the world as written, which
+     *     is the whole reason it is right. The refusal is named on `ids`, where it was;
+     *  4. AFTER the commit, one audit summary row plus one row per person (Decision H's
      *     ordering, matching `AccessControlController::applyRoleSet()` — `AuditLog::record()`
      *     opens its own transaction and locks the chain tail, so nesting it inside this one would
      *     serialise the whole chain for the batch's duration and unwind the attempt's own trail
-     *     with a rollback);
-     *  6. `back()->with('bulk_report', ...)` so the screen shows what actually happened per
+     *     with a rollback). It is also why the lockout refusal in step 3 costs no audit row: it
+     *     throws before any of these are written, so nothing claims a batch happened;
+     *  5. `back()->with('bulk_report', ...)` so the screen shows what actually happened per
      *     person, not "Done."
      *
      * `export` is a READ: it short-circuits immediately after loading, before any of the above,
-     * because none of it — the last-admin guard, the transaction, the per-person audit rows —
+     * because none of it — the lockout guard, the transaction, the per-person audit rows —
      * applies to a request that changes nothing.
      */
     public function bulk(PersonBulkRequest $request): RedirectResponse|StreamedResponse
@@ -336,21 +341,6 @@ class PersonController extends Controller
 
         $actorId = (int) $request->user()->getKey();
         $ip = $request->ip();
-
-        if ($data['action'] === 'set_active' && $data['active'] === false) {
-            $linkedUserIds = $people->map(fn (Person $p): ?int => $p->user()->first()?->getKey())
-                ->filter()
-                ->map(fn ($id): int => (int) $id)
-                ->values()
-                ->all();
-
-            if (PositionChange::wouldLeaveNoActiveAdministrator($linkedUserIds)) {
-                throw ValidationException::withMessages([
-                    'ids' => 'This selection would deactivate every active Administrator — '.
-                        'leave at least one, or grant another account the role first.',
-                ]);
-            }
-        }
 
         $outcomes = [];
 
@@ -383,10 +373,15 @@ class PersonController extends Controller
      * from the account side ("the admin screen offers one control, so this is where they are
      * kept in step"). Whichever console the control is on, a leaver stops being NAMED as well as
      * stops being able to log in.
+     *
+     * `'ids'` is the validation key this screen's selection binds to, and it is passed rather than
+     * defaulted so the lockout refusal lands where the bulk panel is already listening — the same
+     * key the guard this replaced used. The writer owns the refusal; the surface only says where
+     * to put it (`PositionChange::apply()`'s `$field` convention).
      */
     private function applySetActive(Person $person, bool $active): string
     {
-        PersonStatus::apply($person, $active);
+        PersonStatus::apply($person, $active, 'ids');
 
         return $active ? 'activated' : 'deactivated';
     }

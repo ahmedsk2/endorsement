@@ -7,6 +7,7 @@ use App\Models\AuditLog;
 use App\Models\PendingRegistration;
 use App\Models\Position;
 use App\Models\User;
+use App\Support\AccessManageGuard;
 use App\Support\AccountUnbind;
 use App\Support\PositionChange;
 use Illuminate\Http\RedirectResponse;
@@ -32,8 +33,10 @@ use Inertia\Response;
  * Two hard invariants:
  *  - The pending row's ALREADY-HASHED password is copied VERBATIM through the query builder
  *    (exactly like LegacyImport) so the `hashed` model cast can never re-derive it.
- *  - The LAST remaining active Administrator (position 0) can be neither deactivated nor
- *    demoted (self-lockout guard) — including by themselves.
+ *  - The last active holder of `access.manage` can be neither deactivated, unbound nor demoted
+ *    (`App\Support\AccessManageGuard`, ruling 45) — including by themselves. That guard used to
+ *    ask about the Administrator ROLE, which stopped meaning the same thing once the capability
+ *    became deniable per account.
  *
  * `pending_registrations` has had NO WRITER since 2026-07-27 — `/register` is closed
  * (`RegisteredUserController::closed()`) and nothing in `app/` calls
@@ -240,8 +243,8 @@ class UserManagementController extends Controller
     }
 
     /**
-     * Activate / deactivate an account. Deactivating the last remaining active
-     * Administrator is refused (422) — that includes an admin deactivating themselves.
+     * Activate / deactivate an account. Deactivating the last active holder of `access.manage` is
+     * refused (422) — that includes an admin deactivating themselves.
      */
     public function setActive(Request $request, User $user): RedirectResponse
     {
@@ -270,18 +273,26 @@ class UserManagementController extends Controller
             ]);
         }
 
-        if (! $active && PositionChange::isLastActiveAdministrator($user)) {
-            throw ValidationException::withMessages([
-                'active' => 'This is the last active Administrator account — it cannot be deactivated.',
-            ]);
-        }
-
-        $user->update(['active' => $active]);
-
+        // Ruling 45's guard, in the shape every lifecycle door now shares: write, ask the oracle,
+        // and let the throw unwind it. It replaced `PositionChange::isLastActiveAdministrator()`,
+        // which asked about the Administrator ROLE — satisfied by a second position-0 account that
+        // had been DENIED `access.manage` and therefore held nothing, which is how this endpoint
+        // was measured emptying the capability with a 302 on 2026-08-11.
+        //
         // Deactivating a leaver must stop them being NAMED as well as stop them logging in. The
         // two flags answer different questions (P0c) and the admin screen offers one control, so
-        // this is where they are kept in step.
-        $user->person?->update(['active' => $active]);
+        // this is where they are kept in step — and inside the guard's transaction, so a refusal
+        // cannot leave one of the two written.
+        AccessManageGuard::guarding(
+            // Reactivating can only ADD a holder, so it is never the direction that locks anybody
+            // out — see `AccessManageGuard::guarding()`.
+            $active ? null : $user,
+            'active',
+            static function () use ($user, $active): void {
+                $user->update(['active' => $active]);
+                $user->person?->update(['active' => $active]);
+            },
+        );
 
         AuditLog::record(
             $active ? 'user_activate' : 'user_deactivate',

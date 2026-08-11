@@ -1239,6 +1239,23 @@ None block starting P0.
     `App\Support\CapabilityGrant`, the single writer both surfaces call — so the day one is added,
     that case stays green and becomes the proof it reached both. It was itself watched failing
     against a guard planted in one door alone.
+
+    **CLOSED 2026-08-11 (rulings 44 and 45), and it was SIX doors, not one.** Ruling 44 added the
+    guard to `App\Support\CapabilityGrant::applyForUser()` exactly as anticipated above, and the
+    parity case did stay green and did become the proof. Ruling 45 then measured what that left:
+    `PATCH /admin/users/{u}/active`, `PATCH /admin/users/{u}/unbind`, `PATCH
+    /admin/users/{u}/position`, `PATCH /admin/people/{p}` and `POST /admin/people/bulk`
+    (`set_active`) each still returned 302 and left `holdersOf('access.manage')` empty, given one
+    administrator having first denied the capability to another. **One root cause, and not ruling
+    44's:** all five guarded on `PositionChange::isLastActiveAdministrator()` — the Administrator
+    **role** — which a denied position-0 account satisfies while holding nothing. All six doors now
+    call `App\Support\AccessManageGuard::guarding()`, one body holding transaction + write +
+    ask-the-oracle + throw-unwinds; both role-shaped predicates were deleted rather than kept beside
+    it, and `PositionChangeTest` bans their reintroduction over comment-stripped source. The guard is
+    a POSTCONDITION rather than a causal test, which is what keeps it to one uncached five-query
+    answer per guarded write; `RosterImport` pays nothing at all, because no row it can reach has a
+    linked account. Nothing about the parenthetical above changed: a holder of `access.manage` can
+    still grant themselves any capability, because that is what the capability means.
 21. **The invitation route group is gated IN-CONTROLLER by `ManagerScope`, not by `cap:` middleware,
     and that is the codebase's one deliberate exception.** Every other admin route sits behind a
     `cap:` gate; `admin/invitations/*` sits in the `auth`-only group because the rule is two-tier and

@@ -1057,10 +1057,18 @@ database console, and such a write passes no validator.
   same rows through the same code, and both require **`access.manage`** — `people.manage` alone does
   not grant roles, deliberately.
 
-### Known gap, carried not fixed
+### Closed on 2026-08-11: the system now refuses to leave `access.manage` unheld
 
-The self-lockout guard covers the **role matrix only**. A holder of `access.manage` can deny that
-capability to the last account holding it — from either screen — after which the Access Control
-console is unreachable and recovery needs a database console. Pre-existing, measured rather than
-inferred, and recorded as design §14 open item 20. **Operationally: keep more than one account
-holding `access.manage`.**
+Six operations could previously strip the last holder of `access.manage`, after which the Access
+Control console is unreachable and recovery needs a database console: denying it on either override
+screen, deactivating an account, unbinding one, demoting somebody off Administrator from either the
+account or the roster console, and a bulk "set inactive" selection. All six now refuse with a message
+naming the remedy ("Grant it to another active account first"), enforced in one place
+(`App\Support\AccessManageGuard`). Nothing is written when it refuses, and no audit row claims
+otherwise.
+
+**Operationally, still keep more than one account holding `access.manage`.** The guard stops you
+removing the last one, but it cannot help if that one account's password is lost or its holder
+leaves — and while `access.manage` is unheld (an instance that somehow reached that state), the
+guard also refuses deactivations and demotions until a holder exists again. Reactivating an account
+and promoting somebody to Administrator both stay available, which is the recovery path.

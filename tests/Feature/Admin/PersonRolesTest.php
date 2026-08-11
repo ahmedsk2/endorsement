@@ -455,6 +455,22 @@ class PersonRolesTest extends TestCase
      * eventually added to `App\Support\CapabilityGrant` (which is the only place it can be added,
      * now that both surfaces share one body), this case stays green and becomes the proof that
      * the guard reached both.
+     *
+     * THE GUARD ARRIVED ON 2026-08-11, AND THIS CASE NEEDED A FIXTURE FIX TO SURVIVE IT — which
+     * the sentence above did not anticipate and which is worth stating rather than quietly
+     * patching. The two closures share ONE database (`RefreshDatabase` wraps the whole method),
+     * and the property they compare is measured against it. While both doors PERMITTED the deny
+     * that was harmless: each closure's administrator denied themselves, each left zero holders,
+     * and the two answers matched. Once both doors REFUSE, the first closure's administrator
+     * survives as a holder — so the second closure's administrator is no longer the LAST one, its
+     * deny is correctly permitted, and the case went red reporting a disagreement that was
+     * really a difference in the two worlds. It was measuring fixture order, not the doors.
+     *
+     * `$admin->delete()` is what restores the symmetry: `AccessControl::holdersOf()` runs
+     * `User::query()`, so the SoftDeletes scope drops a trashed account and the second closure
+     * opens on the same empty world the first one did. Nothing in the application soft-deletes a
+     * `users` row (accounts are unbound and deactivated, never deleted) — this is a test tearing
+     * down its own fixture, not a path being exercised.
      */
     public function test_the_two_doors_agree_about_denying_the_last_access_manage_holder(): void
     {
@@ -469,11 +485,16 @@ class PersonRolesTest extends TestCase
                     'overrides' => [$capId => 'deny'],
                 ])->status();
 
-            return [
+            $measured = [
                 'status' => $status,
                 'still_holds' => AccessControl::allows($admin->fresh(), 'access.manage'),
                 'holders' => count(AccessControl::holdersOf('access.manage')),
             ];
+
+            // Hand the second door the same world this one opened on — see the docblock.
+            $admin->delete();
+
+            return $measured;
         })();
 
         $viaPeoplePanel = (function () use ($capId): array {

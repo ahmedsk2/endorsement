@@ -5,7 +5,6 @@ namespace App\Support;
 use App\Models\AuditLog;
 use App\Models\HandoverSignoff;
 use App\Models\User;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -62,25 +61,25 @@ final class AccountUnbind
      *
      * @return int the number of signoffs whose signer name was snapshotted
      *
-     * @throws ValidationException when the account is already unbound, or is the last
-     *                             remaining active Administrator
+     * @throws ValidationException when the account is already unbound, or when unbinding it would
+     *                             leave `access.manage` with no active holder
      */
     public static function apply(User $user, User $actor, ?string $ip): int
     {
         $personId = $user->person_id;
 
-        $snapshotted = DB::transaction(function () use ($user): int {
+        // `AccessManageGuard::guarding()` owns the transaction (ruling 45). The refusal it may
+        // raise has to unwind the snapshot and the link-clearing below, and a guard that asked
+        // BEFORE the write could not see the world the unbind is leaving — an unbound account
+        // drops out of `holdersOf()`'s inner join on `people`, which is precisely what makes this
+        // door a lockout. Its predecessor here asked whether another active Administrator existed,
+        // which a second administrator holding a per-user DENY satisfied while holding nothing.
+        $snapshotted = AccessManageGuard::guarding($user, 'unbind', function () use ($user): int {
             $person = $user->person;
 
             if ($person === null) {
                 throw ValidationException::withMessages([
                     'unbind' => 'This account is already unbound from its person.',
-                ]);
-            }
-
-            if (PositionChange::isLastActiveAdministrator($user)) {
-                throw ValidationException::withMessages([
-                    'unbind' => 'This is the last active Administrator — grant another account the Administrator role first.',
                 ]);
             }
 

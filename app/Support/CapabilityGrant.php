@@ -7,7 +7,6 @@ use App\Models\Capability;
 use App\Models\User;
 use App\Models\UserCapability;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -56,6 +55,14 @@ use Illuminate\Validation\ValidationException;
  * `routes/web.php` records for `users.unbind`). The People screen RENDERS its panel behind the
  * same capability so the control is not offered where the endpoint would refuse it, but the
  * boundary is the route group's, in one place.
+ *
+ * AND THE WRITER GUARDS, which is the other thing one body buys. `access.manage` must always have
+ * an active holder; `AccessControlController::assertNoSelfLockout()` only ever enforced that on
+ * the ROLE MATRIX, and never ran here at all. That guard is `App\Support\AccessManageGuard` since
+ * ruling 45 — this class was the first door to get it, and five account-lifecycle doors turned out
+ * to need the same one. `applyForUser()`'s transaction is opened by `guarding()` for that reason:
+ * the transaction, the write, the question and the throw that unwinds it are one shape, and it now
+ * has one definition instead of a copy per door.
  *
  * Guarded at source level by `tests/Feature/Build/CapabilityWritersAreSingularTest.php`.
  */
@@ -142,7 +149,8 @@ final class CapabilityGrant
      * @param  array<array-key, string>  $overrides  capability id => 'grant' | 'deny'
      * @return array<int, string> capability id => 'grant' | 'deny' | 'clear', for every override that CHANGED
      *
-     * @throws ValidationException when a submitted key is not a known capability id
+     * @throws ValidationException when a submitted key is not a known capability id, or when the
+     *                             write would leave `access.manage` with no active holder
      */
     public static function applyForUser(User $user, array $overrides, User $actor, ?string $ip): array
     {
@@ -160,7 +168,12 @@ final class CapabilityGrant
 
         $userId = (int) $user->getKey();
 
-        $changes = DB::transaction(function () use ($userId, $overrides): array {
+        // `AccessManageGuard::guarding()` opens the transaction, runs this body, asks the oracle
+        // and throws if the answer is nobody — which unwinds everything below and leaves no
+        // override row and no `access_user_*` audit row claiming one happened (the audit is
+        // written after the commit for exactly that reason). See {@see AccessManageGuard} for why
+        // the question is asked AFTER the write rather than derived from the submitted map.
+        $changes = AccessManageGuard::guarding($user, 'overrides', function () use ($userId, $overrides): array {
             $keepIds = array_map('intval', array_keys($overrides));
 
             $before = UserCapability::where('user_id', $userId)

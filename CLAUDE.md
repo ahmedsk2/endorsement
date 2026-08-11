@@ -202,6 +202,44 @@ SCBU and WARD are seed data for the QCH institution.
   `week`-granularity leave snaps through `VacationBooking::snap()` — the same code path as the
   booking screen, never a parallel rule re-typed in the importer (owner decision, 2026-08-10) — and
   the preview reports the adjustment.
+- **`access.manage` must always have an active holder, and the ONE guard is
+  `App\Support\AccessManageGuard::guarding($couldLose, $field, $write)`** (rulings 44 and 45). It
+  holds the whole shape in one body — open the transaction, run the write, ask the oracle, throw to
+  unwind — because a door that asks without a transaction refuses a write it already committed, and
+  a door that opens one and forgets to ask is what ruling 45 measured **six** times. Every door
+  calls it: both override surfaces through `CapabilityGrant::applyForUser()`, plus
+  `users/{u}/active`, `users/{u}/unbind`, `users/{u}/position`, `people/{p}` and
+  `people/bulk`'s `set_active`. The guard **asks the oracle rather than deriving the answer**:
+  `holdersOf()` is consulted INSIDE the transaction, after the write, and an empty answer throws
+  (audit rows are written after the commit, so nothing claims it happened). Never re-derive it —
+  **the danger is neither the word `deny` nor the word `Administrator`**: clearing a per-user
+  *grant* that was somebody's only claim strips the capability just as completely (an omitted key is
+  how that API spells it), and a position-0 account that has been DENIED the capability is cover to
+  a role check and none at all to the real question. Phrased over the HOLDER SET, never over the
+  actor — do **not** shorten it to "you may not deny yourself", which is only equivalent while
+  `capabilitiesFor()` (which consults neither `users.active` nor the person link) and `holdersOf()`
+  (which consults both) agree, and nothing enforces that. It is a **POSTCONDITION, not a causal
+  test** ("is it held after this write", not "did this write take it"): one five-query answer
+  instead of two, and in an already-unheld world it still permits every recovery — promotion to 0
+  grants it by role default, reactivation passes null and is never asked — while refusing what keeps
+  it broken. `$couldLose` null means "no account can be affected", which is both sound
+  (`holdersOf()` inner-joins `people`) and the reason `RosterImport`'s per-row loop pays **nothing**:
+  `SKIP_HAS_ACCOUNT` means no importable row ever has an account. `AccessManageLockoutTest` pins all
+  of it — five doors, the permitted direction, and both halves of the cost — verified by planting a
+  disabled guard and watching 13 of 19 cases go red.
+- **`PositionChange::isLastActiveAdministrator()` and `wouldLeaveNoActiveAdministrator()` are GONE
+  (ruling 45) — do not reintroduce either, or a third predicate shaped like them.** Both asked
+  whether another active `people.position = 0` account remained, which stopped implying "somebody
+  holds `access.manage`" the day the capability became deniable per account; five doors guarded on
+  them and all five were measured emptying the capability with a 302. They were deleted rather than
+  kept beside the new guard because every caller was a lockout guard asking the wrong question, and
+  a role-shaped check left lying about is an invitation for the next door to ask it again — which is
+  how it became five. `PositionChangeTest::test_the_account_console_delegates_to_the_one_definition`
+  bans both names across five files, **matched against comment-stripped source**: while this fix was
+  being made the controller's own prose mentioned the deleted method and the old substring assertion
+  went on passing against a method that no longer existed. `assertMayPlaceAtAdministrator()` (who may
+  hand out position 0) and `AccessControlController::assertNoSelfLockout()` (the position-0 role
+  DEFAULT keeps `access.manage`) are different questions and both stay.
 - **`PersonPresenter` gates BOTH `email` and `phone` behind `viewContact`.** `email` shipped
   ungated until P1d's rota grid became the first consumer holding a narrower capability
   (`rota.view`, every seeded position) than every prior caller (`people.manage`, which also grants
@@ -333,15 +371,16 @@ SCBU and WARD are seed data for the QCH institution.
   People screen's two role `<select>`s offer, PLUS whatever the row already holds; the full
   `positions` catalog still ships beside it, because it is what renders an existing Administrator's
   role NAME.
-- **OPEN, and pre-existing: `assertNoSelfLockout()` guards the ROLE matrix only.** It never runs on
-  the per-user override path, so a holder of `access.manage` can deny it to the last account
-  holding it — after which `AccessControl::holdersOf('access.manage')` answers nobody and the
-  security console is unreachable without database access. Measured against the tree in P1c-2 Task
-  6, not inferred; deliberately **not** fixed there, because the extraction had to be
-  behaviour-preserving. `PersonRolesTest::test_the_two_doors_agree_about_denying_the_last_access
-  _manage_holder` asserts the two surfaces AGREE rather than that either permits — so a lockout
-  guard added to `CapabilityGrant` (now the only place it *can* be added) keeps that case green and
-  makes it the proof the guard reached both doors. Recorded as design §14 open item 20.
+- **CLOSED (rulings 44 and 45): `assertNoSelfLockout()` guards the ROLE matrix only, and never did
+  more.** It does not run on the per-user override path, nor on any account-lifecycle door — which
+  is why a holder of `access.manage` could deny it to the last account holding it (measured in P1c-2
+  Task 6 and deliberately left, because that extraction had to be behaviour-preserving), and why
+  five more doors were still open after ruling 44. All six now go through
+  `App\Support\AccessManageGuard`; `assertNoSelfLockout()` stays where it is, guarding the position-0
+  role DEFAULT, which is a third question again.
+  `PersonRolesTest::test_the_two_doors_agree_about_denying_the_last_access_manage_holder` asserts the
+  two override surfaces AGREE rather than that either permits, which is what makes it the proof the
+  guard reached both. Design §14 open item 20 is discharged.
 - **Claim status is DERIVED, never stored** (`App\Support\Invitations\InvitationStatus`, P1c-2
   Decision B): five states folded, in precedence order, from `accepted_at`/`revoked_at`/
   `expires_at`, plus `hidden` for a target the viewer may not manage. A stored status column is the

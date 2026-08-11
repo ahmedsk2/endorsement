@@ -1320,23 +1320,38 @@ None block starting P0.
     — `ClinicRoster` never queries the leave tables at all (P1e Task 3, Decision B: a person on
     vacation is returned, unmarked), so the CL-04 scan passes on the module's own merits, and there
     is no allow-list on either scan.
-23. **`UnitMerge` re-points four unit-owned tables and STRANDS THREE. ACCEPTED AND SCHEDULED —
-    owner decision, 2026-08-11.** Recorded by the P1e-1 adversarial review (two of the three
-    stranded tables predate that branch and the third was out of the slice's scope); the owner has
-    since accepted it as a defect to fix rather than a question to hold open, so this item is no
-    longer *"recorded, deliberately not fixed"*. **It is not scheduled inside P1** — P1e was the
-    last slice and this is not a clinics defect — so it carries forward as the first item of the
-    next slice's scope, whole: all three tables plus the schema-derived guard described below, since
-    the "clinic-shaped fix alone would be wrong" paragraph at the end of this item makes a partial
-    repair worse than none. Everything below is the analysis as found, unchanged.
-    - **What it covers today.** `plan()`/`commit()` handle `handovers.unit_id`,
+23. **`UnitMerge` re-points four unit-owned tables and STRANDS THREE. SHIPPED — `fix/unit-merge-
+    stranded-tables`, 2026-08-12.** Recorded by the P1e-1 adversarial review (two of the three
+    stranded tables predate that branch and the third was out of the slice's scope), accepted by the
+    owner on 2026-08-11 as a defect to fix rather than a question to hold open, and fixed WHOLE: all
+    three tables plus the schema-derived guard this item described. Everything below the fix summary
+    is the analysis as found, unchanged, because a shipped item is still the record of why.
+    - **What shipped.** `plan()` counts, and `commit()` moves in one transaction, all seven foreign
+      keys that point at `units`. The three additions: `master_rota_assignments.unit_id` through
+      `RotaAssignment::repointUnit()`, `clinics.unit_id` through `ClinicWriter::repointUnit()`, and
+      `reminder_preferences.unit_id` directly (it is a pivot behind `User::reminderUnits()` and has
+      no model). **Neither single-writer guard gained an allow-list entry** — the exemption both had
+      anticipated for this file, and refused in advance, was still not taken (ruling 62).
+    - **The collision verdicts.** `master_rota_assignments`: **none possible** — the overlap rule is
+      per `(person_id, period_id)` and unit-blind, so a person split across both units in one period
+      simply lands as two adjacent spans on the survivor, deliberately uncoalesced. `clinics`: **none
+      possible** — no unique key on `(unit_id, weekday, session)`, by design. `reminder_preferences`:
+      **the one real collision**, on UNIQUE(user_id, unit_id) — the source row is DROPPED where the
+      account already holds the target, counted separately everywhere it is reported. Full reasoning
+      in ruling 61.
+    - **The obligation is now mechanical.** `UnitMerge::REFERENCES` names all seven keys with a
+      sentence each, and `UnitMergeCoversEveryUnitReferenceTest` derives the real set from the LIVE
+      schema and compares in both directions — so the eighth `unit_id` column fails the build until
+      somebody writes down what a merge does with it (ruling 63). That is the guard the paragraph
+      below calls "buildable and NOT built here"; it is built.
+    - **What it covered then.** `plan()`/`commit()` handled `handovers.unit_id`,
       `handover_signoffs.unit_id` (with the UNIQUE(unit_id, handover_date) collision resolved by a
       human first), `unit_field_definitions.unit_id` (its own UNIQUE(unit_id, key) collision refused
       outright) and `users.preferred_unit_id`.
-    - **What it does not.** Enumerated from the schema rather than from memory — every table
+    - **What it did not.** Enumerated from the schema rather than from memory — every table
       carrying a `unit_id`: **`reminder_preferences.unit_id`** (`2026_07_24_140002`),
       **`master_rota_assignments.unit_id`** (`2026_08_15_120003`, P1d) and **`clinics.unit_id`**
-      (`2026_08_16_120001`, P1e). All three keep pointing at the retired source unit after a merge.
+      (`2026_08_16_120001`, P1e). All three kept pointing at the retired source unit after a merge.
     - **Reproduction, and which one actually hurts.** Merge a unit that owns clinics into another:
       the clinics stay attached to the retired source, `ClinicWriter::assertOwns()` then refuses to
       revive or move them, and the surviving unit's clinic map is empty. Merge one carrying rota

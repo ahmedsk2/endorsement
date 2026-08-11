@@ -163,8 +163,9 @@ final class DemoReferences
     public const REMEDIES = [
         'clinic_attendees' => 'clinic_attendees: edit that clinic\'s "Who attends" list '
             .'(Structure → Clinics).',
-        'clinics' => 'clinics: move the clinic to another unit, or retire it and re-create it there '
-            .'(Structure → Clinics). A clinic is never deleted.',
+        'clinics' => 'clinics: move the clinic to another unit (Structure → Clinics), or merge the '
+            .'demo unit into a real one (Structure → Units → Merge), which re-points it. A clinic '
+            .'is never deleted.',
         'handovers' => 'handovers: merge the demo unit into a real one (Structure → Units → Merge), '
             .'which re-points them. A handover is never hard-deleted.',
         // Two different columns with two different answers, and the person half genuinely has no
@@ -175,14 +176,19 @@ final class DemoReferences
         'invitations' => 'invitations: none needed — removal deletes an invitation addressed to a '
             .'demo person along with it.',
         'master_rota_assignments' => 'master_rota_assignments: clear those cells on the master rota '
-            .'(Rota).',
+            .'(Rota), or merge the demo unit into a real one (Structure → Units → Merge), which '
+            .'re-points the spans.',
         'person_levels' => 'person_levels: a level span is closed, never deleted, and there is no '
             .'control that removes one — a demo person carrying a span written outside the demo '
             .'holds the removal.',
-        // One of the three tables a unit merge is recorded as STRANDING (design §14 item 23), so
-        // pointing at the merge here would be the same lie in a new place.
+        // This sentence used to end "and a unit merge does not move them", which was true of the
+        // three tables design §14 item 23 recorded a merge as STRANDING. Item 23 shipped and a
+        // merge now re-points all three — so the remedy names the merge, and the account holder's
+        // own settings page stays named too, because it is the only control that removes one.
         'reminder_preferences' => 'reminder_preferences: a per-account reminder for the demo unit. '
-            .'There is no screen for these and a unit merge does not move them.',
+            .'Merge the demo unit into a real one (Structure → Units → Merge), which re-points '
+            .'them; only the account holder can switch one off, from their own notification '
+            .'settings.',
         'unit_field_definitions' => 'unit_field_definitions: merge the demo unit into a real one '
             .'(Structure → Units → Merge), which moves the definitions with it.',
         'users' => 'users: an account has been claimed against a demo person, or has the demo unit '

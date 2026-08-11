@@ -309,6 +309,93 @@ final class Calendar
     }
 
     /**
+     * The English name of an ISO-8601 weekday, Monday = 1 … Sunday = 7 (P1e Decision A).
+     *
+     * A weekday NUMBER is not a date — it is a recurrence-rule component (`clinics.weekday`), and
+     * storing one converts nothing. Its NAME is this module's, though, for the same reason
+     * `hijriLabel()` is: a screen that writes its own day names is the second converter AR-08
+     * exists to forbid, and it would drift from `weekendDays()`'s numbering the first time
+     * somebody reached for Carbon's `dayOfWeek` (Sunday = 0) instead.
+     *
+     * NO `IntlDateFormatter`, no `IntlCalendar`, no date construction: a weekday name is a
+     * vocabulary lookup, and building a date to ask what it is called would put an unnecessary
+     * converter inside the module whose whole job is to be the only one.
+     *
+     * @throws InvalidArgumentException on anything outside 1..7 — including 0, which is exactly
+     *                                  what Carbon's `dayOfWeek` calls Sunday.
+     */
+    public static function weekdayLabel(int $iso): string
+    {
+        return self::weekdayStrings($iso)['label'];
+    }
+
+    /**
+     * The department's week, in the order IT runs, one entry per day (P1e Decision A).
+     *
+     * Rotated to begin at `weekStartIsoDay()`, which is itself derived from `weekend_days` — there
+     * is no `institutions.week_start` column and there never was. `weekend` is read from
+     * `weekendDays()`, never recomputed from the rotation, so there is one definition of "is this
+     * a weekend day" and not two.
+     *
+     * NOTHING STORED DEPENDS ON THE WEEK START. The ISO integer in `clinics.weekday` is absolute;
+     * only presentation rotates. A department that changes its weekend re-orders every clinic map
+     * and every weekday `<select>` in the instance immediately, with no stored value changing and
+     * no data migration — `WeekdayVocabularyTest::
+     * test_changing_the_weekend_reorders_the_columns_with_no_stored_value_changing` is that
+     * property, and `golden.json`'s `weekday_columns` block is it in the shared contract.
+     *
+     * Deliberately NOT memoised: it is a rotation over a seven-entry table and derives everything
+     * from `weekendDays()`, which is already inside the memo `flush()` clears. A second static
+     * here would be a second thing to forget to flush.
+     *
+     * @return list<array{iso:int, label:string, short:string, weekend:bool}>
+     */
+    public static function weekdayColumns(): array
+    {
+        $start = self::weekStartIsoDay();
+        $weekend = self::weekendDays();
+
+        $columns = [];
+
+        for ($offset = 0; $offset < 7; $offset++) {
+            $iso = (($start - 1 + $offset) % 7) + 1;
+            $strings = self::weekdayStrings($iso);
+
+            $columns[] = [
+                'iso' => $iso,
+                'label' => $strings['label'],
+                'short' => $strings['short'],
+                'weekend' => in_array($iso, $weekend, true),
+            ];
+        }
+
+        return $columns;
+    }
+
+    /**
+     * @return array{label:string, short:string}
+     *
+     * One range check for both public entry points, and it doubles as the guard against a broken
+     * or partially translated vocabulary table — so there is no unreachable defensive branch here
+     * that no test could ever exercise.
+     */
+    private static function weekdayStrings(int $iso): array
+    {
+        $entry = ((array) __('calendar.weekdays'))[$iso] ?? null;
+
+        if (! is_array($entry) || ! isset($entry['label'], $entry['short'])) {
+            throw new InvalidArgumentException(
+                'Calendar::weekdayLabel() takes an ISO-8601 weekday with an entry in '
+                .'lang/*/calendar.php — Monday = 1 ... Sunday = 7; got '.$iso.'. '
+                ."Carbon's dayOfWeek (Sunday = 0) is a second numbering scheme and is never what "
+                .'this module means.'
+            );
+        }
+
+        return ['label' => (string) $entry['label'], 'short' => (string) $entry['short']];
+    }
+
+    /**
      * The week containing a date, BOTH BOUNDS INCLUSIVE — the same idiom `Person::levelAt()` and
      * `Period::contains()` share. Labels are dual-dated (UX-04) because the client performs no
      * date formatting at all (Decision A, P1a).

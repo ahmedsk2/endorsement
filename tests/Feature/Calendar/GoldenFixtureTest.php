@@ -85,7 +85,10 @@ class GoldenFixtureTest extends TestCase
      */
     public function test_fixture_declares_a_version(): void
     {
-        $this->assertSame(1, $this->fixture['version']);
+        // 1 -> 2 at P1e Task 1, which added the `weekday_columns` block. A block a consumer has
+        // never seen is exactly the "shape the other has never seen" this marker exists for, so
+        // an additive change bumps it too — the mirror pins a version it has actually read.
+        $this->assertSame(2, $this->fixture['version']);
     }
 
     public function test_date_cases(): void
@@ -142,6 +145,36 @@ class GoldenFixtureTest extends TestCase
      * conversion, never by decrementing the resulting Hijri day number afterwards: doing the
      * latter produces the impossible 1448-02-00 at exactly this boundary.
      */
+    /**
+     * P1e Task 1 (Decision A): the department's week ORDER and its weekday vocabulary.
+     *
+     * This block is in the SHARED contract, not only in `WeekdayVocabularyTest`, because CL-03 —
+     * "no post-call on a day with a clinic of the resident's current specialty" — is a P2
+     * condition that must map a date to an ISO weekday and compare it to `clinics.weekday`
+     * CLIENT-SIDE, with no network round trip (UX-05). P2's `packages/engine` mirror therefore
+     * needs this exact function and must assert it against this exact file; a change on one side
+     * not matched on the other is the drift the fixture exists to catch.
+     *
+     * `assertSame` over the whole `columns` array is deliberate: it pins key ORDER and value TYPES
+     * as well as content, because that array ships to `resources/js` verbatim as an Inertia prop
+     * and the client computes nothing from it.
+     */
+    public function test_the_weekday_column_fixtures_reproduce(): void
+    {
+        foreach ($this->fixture['weekday_columns']['cases'] as $case) {
+            $this->institution(['weekend_days' => $case['weekend_days']]);
+
+            $label = 'weekend_days '.json_encode($case['weekend_days']);
+
+            $this->assertSame(
+                $case['week_start_iso_day'],
+                Calendar::weekStartIsoDay(),
+                "weekStartIsoDay() for {$label}"
+            );
+            $this->assertSame($case['columns'], Calendar::weekdayColumns(), "weekdayColumns() for {$label}");
+        }
+    }
+
     public function test_hijri_month_boundary_is_resolved_by_shifting_the_instant(): void
     {
         $boundary = $this->fixture['hijri_month_boundary'];

@@ -150,6 +150,50 @@ final class RotaAssignment
         return self::CLEARED;
     }
 
+    /**
+     * UN-01's merge, re-pointing every span from a retiring unit onto its survivor.
+     *
+     * IT LIVES HERE BECAUSE THIS IS THE ONLY WRITER. `UnitMerge` calls it rather than reaching into
+     * the table itself, so `RotaWritersAreSingularTest` needs no allow-list entry for that file —
+     * which matters more than usual here: BOTH single-writer guards deliberately withdrew a
+     * `->update(['unit_id'` needle precisely because it matched `UnitMerge`, each recording that
+     * exempting it "blinds this guard on the file the next real offender arrives in". `UnitMerge`
+     * turned out to be that offender (design §14 item 23), and routing the repair back through the
+     * writers is what keeps both files fully scanned.
+     *
+     * ROW BY ROW, NOT A MASS UPDATE, and that is the point of the method rather than an
+     * inefficiency: `MasterRotaAssignment::booted()` runs per save, so every re-pointed span is
+     * re-checked for containment and overlap. A bulk statement would skip all of it.
+     *
+     * NO COLLISION IS POSSIBLE, unlike `handover_signoffs`' UNIQUE(unit_id, handover_date). The
+     * overlap rule is scoped to one (person, period) pair and is UNIT-BLIND — it never reads
+     * `unit_id` — so changing that column cannot produce an overlap the stored set did not already
+     * have. The case that looks most like a collision is a person SPLIT across both units inside one
+     * period; it merely lands as two adjacent spans on the surviving unit, which is a shape the grid
+     * already renders. They are deliberately NOT coalesced: joining them would be a second
+     * definition of what a span is, and would erase from the row that these were once two rotations.
+     *
+     * If a pre-existing overlap somehow does exist (a hand write against the database, which is the
+     * only way to make one), the guard throws and `UnitMerge`'s transaction takes the whole merge
+     * back — a refusal, never a half-moved rota.
+     *
+     * @return int spans re-pointed
+     */
+    public static function repointUnit(Unit $source, Unit $target): int
+    {
+        return DB::transaction(function () use ($source, $target): int {
+            $moved = 0;
+
+            foreach (MasterRotaAssignment::query()->where('unit_id', $source->getKey())->orderBy('id')->get() as $assignment) {
+                $assignment->unit_id = $target->getKey();
+                $assignment->save();
+                $moved++;
+            }
+
+            return $moved;
+        });
+    }
+
     /** @return list<MasterRotaAssignment> */
     private static function spansFor(Person $person, Period $period): array
     {

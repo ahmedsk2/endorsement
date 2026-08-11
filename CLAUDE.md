@@ -550,6 +550,20 @@ SCBU and WARD are seed data for the QCH institution.
   columns actually filtered/compared on (see `periods_year_position_unique` on
   `(academic_year, position)` and `holidays`' `(active, calendar, month, day)` index for the
   corrected shape), and never with `institution_id` itself.
+- **Adding a `unit_id` column obliges you to answer `App\Support\UnitMerge`.** The same shape as the
+  invariant above — a cross-cutting obligation nothing checked — and it cost three stranded tables
+  over four slices (design §14 item 23, shipped 2026-08-12): a merged-away unit kept its rota spans,
+  its clinics and its members' push-reminder opt-ins, the last with **no screen anywhere able to
+  repair one**, so those reminders simply stopped. Nothing was broken inside the writer; the rule was
+  missing. `UnitMerge::REFERENCES` now names every foreign key that points at `units` with one
+  sentence on what a merge does with it, `UnitMergeCoversEveryUnitReferenceTest` derives the real set
+  from the LIVE schema and compares in both directions, and **an entry is a decision, not
+  documentation** — a table whose answer is "a merge deliberately leaves this" still belongs in the
+  map, spelled out. `master_rota_assignments` and `clinics` are re-pointed through
+  `RotaAssignment::repointUnit()`/`ClinicWriter::repointUnit()`, never by `UnitMerge` itself: both
+  single-writer guards had already refused to allow-list this file *in advance*, on the argument that
+  an exemption would blind them exactly where the next offender arrives, and the offender was this
+  file (rulings 61–63).
 - **A REFUSAL MUST BE FLASHED UNDER A KEY THE RECEIVING SCREEN ACTUALLY RENDERS, and the two halves
   are asserted TOGETHER** (rulings 41 and 49). Three instances in two slices: P1c-2's single resend
   keyed `member_email`; P1e-1's clinic attendee lists keyed `level_ids.N`/`person_ids.N`; and

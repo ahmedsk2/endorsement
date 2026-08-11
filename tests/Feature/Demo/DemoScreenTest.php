@@ -383,12 +383,17 @@ class DemoScreenTest extends TestCase
     }
 
     /**
-     * THE REMOVAL PIN, PROVED ON THE ONE CHANGE `remove()`'s OWN RE-DERIVATION CANNOT CATCH.
+     * THE REMOVAL PIN, END TO END: a stale preview is refused and the live batch is untouched.
      *
      * Two administrators. The first opens this screen. The second removes the demo and creates a
      * fresh one. The first presses Remove. Without the pin that DELETE removes a department the
      * operator never previewed — and every table returns to its pre-seed count, so neither the
      * round-trip proof nor the pre-flight nor the audit trail would show anything amiss.
+     *
+     * WHAT IT DOES NOT PROVE, stated because it used to claim otherwise (P1e-2 review, finding 5).
+     * The second batch's ledger rows carry different ids from the first's, so this digest differs
+     * over its CELLS whatever `identity` holds — it would stay green with the batch id dropped from
+     * the pin entirely. The twin below is what makes the batch load-bearing.
      */
     public function test_removal_is_pinned_to_what_the_operator_saw(): void
     {
@@ -410,6 +415,34 @@ class DemoScreenTest extends TestCase
 
         $this->assertSame($before, $this->countsWithoutAudit(), 'the second batch is untouched');
         $this->assertSame([$second['batch']], DemoLedger::batches());
+    }
+
+    /**
+     * THE BATCH IS PART OF THE PIN, isolated (P1e-2 review, finding 5).
+     *
+     * Its sibling above changes two things at once — a different batch AND a different set of
+     * ledger rows — so it cannot tell which of them the refusal came from. This one changes exactly
+     * one field of one payload and nothing else, which is the only way to show the identity slot is
+     * doing work. Calibrated by removing `batch` from `removalDigest()`'s identity and watching
+     * this go red while every other pin test in this file stayed green.
+     */
+    public function test_the_removal_pin_covers_the_batch_and_not_only_its_rows(): void
+    {
+        $created = DemoDepartment::create();
+
+        $state = DemoDepartment::removalState($created['batch']);
+
+        $elsewhere = $state;
+        $elsewhere['batch'] = '11111111-2222-3333-4444-555555555555';
+
+        $this->assertSame($state['rows'], $elsewhere['rows'], 'the two payloads differ in one field');
+
+        $this->assertNotSame(
+            DemoDepartment::removalDigest($state),
+            DemoDepartment::removalDigest($elsewhere),
+            'Two removals over identical rows but different batches hash the same, so a confirmation '
+            .'for one would be accepted for the other. The batch is what a removal IS.',
+        );
     }
 
     /** The pin also catches the world moving under a removal that was previewed as clear. */

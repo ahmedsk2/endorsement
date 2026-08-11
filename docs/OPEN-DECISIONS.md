@@ -44,16 +44,6 @@ guard now works — it had never once engaged. What remains is yours:
 Two things for the password manager: the monitoring account (note the continuity risk — it
 is tied to your personal email) and the heartbeat URL, which is a secret.
 
-### D. Which units own clinics?
-
-P1b (2026-08-09) seeded UN-02's `clinic_owner` flag `false` for all four QCH units — PICU,
-NICU, SCBU and WARD are training rotations and on-call targets, but no clinic concept exists
-in the codebase until P1e, so marking any of them a clinic owner today would be a clinical
-guess this repo has no standing to make. *Blocks:* P1e's CL-01 clinic screen, which needs at
-least one clinic-owning unit to have anything to show. *Default if unanswered:* stays `false`
-everywhere — the flag is a checkbox on Admin → Structure → Units, so P1e's own first step can
-simply be ticking it, and this may never need a standalone answer at all.
-
 ### E. What is the department's next academic year start date?
 
 P1b's period generator (Admin → Structure → Periods) absorbs the remainder of a week-block
@@ -349,6 +339,63 @@ off Administrator from either console, and a bulk "set inactive" each emptied `a
 second position-0 account holding a *deny* satisfied while holding nothing. One capability-shaped
 guard (`App\Support\AccessManageGuard`) now covers all six, and the role-shaped predicates were
 deleted rather than kept beside it. See ruling 45.
+
+---
+
+## DECIDED — 2026-08-11 (P1e, the clinics/wizard/demo plan)
+
+### Which units own clinics — WARD, and it was already decided
+
+This was listed above as open item **D** until 2026-08-11, and it had been wrong since
+2026-08-09. **Owner Decision B (P1b) ruled WARD the sole clinic owner**, and the code shipped it:
+`ReferenceSeeder` writes `clinic_owner => true` for WARD on cold start, and
+`2026_08_15_120002_correct_ward_clinic_owner` exists specifically because the upgrade path left it
+`false` on an already-deployed instance and `db:seed --force` could not repair it — unit profile
+columns are written on CREATE only.
+`UnitCapabilityFlagsTest::test_ward_alone_is_seeded_as_a_clinic_owner`
+pins it. The stale entry said the flag *"stays `false` everywhere"*, that this *"blocks P1e's CL-01
+clinic screen"*, and that *"P1e's own first step can simply be ticking it"* — all three wrong, and
+P1e in fact started with a clinic-owning unit already configured.
+
+**Nothing needs doing.** A second clinic-owning unit is a checkbox on Admin → Structure → Units and
+needs no code; the clinics screen offers exactly the units where `clinic_owner` and `active` are
+both true, from a query.
+
+### The demo department may be created on the LIVE instance
+
+**Answered: yes, behind `structure.manage`, with the removal path shipped first.** ST-05 says the
+demo department exists *"for training"*, and training happens on the instance people are trained
+on. This is a deliberate departure from `DemoSeeder` and `E2eSeeder`, which throw in production and
+should: neither marks a single row it writes, so a row either creates is indistinguishable from a
+real one forever, and neither has a removal path at all. `App\Support\Demo\DemoDepartment` is
+different in the two ways that matter, and both are asserted rather than promised — every row it
+creates is recorded in `demo_rows` so removal can prove it removed all of them (a whole-schema
+row-count comparison around a create-and-remove), and **it creates no account at all**, so pressing
+it on a system holding children's records adds no way in.
+
+**What you should know before pressing it:** everything it creates is named `Demo …` and every
+address is on `demo.invalid`, a domain that can never receive mail. Removal is refused **whole** —
+nothing half-deleted — the moment real work has attached itself to the demo (a genuine handover
+written on the demo unit during a training session, an account claimed against a demo person, a
+sign-off naming one), and the screen tells you which tables are holding it and how many rows. It is
+at **Admin → Set up this department → Somewhere to practise**, and there is deliberately no
+permanent navigation entry for it.
+
+### The department's display name is editable; its CODE is not, and must not become so
+
+**Answered: `name` yes, `code` no.** `institutions.name` is now editable at Admin → Structure →
+Department, audited, and the rename survives every deploy's `db:seed --force`. `institutions.code`
+stays environment-only on purpose: it is the key the seeder finds the institution row BY, so
+re-coding a live institution makes the next deploy create a **second** institution row instead of
+updating the first, after which the system cannot tell which one is current and every configuration
+screen goes blank. Changing a deployed department's code is a provisioning job with a migration
+behind it — `docs/RUNBOOK-PROVISION.md` — not a settings change. (It is also a different value from
+`INSTANCE_SLUG`, which names the backup archive.)
+
+**"Branding" is the display name and nothing else.** A logo upload into a system holding children's
+records is its own decision — where the file is stored, what content types are accepted, path
+traversal, and the size it adds to every backup archive — and it did not arrive as a side effect of
+a wizard step. Additive later if you want one.
 
 ---
 

@@ -611,7 +611,7 @@ deployable and the suite green.
 | **P1b — Structure administration** | Units CRUD with UN-02 flags, UN-03 aliases, UN-05 secondary name, colour, order, deactivate, **merge**; the level ladder seeded per owner decision 1 plus its CRUD; the calendar/period/holiday settings screens (ST-02); new capability keys and nav. | UN-01…05, LV-01, ST-02, ST-06 | P1a |
 | **P1c — People, roster and accounts** | The People screen; PE-01 full field set; PE-02 contact-visibility policy; PE-03 external people made real; LV-02 bulk operations; LV-03 annual promotion; LV-04 history rendering; AC-02 resend and claim status; AC-03 unbinding; AC-04 per-person roles; ST-04 roster import. | PE-01…03, AC-01…04, LV-02…04, ST-04 | P1a, P1b |
 | **P1d — Master rota** | `periods` × people grid by level; one unit per person per period; split periods as date-bounded sub-assignments; vacations at week or exact-date granularity; fill-down/across and copy-period; import/export; the publish view with search, level filter and per-person period strip; per-period availability summaries. | MR-01…03, MR-05…07 | P1a, P1b, P1c |
-| **P1e — Clinics, setup wizard, demo department** | Clinics and attendees; the weekly clinic map; the setup wizard threading every step above; the removable demo department seed. | CL-01…05, ST-01, ST-03 (Stage-1 subset), ST-05 | P1b, P1c, P1d |
+| **P1e — Clinics, setup wizard, demo department** | Clinics and attendees; the weekly clinic map; the setup wizard threading every step above; the removable demo department seed. | ~~CL-01…05, ST-01, ST-03 (Stage-1 subset), ST-05~~ **As shipped 2026-08-11: CL-01, CL-02, CL-05, ST-01, ST-02, ST-05.** CL-03 and CL-04 are recorded hooks with their absence asserted; **ST-03 is not shippable in P1 in any subset** — both its presets are slot/coverage-template presets and those tables arrive in P2/P3. See the dated correction in the P1e section below and design §1.2. | P1b, P1c, P1d |
 
 **MR-04 is deliberately absent from P1d.** *"The master rota drives on-call eligibility
 automatically"* has nothing to drive until slots and call rosters exist in P3. P1d ships the
@@ -2326,6 +2326,54 @@ shipped, MR-04 excepted, which was never in P1d.
    `E2eSeeder` already exist and are the precedent; "removable" is the hard part and needs a
    provenance marker on every row it creates.
 
+**2026-08-11 — P1e SHIPPED, and with it the whole of P1.** Two branches, fifteen tasks, two
+migrations (`2026_08_16_120001` clinics + attendees, `2026_08_16_120002` demo rows — the reserved
+slot, checked free before either was written). Written when P1d-2 merged, per this programme's own
+convention. Recorded as facts rather than as criticism, the way P1d-1's migration-ordering
+correction is written: **five claims in this section and in the split table above turned out to be
+wrong against the tree**, and the plan below is left as written so the record stays honest.
+
+1. **This section's own heading contradicts the split table about CL-03 and CL-04.** The table (line
+   ~614) lists P1e's binding requirements as *"CL-01…05, ST-01, ST-03 (Stage-1 subset), ST-05"*;
+   this heading says *"CL-01…02, CL-04…05"*; and item 3 above says CL-04's surfaces *"exist only
+   from P3"*. **The prose was right and the tables were not.** P1e's binding list is CL-01, CL-02,
+   CL-05, ST-01, ST-02, ST-05. CL-03 and CL-04 ship as recorded hooks whose absence is **asserted**
+   by a comment-stripping needle scan (design §14 item 22) — item 18's treatment applied to clinics,
+   because *"we have not built it"* and *"we have decided not to build it"* are different states.
+2. **ST-03 is not shippable in P1 in any subset, and the split table is wrong to list it.** Both
+   named presets — *"Residency on-call (split day/night)"* and *"Residency on-call (24-hour)"* — are
+   **slot and coverage-template** presets, and `slots`, `coverage_templates` and `conditions` are
+   all unbuilt (design §6.3): no migration, no model, no controller. A "Stage-1 subset" of a slot
+   preset is the empty set. Item 4 above already required those wizard steps to be *"stated as
+   arriving in P2/P3 rather than presented as empty steps"*, which is incompatible with ST-03 being
+   binding in the same slice. **Dropped from the binding list, not faked**, and
+   `DepartmentSetupTest::test_no_step_names_a_slot_a_coverage_template_or_a_condition` asserts the
+   absence. Recorded in design §1.2 where a deviation is findable.
+3. **Item 5's "a provenance marker on every row it creates" is the right requirement in the wrong
+   shape.** A marker COLUMN means an additive column on eight tables — one of which, `units`, has no
+   provenance column of any kind, not even `institution_id`; it is editable to `false` from any
+   database console, after which removal silently misses the row; and it does not ENUMERATE, so
+   proving removal complete would still mean scanning every table. P1e used a LEDGER instead
+   (`demo_rows`, `(table_name, row_id)` grouped by a batch UUID), generalising three patterns
+   already in this schema. This section also says nothing about the actual hard case — **what
+   happens when a real row has since referenced a demo row** — which is what decides whether removal
+   can be partial. It cannot: removal is refused whole, naming tables and counts.
+4. **Item 4 lists "profile and branding" as if it threaded to an existing revisitable screen. It did
+   not.** `institutions.name` and `institutions.code` were env-only, so changing either meant a
+   direct database edit outside the audit trail (design §14 item 12, still open at the time). P1e-2
+   Task 8 built the missing half: `name` is editable and audited, and `code` stays env-only
+   **permanently** — it is `ReferenceSeeder`'s `firstOrNew` key, so re-coding a live institution
+   makes the next `db:seed --force` create a second `institutions` row and `Institution::current()`
+   return null. That is now design §14 item 25, split out of item 12 so "not built yet" cannot be
+   mistaken for "not built yet".
+5. **`docs/OPEN-DECISIONS.md` item D was stale and said the opposite of what had shipped.** It
+   claimed `clinic_owner` *"stays `false` everywhere"*, that this *"blocks P1e's CL-01 clinic
+   screen"* and that *"P1e's own first step can simply be ticking it"*. All three were wrong on
+   2026-08-09: Owner Decision B (P1b) ruled WARD the sole clinic owner, `ReferenceSeeder` writes it
+   on cold start, and `2026_08_15_120002_correct_ward_clinic_owner` exists because the upgrade path
+   left it `false` and `db:seed --force` could not repair it. P1e began with a clinic-owning unit
+   already configured; the item is now in that file's decided section.
+
 ---
 
 ## Owner decisions still needed
@@ -2369,6 +2417,20 @@ private method.
 The three acceptance criteria are met by **P1d** (master rota and availability summaries),
 **P1e** (clinics) and **P1c** (claimed accounts) respectively, and none of the three can be
 honestly started before P1a merges.
+
+**2026-08-11 — where §35 actually stands, now that all five sub-plans have shipped.** Every clause
+has the product behind it: claimed accounts (P1c-1/P1c-2), the master rota and `AvailabilitySummary`
+(P1d-1/P1d-2), clinics (P1e-1). **What is met is the CAPABILITY, not the event.** *"The pilot's
+**real** master rota and clinics live"* is a statement about QCH's data, and the department has not
+entered any yet — the system can now hold it, on screens an administrator reaches without knowing
+which of eleven pages to open first (P1e-2's `/admin/setup`), with somewhere to be trained that can
+afterwards be proved to have left nothing behind (ST-05's demo department). **Declaring the
+criterion accepted is the owner's call once that data exists, not a developer's after the last
+merge.** Stated here because "P1 is complete" and "Stage 1 is accepted" are different claims and
+only the first is ours to make. What Stage 1 does NOT include: CL-03's clinic conditions, CL-04's
+personal schedules and coverage board, MR-04's on-call eligibility and ST-03's launch presets — all
+unbuilt, and three of the four now carrying a guard that asserts they are unbuilt rather than merely
+absent (design §14 items 18, 22 and 27).
 
 ---
 

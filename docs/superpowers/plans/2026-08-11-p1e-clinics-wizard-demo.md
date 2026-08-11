@@ -1953,6 +1953,88 @@ gains item 23.
     `PeriodController::destroy()` typed-word idiom, `create()`'s `{batch, rows, skipped}` return and
     the `cap:structure.manage` group's shape all check out as described.
 
+### 2026-08-11 — Task 15
+
+1. **Baseline: `php artisan test` → 1643, `npm test` → 232, `npm run test:e2e` → 24, `npm run build`
+   green**, matching Task 14's recorded numbers exactly. Task 15 touches no code and adds no test,
+   so all four are unchanged at the end of it; the suites were re-run anyway, because a
+   documentation commit is exactly where a tree is assumed rather than checked.
+2. **TWO DOCUMENTS THIS TASK WAS TOLD TO FIX WERE ALREADY CORRECT ON DISK — the fourth instance of
+   this shape in four slices** (P1c-2 Task 7, P1d-1 Task 12, P1d-2 Task 13, and now this one), and
+   the pattern is worth stating as a rule: *check whether the document is already right before
+   editing it, because the stale version usually exists only in cached context.*
+   - **`docs/spec/08-foundation.md` needed nothing.** Task 5 amendment 12 already added
+     `clinics.view` to BOTH the capability catalog list and the role-defaults paragraph below it,
+     including the D7 override of Munawib §5's link-public footnote and the `applied_role_defaults`
+     once-only behaviour. The Task 15 text hedges this correctly (*"if Task 5 did not already
+     complete it"*); it did. The only change here was ticking P1e-1's own definition-of-done box,
+     which was still unticked against work that had shipped.
+   - **Design §14 item 22 needed nothing.** Task 6 wrote it in full — both hooks, what each will
+     read when it arrives, the sixteen needles, the comment-stripping requirement, the
+     `SourceScanner` extraction and the fact that the absence is real rather than allow-listed. The
+     Task 15 text asks for *"the CL-03/CL-04 hook item (Task 6)"* as if it were outstanding.
+3. **Four MORE P1e-1 definition-of-done boxes were unticked against shipped, verified work**
+   (`weekdayColumns()` + the fixture block, `ClinicRoster`'s bounded contact-free resolution,
+   `/clinics`'s GET-only gate, and the catalog entry). Each was checked against the tree before
+   ticking rather than ticked because the task claimed it: the fixture block exists, the method
+   exists, `ClinicMapTest` carries both named cases. A definition of done that lags the work is how
+   a later slice concludes something was skipped.
+4. **The caller's framing "all of P1a–P1e merged" is not quite true and the documents do not say
+   it.** `main` carries P1a–P1d and **P1e-1**; P1e-2 is this branch and is unmerged, per the
+   instruction not to merge. The documents are written in the house convention — describing the
+   state as shipped, which is what every prior slice's Task N did before its own merge — and the
+   one place the distinction matters (the P1 plan's Stage 1 note, design §14 item 27) says what is
+   met is the CAPABILITY, not the event: no real QCH rota, clinic or roster row exists anywhere yet,
+   and accepting §35 is the owner's call after that data lands, not a developer's after a merge.
+5. **Design §14 item 23 moved from "recorded, deliberately not fixed" to "ACCEPTED AND SCHEDULED"**
+   on the owner's decision, with one addition the instruction did not state: it is scheduled for the
+   NEXT slice rather than inside P1, because P1e was the last one and this is not a clinics defect.
+   The analysis below it is left byte-for-byte as found — including the paragraph explaining that a
+   clinic-only fix would be actively wrong (re-pointing `clinics.unit_id` while the rota rows stayed
+   behind resolves every migrated clinic to nobody), which is what makes "all three, whole" the
+   scheduled unit of work rather than three independent tickets.
+6. **Item 12 was NARROWED, not closed, and `code` was split out into its own item 25.** Task 8
+   closed the `name` half; the `code` half is not an unbuilt feature but a thing that **must not be
+   built**, and leaving both inside one open item reads as the first. "Not built yet" and "must not
+   be built" are different states — the same distinction item 18 and item 22 draw for MR-04 and
+   CL-03/CL-04 — so they are now two items.
+7. **Three new design §14 items beyond the five the task text lists**, each recording something P1e
+   found rather than something it decided: item 24 (`DemoSeeder`/`E2eSeeder` stay unledgered and
+   unremovable, and consolidating them is a follow-on rather than something this slice did quietly),
+   item 26 (`Model::query()->create(` as a sixth writer shape, with the three sibling guards
+   verified at **zero** `::query()` needles apiece and a sweep queued), and item 27 (what Stage 1
+   acceptance does and does not now mean).
+8. **`docs/OWNER-CHECKLIST.md` was not in Task 15's file list and needed two edits.** Its CI item
+   said *"P0a through P1d-2 have had zero CI coverage"* — true and now understated, since P1e has
+   none either. And the demo department is the first feature in this codebase an owner can press on
+   the LIVE instance that creates records, so it gets a section of its own written for somebody who
+   will be asked "may I?" rather than for a developer: what it creates, why this one is safe where
+   `DemoSeeder` is not, what typing `DEMO` does, and that a refusal naming tables and counts is the
+   feature working rather than a fault.
+9. **`docs/OPEN-DECISIONS.md` item D was moved rather than edited in place**, following that file's
+   own stated convention (*"recorded here as decisions, not deleted, because 'we considered it and
+   chose this' is the answer an auditor wants"*). The new decided block also records the two P1e
+   owner answers that were live questions in this plan — the demo department may be created in
+   production, and `name` is editable while `code` is not — because an owner decision that lives
+   only in a plan's "Owner decisions needed" section is one nobody finds later.
+10. **Every claim written here was checked against the tree first, and the checking caught three
+    things.** (a) `DemoRowsAreLedgeredTest` really does needle `DemoRow::query()` (line 106), and the
+    three sibling guards really do carry **zero** `::query()` needles apiece — both stated in
+    CLAUDE.md and design §14 item 26, both measured rather than inferred. (b) **This plan's own
+    finding 3 cites the WARD clinic-owner guard as `P1bStructureTest::test_ward_alone_is_seeded_as_
+    a_clinic_owner`, and no such class exists** — the test is real and green, but it lives in
+    `tests/Feature/Units/UnitCapabilityFlagsTest.php`. Corrected where it was being quoted into
+    `docs/OPEN-DECISIONS.md`, which is a permanent document; the plan's finding is left as written,
+    since the amendments block is where its errors are recorded. **Never cite a guard by a class name
+    you have not grepped for** — a wrong citation reads exactly like a real one and survives review.
+    (c) `SPC-RPT-059` does not say what this plan's finding 7 implies. Its subject is that the two
+    seeders' guards are **`APP_ENV`-only**, so a staging or DR-rehearsal instance restored from
+    production data would accept `db:seed --class=DemoSeeder` and mint a position-0 administrator
+    whose password is in this repository — a sharper and more specific risk than "their rows are
+    identifiable only by documented addresses". Design §14 item 24 quotes it accurately.
+    The design doc has been factually wrong eight times; the cost of checking is one `grep` per
+    sentence, and it was wrong twice more in the space of this task.
+
 ---
 
 ## Standing rules for every task
@@ -2534,16 +2616,18 @@ git commit -am "test: a clinic somebody made is a clinic somebody sees"
       planted violation and carries a staleness twin.
 - [x] `clinics.weekday` is ISO-8601, documented as such in three places, and no Carbon `dayOfWeek`
       appears anywhere near it.
-- [ ] `Calendar::weekdayColumns()` is the only source of the department's week order;
+- [x] `Calendar::weekdayColumns()` is the only source of the department's week order;
       `CalendarIsTheOnlyConverterTest` is green with **no allow-list change**;
       `tests/fixtures/calendar/golden.json` carries the new block.
-- [ ] `ClinicRoster` resolves at read time, issues a bounded and measured number of queries, and
+- [x] `ClinicRoster` resolves at read time, issues a bounded and measured number of queries, and
       returns `contactFree()` projections in which `email` and `phone` are **absent**.
 - [x] `/admin/structure/clinics` is `cap:structure.manage`, has **no destroy route** (asserted over
       the router), and audits by id.
-- [ ] `/clinics` is `cap:clinics.view`, seeded to every position, asserted **GET-only over the
+- [x] `/clinics` is `cap:clinics.view`, seeded to every position, asserted **GET-only over the
       router**, and carries no contact field for any viewer.
-- [ ] `clinics.view` appears in `docs/spec/08-foundation.md`.
+- [x] `clinics.view` appears in `docs/spec/08-foundation.md` — in BOTH the catalog list and the
+      role-defaults paragraph below it (Task 5 amendment 12: a key added only to the first leaves
+      that document self-contradictory while the catalog test stays green).
 - [x] CL-03's and CL-04's absence is guarded by two comment-stripped scans, each watched failing,
       with the stripper pinned in both directions.
 - [x] `npm run build`, `php artisan test` (**1527**), `npm test` (**212**) and `npm run test:e2e`
@@ -3088,25 +3172,39 @@ git commit -am "docs: what P1e made true, and what it made false"
 
 ## Definition of done — P1e-2
 
-- [ ] `institutions.name` is editable and audited; `code` is not writable, asserted server-side;
-      a rename survives `db:seed --force`; `CalendarWritersFlushTest`'s allow-list carries the new
-      controller with its reason stated at the site.
-- [ ] `DepartmentSetup::steps()` is derived, stores nothing, is query-bounded, reports an
-      already-configured department as complete with no backfill, and names no slot, coverage
-      template or condition among its steps.
-- [ ] `/admin/setup` is `cap:structure.manage`, GET-only, and does **not** collide with `/setup`;
-      `FirstLoginSetupTest` is green untouched; `RequireSetup` is unmodified.
-- [ ] `demo_rows` exists with no `institution_id`; `DemoDepartment` is its only writer.
-- [ ] `DemoDepartment::create()` ledgers every row it creates, runs in one transaction, refuses a
-      second run, labels every row visibly, and writes one audit row with no names.
-- [ ] `DemoDepartment::remove()` refuses **whole** when any real row references a demo row, naming
-      tables and counts only.
-- [ ] `DemoRoundTripTest` derives its table list from the schema, justifies every exclusion, and its
-      negative control **was watched failing**.
-- [ ] The demo screen is preview-then-confirm, pinned with `StatePin`, and requires the word typed.
-- [ ] Every document in Task 15 is corrected and re-read.
-- [ ] `npm run build`, `php artisan test`, `npm test` and `npm run test:e2e` all green on a **clean
-      tree**, with measured counts recorded.
+- [x] `institutions.name` is editable and audited; `code` is not writable, asserted server-side (a
+      `code` rule was PLANTED and watched turning `QCH` into `HIJACKED`, because a `disabled`
+      attribute is not a validation rule); a rename survives `db:seed --force` (watched failing with
+      `ReferenceSeeder`'s create-only guard removed); `CalendarWritersFlushTest`'s allow-list carries
+      the new controller with its reason at the site, and that entry was watched EARNING its place.
+- [x] `DepartmentSetup::steps()` is derived, stores nothing (`test_asking_writes_nothing_anywhere`,
+      watched failing against a planted `app_settings` counter), costs an EXACT measured ten
+      queries, reports an already-configured department as complete with no backfill, and names no
+      slot, coverage template or condition among its steps.
+- [x] `/admin/setup` is `cap:structure.manage`, GET-only over the ROUTER by URI prefix (not by
+      capability — `structure.manage` legitimately guards every structure screen's writes), and does
+      **not** collide with `/setup`; `FirstLoginSetupTest` is green untouched; `RequireSetup` is
+      unmodified, and the plant that adds `admin/setup` to its `ALLOWED` list was watched going red.
+- [x] `demo_rows` exists with no `institution_id` (asserted by comparing the WHOLE column list, not
+      one absence); `DemoDepartment` is its only writer, and a SIXTH writer shape
+      (`Model::query()->create(`) was found by mutating the writer rather than by reading the needles.
+- [x] `DemoDepartment::create()` ledgers every row it creates (watched failing against a mutation
+      that dropped one `record()` call), runs in one transaction, refuses a second run, labels every
+      row visibly, mints **no account at all**, and writes one audit row with no names.
+- [x] `DemoDepartment::remove()` refuses **whole** when any real row references a demo row, naming
+      tables and counts only — and its pre-flight's *"and not itself ledgered"* clause is pinned by
+      its own twin, without which every refusal test still passes and no demo is ever removable.
+- [x] `DemoRoundTripTest` derives its table list from the schema, justifies every exclusion three
+      ways, and its negative control **was watched failing** — twice, with two different mutations,
+      which is what surfaced the child/parent asymmetry the plan did not anticipate.
+- [x] The demo screen is preview-then-confirm, pinned with `StatePin` on **both** actions, and
+      requires the word typed. Both pins were watched failing by mutation: with `assertPinned()`
+      removed, the two pin tests failed with *"Session is missing expected key [errors]"* — the
+      operations SUCCEEDED silently, which is the failure they exist for.
+- [x] Every document in Task 15 is corrected and re-read. Two were found **already correct** and
+      left alone: `docs/spec/08-foundation.md` (Task 5 completed both halves) and design §14 item 22.
+- [x] `npm run build`, `php artisan test` (**1643**), `npm test` (**232**) and `npm run test:e2e`
+      (**24**) all green on a **clean tree**, measured rather than arithmetic.
 
 ---
 
@@ -3183,7 +3281,23 @@ open first, and somewhere to be trained that can afterwards be proved to have le
 **What P1e does NOT make true, stated so the gate is not read as wider than it is:** CL-03's clinic
 conditions, CL-04's personal schedules and coverage board, MR-04's on-call eligibility, and ST-03's
 launch presets are all unbuilt, and three of the four now have a guard asserting they are unbuilt
-rather than merely absent.
+rather than merely absent — ST-03 being the exception, because it has no module to guard.
+
+**2026-08-11, on completion — what "met" means, honestly.** All fifteen tasks shipped and P1 is
+complete: P1a's calendar, P1b's structure, P1c's people and accounts, P1d's master rota, P1e's
+clinics, wizard and demo department. **What §35's four clauses now have is the CAPABILITY, not the
+event.** *"The pilot's **real** master rota and clinics live"* is a statement about QCH's data, and
+the department has entered none of it yet — what changed is that the system can hold it, on screens
+an administrator reaches without knowing which of eleven pages to open first, with somewhere to be
+trained that can afterwards be proved to have left nothing behind. **Declaring the criterion
+accepted is the owner's call once that data exists, and it is not a developer's to make after a
+merge.** Recorded here in the plan that completes the stage, because "P1 is complete" and "Stage 1
+is accepted" are different claims and only the first is ours.
+
+One honest scoping note against this document's own claim that P1e *"completes the second clause"*:
+it completes the **clinics** half of that clause in the same sense the rota half was completed by
+P1d — the tables, the writers, the screens and the read surfaces exist and are proved. Neither
+slice put a single real QCH row anywhere.
 
 ---
 

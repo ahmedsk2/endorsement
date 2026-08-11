@@ -294,6 +294,92 @@ SCBU and WARD are seed data for the QCH institution.
   people to delete it. The stripper therefore needs its own calibration test
   (`test_the_scan_strips_comments_and_still_sees_the_code`) — a stripper that over-reached would
   disable the guard and look exactly like a clean tree.
+- **A clinic is CONFIGURATION, and `App\Support\Clinics\ClinicWriter` is the only writer of
+  `clinics` and `clinic_attendees`** (`ClinicWritersAreSingularTest`). Its owning unit is a `units`
+  row and a foreign key — never a code string in a column, never a hardcoded list, never a `match`
+  on `'WARD'`; the screen offers `clinic_owner = true AND active = true` from a query, so a fifth
+  department that ticks that box gets a clinic screen with no code change. **WARD is the sole
+  clinic owner** (owner Decision B, P1b 2026-08-09; `ReferenceSeeder` on cold start, and
+  `2026_08_15_120002_correct_ward_clinic_owner` because the upgrade path left it `false` and unit
+  profile columns are written on CREATE only). Neither table soft-deletes and **there is no
+  `destroy()` route at all** — a clinic that stopped running is deactivated (UN-04) — and the one
+  path that hard-deletes a `clinics` row is `DemoDepartment::remove()`, which is ledger-scoped.
+  `name`, `location` and `note` are PLAIN text, never purified server-side (the
+  `handovers.extra_fields` contract), so every consumer escapes on render.
+- **`clinics.weekday` is a plain ISO-8601 integer — Monday = 1 … Sunday = 7 — and Carbon's
+  `dayOfWeek` (Sunday = 0) is NOT it.** Ordering and labelling the department's week are
+  `Calendar` concerns and go nowhere else: `Calendar::weekdayColumns()` returns the seven columns
+  already rotated to `weekStartIsoDay()` (itself DERIVED from `weekend_days` — there is no
+  `institutions.week_start` column and never was), each flagged `weekend`, and both the clinic form
+  and the map consume that one array. A department that changes its weekend re-orders its clinic
+  map with no stored value changing. `resources/js` names no day: `CalendarIsTheOnlyConverterTest`
+  carries a repo-wide QUOTED-WHOLE-WORD needle for the seven names in any of the three JS string
+  delimiters, with no allow-list — the bare substrings were measured and rejected, `Mon` matching
+  `Month`. The vocabulary lives in `lang/en/calendar.php` beside `hijri_months` (AR-07), not as a
+  `const`, and `golden.json`'s `weekday_columns` block is the contract P2's mirror must satisfy.
+- **`clinic_attendees` holds the RULE; attendance is resolved at READ time and never stored.**
+  CL-02's refinement is a MODE on the clinic (`rotators` default, `levels`, `named`) rather than a
+  bag of include/exclude rules with an unstated precedence, and the mode moves only through
+  `ClinicWriter::setAttendees()` together with its rows, in one transaction, so `levels` mode can
+  never briefly hold a person row. `App\Support\Clinics\ClinicRoster::forDate()` answers *"who does
+  this clinic come down to on this day"* from the master rota, on demand — so moving somebody on
+  the rota moves them on the clinic with **no write anywhere**, and a snapshot would have needed
+  every rota, vacation and level writer to know about clinics. A person on vacation is returned
+  **unmarked** (the leave tables are never queried at all); a departed or deactivated person is
+  returned and FLAGGED, never dropped — an invisible one hides a cell somebody has to clear.
+  **CL-05's map has no date and therefore shows the RULE, not a roster** — resolving a Tuesday cell
+  as of today reports the wrong day with complete confidence — and it ships no person-shaped value
+  at all behind `cap:clinics.view`, a key seeded to every position. Munawib §5's footnote
+  contemplates that map being link-public; **D7 overrides it** (design §1.2), and the whole
+  `cap:clinics.view` group is asserted GET-only over the router.
+- **The department setup checklist holds NO state, anywhere** — no column, no table, no
+  `app_settings` key, no session key. `App\Support\Setup\DepartmentSetup::steps()` derives all nine
+  steps from the data on every request, so an already-configured department reads as complete with
+  no backfill and abandoning the wizard is a non-event. Steps are REQUIRED (derivable, binary) or
+  REVIEW (`profile`, `calendar`, `holidays` — **never** marked done, because no query tells a
+  reviewed default from an unexamined one; the Hijri offset is the specification's own example).
+  `blocked_by` is advisory and never becomes the gate — the target screen refuses on its own terms,
+  because a checklist that authorizes is a second authorization boundary. **`Setup*` names belong
+  to the per-USER first-login 2FA flow** — `SetupController`, `Setup.vue`, `/setup`,
+  `setup.show`/`setup.complete`, `RequireSetup`, `users.setup_completed_at` — and none of them was
+  touched: the department wizard is `DepartmentSetup*` at `/admin/setup`, and `/admin/setup` is
+  deliberately NOT on `RequireSetup`'s allowed list, so an administrator finishes their own second
+  factor before configuring a system holding children's records.
+- **The demo department is LEDGERED, removable, and may be created in production** (owner ruling,
+  2026-08-11) — which is exactly what `DemoSeeder`/`E2eSeeder` are not, and why those two keep
+  their production throw and were not modified. Provenance is a JOIN, not a column: `demo_rows`
+  `(table_name, row_id)` grouped by a batch UUID, written only by `App\Support\Demo\DemoLedger`.
+  **It mints no `users` row**, so a roster-only demo person cannot authenticate by construction
+  (P0c) and pressing this on a live instance creates no way in. `DemoDepartment::remove()` refuses
+  **WHOLE** — naming `(table, count)` pairs and never a name — the moment a non-ledgered row
+  references a ledgered one; the pre-flight's load-bearing clause is *"and not itself ledgered"*,
+  without which the demo's own clinic on its own unit would block its own removal forever with
+  every refusal test still green. **The asymmetry is the thing to remember: the pre-flight catches
+  an unledgered CHILD, and only `DemoRoundTripTest`'s whole-schema count comparison catches an
+  unledgered PARENT** — forgetting to ledger a `people` row removes cleanly and leaves five rows
+  behind. Both screen actions are preview-then-confirm pinned with `App\Support\Rota\StatePin`
+  (`DemoDepartment::planDigest()`/`removalDigest()`), and removal needs the demo unit code typed.
+- **`institutions.code` stays env-only, and this is not a UI omission.** It is
+  `ReferenceSeeder`'s `firstOrNew` key, so re-coding a live institution makes the next
+  `db:seed --force` — a mandatory step of every deploy — CREATE a second `institutions` row instead
+  of updating the first, at which point `Institution::current()` returns null (two active rows means
+  no right answer, D11) and every screen reading the department's configuration goes blank. It is
+  also provenance already stamped on `users`, `people`, `levels`, `periods` and `clinics`. That is a
+  provisioning operation with a migration behind it, not a settings change. `institutions.name` IS
+  editable (`/admin/structure/department`, `structure.manage`, audited by field name), and the
+  rename survives `db:seed --force` because `ReferenceSeeder` writes `name` on CREATE only —
+  asserted, not assumed. `institutions.code` is **not** `App\Support\Instance::slug()`
+  (`INSTANCE_SLUG`, which names the backup archive); they are different values.
+- **`Model::query()->create(` slips past every `Model::create(` needle, and three single-writer
+  guards still share that blind spot.** Found by mutation rather than by reading the needle list:
+  mutating `DemoRow::create([` to `DemoRow::query()->create([` left `DemoRowsAreLedgeredTest`'s
+  offender sweep GREEN while the writer still wrote the table — a sixth writer shape after ruling
+  42's three and ruling 50's two. That guard now needles `DemoRow::query()` whole (which also covers
+  `::query()->…->delete()`, the shape `forgetBatch()` itself uses), measured at zero matches outside
+  the writer. `ClinicWritersAreSingularTest`, `RotaWritersAreSingularTest` and
+  `PersonLevelsHaveOneWriterTest` do **not** yet carry the equivalent and a sweep across them is
+  queued (design §14 item 26). When you add or audit a single-writer guard, needle the
+  `::query()->` form as well — and prove it by mutating the writer, not by reading the list.
 - **The invitation lifetime is configurable, default 7, bounded [1, 30], behind `settings.manage`**
   (`Invitation::lifetimeDays()`, `app_settings.invitation_lifetime_days`, P1c-2 Task 1). Seven is a
   **deliberate, logged override** of Munawib AC-02's "default 14 days" — recorded in the design

@@ -148,6 +148,22 @@ class ClinicController extends Controller
      * UN-04: deactivation HIDES FORWARD and never deletes. Its own endpoint rather than a field on
      * update(), so retiring a clinic is a deliberate single act with its own audit action — and so
      * it cannot ride along inside a rename the administrator thought was cosmetic.
+     *
+     * THE REFUSAL LANDS ON `active`, AND `Clinics.vue` RENDERS `active` — the two halves are one
+     * decision, not two (ruling 41; P1e-1 adversarial review finding 3). This is the ONE endpoint
+     * in the Units/Levels/Holidays/Clinics `setActive()` family that can refuse at all — the other
+     * three cannot fail — and it shipped flashing under a key no element on the screen read, so
+     * pressing Restart on a clinic whose unit had since been retired did nothing visible whatever.
+     * A refusal nobody can see is indistinguishable from a broken button.
+     *
+     * There is deliberately no source-level guard behind that pairing, and the measurement is
+     * recorded in ruling 49 rather than left as an omission: "every key a controller flashes is
+     * rendered by SOME screen" is green on the very defect it would be built for, because
+     * `errors.person_ids` is rendered by an unrelated panel on Admin → People. The property that
+     * actually needs holding is per-SCREEN, and `back()` chooses its screen from the referrer at
+     * runtime. So it is asserted behaviourally, in pairs, at each refusal — the PHPUnit half here
+     * (`ClinicScreenTest::test_a_refused_restart_is_flashed_under_the_key_the_screen_renders`) and
+     * the render half in `tests/js/Clinics.test.js`.
      */
     public function setActive(Request $request, Clinic $clinic): RedirectResponse
     {

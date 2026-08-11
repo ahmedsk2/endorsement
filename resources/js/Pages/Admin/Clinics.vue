@@ -154,9 +154,27 @@ const submitEdit = (clinic) => {
 
 const activeForm = useForm({ active: true });
 
+/**
+ * WHICH clinic the last Stop/Restart was pressed on, so its refusal renders THERE.
+ *
+ * `activeForm` is one form shared by every row's button — there is one field and it would be
+ * wasteful to mint a form per clinic — so `activeForm.errors.active` is page-global. Rendered
+ * unguarded it would hang the same refusal under every clinic on the page, most of which were
+ * never touched; not rendered at all (which is what shipped) the button simply appears to do
+ * nothing, because `ClinicWriter` refuses to revive a clinic onto a unit that has since been
+ * retired or stopped owning clinics, and that refusal reached no element (P1e-1 adversarial review
+ * finding 3).
+ */
+const activeErrorId = ref(null);
+
 const toggleActive = (clinic) => {
     activeForm.active = !clinic.active;
-    activeForm.patch(`/admin/structure/clinics/${clinic.id}/active`, { preserveScroll: true });
+    activeErrorId.value = null;
+    activeForm.clearErrors();
+    activeForm.patch(`/admin/structure/clinics/${clinic.id}/active`, {
+        preserveScroll: true,
+        onError: () => { activeErrorId.value = clinic.id; },
+    });
 };
 
 // --- Who attends (CL-02) ------------------------------------------------------------------------
@@ -165,14 +183,29 @@ const attendeesId = ref(null);
 
 const attendeesForm = useForm({ mode: 'rotators', level_ids: [], person_ids: [] });
 
+/**
+ * Seeded from what the PICKERS OFFER, intersected with what the clinic stores — never from the
+ * stored list alone.
+ *
+ * An id with no checkbox is an id the administrator cannot untick, so carrying it into the form
+ * makes it unremovable: it goes back on every save, the server refuses the request under
+ * `level_ids.N` / `person_ids.N` — keys nothing below renders — and the panel sits open having
+ * reported nothing at all. A retired training level or a departed colleague locked the clinic's
+ * whole rule set that way, permanently (P1e-1 adversarial review finding 1).
+ *
+ * Dropping them here is also what makes the banner below honest: it says "No longer offered, and
+ * saving will drop them", and now that is what saving does.
+ */
+const offeredOnly = (ids, offered) => ids.filter((id) => offered.some((row) => row.id === id));
+
 const startAttendees = (clinic) => {
     attendeesId.value = clinic.id;
     attendeesForm.clearErrors();
     attendeesForm.mode = clinic.attendee_mode;
     // Copies, not the prop arrays: a checkbox bound straight to the prop would edit the page's own
     // data before anything was saved.
-    attendeesForm.level_ids = [...clinic.level_ids];
-    attendeesForm.person_ids = [...clinic.person_ids];
+    attendeesForm.level_ids = offeredOnly(clinic.level_ids, props.levels);
+    attendeesForm.person_ids = offeredOnly(clinic.person_ids, props.people);
 };
 
 const cancelAttendees = () => {
@@ -306,6 +339,10 @@ const submitAttendees = (clinic) => {
                                 {{ clinic.active ? 'Stop' : 'Restart' }}
                             </button>
                         </div>
+                        <p v-if="activeErrorId === clinic.id && activeForm.errors.active"
+                           class="mt-2 text-xs text-critical" data-testid="clinic-active-error">
+                            {{ activeForm.errors.active }}
+                        </p>
                         <!--
                           Stop/Restart is one field and works here; the two multi-field forms are the
                           desktop table's, exactly as Units.vue degrades. Said out loud on the card
@@ -354,6 +391,10 @@ const submitAttendees = (clinic) => {
                                         <button type="button" class="ml-3 text-xs font-semibold text-critical" @click="toggleActive(clinic)">
                                             {{ clinic.active ? 'Stop' : 'Restart' }}
                                         </button>
+                                        <p v-if="activeErrorId === clinic.id && activeForm.errors.active"
+                                           class="mt-1 text-xs text-critical" data-testid="clinic-active-error">
+                                            {{ activeForm.errors.active }}
+                                        </p>
                                     </td>
                                 </tr>
 

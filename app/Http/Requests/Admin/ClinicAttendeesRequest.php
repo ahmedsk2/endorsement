@@ -24,6 +24,24 @@ use Illuminate\Validation\Rule;
  * The two id lists are `present` rather than `sometimes`: a form that stops sending a key is
  * indistinguishable from a form sending an empty list, and the two mean opposite things to a
  * replace-whole endpoint.
+ *
+ * THE OFFER RULE IS ASKED OF THE LIST THE MODE ACTUALLY READS, AND OF NO OTHER (P1e-1 adversarial
+ * review finding 1). Both rules once applied unconditionally, which read as belt-and-braces and was
+ * a permanent lockout: `attendeeRows()` below builds from ONE list and discards the other, so the
+ * discarded list was refusing requests over ids that could not reach the writer, the database or
+ * the screen. Retire a training level, or deactivate a colleague — plain administrative acts — and
+ * every later save of that clinic was refused under `level_ids.N` / `person_ids.N`, keys the
+ * clinics screen renders no element for, so the panel stayed open and reported nothing.
+ * `rotators`, which needs no rules at all, was refused by the same pair, which is what removed the
+ * last state the clinic could have been repaired from.
+ *
+ * D9 IS UNMOVED BY THAT NARROWING, and the distinction is worth stating because it looks like a
+ * relaxation. The offer and the write side still come from ONE predicate per field
+ * (`ClinicPickers`), and the mode that READS a list still refuses every id that list was never
+ * offered — `ClinicScreenTest::test_the_relevant_list_still_refuses_an_id_the_pickers_never_offered`
+ * asserts that at `active = false`, at `deleted_at`, and on a retired level. What changed is only
+ * which list is asked, not what the asking accepts. The bounds (`integer`, `max:50`, `max:200`) stay
+ * on both lists unconditionally, because those bound the PAYLOAD rather than name a subject.
  */
 class ClinicAttendeesRequest extends FormRequest
 {
@@ -38,13 +56,33 @@ class ClinicAttendeesRequest extends FormRequest
      */
     public function rules(): array
     {
+        // Read RAW and compared with `===`, never cast and never through `$request->string()`.
+        // Every value in `$_POST` is a string OR AN ARRAY chosen by whoever typed the request, and
+        // an identity comparison answers `false` for an array without raising anything — leaving
+        // the `Rule::in` below to refuse it the negotiated way, as a 422 rather than a 500.
+        $mode = $this->input('mode');
+
+        $levelIdRules = ['integer'];
+        $personIdRules = ['integer'];
+
+        // ONE list is read per mode, and only that list is asked whether the screen offered its
+        // ids. `rotators` reads neither, which is what makes it the escape from a clinic whose
+        // stored rule now names a retired level or a departed colleague.
+        if ($mode === Clinic::MODE_LEVELS) {
+            $levelIdRules[] = ClinicPickers::levelRule();
+        }
+
+        if ($mode === Clinic::MODE_NAMED) {
+            $personIdRules[] = ClinicPickers::personRule();
+        }
+
         return [
             // Offered and validated from ONE list, the `Clinic::SESSIONS` idiom applied to modes.
             'mode' => ['required', 'string', Rule::in(array_keys(Clinic::ATTENDEE_MODES))],
             'level_ids' => ['present', 'array', 'max:50'],
-            'level_ids.*' => ['integer', ClinicPickers::levelRule()],
+            'level_ids.*' => $levelIdRules,
             'person_ids' => ['present', 'array', 'max:200'],
-            'person_ids.*' => ['integer', ClinicPickers::personRule()],
+            'person_ids.*' => $personIdRules,
         ];
     }
 

@@ -13,6 +13,7 @@ use App\Models\Unit;
 use App\Models\User;
 use App\Support\Calendar;
 use App\Support\Clinics\ClinicWriter;
+use App\Support\PersonStatus;
 use App\Support\Rota\RotaAssignment;
 use Carbon\CarbonImmutable;
 use Database\Seeders\AccessControlSeeder;
@@ -186,6 +187,149 @@ class ClinicScreenTest extends TestCase
         }
     }
 
+    /**
+     * THE LOCKOUT (P1e-1 adversarial review finding 1). A rule list the CHOSEN MODE does not read
+     * must not be able to refuse the request.
+     *
+     * `ClinicAttendeesRequest` applied `levelRule()` to `level_ids.*` and `personRule()` to
+     * `person_ids.*` unconditionally, independent of `mode` — while the screen seeded its form
+     * with the clinic's WHOLE stored id list, including ids the pickers no longer render a
+     * checkbox for. Retire a training level from Admin → Structure → Levels, or deactivate a
+     * colleague from Admin → People — both plain, first-class administrative acts — and every
+     * subsequent save of that clinic's rule was refused under `level_ids.N` / `person_ids.N`,
+     * keys NO ELEMENT ON THE SCREEN RENDERS. `onSuccess` never fired, the panel stayed open, and
+     * nothing was reported: a silent no-op.
+     *
+     * SWITCHING TO `rotators` DID NOT ESCAPE IT, which is what turned a transient annoyance into a
+     * permanent one — the mode that needs no rules at all was refused by the same unconditional
+     * rules, so there was no reachable state from which the clinic could be repaired.
+     *
+     * The payloads below are the ones the pre-fix screen actually built, not hand-crafted minima.
+     */
+    public function test_a_list_the_chosen_mode_ignores_cannot_refuse_the_save(): void
+    {
+        $clinic = $this->clinic();
+        $level = Level::create(['code' => 'XL1', 'name' => 'Lockout 1', 'display_order' => 930, 'active' => true]);
+        $departing = Person::factory()->create(['full_name' => 'Farah Departing']);
+
+        $this->actingAs($this->admin)->put('/admin/structure/clinics/'.$clinic->getKey().'/attendees', [
+            'mode' => Clinic::MODE_NAMED, 'person_ids' => [$departing->getKey()], 'level_ids' => [],
+        ])->assertSessionHasNoErrors();
+
+        // A first-class administrative act, through the one writer of `people.active`. Nothing
+        // about it touches `clinic_attendees`, and nothing should have to.
+        PersonStatus::apply($departing, false);
+
+        // THE ESCAPE. `rotators` takes no rules at all, so the stale `person_ids` the screen is
+        // still carrying must not be consulted — this is the only state from which a locked
+        // clinic could be repaired, and it was refused too.
+        $this->actingAs($this->admin)->put('/admin/structure/clinics/'.$clinic->getKey().'/attendees', [
+            'mode' => Clinic::MODE_ROTATORS,
+            'person_ids' => [$departing->getKey()],
+            'level_ids' => [],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame(Clinic::MODE_ROTATORS, $clinic->fresh()->attendee_mode);
+        $this->assertSame(0, ClinicAttendee::query()->where('clinic_id', $clinic->getKey())->count());
+
+        // And the other crossing: a `levels` save carrying the departed colleague in the list
+        // `levels` mode never reads.
+        $this->actingAs($this->admin)->put('/admin/structure/clinics/'.$clinic->getKey().'/attendees', [
+            'mode' => Clinic::MODE_LEVELS,
+            'level_ids' => [$level->getKey()],
+            'person_ids' => [$departing->getKey()],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('clinic_attendees', [
+            'clinic_id' => $clinic->getKey(), 'level_id' => $level->getKey(), 'person_id' => null,
+        ]);
+        $this->assertSame(1, ClinicAttendee::query()->where('clinic_id', $clinic->getKey())->count());
+    }
+
+    /**
+     * The same shape from the other side: a retired LEVEL must not lock a `named` clinic, and a
+     * level retired through `LevelController`'s plain active toggle is the reproduction — not a
+     * hand-built row.
+     */
+    public function test_a_retired_level_does_not_lock_a_named_clinic(): void
+    {
+        $clinic = $this->clinic();
+        $level = Level::create(['code' => 'XL2', 'name' => 'Lockout 2', 'display_order' => 940, 'active' => true]);
+        $person = Person::factory()->create(['full_name' => 'Ghada Named']);
+
+        $this->actingAs($this->admin)->put('/admin/structure/clinics/'.$clinic->getKey().'/attendees', [
+            'mode' => Clinic::MODE_LEVELS, 'level_ids' => [$level->getKey()], 'person_ids' => [],
+        ])->assertSessionHasNoErrors();
+
+        $this->actingAs($this->admin)
+            ->patch('/admin/structure/levels/'.$level->getKey().'/active', ['active' => false])
+            ->assertSessionHasNoErrors();
+
+        $this->actingAs($this->admin)->put('/admin/structure/clinics/'.$clinic->getKey().'/attendees', [
+            'mode' => Clinic::MODE_NAMED,
+            'person_ids' => [$person->getKey()],
+            'level_ids' => [$level->getKey()],
+        ])->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('clinic_attendees', [
+            'clinic_id' => $clinic->getKey(), 'person_id' => $person->getKey(), 'level_id' => null,
+        ]);
+    }
+
+    /**
+     * D9, UNMOVED. Narrowing the rules to the mode that reads them must not narrow what that mode
+     * accepts: a hand-crafted payload naming a non-offered id in the RELEVANT list is still
+     * refused, under the key the relevant picker is rendered against.
+     *
+     * A soft delete is included beside the two `active` toggles because it freezes the clinic
+     * identically and is reached through a different door.
+     */
+    public function test_the_relevant_list_still_refuses_an_id_the_pickers_never_offered(): void
+    {
+        $clinic = $this->clinic();
+        $retiredLevel = Level::create(['code' => 'XL3', 'name' => 'Lockout 3', 'display_order' => 950, 'active' => false]);
+        $inactive = Person::factory()->create(['full_name' => 'Hana Inactive', 'active' => false]);
+        $softDeleted = Person::factory()->create(['full_name' => 'Iman Deleted']);
+        $softDeleted->delete();
+
+        foreach ([$inactive, $softDeleted] as $person) {
+            $this->actingAs($this->admin)->put('/admin/structure/clinics/'.$clinic->getKey().'/attendees', [
+                'mode' => Clinic::MODE_NAMED, 'person_ids' => [$person->getKey()], 'level_ids' => [],
+            ])->assertSessionHasErrors('person_ids.0');
+        }
+
+        $this->actingAs($this->admin)->put('/admin/structure/clinics/'.$clinic->getKey().'/attendees', [
+            'mode' => Clinic::MODE_LEVELS, 'level_ids' => [$retiredLevel->getKey()], 'person_ids' => [],
+        ])->assertSessionHasErrors('level_ids.0');
+
+        // Nothing was written by any of the three.
+        $this->assertSame(0, ClinicAttendee::query()->where('clinic_id', $clinic->getKey())->count());
+        $this->assertSame(Clinic::MODE_ROTATORS, $clinic->fresh()->attendee_mode);
+    }
+
+    /**
+     * `rules()` now READS `mode` before validation runs, to decide which list to ask the offer rule
+     * of — so it is a new pre-validation sink for a value the client chooses the SHAPE of. Every
+     * value in `$_POST` is a string OR AN ARRAY, and the codebase has already paid for that five
+     * times (`ArrayShapedQueryTest`): a `(string)` cast raises `Array to string conversion`, which
+     * `HandleExceptions` renders as a 500, and `$request->string()` throws on array input too.
+     *
+     * The read is a bare `input()` compared with `===`, which answers `false` for an array without
+     * raising, leaving the `string`/`Rule::in` pair to refuse it the negotiated way. Asserted rather
+     * than assumed, because the difference between the right sink and the wrong one is invisible
+     * until somebody posts an array.
+     */
+    public function test_an_array_shaped_mode_is_a_negotiated_refusal_not_a_500(): void
+    {
+        $clinic = $this->clinic();
+
+        $this->actingAs($this->admin)->put('/admin/structure/clinics/'.$clinic->getKey().'/attendees', [
+            'mode' => [Clinic::MODE_NAMED], 'person_ids' => [], 'level_ids' => [],
+        ])->assertSessionHasErrors('mode');
+
+        $this->assertSame(Clinic::MODE_ROTATORS, $clinic->fresh()->attendee_mode);
+    }
+
     // --- The audit trail ------------------------------------------------------------------
 
     public function test_creating_a_clinic_audits_by_id_and_never_by_name(): void
@@ -293,6 +437,47 @@ class ClinicScreenTest extends TestCase
 
         $this->assertTrue((bool) $clinic->fresh()->active);
         $this->assertDatabaseHas('audit_log', ['action' => 'clinic_activate']);
+    }
+
+    /**
+     * A REFUSED RESTART IS REPORTED, UNDER THE KEY THE SCREEN READS (P1e-1 adversarial review
+     * finding 3).
+     *
+     * `ClinicWriter::setActive()` refuses to revive a clinic onto a unit that has since been
+     * retired or stopped owning clinics — a real state, since a unit may be retired UNDER a clinic
+     * that already exists. The refusal was flashed under `active` and nothing on the clinics screen
+     * read it, so the Restart button appeared to do nothing at all.
+     *
+     * The key half is asserted here and the RENDER SITE in `tests/js/Clinics.test.js`
+     * ("renders a refused stop or restart against the clinic it was pressed on"), which is ruling
+     * 41's two-halves discipline: without the second, a template that stopped reading
+     * `errors.active` would take this refusal silent again and leave this assertion green.
+     */
+    public function test_a_refused_restart_is_flashed_under_the_key_the_screen_renders(): void
+    {
+        $clinic = $this->clinic();
+
+        $this->actingAs($this->admin)
+            ->patch('/admin/structure/clinics/'.$clinic->getKey().'/active', ['active' => false])
+            ->assertSessionHasNoErrors();
+
+        $this->ward->update(['active' => false]);
+
+        $this->actingAs($this->admin)
+            ->patch('/admin/structure/clinics/'.$clinic->getKey().'/active', ['active' => true])
+            ->assertSessionHasErrors('active');
+
+        $this->assertFalse((bool) $clinic->fresh()->active);
+        $this->assertDatabaseMissing('audit_log', ['action' => 'clinic_activate']);
+
+        // The other half of the same refusal: a unit that is still live but no longer owns clinics.
+        $this->ward->update(['active' => true, 'clinic_owner' => false]);
+
+        $this->actingAs($this->admin)
+            ->patch('/admin/structure/clinics/'.$clinic->getKey().'/active', ['active' => true])
+            ->assertSessionHasErrors('active');
+
+        $this->assertFalse((bool) $clinic->fresh()->active);
     }
 
     // --- The payload -----------------------------------------------------------------------

@@ -2035,6 +2035,118 @@ gains item 23.
     The design doc has been factually wrong eight times; the cost of checking is one `grep` per
     sentence, and it was wrong twice more in the space of this task.
 
+### 2026-08-12 — adversarial review of the slice (seven findings, all confirmed)
+
+Reviewed at `ec2dd70`. Every one of the seven checked out against the tree; nothing in the report
+was wrong, and two of its suggested fixes needed narrowing (noted per item).
+
+1. **Finding 1 (IMPORTANT), confirmed by reproduction rather than by reading.** `remove()` called
+   `preflight()` at `:498` and opened `DB::transaction()` at `:511`, never re-checking inside. A
+   throwaway probe planted a `handover_signoffs` row from a `TransactionBeginning` listener — the
+   one seam that fires after `BEGIN` and before the closure's first statement — and `remove()`
+   returned **`rows=21` with no refusal**, wrote a clean `demo_department_remove` row, deleted all
+   five demo people, and left the sign-off in the database with `endorsed_by_person_id` NULLed from
+   2 and `endorsed_by_name` still beside it. The report's count of the FK actions is right: three
+   RESTRICT out of nineteen, so **the database is not a backstop here** and the failure is a silent
+   success rather than an exception. Fixed all three ways it asked: `preflight()` is now the first
+   statement inside the transaction (throwing from there, so a blocker found late unwinds the whole
+   delete), `lockLedgeredRows()` takes `lockForUpdate()` on every ledgered row before it, and the
+   `Schema::hasTable()` loop is hoisted out. The refusal audit is written from OUTSIDE the
+   transaction in **both** directions — it was already outside on the early path, and putting the
+   late one inside would have rolled the record back with the thing it records.
+   **What SQLite could and could not prove, which is the part worth keeping:** the in-transaction
+   re-check is proved behaviourally (the same probe becomes a whole refusal with nothing deleted,
+   and a `whereNull('endorsed_by_person_id')` count of zero asserts the harm is gone). The LOCK is
+   not provable here at all — `SQLiteGrammar::compileLock()` returns the empty string and SQLite
+   serialises writers anyway — so it and the hoist are asserted at source level over
+   `ReflectionMethod` offsets rather than by a whole-file substring, with the lock assertion split
+   from the re-check assertion so the two claims fail separately. **This is the first defect in this
+   codebase whose worst form is structurally invisible to the only engine its suite has ever run
+   against**, and it is recorded in `CLAUDE.md` and as ruling 59 for that reason as much as for the
+   fix.
+
+2. **Finding 2 (IMPORTANT) confirmed, and the obvious form of its fix would have been unsafe.**
+   `InvitationController::revoke()` does only stamp `revoked_at`, and nothing deletes an invitation
+   anywhere. But **merely dropping the blocker would have been worse than the bug**:
+   `invitations.person_id` is `nullOnDelete` and `InvitationAcceptController:113` takes a
+   `person_id === null` branch that **creates a person at redemption time**, so a link surviving a
+   removal would mint a brand-new `people` row and a working account for whoever still held it. So
+   the row is swept, not excused. `DemoReferences::SWEPT` is a subset of `MAP` rather than a
+   deletion from it, keeping the schema-introspection tests covering the key; the sweep runs inside
+   the transaction and BEFORE the ledgered rows, or the parent would orphan the child first; and it
+   is surfaced three ways (`removalState()['swept']`, the pin's `identity`, and `swept=N` in the
+   audit detail) because a cleanup button reaching outside its own ledger must say so. Two existing
+   tests were updated for the audit-detail and blocked-row shapes, deliberately: `swept=` is always
+   present rather than appended only when non-zero, so a reader of the trail never has to infer
+   that its absence means nothing was swept.
+   **The `MAP` survey the finding asked for produced `DemoReferences::REMEDIES`**, one sentence per
+   referencing table, and three of them contradict the generic prose that was there before —
+   `users` (unbind; accounts are deactivated, never deleted), `handover_signoffs` (a sign-off naming
+   a demo person has **no** remedy, and the demo stays for as long as it does), and
+   `reminder_preferences` (**not** a unit merge — it is one of the three tables this plan's own
+   Task 6 amendment 8 measured as stranded). `clinics` was checked rather than assumed:
+   `ClinicWriter::update()` takes a `Unit` and `ClinicRequest` validates `unit_id`, so moving a
+   clinic between units is a real control. A completeness test asserts `REMEDIES` covers every table
+   in `MAP`, so a future entry cannot ship with prose naming a control this product does not have.
+
+3. **Finding 3 confirmed exactly.** The four counting steps moved: `units` 4 → 5, `periods`
+   not-done → *"2 rota periods run to today or later"*, `roster` none → *"5 people on the roster"*,
+   `clinics` none → *"1 active clinics"*. Fixed through a new `DemoLedger::notLedgered()`, and its
+   SIGNATURE is the whole point: **the report's warning about the query budget was the binding
+   constraint.** A helper returning ids would have cost one round trip per consulted table (10 →
+   14); a subquery costs none. The budget test now measures with and without a demo department and
+   asserts the two are EQUAL — which found its own trap, since `Calendar` memoises its settings read
+   in a static and the second measurement was one query cheaper for a reason unrelated to what was
+   being measured until `Calendar::flush()` was placed before both.
+   The clinic step's separate *"does any unit own clinics"* question is excluded too, which the
+   report did not name: the demo unit is `clinic_owner`, so a department whose own units run none
+   would otherwise read as unfinished on the strength of a demo unit.
+
+4. **Finding 4 confirmed and measured before fixing, per ruling 42.** All six added needles
+   (`->create(`, `->insert(`, `->firstOrCreate(`, `->updateOrCreate(`, `->upsert(`, `->saveMany(`)
+   match **zero** files in `app/Support/Demo` today, so they buy no allow-list entry and blind no
+   file. Then proved twice over rather than once: one throwaway file per shape, each run against the
+   new list AND against the list with the six lines stripped out. All six red on the new list and
+   all six **green on the old one** — the half that shows the hole was real rather than merely that
+   the needle works. `DB::table("x")->insert(` was deliberately not used as the plant for
+   `->insert(`, since the pre-existing `DB::table(` needle would have caught it and the proof would
+   have been vacuous.
+
+5. **Finding 5 confirmed, and calibrated by mutation.** `test_removal_is_pinned_to_what_the_operator
+   _saw` changes the batch AND the ledger row ids together, so its digest differs over `cells`
+   whatever `identity` holds. Removing `batch` from `removalDigest()`'s identity and running the
+   whole demo suite turned **exactly one test red — the new one** — with every other pin test in the
+   file green, which is simultaneously the proof the twin works and the proof the original could
+   not. The original's docblock now states what it does not cover.
+
+6. **Finding 6 confirmed at the source.** `Unit::findByCode()` is `where('code', …)->first()` with
+   no `active` clause, and `units.code` carries its own UNIQUE index, so retiring releases nothing.
+   One narrowing: the message still MENTIONS retiring, as the thing that will not work, because it
+   is the administrator's natural next move and worth pre-empting. The test therefore asserts the
+   OFFER is gone (`'or retire it'`) and the correction is present, rather than that the word is
+   absent — the first attempt asserted the word, and went red against the better message. Worth
+   recording as the small trap it is: an assertion phrased over vocabulary rather than over meaning
+   fights the fix.
+
+7. **Finding 7 confirmed, and the model had no `open()` scope to reuse — only `isOpen()`.** So one
+   was extracted, and `Invitation::redeemable()` now resolves through it, which is what makes it one
+   definition rather than a second. **The step's fact needed deciding, and "still open" alone is
+   wrong**: an accepted invitation is not open, so an `open()`-only predicate would have un-ticked
+   the box the moment the whole roster claimed their accounts — the opposite error, arriving later
+   and reading as data loss. The predicate is *still redeemable OR already redeemed*: one query, one
+   table, `invitations` being the only path from a roster row to an account, with the summary
+   reworded to say what it counted. Five states through a data provider, watched red on the two that
+   were wrong. Two traps on the way, both worth recording: a data provider is evaluated **before the
+   application boots**, so `Calendar::now()` inside one makes PHPUnit silently drop the test and
+   exit non-zero with no failure in the JUnit log at all (18 tests where 23 were expected,
+   `result: failed`, `failures: []`); and `[...defaults] + $columns` keeps the LEFT side's value for
+   a duplicate key, so the expired case was created live and passed for the wrong reason until it
+   became `array_merge`.
+
+**Gates.** Baseline at `ec2dd70` re-measured clean: PHPUnit 1643, Vitest 232, e2e 24, build green.
+Finished at **PHPUnit 1658, Vitest 233, e2e 24 (world rebuilt from a deleted `database/e2e.sqlite`),
+build green**. Seven commits, finding 1 first and alone. Not merged.
+
 ---
 
 ## Standing rules for every task

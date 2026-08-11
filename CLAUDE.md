@@ -359,6 +359,45 @@ SCBU and WARD are seed data for the QCH institution.
   unledgered PARENT** — forgetting to ledger a `people` row removes cleanly and leaves five rows
   behind. Both screen actions are preview-then-confirm pinned with `App\Support\Rota\StatePin`
   (`DemoDepartment::planDigest()`/`removalDigest()`), and removal needs the demo unit code typed.
+- **`remove()`'s pre-flight runs INSIDE the transaction that deletes, under `lockForUpdate()`, and
+  the outer call is only the cheap early refusal** (ruling 59). The database is NOT a backstop here
+  the way it is for `PeriodController::destroy()`: of the nineteen inbound keys in
+  `DemoReferences::MAP` only **three** are RESTRICT, nine are `ON DELETE SET NULL` and seven
+  CASCADE — so a blocker landing after an outside-the-transaction check does not raise, it
+  **succeeds**. Measured on this tree: `rows=21`, a clean `demo_department_remove` audit row, and
+  `handover_signoffs.endorsed_by_person_id` silently NULLed with `endorsed_by_name` left beside it.
+  The refusal is audited from OUTSIDE the transaction in both directions, or the row recording it
+  rolls back with what it records. **This is the first defect here whose worst form a SQLite-only
+  suite structurally cannot show**: `SQLiteGrammar::compileLock()` returns the empty string and
+  SQLite serialises writers, so a plain re-read passes — while on MySQL 8.4 under REPEATABLE READ a
+  `DELETE` is a *current* read and sees rows committed after the snapshot the `SELECT` beside it
+  still reads. The lock, and the `Schema::hasTable()` loop hoisted out of the transaction body (an
+  uncached `information_schema` query per ledgered row on MySQL), are therefore asserted at SOURCE
+  level. Nothing in this repository has ever run against MySQL.
+- **A blocker is only honest if its remedy exists, and `invitations` was not** (ruling 60).
+  Invitations are never deleted anywhere in this product — `revoke()` stamps `revoked_at`, a resend
+  supersedes and KEEPS the superseded row, design §14 item 7 records no retention rule at all — so
+  an invitation to a demo person pinned the demo in place permanently. `DemoReferences::SWEPT` is
+  the subset removal DELETES instead of refusing over; it stays in `MAP` so the schema
+  introspection still covers it. **Merely un-blocking it would have been WORSE than the bug**:
+  `invitations.person_id` is `nullOnDelete` and `InvitationAcceptController` reads a null
+  `person_id` as "create the person at redemption time", so a link left behind would mint a
+  brand-new person AND account for whoever still held it. The sweep runs inside the transaction,
+  BEFORE the ledgered rows, and is reported on screen, inside the pin and as `swept=N` in the audit
+  detail — a cleanup button reaching outside its own ledger says so. `DemoReferences::REMEDIES`
+  gives every referencing table its own sentence, consumed by both the refusal message and the
+  screen's blocked panel: `users` stays a blocker and names UNBINDING (accounts are deactivated,
+  never deleted), `handover_signoffs` says plainly that a sign-off naming a demo person has NO
+  remedy and the demo stays, and `reminder_preferences` does not point at a unit merge, being one
+  of the three tables design §14 item 23 records that merge as stranding.
+- **A ledgered row is not configuration.** `DepartmentSetup::steps()` asks through
+  `DemoLedger::notLedgered()` for `units`, `periods`, `roster`, `clinics` and the clinic step's
+  separate "does any unit run clinics" question, or pressing the demo button takes `/admin/setup`
+  from two required steps to five on a live department where nothing real was configured. It is a
+  SUBQUERY, chosen so the measured ten-query bound holds exactly. The invitations step is a
+  different question again — "can anybody get in", i.e. `Invitation::scopeOpen()` **or** accepted —
+  because a bare count ticked the box for a link that was revoked or had expired unclaimed, and an
+  `open()`-only predicate would un-tick it the moment the whole roster claimed their accounts.
 - **`institutions.code` stays env-only, and this is not a UI omission.** It is
   `ReferenceSeeder`'s `firstOrNew` key, so re-coding a live institution makes the next
   `db:seed --force` — a mandatory step of every deploy — CREATE a second `institutions` row instead

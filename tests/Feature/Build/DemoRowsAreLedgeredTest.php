@@ -3,6 +3,7 @@
 namespace Tests\Feature\Build;
 
 use Illuminate\Support\Facades\File;
+use Tests\Support\SourceScanner;
 use Tests\TestCase;
 
 /**
@@ -134,6 +135,163 @@ class DemoRowsAreLedgeredTest extends TestCase
         '$demoRow->update(',
         '$ledgerRow->update(',
     ];
+
+    /**
+     * THE OTHER HALF, added in Task 12: a file in the demo module that CREATES a row must also
+     * RECORD it. The guard above asks "who writes the ledger"; this one asks "who writes a row
+     * without one", which is the failure ST-05's "removable" actually dies of.
+     *
+     * It is coarser than its sibling and says so plainly. `DemoLedger::record(` appearing anywhere
+     * in a file satisfies it, so a creator that ledgers nine rows out of ten passes. That is
+     * deliberate — a static scan cannot count runtime writes — and it is precisely why
+     * `DemoRoundTripTest` exists: it snapshots every table in the live schema around a
+     * create-and-remove and catches the tenth row whatever this scan missed. Two mechanisms,
+     * layered, and only the second is proof.
+     *
+     * The needle list is deliberately WIDE for this directory and narrow nowhere else. It covers
+     * the model statics, the raw builder, `->save()`, and the four sanctioned writers this module
+     * is required to go through — because a row created via `ClinicWriter::create()` is exactly as
+     * unremovable as one created via `Clinic::create()` if nothing recorded it.
+     *
+     * BOTH HALVES RUN OVER COMMENT-STRIPPED SOURCE (`Tests\Support\SourceScanner`), unlike this
+     * file's sibling scan above, and each direction was measured rather than assumed. Without the
+     * stripper a docblock explaining what this module does NOT create would flag its own file
+     * (trap 1, which has fired four times in this slice) — and, worse in the other direction, a
+     * COMMENTED-OUT `DemoLedger::record(` would satisfy the escape: that was observed on a plant
+     * before the stripper was added, and it is the exact false-negative shape a guard must not
+     * have. Strings are deliberately NOT stripped, per `SourceScanner`'s own contract.
+     */
+    private const CREATION_NEEDLES = [
+        '::create(',
+        '::insert(',
+        '::updateOrCreate(',
+        '::firstOrCreate(',
+        '::upsert(',
+        '->save()',
+        'DB::table(',
+        // The writers that own the tables this module is forbidden to write directly. Each one
+        // creates rows through a name that contains none of the needles above.
+        'ClinicWriter::setAttendees(',
+        'RotaAssignment::set(',
+        'RotaAssignment::split(',
+        'VacationBooking::book(',
+        'LevelAssignment::assign(',
+    ];
+
+    /**
+     * The one file in the module allowed to create without recording, and why.
+     *
+     * `DemoLedger` writes `demo_rows` itself. A ledger entry recording the ledger entry is an
+     * infinite regress, and its own return to the pre-seed row count is proved by the round trip
+     * rather than by a self-reference.
+     */
+    private const CREATION_ALLOW_LIST = [
+        'app/Support/Demo/DemoLedger.php',
+    ];
+
+    /** @return list<string> every PHP file in the demo module, repo-relative. */
+    private function demoModuleFiles(): array
+    {
+        $files = [];
+
+        foreach (File::allFiles(app_path('Support/Demo')) as $file) {
+            if ($file->getExtension() === 'php') {
+                $files[] = str_replace('\\', '/', str_replace(base_path().DIRECTORY_SEPARATOR, '', $file->getPathname()));
+            }
+        }
+
+        sort($files);
+
+        return $files;
+    }
+
+    public function test_a_file_that_creates_a_row_in_the_demo_module_also_records_it(): void
+    {
+        $files = $this->demoModuleFiles();
+
+        // A FLOOR, so the sweep below cannot be green by iterating nothing (trap 3, six times over
+        // in this slice). The module holds at least the ledger and the department that uses it.
+        $this->assertGreaterThanOrEqual(2, count($files), 'The demo module has gone missing.');
+
+        $offenders = [];
+
+        foreach ($files as $relative) {
+            if (in_array($relative, self::CREATION_ALLOW_LIST, true)) {
+                continue;
+            }
+
+            $contents = SourceScanner::withoutComments(base_path($relative));
+
+            $creates = array_values(array_filter(
+                self::CREATION_NEEDLES,
+                static fn (string $needle): bool => str_contains($contents, $needle),
+            ));
+
+            if ($creates !== [] && ! str_contains($contents, 'DemoLedger::record(')) {
+                $offenders[] = $relative.' creates rows ('.implode(', ', $creates).') and records none of them';
+            }
+        }
+
+        $this->assertSame([], $offenders,
+            "A demo row created without a ledger entry survives removal permanently, in a live\n"
+            ."instance, indistinguishable from a real one forever. This scan is an early warning;\n"
+            ."DemoRoundTripTest is the proof.\n".implode("\n", $offenders));
+    }
+
+    /**
+     * THE VACUITY TWIN. The sweep above is satisfied by a module in which nothing creates anything
+     * — which was the tree until Task 12 landed. So the creator must actually match a creation
+     * needle, or the scan is looking for a shape nothing uses and would stay green against a
+     * creator that ledgers nothing.
+     */
+    public function test_the_creator_really_does_create_rows_the_scan_can_see(): void
+    {
+        $path = base_path('app/Support/Demo/DemoDepartment.php');
+        $source = SourceScanner::withoutComments($path);
+
+        $matched = array_values(array_filter(
+            self::CREATION_NEEDLES,
+            static fn (string $needle): bool => str_contains($source, $needle),
+        ));
+
+        $this->assertNotSame([], $matched,
+            'DemoDepartment matches no creation needle, so the scan above is guarding a shape '
+            .'nothing in the module uses.');
+
+        $this->assertStringContainsString('DemoLedger::record(', $source);
+    }
+
+    /**
+     * THE STRIPPER, CALIBRATED IN BOTH DIRECTIONS ON THIS GUARD'S OWN FILES — because a proof that
+     * it handles `AvailabilitySummary`'s docblock is not a proof that it handles this one's.
+     *
+     * Eating code would be the dangerous failure: every needle would miss, the scan would be
+     * silently disabled, and the run would look exactly like a clean tree. So a real code token is
+     * asserted to survive, and a phrase that exists ONLY in a comment is asserted to be gone.
+     */
+    public function test_the_scan_strips_comments_and_still_sees_the_code(): void
+    {
+        $path = base_path('app/Support/Demo/DemoDepartment.php');
+
+        $raw = (string) File::get($path);
+        $stripped = SourceScanner::withoutComments($path);
+
+        // Present in the docblock and nowhere in the code.
+        $this->assertStringContainsString('clearly-labeled', $raw);
+        $this->assertStringNotContainsString('clearly-labeled', $stripped);
+
+        // Real code, which must survive — one creation needle and the escape hatch.
+        $this->assertStringContainsString('DemoLedger::record(', $stripped);
+        $this->assertStringContainsString('RotaAssignment::set(', $stripped);
+    }
+
+    /** A stale allow-list is a silently disabled guard — the same twin the writer list carries. */
+    public function test_every_creation_allow_listed_file_still_exists(): void
+    {
+        foreach (self::CREATION_ALLOW_LIST as $relative) {
+            $this->assertFileExists(base_path($relative), "Allow-listed file {$relative} is gone — prune the list.");
+        }
+    }
 
     public function test_only_the_demo_ledger_writes_the_ledger_table(): void
     {

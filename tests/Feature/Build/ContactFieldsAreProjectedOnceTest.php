@@ -135,6 +135,18 @@ class ContactFieldsAreProjectedOnceTest extends TestCase
         'database/migrations/2026_07_25_130001_add_identity_verification_signature_and_otp.php',
         'database/seeders/DemoSeeder.php',
         'database/seeders/E2eSeeder.php',
+        // P1e Task 12 (ST-05). Matches on TWO needles and neither is a projection:
+        //  - `'email'` is written onto the fictional people it creates, on a domain RFC 2606
+        //    reserves and the DNS root guarantees can never resolve. Write-only, rendering
+        //    nothing back — the same reasoning `CreateAdmin` and `InvitationIssue` above carry,
+        //    and the address is generated from the demo's own short name rather than read off
+        //    any person.
+        //  - `'notes'` is a key of this class's own RESULT array (which steps it skipped and
+        //    why), and has nothing to do with `people.notes`. Recorded rather than renamed
+        //    around, because the collision is real and the next reader deserves to know the
+        //    needle cannot tell one from the other.
+        // WATCHED FIRING WITHOUT THIS ENTRY (2026-08-11): it named the file on both needles.
+        'app/Support/Demo/DemoDepartment.php',
     ];
 
     private const NEEDLES = [

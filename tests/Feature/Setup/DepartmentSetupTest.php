@@ -11,6 +11,8 @@ use App\Models\Person;
 use App\Models\Unit;
 use App\Models\User;
 use App\Support\Calendar;
+use App\Support\Demo\DemoDepartment;
+use App\Support\Demo\DemoLedger;
 use App\Support\Setup\DepartmentSetup;
 use Database\Seeders\AccessControlSeeder;
 use Database\Seeders\ReferenceSeeder;
@@ -280,6 +282,70 @@ class DepartmentSetupTest extends TestCase
         $this->assertTrue($this->stepsByKey()['clinics']['done']);
     }
 
+    // --- The demo department is not configuration ----------------------------------------------
+
+    /**
+     * PRESSING THE DEMO BUTTON MUST NOT TICK THIS CHECKLIST (P1e-2 review, finding 3).
+     *
+     * The demo may be created on the LIVE instance — that is the owner's ruling of 2026-08-11 and
+     * the whole reason `DemoDepartment` is ledgered rather than seeded. So an administrator who
+     * presses it to see what a configured department looks like used to watch `/admin/setup` jump
+     * from two required steps to five, with a unit, a rota year, a roster and a clinic that are all
+     * labelled `Demo ` and none of which is their department's.
+     *
+     * `demo_rows` is the only place with the authority to say a row is not real, so the exclusion
+     * goes through the ledger and nowhere else. Asserted over the WHOLE step set including the
+     * summaries, not a spot check on `done`: "4 active units" quietly becoming "5" is the same lie
+     * one field along.
+     */
+    public function test_creating_the_demo_department_ticks_nothing_and_counts_nothing(): void
+    {
+        $before = $this->stepsByKey();
+
+        DemoDepartment::create();
+
+        $after = $this->stepsByKey();
+
+        $this->assertTrue(DemoLedger::has(), 'the demo really was created, or this proves nothing');
+
+        $drifted = [];
+
+        foreach ($before as $key => $step) {
+            if ($step['done'] !== $after[$key]['done'] || $step['summary'] !== $after[$key]['summary']) {
+                $drifted[] = $key.': '.$step['summary'].' -> '.$after[$key]['summary'];
+            }
+        }
+
+        $this->assertSame([], $drifted,
+            "The demo department moved the checklist. It is ledgered rows on a live instance, not\n"
+            ."this department's configuration.\n".implode("\n", $drifted));
+    }
+
+    /**
+     * THE VACUITY TWIN. An exclusion that blinded the step to real rows as well would satisfy the
+     * test above perfectly, and would be a checklist that can never be completed once anybody has
+     * pressed the demo button.
+     */
+    public function test_a_real_row_still_ticks_its_step_while_a_demo_department_exists(): void
+    {
+        DemoDepartment::create();
+
+        $this->assertFalse($this->stepsByKey()['roster']['done']);
+        $this->assertFalse($this->stepsByKey()['clinics']['done']);
+        $this->assertFalse($this->stepsByKey()['periods']['done']);
+
+        $this->addRosterPerson();
+        Clinic::factory()->create(['unit_id' => Unit::findByCode('WARD')->getKey()]);
+        $this->generateAYear();
+
+        $steps = $this->stepsByKey();
+
+        $this->assertTrue($steps['roster']['done']);
+        $this->assertTrue($steps['clinics']['done']);
+        $this->assertTrue($steps['periods']['done']);
+        $this->assertStringContainsString('1 people', $steps['roster']['summary']);
+    }
+
     // --- The QCH case -------------------------------------------------------------------------
 
     public function test_an_already_configured_department_shows_complete_with_no_backfill(): void
@@ -408,5 +474,28 @@ class DepartmentSetupTest extends TestCase
         $this->assertLessThanOrEqual(10, $count, "DepartmentSetup issued {$count} queries. It is "
             .'nine steps over `exists()` plus three summary reads; anything above that is a step '
             .'resolving per-step what belongs in one read.');
+
+        // AND THE DEMO EXCLUSION COSTS NOTHING (P1e-2 review, finding 3). `DemoLedger::
+        // notLedgered()` is a subquery for exactly this reason: handing the caller a list of
+        // ledgered ids would have cost one round trip per consulted table, on every render of a
+        // screen whose bound is measured rather than estimated.
+        DemoDepartment::create();
+
+        // The same starting conditions as the first measurement: `Calendar` memoises its settings
+        // read in a static for the life of the process, so a second call that inherited a warm memo
+        // would be one query cheaper for a reason that has nothing to do with what is being
+        // measured — and would report a saving where there is none.
+        Calendar::flush();
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+
+        DepartmentSetup::steps();
+
+        $withDemo = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        $this->assertSame($count, $withDemo,
+            "DepartmentSetup issued {$withDemo} queries with a demo department present and {$count} "
+            .'without. Excluding ledgered rows must cost no round trip.');
     }
 }

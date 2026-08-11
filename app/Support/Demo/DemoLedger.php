@@ -3,6 +3,7 @@
 namespace App\Support\Demo;
 
 use App\Models\DemoRow;
+use Illuminate\Database\Eloquent\Builder;
 use InvalidArgumentException;
 
 /**
@@ -133,6 +134,40 @@ final class DemoLedger
     public static function has(): bool
     {
         return DemoRow::query()->exists();
+    }
+
+    /**
+     * Narrow a query to the rows this ledger does NOT hold for a table — "the real ones".
+     *
+     * WHY IT EXISTS (P1e-2 review, finding 3). The demo may be created on the LIVE instance, so
+     * every projection that answers *"how is this department configured"* has to be able to leave
+     * it out. `/admin/setup`'s checklist was the first: pressing the demo button took it from two
+     * required steps to five, on a department where nothing real had been configured at all.
+     * `demo_rows` is the only place with the authority to say a row is not real, and this is how a
+     * caller asks without becoming a second reader of the table — which is the failure that guard's
+     * docblock names, a second answer to "what did the demo create", arrived at from the read side.
+     *
+     * A SUBQUERY, NOT A FETCH, and that is the whole design of the signature. The checklist's query
+     * budget is pinned at ten and measured exactly; returning ids for the caller to pass to
+     * `whereNotIn` would have cost one round trip per consulted table, and a bound with more
+     * headroom than the regression it guards is decoration (`DepartmentSetupTest`). `demo_rows` is
+     * tens of rows, so the `NOT IN` costs nothing worth measuring.
+     *
+     * ACROSS EVERY BATCH, deliberately. There is at most one demo department at a time
+     * (`DemoDepartment::refusals()` refuses a second), but a caller asking "is this row real" is
+     * asking about the ledger, not about one batch of it.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<*>  $query
+     * @param  string  $table  the ledgered table name, as `record()` spells it
+     * @param  string  $column  the key on `$query`'s own table to compare — `id` everywhere so far
+     * @return \Illuminate\Database\Eloquent\Builder<*>
+     */
+    public static function notLedgered(Builder $query, string $table, string $column = 'id'): Builder
+    {
+        return $query->whereNotIn(
+            $column,
+            DemoRow::query()->select('row_id')->where('table_name', $table),
+        );
     }
 
     /**

@@ -11,6 +11,7 @@ use App\Models\Period;
 use App\Models\Person;
 use App\Models\Unit;
 use App\Support\Calendar;
+use App\Support\Demo\DemoLedger;
 use Carbon\CarbonImmutable;
 
 /**
@@ -48,6 +49,18 @@ use Carbon\CarbonImmutable;
  *    without leaving the page — and is labelled for review rather than shown as an unticked box.
  *    Inventing a `reviewed_at` flag to make them tickable is the stored state this class exists
  *    to refuse, in miniature.
+ *
+ * A LEDGERED ROW IS NOT CONFIGURATION (P1e-2 review, finding 3). The demo department may be
+ * created on the LIVE instance (owner ruling, 2026-08-11), and it lands one unit, five people, two
+ * periods and a clinic — so pressing that button used to take this checklist from two required
+ * steps to five on a department where nothing real had been configured at all, which is the exact
+ * lie in the exact direction nobody re-checks. Every step whose count the demo can move —
+ * `units`, `periods`, `roster`, `clinics`, and the clinic step's *"does any unit run clinics"*
+ * question — therefore asks through `DemoLedger::notLedgered()`, because `demo_rows` is the only
+ * place in this schema with the authority to say a row is not real. `levels`, `holidays` and
+ * `invitations` are untouched: the demo reads the ladder rather than writing it, and creates
+ * neither of the other two. IT COSTS NO QUERY — `notLedgered()` is a subquery, chosen so the
+ * measured ten-query bound below still holds exactly.
  *
  * `blocked_by` IS ADVISORY AND NEVER BECOMES THE GATE. It names an unmet prerequisite by reading
  * the same predicate the target screen's own server-side rule already enforces; the target still
@@ -87,7 +100,7 @@ class DepartmentSetup
         // `exists()` would cost the same query and leave a REVIEW-less REQUIRED step saying
         // "done" with nothing behind it.
         $levels = Level::query()->active()->count();
-        $units = Unit::query()->active()->count();
+        $units = DemoLedger::notLedgered(Unit::query()->active(), 'units')->count();
         $holidays = Holiday::query()->where('active', true)->count();
 
         // "Still to run", not "exists": a department whose only generated year ended in a
@@ -96,14 +109,28 @@ class DepartmentSetup
         // a string comparison because both bounds are `date`-cast and MySQL 8.4 round-trips
         // such a column as 'Y-m-d 00:00:00' — the caveat MasterRotaAssignment::booted() and
         // Vacation::scopeIntersecting() each already carry.
-        $periods = Period::query()->whereDate('ends_on', '>=', Calendar::todayYmd())->count();
+        $periods = DemoLedger::notLedgered(
+            Period::query()->whereDate('ends_on', '>=', Calendar::todayYmd()),
+            'periods',
+        )->count();
 
         // The roster of record, excluding administrators: an instance with one bootstrap admin
         // and nobody else has no roster, whatever the `people` count says.
-        $roster = Person::query()->where('active', true)->where('position', '!=', 0)->count();
+        $roster = DemoLedger::notLedgered(
+            Person::query()->where('active', true)->where('position', '!=', 0),
+            'people',
+        )->count();
 
-        $clinics = Clinic::query()->active()->count();
-        $clinicOwners = Unit::query()->active()->where('clinic_owner', true)->exists();
+        $clinics = DemoLedger::notLedgered(Clinic::query()->active(), 'clinics')->count();
+
+        // The demo unit is a clinic owner, so it is excluded here too — otherwise a department
+        // whose own units run no clinics would read "no clinics defined on the units that run
+        // them" on the strength of a demo unit nobody configured.
+        $clinicOwners = DemoLedger::notLedgered(
+            Unit::query()->active()->where('clinic_owner', true),
+            'units',
+        )->exists();
+
         $invitations = Invitation::query()->count();
 
         $yearStart = Calendar::academicYearStart();

@@ -225,12 +225,26 @@ class DeploymentInvariantsTest extends TestCase
     /**
      * The other direction: a wildcard means Symfony believes the client-supplied leftmost
      * X-Forwarded-For entry — forgeable audit IPs and a lockout escaped with a header.
+     *
+     * "Anywhere" was aspirational until 2026-08-11: this test checked the compose file and
+     * bootstrap/app.php, while `.env.example` — the file CI copies verbatim and the file
+     * `docs/RUNBOOK-PROVISION.md` hands a new customer — sat two directories away shipping
+     * `TRUSTED_PROXIES=*` with a comment recommending it. `TrustedProxies::list()` refuses the
+     * token, so nothing was ever forgeable; the damage was the opposite one, and it is measured
+     * in `EnvExampleNeverNeutersADefaultTest::test_the_template_does_not_narrow_the_trusted_proxy_list`.
+     * A guard whose name claims a scope should hold that scope.
      */
     public function test_the_proxy_list_is_never_a_wildcard_anywhere(): void
     {
         $this->assertDoesNotMatchRegularExpression(
             '/TRUSTED_PROXIES[^\n]*[:=][^\n]*\*/',
             $this->compose(),
+        );
+
+        $this->assertDoesNotMatchRegularExpression(
+            '/^\s*TRUSTED_PROXIES\s*=[^\n]*\*/m',
+            (string) file_get_contents(base_path('.env.example')),
+            'the operator template must not hand a new deployment a wildcard proxy list',
         );
 
         $this->assertStringNotContainsString(

@@ -90,6 +90,30 @@ SCBU and WARD are seed data for the QCH institution.
   $-interpolates env values, so a `$` in a password is silently truncated into something
   weaker. `APP_KEY` and `BACKUP_PASSPHRASE` are stored in DIFFERENT places — a backup and its
   key never sit together, and both are needed to read an archive.
+- **`.env.example` is CI's entire environment AND the `.env` every fresh checkout gets, so a wrong
+  line there is wrong in two places.** `.github/workflows/ci.yml` does `cp .env.example .env`, and
+  `composer.json`'s `post-root-package-install`/`post-create-project-cmd` copy it whenever `.env`
+  is absent. It is NOT the production path — a real deployment is configured through Coolify and
+  `docker-compose.production.yml`'s `environment:` block — which is exactly why bad lines in it
+  survive review: the file reads as documentation, and its one executing consumer is CI.
+  Laravel resolves a PRESENT-BUT-EMPTY key to `''` and an ABSENT key to `env()`'s default — so
+  `INSTITUTION_CODE=` made `env('INSTITUTION_CODE', 'QCH')` return `''`, `ReferenceSeeder`
+  anchored the deployment on an institution with no code, and **459 of 1446 tests failed in CI on
+  a tree green on every developer machine** (2026-08-11; this machine's `.env` predates the keys,
+  which is why it was invisible here). The same trap was already known and already guarded for
+  `docker-compose.production.yml`'s `${VAR:-default}` (`DeploymentInvariantsTest`, after P0d Task
+  9's rehearsal) and never carried across to the file beside it. Two further shapes, both found
+  only because the FULL suite was re-run under the fixed template: a NON-empty value neuters a
+  default just as completely — `TRUSTED_PROXIES=*` discarded `TrustedProxies::DEFAULT`'s three
+  RFC1918 ranges (25 entries → 22) even though the wildcard itself is correctly refused — and a
+  template must never pin a default the code computes from the environment, which
+  `REQUIRE_2FA_PRIVILEGED=true` did in a file whose own `APP_ENV` is `local`, forcing the 2FA
+  challenge on in CI and leaving 384 tests red after the empty keys were fixed. Guarded whole-set
+  by `tests/Feature/Build/EnvExampleNeverNeutersADefaultTest.php` (rulings 46-47): a key may be
+  shipped empty only on the allow-list with a stated reason (`APP_KEY` must be present-and-empty —
+  `key:generate` rewrites the line in place and has nothing to rewrite if it is absent). **CI
+  running from `.env.example` is correct and stays** — it is what keeps the template honest, and
+  it is why all three defects surfaced at once.
 - **All date logic goes through `App\Support\Calendar`** (Munawib AR-08, P1a). Nothing else
   constructs an `IntlCalendar`/`IntlDateFormatter`, or does date arithmetic — including
   `resources/js`, which receives formatted labels, enumerated date ranges and day types as

@@ -107,4 +107,88 @@ final class DemoReferences
         'master_rota_assignments' => [],
         'vacations' => [],
     ];
+
+    /**
+     * The `(referencing table, column)` pairs removal DELETES instead of refusing over.
+     *
+     * A subset of {@see MAP}, never a replacement for it: the map's job is to be the complete
+     * inventory of inbound foreign keys, which is what `DemoRemoveTest` asserts against the live
+     * schema in both directions. A pair listed here is still in the map, still introspected, and
+     * still fails the build if the key it names is dropped — it simply gets a different treatment.
+     *
+     * ---------------------------------------------------------------------------------------------
+     * WHY `invitations.person_id` IS HERE (P1e-2 review, finding 2)
+     * ---------------------------------------------------------------------------------------------
+     * A blocker is only honest if its remedy exists. `invitations` is NEVER DELETED anywhere in this
+     * product: `InvitationController::revoke()` stamps `revoked_at`, `InvitationIssue` supersedes and
+     * deliberately KEEPS the superseded row, and design §14 item 7 records that invitations have no
+     * retention rule at all. So practising the invitation flow on a demo person — which
+     * `/admin/setup`'s own invitations step pushes an administrator towards — made the demo
+     * permanently unremovable through every screen and both console commands, behind a refusal
+     * naming a remedy nobody could perform.
+     *
+     * MERELY UN-BLOCKING IT WOULD HAVE BEEN WORSE THAN THE BUG. The key is `nullOnDelete`, and
+     * `InvitationAcceptController` reads a null `person_id` as *"create the person at redemption
+     * time"* — so a link left behind by a removal would not dangle harmlessly, it would mint a
+     * brand-new `people` row and a working account for whoever still held it. The row has to go.
+     *
+     * It carries no independent value to lose: its address is on `demo.invalid`, which the DNS root
+     * guarantees cannot resolve, and the only thing it can produce is an account against a demo
+     * person — which `users.person_id` refuses separately and on its own terms. `audit_log` keeps
+     * the trail either way, and `remove()` reports the swept count on the screen, in its return
+     * value and in its audit row rather than deleting quietly.
+     *
+     * @var list<array{table: string, column: string}>
+     */
+    public const SWEPT = [
+        ['table' => 'invitations', 'column' => 'person_id'],
+    ];
+
+    /**
+     * WHAT AN OPERATOR ACTUALLY DOES ABOUT A BLOCKER, per referencing table.
+     *
+     * The refusal used to end *"deal with those rows first (delete or re-point them)"* for every
+     * table alike, which is wrong wherever this product offers neither. Accounts are deactivated and
+     * never deleted; sign-offs are medico-legal evidence and are never deleted at all. A refusal
+     * that names a control the product does not have sends its reader to a database console.
+     *
+     * `DemoRemoveTest::test_every_referencing_table_names_a_remedy_the_product_actually_offers`
+     * asserts this map covers every table in {@see MAP}, so a future entry cannot ship without one.
+     *
+     * TABLES AND CONTROLS ONLY — never a name (invariant 9): these sentences are rendered to an
+     * operator AND folded into the audit trail through the same exception.
+     *
+     * @var array<string, string>
+     */
+    public const REMEDIES = [
+        'clinic_attendees' => 'clinic_attendees: edit that clinic\'s "Who attends" list '
+            .'(Structure → Clinics).',
+        'clinics' => 'clinics: move the clinic to another unit, or retire it and re-create it there '
+            .'(Structure → Clinics). A clinic is never deleted.',
+        'handovers' => 'handovers: merge the demo unit into a real one (Structure → Units → Merge), '
+            .'which re-points them. A handover is never hard-deleted.',
+        // Two different columns with two different answers, and the person half genuinely has no
+        // remedy. Saying so is the point: this is the case DemoReferences exists for.
+        'handover_signoffs' => 'handover_signoffs: a sign-off on the demo UNIT moves with a unit '
+            .'merge (Structure → Units → Merge). A sign-off NAMING a demo person is medico-legal '
+            .'evidence, is never deleted or re-pointed, and the demo stays for as long as it does.',
+        'invitations' => 'invitations: none needed — removal deletes an invitation addressed to a '
+            .'demo person along with it.',
+        'master_rota_assignments' => 'master_rota_assignments: clear those cells on the master rota '
+            .'(Rota).',
+        'person_levels' => 'person_levels: a level span is closed, never deleted, and there is no '
+            .'control that removes one — a demo person carrying a span written outside the demo '
+            .'holds the removal.',
+        // One of the three tables a unit merge is recorded as STRANDING (design §14 item 23), so
+        // pointing at the merge here would be the same lie in a new place.
+        'reminder_preferences' => 'reminder_preferences: a per-account reminder for the demo unit. '
+            .'There is no screen for these and a unit merge does not move them.',
+        'unit_field_definitions' => 'unit_field_definitions: merge the demo unit into a real one '
+            .'(Structure → Units → Merge), which moves the definitions with it.',
+        'users' => 'users: an account has been claimed against a demo person, or has the demo unit '
+            .'as its preferred one. Accounts are deactivated and never deleted here — UNBIND it '
+            .'(Administration → Accounts), which clears the link and deactivates the account in one '
+            .'act; a preferred unit is changed by its own account holder.',
+        'vacations' => 'vacations: cancel that leave on the rota screen (Rota).',
+    ];
 }

@@ -51,6 +51,7 @@ const result = computed(() => page.props.flash?.demo_result ?? null);
 
 const canCreate = computed(() => !props.demo && props.plan.refusals.length === 0);
 const blocked = computed(() => props.demo?.blocked ?? []);
+const swept = computed(() => props.demo?.swept ?? []);
 
 const createForm = useForm({ pin: '' });
 const removeForm = useForm({ pin: '', confirm_demo: '' });
@@ -179,13 +180,28 @@ const remove = () => {
                     </table>
                 </div>
 
-                <!-- Refused, and by what. Never merely "refused". -->
+                <!-- Rows removal deletes that the demo never created. Said BEFORE the word is
+                     typed: a cleanup button reaching outside its own ledger has to be legible. -->
+                <div v-if="swept.length" class="mt-3 rounded-md border border-line p-3" data-testid="remove-swept">
+                    <p class="text-sm text-body">
+                        Removing also deletes these, which the demo did not create but which name
+                        nobody else — an invitation addressed to a demo person can reach no real
+                        inbox and would otherwise hold the demo here for good.
+                    </p>
+                    <ul class="mt-1 space-y-1">
+                        <li v-for="row in swept" :key="row.table" class="readout text-sm text-body">
+                            {{ row.count }} in {{ row.table }}
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Refused, and by what, and what to do about each one. Never merely "refused",
+                     and never one remedy for tables whose remedies differ. -->
                 <div v-if="blocked.length" class="mt-4 rounded-md border border-caution p-3" data-testid="remove-blocked">
                     <p class="text-sm font-semibold text-caution">This cannot be removed yet.</p>
                     <p class="mt-1 text-sm text-body">
                         Real records now point at it, so removing the demo would take them with it.
-                        Deal with these first — delete them, or point them somewhere real — and this
-                        page will offer the removal again.
+                        Deal with these first and this page will offer the removal again.
                     </p>
                     <table class="mt-2 min-w-full text-left text-sm">
                         <caption class="sr-only">What is holding the removal</caption>
@@ -193,12 +209,14 @@ const remove = () => {
                             <tr class="border-b border-line">
                                 <th scope="col" class="channel-tag px-3 py-2">Where</th>
                                 <th scope="col" class="channel-tag px-3 py-2">Records</th>
+                                <th scope="col" class="channel-tag px-3 py-2">What clears it</th>
                             </tr>
                         </thead>
                         <tbody>
                             <tr v-for="row in blocked" :key="row.table" class="border-t border-line">
                                 <td class="readout px-3 py-2 text-body">{{ row.table }}</td>
                                 <td class="readout px-3 py-2 text-body">{{ row.count }}</td>
+                                <td class="px-3 py-2 text-body">{{ row.remedy || '—' }}</td>
                             </tr>
                         </tbody>
                     </table>

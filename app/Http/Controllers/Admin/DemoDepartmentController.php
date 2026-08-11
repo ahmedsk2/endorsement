@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Support\Demo\DemoDepartment;
 use App\Support\Demo\DemoLedger;
+use App\Support\Demo\DemoReferences;
 use App\Support\Demo\DemoRemovalBlockedException;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
@@ -200,7 +201,7 @@ class DemoDepartmentController extends Controller
     }
 
     /**
-     * @return array{batch: string, total: int, counts: list<array{table: string, count: int}>, blocked: list<array{table: string, count: int}>, pin: string}|null
+     * @return array{batch: string, total: int, counts: list<array{table: string, count: int}>, blocked: list<array{table: string, count: int}>, swept: list<array{table: string, count: int}>, pin: string}|null
      */
     private function currentDemo(): ?array
     {
@@ -218,7 +219,19 @@ class DemoDepartmentController extends Controller
             'batch' => $state['batch'],
             'total' => count($state['rows']),
             'counts' => $state['counts'],
-            'blocked' => $state['blocked'],
+            // Each blocker carries the remedy for ITS table, from the same `DemoReferences::REMEDIES`
+            // the refusal message is built from — one definition, two consumers. The generic
+            // "delete them or point them somewhere real" was wrong for half of these: accounts are
+            // deactivated and never deleted, sign-offs are never deleted at all.
+            'blocked' => array_map(
+                static fn (array $row): array => $row + [
+                    'remedy' => DemoReferences::REMEDIES[$row['table']] ?? null,
+                ],
+                $state['blocked'],
+            ),
+            // Rows removal will hard-delete that the demo never created — an invitation addressed
+            // to a demo person. Rendered before the word is typed, never after the fact.
+            'swept' => $state['swept'],
             'pin' => DemoDepartment::removalDigest($state),
         ];
     }

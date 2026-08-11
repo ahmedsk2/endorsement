@@ -327,7 +327,12 @@ final class DemoDepartment
      * table, which is what a human can actually check ("one unit, five people, one clinic") where a
      * bare total is a number nobody can verify.
      *
-     * @return array{batch: string, rows: list<array{table: string, id: int}>, counts: list<array{table: string, count: int}>, blocked: list<array{table: string, count: int}>}
+     * `swept` is the third list and the one that needs stating: rows removal will HARD-DELETE that
+     * it never created (`DemoReferences::SWEPT`). A cleanup button reaching outside its own ledger
+     * must say so before the word is typed, and the pin is taken over this payload, so an
+     * invitation issued between the preview and the confirm invalidates it.
+     *
+     * @return array{batch: string, rows: list<array{table: string, id: int}>, counts: list<array{table: string, count: int}>, blocked: list<array{table: string, count: int}>, swept: list<array{table: string, count: int}>}
      */
     public static function removalState(string $batch): array
     {
@@ -350,6 +355,7 @@ final class DemoDepartment
                 $counts,
             )),
             'blocked' => $rows === [] ? [] : self::preflight($batch),
+            'swept' => $rows === [] ? [] : self::sweepable($batch),
         ];
     }
 
@@ -371,13 +377,18 @@ final class DemoDepartment
      * batch in `identity` is what refuses it. The blockers ride in `errors` for the ordinary case:
      * a removal previewed as clear, confirmed after real work landed on it.
      *
-     * @param  array{batch: string, rows: list<array{table: string, id: int}>, counts: list<array{table: string, count: int}>, blocked: list<array{table: string, count: int}>}  $state
+     * `swept` rides in `identity` beside the batch, because it is part of what this operation WILL
+     * DO and the operator was shown it: an invitation issued to a demo person between the preview
+     * and the confirm turns "21 rows" into "21 rows and one invitation", and that is a different
+     * operation from the one that was approved.
+     *
+     * @param  array{batch: string, rows: list<array{table: string, id: int}>, counts: list<array{table: string, count: int}>, blocked: list<array{table: string, count: int}>, swept: list<array{table: string, count: int}>}  $state
      */
     public static function removalDigest(array $state): string
     {
         return StatePin::of(
             'demo_department_remove',
-            ['batch' => $state['batch']],
+            ['batch' => $state['batch'], 'swept' => $state['swept']],
             array_map(
                 static fn (array $row): string => $row['table'].':'.$row['count'],
                 $state['blocked'],
@@ -426,6 +437,13 @@ final class DemoDepartment
 
         foreach ($ledgered as $table => $ids) {
             foreach (DemoReferences::MAP[$table] ?? [] as $reference) {
+                // A SWEPT pair is not a blocker: removal deletes those rows rather than refusing
+                // over them, because the product offers no way to clear them and the row has no
+                // value away from the demo person it names. See `DemoReferences::SWEPT`.
+                if (self::isSwept($reference)) {
+                    continue;
+                }
+
                 $conditions[$reference['table']][] = ['column' => $reference['column'], 'ids' => $ids];
             }
         }
@@ -456,6 +474,62 @@ final class DemoDepartment
         usort($blocked, static fn (array $a, array $b): int => $a['table'] <=> $b['table']);
 
         return $blocked;
+    }
+
+    /** @param  array{table: string, column: string}  $reference */
+    private static function isSwept(array $reference): bool
+    {
+        foreach (DemoReferences::SWEPT as $swept) {
+            if ($swept['table'] === $reference['table'] && $swept['column'] === $reference['column']) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * WHAT REMOVAL WOULD DELETE THAT IT DID NOT CREATE — `(table, count)` pairs, read-only, same
+     * shape as {@see preflight()} and computed the same way, minus the "not itself ledgered" clause
+     * (nothing the demo ledgers is on the swept list, and asking would cost a second query to
+     * exclude an empty set).
+     *
+     * It exists so the sweep is never silent: the screen renders it before the word is typed, the
+     * pin covers it, and the audit row carries its total. A cleanup button that hard-deletes rows
+     * outside its own ledger has to say so.
+     *
+     * @return list<array{table: string, count: int}> ordered by table name
+     */
+    public static function sweepable(string $batch): array
+    {
+        /** @var array<string, list<int>> $ledgered */
+        $ledgered = [];
+
+        foreach (DemoLedger::rowsFor($batch) as $row) {
+            $ledgered[$row['table']][] = $row['id'];
+        }
+
+        $swept = [];
+
+        foreach (DemoReferences::MAP as $table => $references) {
+            foreach ($references as $reference) {
+                if (! self::isSwept($reference) || ($ledgered[$table] ?? []) === []) {
+                    continue;
+                }
+
+                $count = DB::table($reference['table'])
+                    ->whereIn($reference['column'], $ledgered[$table])
+                    ->count();
+
+                if ($count > 0) {
+                    $swept[] = ['table' => $reference['table'], 'count' => $count];
+                }
+            }
+        }
+
+        usort($swept, static fn (array $a, array $b): int => $a['table'] <=> $b['table']);
+
+        return $swept;
     }
 
     /**
@@ -536,8 +610,10 @@ final class DemoDepartment
             static fn (array $row): bool => Schema::hasTable($row['table']),
         ));
 
+        $swept = 0;
+
         try {
-            DB::transaction(function () use ($rows, $deletable, $batch): void {
+            DB::transaction(function () use ($rows, $deletable, $batch, &$swept): void {
                 self::lockLedgeredRows($rows);
 
                 // THE LOAD-BEARING CHECK. Same definition as the one above; a second predicate here
@@ -549,6 +625,12 @@ final class DemoDepartment
                 if ($blocked !== []) {
                     throw new DemoRemovalBlockedException($batch, $blocked);
                 }
+
+                // BEFORE the ledgered rows, not after: the swept rows are children of them, and
+                // deleting the parent first would let `nullOnDelete` orphan the child instead —
+                // which for `invitations` means a live link whose null `person_id` makes
+                // `InvitationAcceptController` mint a brand-new person and account.
+                $swept = self::sweep($batch);
 
                 foreach ($deletable as $row) {
                     DB::table($row['table'])->where('id', $row['id'])->delete();
@@ -567,9 +649,45 @@ final class DemoDepartment
 
         $count = count($rows);
 
-        AuditLog::record('demo_department_remove', "batch={$batch};rows={$count}", $actorId, $ip);
+        AuditLog::record(
+            'demo_department_remove',
+            "batch={$batch};rows={$count};swept={$swept}",
+            $actorId,
+            $ip,
+        );
 
-        return ['batch' => $batch, 'rows' => $count];
+        return ['batch' => $batch, 'rows' => $count, 'swept' => $swept];
+    }
+
+    /**
+     * Delete the swept rows, inside the caller's transaction, and say how many.
+     *
+     * @return int rows deleted outside the ledger
+     */
+    private static function sweep(string $batch): int
+    {
+        /** @var array<string, list<int>> $ledgered */
+        $ledgered = [];
+
+        foreach (DemoLedger::rowsFor($batch) as $row) {
+            $ledgered[$row['table']][] = $row['id'];
+        }
+
+        $deleted = 0;
+
+        foreach (DemoReferences::MAP as $table => $references) {
+            foreach ($references as $reference) {
+                if (! self::isSwept($reference) || ($ledgered[$table] ?? []) === []) {
+                    continue;
+                }
+
+                $deleted += DB::table($reference['table'])
+                    ->whereIn($reference['column'], $ledgered[$table])
+                    ->delete();
+            }
+        }
+
+        return $deleted;
     }
 
     /**

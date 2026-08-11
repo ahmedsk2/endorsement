@@ -299,8 +299,15 @@ class DemoScreenTest extends TestCase
 
         $demo = $this->props()['demo'];
 
-        $this->assertSame([['table' => 'handovers', 'count' => 1]], $demo['blocked'],
-            'the screen must show WHAT is holding the removal, not only that it refused');
+        $this->assertSame([['table', 'count', 'remedy']], array_map('array_keys', $demo['blocked']));
+        $this->assertSame([['table' => 'handovers', 'count' => 1]], array_map(
+            static fn (array $row): array => ['table' => $row['table'], 'count' => $row['count']],
+            $demo['blocked'],
+        ), 'the screen must show WHAT is holding the removal, not only that it refused');
+
+        // …and what to do about it, per table. "Delete them or point them somewhere real" was the
+        // one sentence every blocker used to get, and it is wrong for half of them.
+        $this->assertStringContainsString('Merge', (string) $demo['blocked'][0]['remedy']);
 
         // …and the composition of what would go, so "remove" is not a number nobody can check.
         $this->assertContains(['table' => 'units', 'count' => 1], $demo['counts']);
@@ -369,7 +376,10 @@ class DemoScreenTest extends TestCase
 
         // And the screen the operator lands back on shows the blocker itself, freshly read,
         // rather than only an error string.
-        $this->assertSame([['table' => 'handovers', 'count' => 1]], $this->props()['demo']['blocked']);
+        $this->assertSame([['table' => 'handovers', 'count' => 1]], array_map(
+            static fn (array $row): array => ['table' => $row['table'], 'count' => $row['count']],
+            $this->props()['demo']['blocked'],
+        ));
     }
 
     /**

@@ -7,6 +7,7 @@ use App\Models\Clinic;
 use App\Models\Handover;
 use App\Models\HandoverSignoff;
 use App\Models\Institution;
+use App\Models\Invitation;
 use App\Models\Period;
 use App\Models\Person;
 use App\Models\Unit;
@@ -27,6 +28,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 use ReflectionMethod;
 use Tests\Support\TableCounts;
@@ -384,6 +386,141 @@ class DemoRemoveTest extends TestCase
         }
     }
 
+    // --- A blocker whose remedy the product does not offer -----------------------------------------
+
+    /**
+     * AN INVITATION TO A DEMO PERSON MADE THE DEMO PERMANENTLY UNREMOVABLE (P1e-2 review, finding 2).
+     *
+     * `invitations` is never deleted anywhere in this product: `InvitationController::revoke()`
+     * stamps `revoked_at`, resend supersedes and KEEPS the old row, and design §14 item 7 records
+     * that invitations have no retention rule at all. So practising the invitation flow on a demo
+     * person — which `/admin/setup`'s own invitations step pushes an administrator towards — pinned
+     * the demo in place for good, behind a refusal naming a remedy nobody could perform.
+     *
+     * SO REMOVAL SWEEPS IT, AND MERELY UN-BLOCKING IT WOULD HAVE BEEN WORSE THAN THE BUG.
+     * `invitations.person_id` is `nullOnDelete`, and `InvitationAcceptController` treats a null
+     * `person_id` as "create the person at redemption time" — so a link left behind by a removal
+     * would not merely dangle, it would mint a brand-new person AND account for whoever still holds
+     * it. The row has to go, not just stop counting.
+     */
+    public function test_an_invitation_to_a_demo_person_does_not_block_removal_and_goes_with_it(): void
+    {
+        $created = DemoDepartment::create();
+        $person = $this->demoPeople($created['batch'])[2];
+
+        Invitation::query()->create([
+            'person_id' => $person->getKey(),
+            'member_email' => (string) $person->email,
+            'position' => 4,
+            'token_hash' => hash('sha256', Str::random(40)),
+            'expires_at' => Calendar::now()->addDays(Invitation::LIFETIME_DAYS),
+        ]);
+
+        // A real invitation to a real person, which must be untouched: the sweep is scoped to the
+        // ledger, exactly as the delete is.
+        $realInvitation = Invitation::query()->create([
+            'person_id' => $this->realPerson()->getKey(),
+            'member_email' => 'real@example.org',
+            'position' => 4,
+            'token_hash' => hash('sha256', Str::random(40)),
+            'expires_at' => Calendar::now()->addDays(Invitation::LIFETIME_DAYS),
+        ]);
+
+        $this->assertSame([], DemoDepartment::preflight($created['batch']),
+            'an invitation addressed to a demo person is a demo artefact, not a blocker');
+
+        $result = DemoDepartment::remove($created['batch']);
+
+        $this->assertSame(1, $result['swept'], 'the invitation went with the department it named');
+        $this->assertFalse(DemoLedger::has());
+
+        $survivors = Invitation::query()->pluck('id')->all();
+
+        $this->assertSame([$realInvitation->getKey()], $survivors,
+            'the sweep took an invitation it had no business touching');
+    }
+
+    /** The sweep is reported, not silent: `remove()` hard-deletes a row it never ledgered. */
+    public function test_the_swept_rows_are_previewed_counted_and_audited(): void
+    {
+        $created = DemoDepartment::create();
+
+        Invitation::query()->create([
+            'person_id' => $this->demoPeople($created['batch'])[0]->getKey(),
+            'member_email' => 'demo-c1@'.DemoDepartment::EMAIL_DOMAIN,
+            'position' => 3,
+            'token_hash' => hash('sha256', Str::random(40)),
+            'expires_at' => Calendar::now()->addDays(Invitation::LIFETIME_DAYS),
+        ]);
+
+        $state = DemoDepartment::removalState($created['batch']);
+
+        $this->assertSame([['table' => 'invitations', 'count' => 1]], $state['swept'],
+            'the screen must say what removal will delete that it did not create');
+
+        $result = DemoDepartment::remove($created['batch']);
+
+        $detail = (string) AuditLog::query()->where('action', 'demo_department_remove')->value('detail');
+
+        $this->assertSame("batch={$created['batch']};rows={$result['rows']};swept=1", $detail);
+    }
+
+    /**
+     * EVERY BLOCKING TABLE NAMES A REMEDY THAT EXISTS. Finding 2's other half: `users.person_id`
+     * stays a blocker — an account is real work — but the generic *"delete or re-point them"* is
+     * wrong for it in this codebase, where accounts are deactivated and never deleted. The refusal
+     * has to name unbinding, which is the act that actually clears the link.
+     *
+     * Asserted over the WHOLE referencing set rather than on `users` alone, so a future map entry
+     * cannot ship carrying a sentence that sends an operator to a control the product does not have.
+     */
+    public function test_every_referencing_table_names_a_remedy_the_product_actually_offers(): void
+    {
+        $tables = [];
+
+        foreach (DemoReferences::MAP as $rows) {
+            foreach ($rows as $row) {
+                $tables[$row['table']] = true;
+            }
+        }
+
+        $tables = array_keys($tables);
+        sort($tables);
+
+        $this->assertGreaterThan(5, count($tables), 'the reference map has gone missing');
+
+        $missing = array_values(array_filter(
+            $tables,
+            static fn (string $table): bool => ! array_key_exists($table, DemoReferences::REMEDIES),
+        ));
+
+        $this->assertSame([], $missing,
+            "These tables can block a removal and the refusal has no remedy for them, so it falls\n"
+            ."back on prose that may name a control this product does not offer.\n"
+            .implode("\n", $missing));
+    }
+
+    public function test_the_account_refusal_names_unbinding_rather_than_deleting(): void
+    {
+        $created = DemoDepartment::create();
+
+        User::create([
+            'member_name' => 'claimed', 'password' => 'Str0ng-pass!x', 'active' => true,
+            'person_id' => $this->demoPeople($created['batch'])[0]->getKey(),
+        ]);
+
+        try {
+            DemoDepartment::remove($created['batch']);
+            $this->fail('An account claimed against a demo person still refuses the removal.');
+        } catch (DemoRemovalBlockedException $e) {
+            $message = $e->getMessage();
+
+            $this->assertStringContainsString('unbind', strtolower($message),
+                'accounts are deactivated and never deleted here, so "delete them" is not a remedy');
+            $this->assertStringNotContainsString('demo.invalid', $message);
+        }
+    }
+
     // --- The gap between the check and the delete --------------------------------------------------
 
     /**
@@ -560,7 +697,13 @@ class DemoRemoveTest extends TestCase
         $removed = AuditLog::query()->where('action', 'demo_department_remove')->get();
 
         $this->assertCount(1, $removed);
-        $this->assertSame("batch={$created['batch']};rows={$result['rows']}", (string) $removed->first()->detail);
+
+        // `swept=` is always present, never appended only when non-zero: one shape per action, and
+        // a reader of the trail should not have to infer that its absence means nothing was swept.
+        $this->assertSame(
+            "batch={$created['batch']};rows={$result['rows']};swept=0",
+            (string) $removed->first()->detail,
+        );
     }
 
     /** ONE summary row, never one per deleted row (invariant 12 / P1 finding 11). */

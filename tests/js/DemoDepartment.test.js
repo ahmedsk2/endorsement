@@ -91,6 +91,7 @@ const existing = (overrides = {}) => ({
         { table: 'units', count: 1 },
     ],
     blocked: [],
+    swept: [],
     pin: 'remove-pin',
     ...overrides,
 });
@@ -180,7 +181,12 @@ describe('Admin/DemoDepartment', () => {
      */
     it('shows what is holding a blocked removal and offers no way to press through it', () => {
         const w = mountScreen({
-            demo: existing({ blocked: [{ table: 'handovers', count: 2 }, { table: 'users', count: 1 }] }),
+            demo: existing({
+                blocked: [
+                    { table: 'handovers', count: 2, remedy: 'handovers: merge the demo unit.' },
+                    { table: 'users', count: 1, remedy: 'users: UNBIND it (Administration -> Accounts).' },
+                ],
+            }),
         });
 
         const held = w.get('[data-testid="remove-blocked"]').text();
@@ -190,8 +196,37 @@ describe('Admin/DemoDepartment', () => {
         expect(held).toContain('users');
         expect(held).toContain('Deal with these first');
 
+        // THE REMEDY IS PER TABLE, and it is rendered. Accounts are deactivated and never deleted
+        // here, so the one sentence this panel used to show every blocker ("delete them, or point
+        // them somewhere real") named a control the product does not have for half of them.
+        expect(held).toContain('UNBIND');
+        expect(held).toContain('merge the demo unit');
+
         expect(w.find('[data-testid="remove-demo"]').exists()).toBe(false);
         expect(w.find('[data-testid="confirm-demo"]').exists()).toBe(false);
+    });
+
+    /**
+     * Removal hard-deletes an invitation addressed to a demo person — a row the demo never created.
+     * Silence there would be a cleanup button reaching outside its own ledger with nobody told, so
+     * the panel is rendered BEFORE the word is typed, not reported afterwards.
+     */
+    it('says what removal will delete that the demo did not create', () => {
+        const clean = mountScreen({ demo: existing() });
+
+        expect(clean.find('[data-testid="remove-swept"]').exists()).toBe(false);
+
+        const w = mountScreen({
+            demo: existing({ swept: [{ table: 'invitations', count: 1 }] }),
+        });
+
+        const swept = w.get('[data-testid="remove-swept"]').text();
+
+        expect(swept).toContain('invitations');
+        expect(swept).toContain('1');
+
+        // …and it is still offered: a swept row is not a blocker.
+        expect(w.find('[data-testid="confirm-demo"]').exists()).toBe(true);
     });
 
     it('renders both refusal keys where the control that caused them is', async () => {

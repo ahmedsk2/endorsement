@@ -63,7 +63,19 @@ final class DemoRemovalBlockedException extends RuntimeException
         ));
     }
 
-    /** @param  list<array{table: string, count: int}>  $blocked */
+    /**
+     * THE REMEDY IS PER TABLE, and that is the P1e-2 review's finding 2 in miniature. This used to
+     * end *"deal with those rows first (delete or re-point them)"* for every table alike, which is
+     * wrong wherever the product offers neither: accounts are deactivated and never deleted,
+     * sign-offs are medico-legal evidence and are never deleted at all. A refusal naming a control
+     * that does not exist sends its reader to a database console.
+     *
+     * `DemoReferences::REMEDIES` is the one definition and `DemoRemoveTest` asserts it covers every
+     * table that can appear here, so a future map entry cannot ship without one. The fallback below
+     * is unreachable while that test passes and is deliberately vague rather than confidently wrong.
+     *
+     * @param  list<array{table: string, count: int}>  $blocked
+     */
     private static function describe(array $blocked): string
     {
         $lines = array_map(
@@ -71,8 +83,14 @@ final class DemoRemovalBlockedException extends RuntimeException
             $blocked,
         );
 
+        $remedies = array_map(
+            static fn (array $row): string => DemoReferences::REMEDIES[$row['table']]
+                ?? $row['table'].': deal with those rows first.',
+            $blocked,
+        );
+
         return 'This demo department cannot be removed: real records now reference it — '
-            .implode('; ', $lines).'. Deal with those rows first (delete or re-point them), then '
-            .'remove the demo. Nothing has been deleted.';
+            .implode('; ', $lines).'. Deal with those rows first, then remove the demo. Nothing has '
+            .'been deleted. '.implode(' ', $remedies);
     }
 }

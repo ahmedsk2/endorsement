@@ -1361,6 +1361,76 @@ arithmetic — this plan's own PHPUnit baseline was measured on a dirty tree and
     Item 4 is an interaction with the installed Inertia version that the task text could not have
     foreseen; item 8 is a disambiguation, not a correction.
 
+### 2026-08-11 — P1e-1 adversarial review, findings 1–4
+
+Baseline re-measured clean before touching anything: `php artisan test` → **1527 passed, 0 failed**,
+matching the review's stated baseline exactly; `npm test` → **212**, `npm run test:e2e` → **24**,
+`npm run build` → green. Three findings fixed, one recorded. Rulings 48, 49 and 50 added; design §14
+gains item 23.
+
+1. **Finding 1 was reproduced exactly as reported, and the RED run named the two keys the report
+   predicted** — `The selected person_ids.0 is invalid.` on the switch-to-`rotators` escape, and
+   `The selected level_ids.0 is invalid.` on the named-mode save. Both fixed halves are needed and
+   neither is sufficient: the server narrowing stops a stale or hand-edited payload, the client
+   seeding stops the screen generating one. Recorded as ruling 48.
+2. **The client half is asserted on the SUBMITTED PAYLOAD, not the DOM, and that forced a change to
+   the Vitest mock.** Inertia's `useForm` sends `form.data()`, which never appears in the
+   `put(url, options)` arguments — so the existing spy could prove which endpoint a control reached
+   and nothing about what it sent, which is where this entire defect lived. The mock's `put` is now
+   a `function` (not an arrow) that records `this.mode`/`level_ids`/`person_ids`. Stated because it
+   generalises: **a form holding `[5, 99]` and one holding `[5]` render byte-identical markup when
+   99 has no checkbox**, so no DOM assertion of any kind could have caught this.
+3. **`patch` gained a refusal mode for finding 3** (`store.refuseWith` → populates `form.errors` and
+   fires `onError`). Without it there is no way to exercise a refusal path from the client side, and
+   "the control calls the endpoint" — which is what the existing test asserted — cannot distinguish
+   a rendered refusal from a silent one. The finding-3 test mounts **two** clinics deliberately:
+   `activeForm` is one `useForm` shared by every row's button, so the naive `v-if` renders the same
+   refusal under clinics nobody touched. That is a second, quieter defect the obvious fix would have
+   shipped, and the second assertion is what refuses it.
+4. **The flash-key source guard was designed, measured and REJECTED** — the full reasoning is
+   ruling 49, and the decisive number is that `errors.person_ids` is rendered by Admin → People's
+   bulk-resend panel, so "every flashed key is rendered by SOME screen" is **green on finding 1**.
+   Measured, not argued: 4 `withErrors` keys + 10 `withMessages` keys + ~70 FormRequest rule keys
+   against ~55 rendered keys. Recorded as a measurement so the fourth instance of this shape does
+   not re-derive it from scratch.
+5. **Finding 2's hole was measured before it was closed, and the guard was green against a plant
+   rewriting six columns on both tables.** `app/Support/Clinics/PlantedUpdateWriter.php`, deleted
+   immediately after; the plant carried both a `$clinic->update([...])` and a `$c->update([...])`
+   so the two needle families could be told apart. After the fix it named the file on four needles.
+   **Observed on the plant rather than reasoned about:** the column-qualified needle matches only
+   the array's FIRST key, so `update(['weekday' => 3, 'session' => 'PM'])` fires
+   `->update(['weekday'` and not `->update(['session'` — which is exactly why the variable-qualified
+   half is not redundant, and it is stated in the guard's own docblock.
+6. **`->update(['active'` was written, measured and withdrawn** (ruling 42's discipline). Six files,
+   five tables, and the two most dangerous allow-list entries it would buy are `UnitController` and
+   `UnitMerge` — `UnitMerge` being the file finding 4 shows *should* be writing `clinics.unit_id` and
+   is not. An allow-list entry there would blind the guard at the exact point the next real offender
+   arrives.
+7. **The sibling guards were PROBED, not read.** One `$model->update([...])` per guarded table in a
+   single throwaway file, then five filtered runs: `RotaWritersAreSingularTest` **green** (shares the
+   hole — `master_rota_assignments`, `vacations`), `PersonLevelsHaveOneWriterTest` **green** (shares
+   it — and `LevelAssignment` writes `effective_to` that way twice, so it is the live idiom for that
+   table), `InvitationWritersAreSingularTest` / `AccountLinkHasOneWriterTest` /
+   `CapabilityWritersAreSingularTest` **red** (do not share it). Reading the needle lists would have
+   got the last three right and is not the same as knowing. Left open deliberately: they guard P1c's
+   and P1d's tables, the same scope line design §14 item 23 draws for `UnitMerge`.
+8. **Finding 4 verified from the SCHEMA rather than from the report.** Every migration declaring a
+   `unit_id`/`preferred_unit_id` column was enumerated and compared against `UnitMerge::plan()`:
+   four covered, three stranded (`reminder_preferences`, `master_rota_assignments`, `clinics`). The
+   report is correct, and its refutation is correct too — `UnitMerge`'s docblock enumerates what a
+   merge does and never claims exhaustiveness over `unit_id`. Recorded as design §14 item 23 with
+   one addition the review did not state: **a clinic-only fix would be actively wrong**, because
+   re-pointing `clinics.unit_id` while the rota rows stayed behind resolves every migrated clinic
+   to nobody.
+9. **What the review got wrong: nothing material.** Every claim checked out against the tree,
+   including the two line references and the "both files are new on this branch" scoping. One
+   refinement: finding 2's list of shapes the guard catches says "property-assign-then-`save()` and
+   relation writes", which is right, but the *reason* the hole exists is recorded in this plan's own
+   Task 2 amendment 2 — the array-key twins (`'weekday' =>`, …) were deliberately withdrawn to avoid
+   allow-listing `ClinicController`, and those are precisely what closes this shape in the three
+   sibling guards that do not share it. The `update(`-qualified form is the narrowing that recovers
+   the coverage without the cost, which Task 2's measurement had no reason to anticipate.
+
 ---
 
 ## Standing rules for every task

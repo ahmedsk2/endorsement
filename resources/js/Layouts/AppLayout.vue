@@ -259,6 +259,17 @@ const navClass = (active) => [
                 -->
                 <template v-if="canAdmin">
                     <p class="channel-tag px-3 pb-1 pt-4">Administration</p>
+                    <!--
+                      FIRST in Administration, because it is the entry that says which of the
+                      others still need opening. It is the department checklist, not the per-user
+                      first-login flow at /setup — different path, different capability, different
+                      thing entirely.
+                    -->
+                    <Link v-if="can('structure.manage')" href="/admin/setup"
+                          :aria-current="ariaCurrent(isActive('/admin/setup'))"
+                          :class="navClass(isActive('/admin/setup'))">
+                        Set up
+                    </Link>
                     <Link v-if="can('users.manage') || can('users.manage_residents')" href="/admin/users"
                           :aria-current="ariaCurrent(isActive('/admin/users'))"
                           :class="navClass(isActive('/admin/users'))">
@@ -283,6 +294,11 @@ const navClass = (active) => [
                           :aria-current="ariaCurrent(isActive('/admin/access-control'))"
                           :class="navClass(isActive('/admin/access-control'))">
                         Access Control
+                    </Link>
+                    <Link v-if="can('structure.manage')" href="/admin/structure/department"
+                          :aria-current="ariaCurrent(isActive('/admin/structure/department'))"
+                          :class="navClass(isActive('/admin/structure/department'))">
+                        Department
                     </Link>
                     <Link v-if="can('structure.manage')" href="/admin/structure/units"
                           :aria-current="ariaCurrent(isActive('/admin/structure/units'))"

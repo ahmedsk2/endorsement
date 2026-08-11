@@ -3,6 +3,9 @@
 use App\Http\Controllers\Admin\AccessControlController;
 use App\Http\Controllers\Admin\CalendarSettingsController;
 use App\Http\Controllers\Admin\ClinicController;
+use App\Http\Controllers\Admin\DemoDepartmentController;
+use App\Http\Controllers\Admin\DepartmentProfileController;
+use App\Http\Controllers\Admin\DepartmentSetupController;
 use App\Http\Controllers\Admin\HolidayController;
 use App\Http\Controllers\Admin\LevelController;
 use App\Http\Controllers\Admin\MasterRotaController;
@@ -224,6 +227,31 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:settings.manage'])
     });
 
 /*
+ * Admin → Set up this department (Munawib ST-01/ST-02, P1e Decisions D and E). A DERIVED checklist
+ * over the structure screens below, holding no state of its own — no column, no table, no
+ * `app_settings` key, no session key — so there is nothing here to write and nothing to resume.
+ *
+ * ITS OWN GROUP, AND THAT IS WHAT MAKES THE GET-ONLY PROPERTY ASSERTABLE. It shares
+ * `cap:structure.manage` with the group below, which legitimately carries the write endpoints of
+ * every structure screen, so the capability cannot be the scope of a read-only sweep.
+ * `DepartmentSetupScreenTest::test_every_route_under_admin_setup_is_a_get` enumerates by URI prefix
+ * over the ROUTER instead — holding for routes nobody has written yet — and carries a vacuity twin,
+ * because P1e-1 Task 4's DELETE sweep passed on its first red run against an empty route set.
+ *
+ * `/setup` IS A DIFFERENT THING AND IS NOT TOUCHED. That route, `SetupController`, `Setup.vue`,
+ * `RequireSetup` and `users.setup_completed_at` are the per-USER first-login two-factor flow.
+ * `/admin/setup` is deliberately NOT added to `RequireSetup`'s allowed paths: an administrator
+ * finishes their own second factor before configuring a system that holds children's records, and
+ * the redirect that enforces it is the point rather than a bug to route around.
+ *
+ * Deliberately NOT under `/endorsement`, so Unit::RESERVED_CODES is untouched.
+ */
+Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
+    ->group(function () {
+        Route::get('/admin/setup', [DepartmentSetupController::class, 'index'])->name('admin.setup');
+    });
+
+/*
  * Admin → Structure: the department's SHAPE — units, training levels, the calendar, rota
  * periods and holidays (Munawib UN-01…05, LV-01, ST-02, ST-06). One capability covers all of
  * them: they are edited by the same person in the same sitting, and they are a different kind
@@ -237,6 +265,15 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
     ->prefix('admin/structure')
     ->name('admin.structure.')
     ->group(function () {
+        // Munawib ST-01's first step (P1e Decision G). `institutions.name` only — there is no
+        // endpoint that writes `institutions.code`, deliberately: it is ReferenceSeeder's
+        // firstOrNew key, so re-coding a live institution makes the next `db:seed --force`
+        // create a second institution row instead of updating the first. That is a
+        // provisioning operation, not a settings change; the screen says so and
+        // DepartmentProfileRequest validates `name` alone.
+        Route::get('/department', [DepartmentProfileController::class, 'index'])->name('department');
+        Route::patch('/department', [DepartmentProfileController::class, 'update'])->name('department.update');
+
         Route::get('/units', [UnitController::class, 'index'])->name('units');
         Route::post('/units', [UnitController::class, 'store'])->name('units.store');
         // Declared BEFORE {unit} so `merge` never binds as a unit id — the same discipline the
@@ -286,6 +323,22 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
         // PUT: the refinement rule set is REPLACED whole, mode and rows together, so a re-submitted
         // form converges instead of duplicating.
         Route::put('/clinics/{clinic}/attendees', [ClinicController::class, 'setAttendees'])->name('clinics.attendees');
+
+        // Munawib ST-05's one-click, clearly-labelled, REMOVABLE demo department (P1e Decision F).
+        // THREE routes and no preview POST: neither action takes any operator input, so the GET is
+        // the preview and both pins (App\Support\Rota\StatePin) travel back with the confirmation.
+        // A fourth route whose only job was to show what the GET already shows would sit one
+        // boolean away from the destructive path.
+        //
+        // It carries NO environment guard, unlike DemoSeeder/E2eSeeder, on the owner's ruling of
+        // 2026-08-11: this one ledgers every row it writes, is provably removable, and mints no
+        // account, so pressing it on the live instance creates no way into a system holding
+        // children's records. Removal shipped before this route existed, deliberately.
+        Route::get('/demo', [DemoDepartmentController::class, 'index'])->name('demo');
+        Route::post('/demo', [DemoDepartmentController::class, 'store'])->name('demo.store');
+        // DELETE, not POST: it is a hard delete with no undo in the UI — neither rota table nor
+        // `clinics` soft-deletes — and the word is typed, PeriodController::destroy()'s idiom.
+        Route::delete('/demo', [DemoDepartmentController::class, 'destroy'])->name('demo.destroy');
     });
 
 /*

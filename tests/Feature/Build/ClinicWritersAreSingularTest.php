@@ -33,6 +33,21 @@ use Tests\TestCase;
  * `remove()` performs, which is ledger-scoped and cannot reach a row it did not create. It is
  * deliberately absent today, because an allow-list entry for a file that does not exist is a stale
  * entry, and `test_every_allow_listed_file_still_exists` below exists to refuse exactly that.
+ *
+ * ONE PATH DELETES THESE TABLES WITHOUT THIS GUARD BEING ABLE TO SEE IT, AND IT IS NOT AN
+ * OVERSIGHT. `App\Support\Demo\DemoDepartment::remove()` (P1e Task 13) hard-deletes every row the
+ * demo department created, including its clinic and that clinic's attendee rules — the only path in
+ * the product that hard-deletes a `clinics` row at all, which the plan's invariant 7 sanctions
+ * explicitly ("there is no delete path, not here and not on the controller"). It deletes by walking
+ * `demo_rows` and taking the TABLE NAME FROM THE LEDGER ROW, so the query reads `DB::table($table)`
+ * and no substring needle can match it.
+ *
+ * It is deliberately NOT on ALLOW_LIST. An entry would exempt that file from every needle here
+ * while buying no green — it matches none of them either way — and it would blind this guard at a
+ * file that legitimately reaches all eight of the demo's tables. What holds the line instead is
+ * behavioural and stronger than a grep: `DemoRoundTripTest` snapshots every table in the live
+ * schema around a create-and-remove and compares the maps whole, so a delete that reached a row the
+ * demo did not create shows up as a count that did not come back.
  */
 class ClinicWritersAreSingularTest extends TestCase
 {

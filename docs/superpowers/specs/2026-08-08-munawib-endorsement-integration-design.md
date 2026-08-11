@@ -58,6 +58,8 @@ authorized change:
 | PersonPresenter contact projection | `email` shipped ungated in P1c (every caller then held `people.manage`, a no-op distinction from `viewContact()`) | **Hardened, P1d-1, 2026-08-10.** `email` now sits behind the same `viewContact()` gate `phone` already used, because the rota grid is the first consumer holding a narrower capability (`rota.view`) than every prior caller. Not a Munawib-clause override — recorded here as the security finding that closed before any grid prop existed (P1d-1 finding 1, Task 7). |
 | AC-02 invitation lifetime | *"Invitations expire (default 14 days)"* | **Overridden to 7, and made configurable — P1 owner decision 5 (round 2, 2026-08-08), shipped P1c-2 Task 1, 2026-08-10.** An invitation is a bearer credential that reaches children's clinical records once redeemed, so a link that was forwarded, printed or left in a shared inbox stays live for half as long. `Invitation::lifetimeDays()` reads `app_settings.invitation_lifetime_days` behind `settings.manage`, clamped to [1, 30] in the model itself as well as the FormRequest (that table is also reachable from a database console, which no validator sees), and falls back to `LIFETIME_DAYS = 7` when unset or out of bounds. **Recorded here rather than only in §14 item 13, because an override that lives in an open-items list is one nobody finds.** |
 | MR-06 CSV-only export/import for the rota | Same dependency question as ST-04 | **Carried forward, P1c Decision E.** P1d-2 (scoped, not yet built) exports/imports the rota through `App\Support\Csv` exactly as the roster importer does — no spreadsheet package, two files (`rota.csv`, `vacations.csv`), person identified by `short_name` never email. |
+| §5 footnote, CL-05 clinic map | *"when link-public, only the published schedule, boards, and clinic map are exposed"* — the weekly clinic map named among three surfaces reachable without a login | **Overridden, P1e-1, 2026-08-11 — D7 holds, as it does for every other surface.** `/clinics` is `['auth', 'throttle:clinical', 'cap:clinics.view']`, a key seeded to every position for `rota.view`'s reason (a resident needs to know when their unit's clinic runs). Recorded here rather than only in the P1e plan because a deviation that lives in a plan is one nobody finds — this row is the second such rescue, after AC-02's lifetime. Two consequences worth stating: because the capability reaches the entire department, the map ships **no person-shaped value at all** (it shows the RULE — the attendee mode, plus training-level codes for a `levels` refinement — since a weekly recurrence has no date to resolve a roster against), and the whole `cap:clinics.view` group is asserted **GET-only over the router** (`ClinicMapTest`), so a write endpoint cannot arrive on a department-wide surface unnoticed. *Cost of the override:* a consultant checking clinic times signs in. |
+| ST-03 launch presets | *"Residency on-call (split day/night)"* and *"Residency on-call (24-hour)"*, listed against P1e in the P1 plan's split table | **Not shippable in P1 in any subset — dropped from P1e's binding list, 2026-08-11, not faked.** Both named presets are **slot and coverage-template** presets, and `slots`, `coverage_templates` and `conditions` are all listed unbuilt in §6.3 with no migration, model or controller anywhere in `app/`. A "Stage-1 subset" of a slot preset is the empty set. The P1 plan's own P1e item 4 already required the slot/coverage/condition wizard steps to be *"stated as arriving in P2/P3 rather than presented as empty steps"*, which is incompatible with ST-03 being binding in the same slice; `DepartmentSetupTest::test_no_step_names_a_slot_a_coverage_template_or_a_condition` now asserts the absence. ST-03 arrives with the tables, in P2/P3. |
 
 Everything else in Munawib Spec v1.0 stands. Requirement IDs (MR-03, CG-07, AU-06…) remain
 the binding vocabulary.
@@ -669,7 +671,8 @@ Munawib §AR-05's collections become Eloquent tables. Semantics binding, names a
 | `periods` | months or week-blocks (MR-01) |
 | `master_rota_assignments` | person × period × unit, date-bounded splits (MR-02). **SHIPPED, P1d-1, 2026-08-10.** One row shape only: `starts_on`/`ends_on` NOT NULL on every row, both bounds inclusive — a whole-period assignment is the degenerate split (one row whose bounds equal its period's), not a second, nullable representation. Overlaps for one (person, period) are refused by the model; gaps are allowed and counted (owner decision, P1d). `App\Support\Rota\RotaAssignment` is the only writer (Decision F). No soft delete — the hash-chained `audit_log` is the history. |
 | `vacations` | week or exact-date granularity (MR-03). **SHIPPED, P1d-1, 2026-08-10.** Deliberately carries **no `period_id`** — a vacation overlays whatever unit the master rota already has a person on, crosses period boundaries, and must survive a department regenerating or switching its period system; which period(s) it touches is a range intersection computed at read time (P1d Decision C). `App\Support\Rota\VacationBooking` is the only writer. |
-| `clinics`, `clinic_attendees` | CL-01, CL-02 |
+| `clinics`, `clinic_attendees` | CL-01, CL-02. **SHIPPED, P1e-1, 2026-08-11** (`2026_08_16_120001`). `clinics` is CL-01's full field set on a `unit_id` foreign key — never a code string — plus `weekday` as a plain **ISO-8601 integer (Monday = 1 … Sunday = 7**, deliberately not Carbon's `dayOfWeek`, where Sunday is 0), `session` from `Clinic::SESSIONS`, optional `location`/`note`, and `active`. **`clinic_attendees` holds the RULE, and attendance is resolved at READ time** (P1e Decision B): CL-02's *"refinement by level or named people"* is a MODE on the clinic — `rotators` (the default, needing no rows at all), `levels`, `named` — rather than a bag of include/exclude rules whose precedence nobody has specified and whose every wrong answer fails silently. `App\Support\Clinics\ClinicRoster::forDate()` answers *"who does this clinic come down to on this day"* from the master rota on demand, so **moving somebody on the rota moves them on the clinic with no write anywhere**; a stored snapshot would have obliged every rota, vacation and level writer to know about clinics. A row names exactly one of a level or a person and must not duplicate within a clinic — a constraint neither SQLite nor MySQL 8.4 can express over nullable columns (NULLs compare distinct), so it lives in `App\Support\Clinics\ClinicWriter`, the **only** writer of both tables, exactly as `person_levels`' overlap rule lives in `LevelAssignment`. Neither table soft-deletes (schedule structure, not a clinical row) and **there is no destroy route at all** — a clinic that stopped running is deactivated, UN-04's *"hides forward, never deletes history"* — the single exception being `DemoDepartment::remove()`, which is ledger-scoped and cannot reach a row it did not create. |
+| `demo_rows` | ST-05's *"removable"*. **SHIPPED, P1e-2, 2026-08-11** (`2026_08_16_120002`). Not a Munawib collection: a provenance LEDGER, `(table_name, row_id)` UNIQUE and grouped by a batch UUID, written only by `App\Support\Demo\DemoLedger`. It generalises three patterns already in this schema — `applied_role_defaults` (a ledger of "this step already ran"), `handovers.legacy_source_table`+`legacy_id` (provenance as a key) and `person_levels.promotion_batch_id` (a batch UUID with no foreign key). A `demo` boolean on the eight tables the seed writes was rejected: `units` has no provenance column of any kind, a flag is editable to `false` from any console after which removal silently misses the row, and a column does not ENUMERATE, so proving removal complete would still mean scanning every table. Carries no `institution_id` (D11: a pure child table does not repeat its parent's provenance) and no index led by one. |
 | `slots` | SL-01 (kind, window, cadence, days, unit, counts_hours, tally_key) |
 | `coverage_templates` | SL-03 (slot × day type → ordered level requirements, min/target/composition) |
 | `conditions` | CG-01 (type_key, params, scope, class, rank, active, source) |
@@ -1045,7 +1048,7 @@ merely expired row) and matched on address alone (leaving a live link to a corre
 Both halves were planned only once P1c-1 had merged, per this programme's own convention. Two
 claims this plan's own P1c item made turned out false and are corrected at their own sections:
 PE-02's projection is `PersonPresenter`, not `$hidden` (§5.1); LV-02's "resend invitations" is an
-account action, not a roster one, and ships in P1c-2. **P1d-1 — SHIPPED, 2026-08-10.** The master rota's data and its editor: `rota.view` (every seeded position) and `rota.manage` capabilities — P1d-1 seeded the latter to Administrator **and Chief Resident**, which P1d-2 reversed to Administrator-only the same day on an owner decision (§9.1); the department's own week inside `Calendar` (§7); `master_rota_assignments` (one row per span, overlaps refused, gaps allowed and counted, §6.3) and its one writer `App\Support\Rota\RotaAssignment`; `vacations` (no `period_id`) and its one writer `App\Support\Rota\VacationBooking`; the `PeriodController::destroy()` hardening the first table makes necessary; the `PersonPresenter` `email` gating; `/admin/rota`'s grid — rows by level, columns by period, per-cell save, splits, vacations — at a measured, bounded query count. **P1d-2 — SHIPPED, 2026-08-10**, in two branches (2a read and summarise, 2b move), adding **no migration in either half**: MR-05's resident-facing read view (`/rota`, `cap:rota.view`, search, level filter, per-person period strip, and a router-level assertion that *every* route behind `cap:rota.view` is a GET — no publish gate exists to add one for); MR-07's `App\Support\Rota\AvailabilitySummary`, one pure, query-free fold over the grid feeding **both** screens, counting uncovered days and the people carrying them separately and reporting who is on leave each week — **the Stage 1 acceptance criterion**; the contact-free projection that closes a props-payload disclosure on the editor as well as the read view (§9.1's neighbour, `PersonPresenter::contactFree()`, and `RotaGrid` taking no viewer at all); and MR-06's bulk moves — `RotaFill` (four action keys, one shared `analyse()`, a digest-pinned confirm, one `rota_fill` audit row per operation on `AuditAnomalies`' watch list, and a split-carrying target skipped unless explicitly confirmed), the two-file CSV export carrying no contact field, and `RotaImport`, which invents no person, unit or period and whose unit of outcome is the (person, period) cell rather than the line. MR-06 is six words in Munawib and the most destructive surface in the rota; the bulk discipline this codebase already had (P1 finding 12, `AccessControlController::updateRoles()`; `RosterImport`'s preview/commit/digest) is not optional for it, which is why every clause above about validation, transactions and confirmation is stated rather than assumed. **P1e** clinics, the weekly clinic map, and the setup wizard threading every step above, plus the removable demo department seed. Each sub-plan is written when its predecessor merges, per the P0a–P0d convention. |
+account action, not a roster one, and ships in P1c-2. **P1d-1 — SHIPPED, 2026-08-10.** The master rota's data and its editor: `rota.view` (every seeded position) and `rota.manage` capabilities — P1d-1 seeded the latter to Administrator **and Chief Resident**, which P1d-2 reversed to Administrator-only the same day on an owner decision (§9.1); the department's own week inside `Calendar` (§7); `master_rota_assignments` (one row per span, overlaps refused, gaps allowed and counted, §6.3) and its one writer `App\Support\Rota\RotaAssignment`; `vacations` (no `period_id`) and its one writer `App\Support\Rota\VacationBooking`; the `PeriodController::destroy()` hardening the first table makes necessary; the `PersonPresenter` `email` gating; `/admin/rota`'s grid — rows by level, columns by period, per-cell save, splits, vacations — at a measured, bounded query count. **P1d-2 — SHIPPED, 2026-08-10**, in two branches (2a read and summarise, 2b move), adding **no migration in either half**: MR-05's resident-facing read view (`/rota`, `cap:rota.view`, search, level filter, per-person period strip, and a router-level assertion that *every* route behind `cap:rota.view` is a GET — no publish gate exists to add one for); MR-07's `App\Support\Rota\AvailabilitySummary`, one pure, query-free fold over the grid feeding **both** screens, counting uncovered days and the people carrying them separately and reporting who is on leave each week — **the Stage 1 acceptance criterion**; the contact-free projection that closes a props-payload disclosure on the editor as well as the read view (§9.1's neighbour, `PersonPresenter::contactFree()`, and `RotaGrid` taking no viewer at all); and MR-06's bulk moves — `RotaFill` (four action keys, one shared `analyse()`, a digest-pinned confirm, one `rota_fill` audit row per operation on `AuditAnomalies`' watch list, and a split-carrying target skipped unless explicitly confirmed), the two-file CSV export carrying no contact field, and `RotaImport`, which invents no person, unit or period and whose unit of outcome is the (person, period) cell rather than the line. MR-06 is six words in Munawib and the most destructive surface in the rota; the bulk discipline this codebase already had (P1 finding 12, `AccessControlController::updateRoles()`; `RosterImport`'s preview/commit/digest) is not optional for it, which is why every clause above about validation, transactions and confirmation is stated rather than assumed. **P1e — SHIPPED, 2026-08-11**, in two branches and with **two** migrations, both new tables in the reserved `2026_08_16_*` slot: **P1e-1** the department's own week inside `Calendar` (ISO-8601 weekday vocabulary, `weekdayColumns()` rotated to the derived week start, extending `golden.json` as P2's contract), `clinics` + `clinic_attendees` and their one writer `ClinicWriter` (§6.3), `ClinicRoster`'s read-time resolution, the `structure.manage` CRUD screen with no destroy route, and CL-05's weekly map behind a new `clinics.view` seeded to every position — `auth`, contact-free, GET-only over the router, and **not** link-public (§1.2); **P1e-2** `institutions.name` gaining the screen §14 item 12 had left it without, `App\Support\Setup\DepartmentSetup`'s nine-step derived checklist at `/admin/setup` (holding no state anywhere, and named `DepartmentSetup` throughout because `Setup*` belongs to the per-USER 2FA flow), and ST-05's demo department — ledgered in `demo_rows`, minting no account, removable whole or not at all, and provable by a whole-schema round trip. **Three requirements were NOT shipped and are recorded rather than quietly dropped:** ST-03's launch presets are not shippable in P1 in any subset (§1.2, and the P1 plan's split table is wrong to list them), and CL-03/CL-04 are P2/P3 with their absence asserted rather than merely unimplemented (item 22). **With P1e, P1 is complete**, and every clause of Stage 1's acceptance criterion (§35) now has the product behind it — item 27 states precisely what that does and does not mean, because *"P1 is complete"* and *"Stage 1 is accepted"* are different claims and only the first is a developer's to make. Each sub-plan was written when its predecessor merged, per the P0a–P0d convention. |
 | **P2 — Engine** | `packages/engine` with **all 21 CG-07 types** (D13), golden fixtures, plain-language previews, severity/rank model; `services/engine`; the CI cross-validation job. |
 | **P3 — Munawib Stage 2** | Slots, call windows, coverage templates, conditions gate with drag ranking, draft workbench with live hints, trackers, undo ≥30, unfilled lens, publish + archive, morning coverage, who's-on-call board, personal pages, tallies, exports. **L1 and the §9.1 share-token feed land here.** |
 | **P4 — Munawib Stage 3** | *Prerequisite: host scaled to 4 OCPU / 24 GB.* Solver service, §4.2 evaluation mode, ranked-sacrifice report, per-placement explanations, partial modes, infeasibility reporting, AU-06 against §11.2's fixture; requests with deadlines and reminders; approval queue with coverage impact; versioned change log; ICS feeds. **L4 lands here.** |
@@ -1129,7 +1132,24 @@ None block starting P0.
     `code` remain `INSTITUTION_CODE`/`INSTITUTION_NAME`, env-only (P0d Task 3), read once by
     `ReferenceSeeder` on `db:seed --force` — changing either still means a direct database edit
     outside the audit trail. Narrowed rather than closed: a rename/re-code screen is a separate,
-    not-yet-scoped item.
+    not-yet-scoped item. **NARROWED AGAIN, P1e-2 Task 8, 2026-08-11, and now as closed as it will
+    get.** `institutions.name` is editable at `/admin/structure/department`, `cap:structure.manage`,
+    audited `institution_profile_update` by field name — and the rename **survives
+    `db:seed --force`**, because `ReferenceSeeder` writes `name` on CREATE only, which was asserted
+    (`test_a_rename_survives_db_seed_force`) rather than assumed: the same create-only property for
+    unit profile columns is precisely why `2026_08_15_120002_correct_ward_clinic_owner` had to exist
+    as a separate migration. **`code` stays env-only deliberately and is not a UI omission.** It is
+    `ReferenceSeeder`'s `firstOrNew` key, so re-coding a live institution makes the next
+    `db:seed --force` — a mandatory step of every deploy — CREATE a second `institutions` row rather
+    than update the first, at which point `Institution::current()` returns null (two active rows
+    means no right answer, D11) and every configuration-reading screen goes blank; it is also
+    provenance already stamped on `users`, `people`, `levels`, `periods` and `clinics`. That is a
+    provisioning operation with a migration behind it, not a settings change, and the screen renders
+    it read-only with that reason on it. `DepartmentProfileRequest` validates `name` alone —
+    asserted by planting a `code` rule and watching `QCH` become `HIJACKED`, because a `disabled`
+    attribute is not a validation rule. (`institutions.code` is **not** `App\Support\Instance::slug()`,
+    which comes from `INSTANCE_SLUG` and names the backup archive; the screen must not imply
+    otherwise.) A re-code remains a provisioning task for `docs/RUNBOOK-PROVISION.md`, not a screen.
 13. ~~**AC-02 invitation lifetime: 7 days or 14?**~~ **SETTLED, owner decision, round 2,
     2026-08-08.** `Invitation::LIFETIME_DAYS = 7` today, deliberately shorter than Munawib
     AC-02's 14 — an invitation is a credential that reaches children's clinical records once
@@ -1300,9 +1320,15 @@ None block starting P0.
     — `ClinicRoster` never queries the leave tables at all (P1e Task 3, Decision B: a person on
     vacation is returned, unmarked), so the CL-04 scan passes on the module's own merits, and there
     is no allow-list on either scan.
-23. **`UnitMerge` re-points four unit-owned tables and STRANDS THREE.** Recorded, deliberately not
-    fixed, by the P1e-1 adversarial review (2026-08-11): two of the three predate that branch and
-    the third is out of the slice's scope.
+23. **`UnitMerge` re-points four unit-owned tables and STRANDS THREE. ACCEPTED AND SCHEDULED —
+    owner decision, 2026-08-11.** Recorded by the P1e-1 adversarial review (two of the three
+    stranded tables predate that branch and the third was out of the slice's scope); the owner has
+    since accepted it as a defect to fix rather than a question to hold open, so this item is no
+    longer *"recorded, deliberately not fixed"*. **It is not scheduled inside P1** — P1e was the
+    last slice and this is not a clinics defect — so it carries forward as the first item of the
+    next slice's scope, whole: all three tables plus the schema-derived guard described below, since
+    the "clinic-shaped fix alone would be wrong" paragraph at the end of this item makes a partial
+    repair worse than none. Everything below is the analysis as found, unchanged.
     - **What it covers today.** `plan()`/`commit()` handle `handovers.unit_id`,
       `handover_signoffs.unit_id` (with the UNIQUE(unit_id, handover_date) collision resolved by a
       human first), `unit_field_definitions.unit_id` (its own UNIQUE(unit_id, key) collision refused
@@ -1333,6 +1359,62 @@ None block starting P0.
       `clinics.unit_id` while `master_rota_assignments.unit_id` stayed stranded would move the
       clinics onto a unit whose rota rows did not follow, so `ClinicRoster::forDate()` would resolve
       every migrated clinic to nobody. The three move together or not at all.
+24. **`DemoSeeder` and `E2eSeeder` remain unledgered and unremovable, and consolidating them onto
+    `DemoDepartment` is a follow-on rather than something P1e did quietly.** Both were left exactly
+    as they were, production throw included, and that is correct for what they are: neither marks a
+    single row it writes, so a row either creates is indistinguishable from a real one forever, and
+    neither has a removal path of any kind — which is precisely why they must not run in
+    production, and precisely what `DemoDepartment` is not. `DemoSeeder` creates seven fictional
+    accounts and three PICU handovers; `E2eSeeder` creates an admin, three residents, two periods,
+    rota spans, a vacation and (from P1e-1) a clinic. Their rows are identifiable only by fixed,
+    documented email addresses and `member_name`s. The related residual risk the security audit
+    already records is `SPC-RPT-059`, and it is worth quoting accurately rather than paraphrasing:
+    their guards are **`APP_ENV`-only**, so a staging or DR-rehearsal instance restored from
+    production data runs at `APP_ENV=staging` and *would* accept `db:seed --class=DemoSeeder`,
+    creating a position-0 administrator whose password is published in this repository — and a
+    restore rehearsal is exactly when somebody seeds "to get a login". That finding's own remedy is a
+    data-shaped second gate plus an explicit opt-in; ledgering these two would additionally make such
+    a seeding **reversible**, which today it is not. **The follow-on, when somebody takes it:** route both through
+    `DemoLedger` so their rows are enumerable and removable, at which point their environment throws
+    become a policy choice rather than a necessity. Not urgent — both are development fixtures that
+    cannot run on the live instance — and deliberately not smuggled into a clinics-and-wizard slice.
+25. **`institutions.code` has no admin surface and must not grow one.** Split out of item 12, which
+    is now as closed as it will get, because "not built yet" and "must not be built" are different
+    states and item 12's history reads as the first. See item 12 for the full reasoning: `code` is
+    `ReferenceSeeder`'s `firstOrNew` key, so re-coding a live institution makes the next
+    `db:seed --force` create a *second* row and `Institution::current()` return null. A re-code is a
+    provisioning operation with a migration behind it and belongs in `docs/RUNBOOK-PROVISION.md`.
+26. **`Model::query()->create(` is a sixth writer shape, and three single-writer guards are still
+    blind to it.** Found by mutation rather than by reading a needle list (P1e-2 Task 11): mutating
+    `DemoRow::create([` to `DemoRow::query()->create([` left `DemoRowsAreLedgeredTest`'s offender
+    sweep **green** while the writer still wrote the table — the vacuity twin is what went red. It
+    joins ruling 42's three shapes (property-assign-then-`save()`, the relation-write spellings,
+    `find()`-then-`delete()`) and ruling 50's two (`->update(['col'`, `$model->update(`). That guard
+    now needles `DemoRow::query()` **whole**, which also covers `::query()->…->delete()` — the shape
+    `DemoLedger::forgetBatch()` itself uses — measured at zero matches outside the writer.
+    **`ClinicWritersAreSingularTest`, `RotaWritersAreSingularTest` and
+    `PersonLevelsHaveOneWriterTest` carry no `::query()` needle at all** (verified 2026-08-11: zero
+    occurrences in each file), so the same bypass is open on `clinics`, `clinic_attendees`,
+    `master_rota_assignments`, `vacations` and `person_levels`. **A sweep across the three is queued
+    and was not done here**, the same scope line item 23 draws: they guard P1c's, P1d's and P1e-1's
+    tables. Whoever takes it should follow the method rather than the conclusion — the shape was
+    found by attacking the guard, and reading the needle lists would not have found it.
+27. **Stage 1 acceptance (§35) is met, and this item states exactly what that does and does not
+    mean.** The criterion reads *"the pilot's real master rota and clinics live; residents claimed
+    accounts; availability summaries match reality."* All four clauses now have the product behind
+    them: P1c-1/P1c-2 for claimed accounts, P1d-1/P1d-2 for the master rota and for
+    `AvailabilitySummary` (which counts uncovered days and the people carrying them separately, and
+    reports a departed-but-still-assigned person as their own figure rather than as coverage), and
+    P1e-1 for clinics. **What is met is the CAPABILITY, not the event.** "The pilot's *real* rota and
+    clinics live" is a statement about QCH's data, and the department has not yet entered any: the
+    system can now hold it, on screens an administrator can reach without knowing which of eleven
+    pages to open first, with somewhere to be trained that can afterwards be proved to have left
+    nothing behind. Declaring the criterion accepted is the owner's call after that data exists, not
+    a developer's after the last merge. **What Stage 1 does NOT include, stated so the gate is not
+    read as wider than it is:** CL-03's clinic conditions, CL-04's personal schedules and coverage
+    board, MR-04's on-call eligibility and ST-03's launch presets are all unbuilt — and three of the
+    four now have a guard asserting they are unbuilt rather than merely absent (items 18 and 22),
+    ST-03 being the exception because it has no module to guard.
 
 ---
 

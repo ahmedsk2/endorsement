@@ -54,10 +54,9 @@ class CalendarSettingsController extends Controller
                 1 => 'Monday', 2 => 'Tuesday', 3 => 'Wednesday', 4 => 'Thursday',
                 5 => 'Friday', 6 => 'Saturday', 7 => 'Sunday',
             ],
-            'period_type_options' => [
-                Institution::PERIOD_WEEK_BLOCKS => 'Week blocks',
-                Institution::PERIOD_MONTHS => 'Calendar months',
-            ],
+            // One list, read rather than re-typed — DepartmentSetup reports which of these is
+            // in force and must not invent a second name for it.
+            'period_type_options' => Institution::PERIOD_TYPES,
             // Decision D: the form disables period_type/academic_year_start the moment ANY
             // periods row exists, server-side truth mirrored client-side for the UI only.
             'locked' => Period::query()->exists(),

@@ -278,7 +278,7 @@ working.
 
 Why it matters more than the usual "CI is red":
 
-- **P0a through P1d-2 have had zero CI coverage.** Every one of those slices was verified locally
+- **P0a through P1e — every slice of P0 and P1 — has had zero CI coverage.** Every one was verified locally
   (`php artisan test`, `npm test`, `npm run test:e2e`, `npm run build`) and committed on that
   evidence. That is the only reason the tree is trustworthy — but "the suite is green" has meant
   "green on one Windows machine" since 2026-08-08, with no second opinion on Linux, no matrix, and
@@ -351,6 +351,42 @@ Also worth knowing, because both look like faults and are not: **resending an in
 old link** (a new one is minted; the old row is kept and marked revoked), and **unbinding an account
 removes it from the Users list** (it is kept as history, cannot log in, and cannot be reactivated — a
 colleague who returns gets a fresh invitation and needs their roles granted again).
+
+---
+
+## 14. Somewhere to practise — and it is safe to press on the live system
+
+**New in P1e (2026-08-11). Nothing to do; read it before somebody asks you whether they may.**
+
+**Admin → Set up this department** is the new front door for configuring a department: a checklist
+that reads the data and tells you what is still unset, with a link to the screen that owns each
+step. It stores nothing, so there is no progress to lose and nothing to redo — this department
+already shows as configured.
+
+At the bottom of that page is **Somewhere to practise**, which creates a small, obviously fictional
+demo department for training: one extra unit coded `DEMO`, five staff records named `Demo …` on
+addresses at `demo.invalid` (a domain that can never receive mail anywhere), a rotation, a week of
+leave and a weekly clinic. Roughly fifteen records.
+
+**Why this one is allowed on the live system when `DemoSeeder` is not.** The old development
+fixtures refuse to run in production and should: they mark nothing they create, so their records
+would be indistinguishable from real ones forever, and there is no way to remove them. This one is
+different in the two ways that matter, and both are proved by tests rather than promised:
+
+- **Every record it creates is recorded**, so removal can prove it removed all of them — the test
+  suite counts every table in the database before and after a create-and-remove and requires the
+  numbers to match exactly.
+- **It creates no account.** Nobody it names can sign in. Pressing it adds no way into the system.
+
+**Removing it is on the same page.** You type `DEMO` to confirm — it is a permanent delete with no
+undo. **If it refuses, that is correct behaviour, not a fault:** it refuses *whole*, deleting
+nothing at all, the moment real work has attached itself to the demo — a genuine handover written
+on the demo unit during a training session, an account claimed against a demo person, or a signed
+handover naming one. The screen tells you which tables are holding it and how many records; deal
+with those first and try again. Both the refusal and the removal go into the audit trail.
+
+**If you would rather it never existed on this instance:** don't press it. There is no navigation
+entry for it, and it does nothing until somebody does.
 
 ---
 

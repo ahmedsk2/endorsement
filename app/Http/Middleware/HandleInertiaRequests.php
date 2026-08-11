@@ -148,6 +148,18 @@ class HandleInertiaRequests extends Middleware
                 // put it on (Decision C).
                 'rota_import_preview' => $request->session()->get('rota_import_preview'),
                 'rota_import_result' => $request->session()->get('rota_import_result'),
+                // ST-05's demo department (P1e Task 14). Listed in the task that adds it, for the
+                // reason two entries above it were added a task late: a session key no `share()`
+                // names is invisible to every page in the app, so the feature's tests stay green
+                // while the screen shows nothing.
+                //
+                // There is NO `demo_preview` beside it, and that is the design rather than an
+                // omission: neither action takes any operator input, so the GET renders the
+                // preview from live data and carries both `StatePin` digests as ordinary props.
+                // This is the RESULT only — a row count and the list of things the demo did NOT
+                // do here (the department already had periods; there is no training ladder yet).
+                // Counts and sentences, never a name.
+                'demo_result' => $request->session()->get('demo_result'),
             ],
         ];
     }

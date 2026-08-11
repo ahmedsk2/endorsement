@@ -20,6 +20,15 @@ use Tests\TestCase;
  * directly to seed history for `levelAt()`'s tests (it predates this guard, and asserting
  * `levelAt()`'s read semantics is exactly what that file is for) — a test fixture is not the
  * production integrity surface this guard exists to close.
+ *
+ * ONE PATH DELETES THIS TABLE WITHOUT THIS GUARD BEING ABLE TO SEE IT, AND IT IS NOT AN OVERSIGHT.
+ * `App\Support\Demo\DemoDepartment::remove()` (P1e Task 13) hard-deletes every row the demo
+ * department created, which includes the level spans it opened through `LevelAssignment::assign()`.
+ * It deletes by walking `demo_rows` and taking the TABLE NAME FROM THE LEDGER ROW, so the query
+ * reads `DB::table($table)` and no substring needle can match it. It is deliberately NOT on
+ * ALLOW_LIST — an entry would exempt the file from every needle here while buying no green. What
+ * holds the line is behavioural: `DemoRoundTripTest` compares every table in the live schema around
+ * a create-and-remove.
  */
 class PersonLevelsHaveOneWriterTest extends TestCase
 {

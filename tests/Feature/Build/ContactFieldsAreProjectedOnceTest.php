@@ -135,6 +135,15 @@ class ContactFieldsAreProjectedOnceTest extends TestCase
         'database/migrations/2026_07_25_130001_add_identity_verification_signature_and_otp.php',
         'database/seeders/DemoSeeder.php',
         'database/seeders/E2eSeeder.php',
+        // P1e Task 12 (ST-05). WRITE-ONLY: `'email'` is written onto the fictional people the demo
+        // department creates, generated from the demo's own short name rather than read off any
+        // person, on a domain RFC 2606 reserves and the DNS root guarantees can never resolve. It
+        // renders nothing back — the same reasoning `CreateAdmin` and `InvitationIssue` above carry.
+        // It matched a SECOND needle on first writing, `'notes'`, as a key of its own result array;
+        // that key was renamed rather than excused here, because the key travels into the console
+        // command and the controller and would have bought a blinding entry in each. WATCHED FIRING
+        // WITHOUT THIS ENTRY (2026-08-11).
+        'app/Support/Demo/DemoDepartment.php',
     ];
 
     private const NEEDLES = [

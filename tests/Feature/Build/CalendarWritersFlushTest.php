@@ -54,6 +54,27 @@ class CalendarWritersFlushTest extends TestCase
         // the model, so there is nothing stale here for flush() to clear. Matched only because
         // WRITE_NEEDLES includes `Institution::current()`, which any reader of that row calls.
         'app/Support/ContactVisibility.php',
+        // Reads and writes `institutions.name`, and reads `institutions.code` to render it
+        // read-only — display columns, not calendar ones, exactly as ContactVisibility above
+        // is a policy column. Calendar::settings() memoises the six calendar values as an
+        // array and holds neither, so flushing on a rename would imply a relationship that
+        // does not exist. Matched only because WRITE_NEEDLES includes `Institution::current()`.
+        'app/Http/Controllers/Admin/DepartmentProfileController.php',
+        // Reads the institution row and counts holiday rules to REPORT them on ST-01's derived
+        // setup checklist, and writes nothing at all — DepartmentSetupTest snapshots every table
+        // in the schema around a call and pins that. The same read-only carve-out CreateAdmin
+        // and InstanceShow above already hold; there is nothing here for a flush to clear.
+        'app/Support/Setup/DepartmentSetup.php',
+        // Reads the institution row for ONE value — `institution_id`, D11 provenance stamped onto
+        // the rows it creates and never used to find one — when its caller supplies none. It is
+        // driven from the console as well as from a request, so unlike `ClinicWriter` (which takes
+        // the id from `$request->user()` and says so) there is no actor to take it from, and the
+        // alternative is a second definition of "the current institution" in a console command.
+        // Nothing here touches a calendar column, so there is nothing for a flush to clear;
+        // flushing on a demo seed would imply a relationship that does not exist. WATCHED FIRING
+        // WITHOUT THIS ENTRY (2026-08-11) — it named the file on its own, which is the only thing
+        // that tells an earned exemption apart from a decorative one.
+        'app/Support/Demo/DemoDepartment.php',
     ];
 
     /** Tokens that mean "this file reads or writes calendar configuration". */

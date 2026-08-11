@@ -11,6 +11,17 @@ class Institution extends Model
 
     public const PERIOD_WEEK_BLOCKS = 'week_blocks';
 
+    /**
+     * Offered and labelled from ONE list — the same discipline CONTACT_VISIBILITIES below
+     * follows, and for the same reason: the calendar settings screen offers these and the
+     * setup checklist reports which one is in force, and two hand-written label pairs would
+     * eventually disagree about what a period system is called.
+     */
+    public const PERIOD_TYPES = [
+        self::PERIOD_WEEK_BLOCKS => 'Week blocks',
+        self::PERIOD_MONTHS => 'Calendar months',
+    ];
+
     /** The bounds a calibration may take. Beyond this it is a wrong timezone, not an offset. */
     public const HIJRI_OFFSET_BOUNDS = [-2, 2];
 

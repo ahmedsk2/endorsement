@@ -1072,3 +1072,104 @@ removing the last one, but it cannot help if that one account's password is lost
 leaves — and while `access.manage` is unheld (an instance that somehow reached that state), the
 guard also refuses deactivations and demotions until a holder exists again. Reactivating an account
 and promoting somebody to Administrator both stay available, which is the recovery path.
+
+---
+
+## Verifying the 2026-08-16 clinics and demo migrations (P1e)
+
+**Two additive migrations, both brand-new tables, in the slot the P1 plan reserved.** Nothing is
+retyped, nothing is dropped, and no clinical table's shape is touched. The slot was checked free
+before either was written — unlike P1d-1, which found its reserved `2026_08_15_1200*` slots already
+taken and had to renumber.
+
+- `2026_08_16_120001_create_clinics_and_attendees_tables` (P1e-1)
+- `2026_08_16_120002_create_demo_rows_table` (P1e-2)
+
+```sql
+-- Expect zero rows on a fresh deploy. `weekday` is ISO-8601 (Monday = 1 … Sunday = 7) — NOT
+-- Carbon's dayOfWeek, where Sunday is 0. `unit_id` is a foreign key: a clinic's owning unit is a
+-- units row, never a code string. `institution_id` is D11 provenance and no index touches it.
+SHOW CREATE TABLE clinics;
+SELECT COUNT(*) FROM clinics;
+
+-- Expect zero rows. Each row names exactly ONE of level_id / person_id, and never duplicates
+-- within a clinic — a rule the schema cannot express over nullable columns on either engine
+-- (NULLs compare distinct), so it lives in App\Support\Clinics\ClinicWriter, the only writer.
+-- Carries no institution_id at all: a pure child table does not repeat its parent's provenance.
+SHOW CREATE TABLE clinic_attendees;
+SELECT COUNT(*) FROM clinic_attendees;
+
+-- Expect zero rows on a fresh deploy, and zero rows on any instance where nobody has pressed
+-- "Create the demo department". A non-zero count means a demo department is currently present;
+-- SELECT DISTINCT batch_id FROM demo_rows names it. This table has no institution_id column.
+SHOW CREATE TABLE demo_rows;
+SELECT COUNT(*) FROM demo_rows;
+
+-- WARD is the sole clinic owner (Owner Decision B, 2026-08-09) and the clinics screen offers
+-- exactly the units where both flags are true. If this returns no rows, Admin → Structure →
+-- Clinics will show an empty state rather than an error — the fix is a checkbox on
+-- Admin → Structure → Units, not a migration.
+SELECT code, clinic_owner, active FROM units WHERE clinic_owner = 1 AND active = 1;
+```
+
+Post-deploy checklist addition:
+
+- **`clinics.view` lands on EVERY seeded role automatically, ONCE** — the same
+  `applied_role_defaults` idempotent-apply mechanism `structure.manage`, `people.manage` and
+  `rota.view` used above, so there is no owner action. Reaching every position is deliberate (CL-05:
+  a resident needs to know when their unit's clinic runs), and it is exactly why the map ships no
+  contact field and no person-shaped value of any kind. **An administrator revocation is never
+  re-imposed:** `AccessControlSeeder` records each (position, capability) default in
+  `applied_role_defaults` and never re-asserts it, so un-ticking this on Admin → Access Control
+  survives every later `db:seed --force`, and there is deliberately no migration to force it back.
+  **Defining** a clinic stays on `structure.manage` — one new key, not two.
+- **The clinic map is `auth` + `cap:clinics.view` and is NOT link-public**, despite Munawib §5's
+  footnote naming it among three surfaces exposed without a login. D7 overrides that (design §1.2).
+  A consultant who wants to check clinic times signs in.
+- **There is no way to delete a clinic, by design.** A clinic that stopped running is deactivated
+  (Admin → Structure → Clinics → Deactivate) and can be restarted later — the same shape Units,
+  Levels and Holidays already take. DELETE against a clinic URI is a plain 405.
+- **`/admin/setup` is the new front door for configuring a department** — a derived checklist over
+  the screens that already exist, storing nothing anywhere. An already-configured department (QCH)
+  reads as complete on the first load with no backfill and no migration. It is **not** `/setup`,
+  which is the per-user first-login two-factor flow and is untouched; an administrator who has not
+  finished their own second factor is redirected there first, which is intended.
+- **Admin → Structure → Department now edits the institution's display name**, audited
+  (`institution_profile_update`), and the rename survives `db:seed --force`. **The institution CODE
+  is deliberately not editable from any screen** — it is the key `ReferenceSeeder` finds the row by,
+  so re-coding a live institution makes the next deploy create a SECOND institutions row and
+  `Institution::current()` return null, blanking every configuration-reading screen. A re-code is a
+  provisioning operation; see `docs/RUNBOOK-PROVISION.md`.
+
+### Operating the demo department (ST-05)
+
+**This one is safe to run on the live instance, unlike `db:seed --class=DemoSeeder`, which throws in
+production and must keep doing so.** The difference is not policy: `DemoSeeder` and `E2eSeeder` mark
+no row they write and have no removal path, so their rows are permanent and indistinguishable from
+real ones. The demo department records every row it creates and **creates no account at all**.
+
+| | |
+|---|---|
+| **Where** | Admin → Set up this department → Somewhere to practise (`/admin/structure/demo`), `structure.manage`. No permanent navigation entry, deliberately. |
+| **From a terminal** | `php artisan demo:seed` and `php artisan demo:remove` (both prompt; `--force` skips). `demo:remove` prints the pre-flight before it asks. |
+| **What it creates** | One extra unit coded `DEMO`, five staff records, an academic year of periods **only if the department has none**, master-rota spans (one deliberately short, so the coverage summary has a real gap in it), one week of leave, and one weekly clinic. Roughly fifteen rows. |
+| **How it is labelled** | Every name begins `Demo ` and every address is on `demo.invalid` — reserved by RFC 2606 and guaranteed never to resolve, so an invitation issued to a demo person by mistake cannot reach a real inbox. |
+| **Removing it** | Same screen. Type `DEMO` to confirm. It is a hard delete with no undo. |
+
+**If removal is refused, that is the feature working.** It refuses **whole** — nothing is
+half-deleted — the moment a row that is not part of the demo points at one that is: a real handover
+written on the demo unit during a training session, an account claimed against a demo person, a real
+clinic naming a demo resident, or a sign-off naming one, which is medico-legal evidence and must
+never be reachable from a cleanup button. The screen names the tables and the row counts holding it;
+the remedy is to deal with those rows first (delete or re-point them) and try again. Both the
+refusal and the removal are audited (`demo_department_remove_refused` / `demo_department_remove`) —
+ids and counts only, never a name.
+
+**Two operational notes:**
+
+- **The demo generates periods only when the department has none.** On a configured department it
+  uses the existing academic year instead — deliberately, since a second year sitting beside the
+  real one is confusing on the rota's year picker — and the screen says which branch it took. Read
+  that line; it is how you know the button did what you expected.
+- **A `DEMO` unit that is NOT part of a demo department blocks creation**, by name, rather than
+  colliding on the unique index. Rename or retire it first.

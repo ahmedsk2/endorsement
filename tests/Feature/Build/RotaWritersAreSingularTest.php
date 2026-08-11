@@ -19,6 +19,21 @@ use Tests\TestCase;
  * `tests/` is NOT scanned — same reasoning `PersonLevelsHaveOneWriterTest` states: a test fixture
  * seeding rows directly for an unrelated test's own purposes is not the production integrity
  * surface this guard exists to close.
+ *
+ * ONE PATH DELETES THESE TABLES WITHOUT THIS GUARD BEING ABLE TO SEE IT, AND IT IS NOT AN
+ * OVERSIGHT. `App\Support\Demo\DemoDepartment::remove()` (P1e Task 13) hard-deletes every row the
+ * demo department created, which includes its master rota spans and its one week of leave. It
+ * deletes by walking `demo_rows` and taking the TABLE NAME FROM THE LEDGER ROW, so the query reads
+ * `DB::table($table)` and no substring needle can match it. It CREATES through `RotaAssignment` and
+ * `VacationBooking` like everything else — the plan's own test that no writer was bypassed — and
+ * this guard stayed green over it with no allow-list entry, which is the result rather than the
+ * hope.
+ *
+ * It is deliberately NOT on ALLOW_LIST: an entry would exempt that file from every needle here
+ * while buying no green, blinding this guard at a file that reaches both of these tables. What
+ * holds the line is behavioural — `DemoRoundTripTest` compares every table in the live schema
+ * around a create-and-remove, so a delete reaching a row the demo did not create shows up as a
+ * count that did not come back.
  */
 class RotaWritersAreSingularTest extends TestCase
 {

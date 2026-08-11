@@ -60,6 +60,11 @@ class CalendarWritersFlushTest extends TestCase
         // array and holds neither, so flushing on a rename would imply a relationship that
         // does not exist. Matched only because WRITE_NEEDLES includes `Institution::current()`.
         'app/Http/Controllers/Admin/DepartmentProfileController.php',
+        // Reads the institution row and counts holiday rules to REPORT them on ST-01's derived
+        // setup checklist, and writes nothing at all — DepartmentSetupTest snapshots every table
+        // in the schema around a call and pins that. The same read-only carve-out CreateAdmin
+        // and InstanceShow above already hold; there is nothing here for a flush to clear.
+        'app/Support/Setup/DepartmentSetup.php',
     ];
 
     /** Tokens that mean "this file reads or writes calendar configuration". */

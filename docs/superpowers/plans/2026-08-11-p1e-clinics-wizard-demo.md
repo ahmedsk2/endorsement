@@ -1480,6 +1480,83 @@ gains item 23.
    `ReferenceSeeder`'s create-only `name` write, `institutions.name`'s `string` (255) column and
    the `INSTANCE_SLUG`/`INSTITUTION_CODE` distinction all check out as described.
 
+### 2026-08-11 — Task 9
+
+1. **Baseline re-measured clean before touching anything: `php artisan test` → 1541 passed, 0
+   failed**, matching Task 8's recorded number exactly. `npm test` → 216, `npm run build` → green.
+   Task 9 took PHPUnit to **1557** (16 `DepartmentSetupTest`). Vitest unchanged; no migration and
+   no e2e file was touched, so the e2e world was not rebuilt.
+2. **`clinics` is a REQUIRED step, not a third `OPTIONAL` kind — the plan's own table and its own
+   Decision D disagree, and the prose wins** (the P1d-1 lesson: task text contradicting the
+   decisions block is this plan family's single most repeated defect class). Decision D enumerates
+   exactly two kinds and lists `clinics` under REQUIRED with the escape in its predicate; the
+   implementation table calls the kind `OPTIONAL`. Two kinds shipped, `KIND_REQUIRED` /
+   `KIND_REVIEW`, and the escape lives where Decision D puts it — in `done`.
+3. **`clinics` carries NO `blocked_by`, and the table's entry for it is unreachable by
+   construction.** It names "no clinic-owning unit" as the block — but that is precisely the state
+   that SATISFIES the step (a department without an outpatient week is a valid department), so a
+   populated `blocked_by` there would render as "done, but blocked". Stated at the site so nobody
+   restores it from the table.
+4. **The `periods` predicate is "a period whose `ends_on` is today or later", not "a row exists for
+   the current academic year" — a deliberate deviation, and it is stronger in both directions.**
+   Deriving the current year's LABEL means calling `PeriodGenerator::deriveAcademicYear($firstStart,
+   $lastEnd)`, whose second argument is the last generated end date: you must regenerate the whole
+   run in memory just to name the year, which is a second definition of a label the generator owns.
+   The shipped predicate avoids two real lies instead. A bare `exists()` calls a department whose
+   only year ended in a previous academic year "done" — the direction nobody re-checks. A
+   contains-today test calls a department that generated its year in August for a September start
+   "not done" — the direction that makes an administrator redo work they just did.
+   `test_a_year_that_has_already_ended_does_not_satisfy_the_period_step` pins the first.
+   `whereDate()`, not a string comparison: both bounds are `date`-cast and MySQL 8.4 round-trips
+   such a column as `'Y-m-d 00:00:00'` — the same caveat Task 3 amendment 3 recorded.
+5. **`count()`, not `exists()`, on every REQUIRED step — the same one query, and it buys the
+   summary line.** The plan says `exists()`; a REQUIRED step whose summary cannot say *how many* is
+   a tick with nothing behind it, and the REVIEW steps would then be the only ones an administrator
+   could actually verify from the checklist. The measured cost is identical.
+6. **`Institution::PERIOD_TYPES` is new, and the two files that name a period system now read it.**
+   The checklist reports which system is in force and the calendar screen offers the choice; two
+   hand-written label pairs are the `SignoffPickers` defect in miniature. `CalendarSettingsController`
+   now renders `period_type_options` from the constant with byte-identical output.
+7. **THE `CalendarWritersFlushTest` TRAP FIRED A SECOND TIME, in a file Decision G never
+   anticipated.** `DepartmentSetup` reads the institution row for the profile summary and counts
+   `Holiday::query()` for the holidays summary — two WRITE_NEEDLES in a class that writes nothing
+   at all. Allow-listed with the reason at the site, and **watched failing without the entry**
+   (it named the file), then restored. Generalisable: the guard's needles are "touches calendar
+   configuration", and a READ-ONLY reporting surface trips them by construction. The wizard screen
+   in Task 10 will not — it reads `DepartmentSetup`, not the row.
+8. **NINE steps, TEN queries, both measured rather than argued, and the bound was watched failing
+   at 11 AND at 12.** Ten is one per REQUIRED step (six), two for `clinics` (an active clinic and a
+   clinic-owning unit are different questions and the summary must tell them apart), plus the three
+   REVIEW reads. The bound is EXACT, not generous: the regression it exists to catch is a step
+   resolving per-step what belongs in one read, and each of those costs exactly one query — a bound
+   with headroom would not see it. Planted `Institution::current()` a second time → 11, named.
+9. **Trap 3 caught this task: `test_no_step_names_a_slot_a_coverage_template_or_a_condition` PASSED
+   ON ITS FIRST RUN.** What makes it non-vacuous is not another assertion inside it but the two
+   structural twins — `test_every_step_carries_the_same_keys_and_a_registered_route` (which pins
+   the key set AND resolves every `route` over the router, so a checklist pointing at a dead
+   screen fails at source) and the plant. A step titled *"Coverage templates"* was added and it
+   named `templates names coverage`; the already-configured test named `templates` in the same run,
+   which is a second, quieter proof — an unsatisfiable step also breaks "complete with no backfill".
+10. **`test_asking_writes_nothing_anywhere` was watched failing against a planted stored counter**
+    (`app_settings` updateOrInsert of a `setup_step` key inside `steps()`): the diff named
+    `'main.app_settings' => 0` becoming `1`. Worth recording that SQLite returns table names
+    SCHEMA-QUALIFIED from `Schema::getTableListing()` (`main.audit_log`, …), which is exactly why
+    the map is compared WHOLE rather than by hand-written keys — a named-key assertion written
+    against `'app_settings'` would have found nothing on either side and passed forever.
+11. **Two route facts the task's table does not state, both checked against the router rather than
+    assumed.** There is **no GET invitations screen** — invitations are issued from Admin → People
+    (`admin.people`), so that is the invitations step's route. And the `roster` step points at
+    `admin.roster-import` rather than at People, because its `blocked_by` ("no active level") is
+    that screen's OWN prerequisite: `RosterImportController::index()` offers
+    `Level::query()->active()` for the level mapping, so an import against an empty ladder maps
+    nothing. `blocked_by` reading the target's own predicate is Decision D's rule, and the route
+    has to be the screen that predicate belongs to.
+12. **Three files beyond the task's two-file list were touched**, all stated above: `Institution`
+    (the new constant), `CalendarSettingsController` (reads it), and `CalendarWritersFlushTest`
+    (item 7). Nothing else in the task text was wrong against the tree — the nine step keys, the
+    REQUIRED/REVIEW split, the `later` shape, `ReferenceSeeder` seeding levels and units but not
+    periods, and WARD as the sole seeded clinic owner all check out as described.
+
 ---
 
 ## Standing rules for every task

@@ -774,6 +774,56 @@ plan is wrong somewhere too**, and in particular: run `php artisan test` on a cl
 touching any file at the start of each task, and trust the measured baseline over this document's
 arithmetic — this plan's own PHPUnit baseline was measured on a dirty tree and says so.*
 
+### 2026-08-11 — Task 1
+
+1. **Baseline re-measured on a clean tree, as instructed: `php artisan test` → 1451 passed, 0
+   failed** (the plan's contaminated reading said 1446/75-failed). `npm test` → 192, `npm run
+   build` → green. Task 1 took it to **1460** (8 `WeekdayVocabularyTest` + 1 `GoldenFixtureTest`).
+2. **The weekday names went into `lang/en/calendar.php`, not into a `const` on `Calendar` — a
+   deliberate deviation from Task 1's "are plain constants".** The prohibition that sentence is
+   really making (*"no `IntlDateFormatter`, no `IntlCalendar`, no date construction"*) is held in
+   full: a weekday name is a vocabulary lookup and nothing constructs a date to obtain one. But
+   the tree already has exactly one calendar-vocabulary table, `lang/en/calendar.php`'s
+   `hijri_months`, whose own docblock states the reason — *"Munawib AR-07: strings are
+   externalized from launch so a future locale is translation work, not a rewrite"* — and
+   `golden.json`'s `hijri_labels` block already names that file as the source a mirror checks
+   itself against. A second calendar vocabulary in a different place, with a different translation
+   story, is the "one fact in two places" this codebase keeps paying for; Task 1's own
+   justification cites AR-07 while prescribing the shape AR-07 exists to avoid. `label` and
+   `short` sit in ONE entry per day rather than two parallel arrays, because two arrays are two
+   lengths that can drift and an abbreviation is not always the first three characters of a name
+   in another language. **If the owner prefers the constant, it is a one-function change**
+   (`Calendar::weekdayStrings()`); the public signatures, the Inertia prop shape and the fixture
+   are identical either way.
+3. **`golden.json`'s `version` went 1 → 2.** Its marker exists so *"a future shape change is
+   visible to BOTH independent consumers … rather than one silently drifting onto a JSON shape the
+   other has never seen"* — a whole new top-level block is such a shape, additive or not. The
+   mirror is unwritten, so nothing breaks; `GoldenFixtureTest::test_fixture_declares_a_version`
+   now pins 2 and records why.
+4. **The new block is `weekday_columns: {_description, cases[]}`, not a bare list**, matching
+   `parse_rejects`/`hijri_labels` rather than `weeks` — it needed a paragraph of contract prose
+   (why CL-03 makes it contractual at all) that a bare list has nowhere to put.
+5. **Empirical, and the reason the fixture assertion is `assertSame` on the whole `columns`
+   array:** `assertSame` on a PHP array compares key ORDER too. A first draft of
+   `test_every_column_says_whether_it_is_a_weekend_day` built its map in *column* order and failed
+   against an ISO-ordered expectation that was correct in content — fixed with a `ksort()` and a
+   comment, since ORDER is the previous test's subject. The same property is what makes the
+   fixture assertion strong: it pins key order and value types, and the array ships to
+   `resources/js` verbatim.
+6. **The fixture assertion was watched failing against planted drift** (one `weekend` flag flipped
+   in the `[5, 6]` case) before being trusted; it named the exact column. Note for whoever plants
+   the next one: `git checkout <fixture>` to revert a plant also reverts the task's own
+   uncommitted work on that file. Copy the file aside instead.
+7. **`CalendarIsTheOnlyConverterTest` stayed green with no allow-list change**, as Task 1 requires
+   — but note its JS scan needles for date CONSTRUCTION (`new Date(`, `toLocaleDateString(`, …),
+   so it would **not** catch a `.vue` file that hardcoded `['Sun', 'Mon', …]` instead of consuming
+   the `weekdayColumns()` prop. Tasks 4 and 5 are where that could actually happen; if it is worth
+   guarding, the needle is a weekday-name list under `resources/js`, and it belongs there rather
+   than here.
+8. Verified against the tree, as instructed: **there is no `institutions.week_start` column**
+   (`grep week_start database/migrations app/Models/Institution.php` → nothing).
+   `Calendar::weekStartIsoDay()` derives it. Finding 6 is correct.
+
 ---
 
 ## Standing rules for every task

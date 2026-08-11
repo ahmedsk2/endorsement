@@ -87,6 +87,16 @@ class ContactFieldsAreProjectedOnceTest extends TestCase
         'app/Http/Controllers/Admin/InvitationController.php',
         'app/Http/Controllers/Admin/UserManagementController.php',
         'app/Http/Controllers/Auth/InvitationAcceptController.php',
+        // P1c-2 Task 3, and this guard is what made the entry get written rather than assumed.
+        // The one writer of `invitations` reads `people.email` for exactly two purposes, both
+        // write-side: it is the address the credential is FROZEN onto (`invitations.member_email`,
+        // Decision G), and it is half of the predicate deciding which live links a new one must
+        // kill. It builds no props, returns no person, and its only return value carrying an
+        // address at all is the invitation model the caller re-reads through its own allow-listed
+        // path. The read lives HERE rather than being passed in by the caller on purpose: "an
+        // invitation is addressed to the roster row's current address" is an invariant, and a
+        // caller-supplied address is a caller that can get it wrong.
+        'app/Support/Invitations/InvitationIssue.php',
 
         // SELF-SERVICE: reads/writes the SIGNED-IN account's OWN address for their OWN profile
         // or first-login setup screen — never another person's, so `PersonPolicy::viewContact()`

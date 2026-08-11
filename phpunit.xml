@@ -18,6 +18,19 @@
         </include>
     </source>
     <php>
+        <!-- The suite crossed PHP's stock 128M CLI ceiling at 1,360 tests (P1c-2 Task 4). It
+             exhausts CUMULATIVELY across the whole run, so the failure lands on whichever test
+             happens to be running when the last byte goes — a different one each time, always
+             reported as a fatal inside vendor/ rather than as a failing assertion. That reads
+             exactly like a real defect and is not one, and the next person to add twenty tests
+             would spend the same half hour on it.
+
+             Set here rather than in the machine's php.ini so CI, the container and every
+             developer get the same ceiling: `php artisan test` runs PHPUnit in a subprocess, so a
+             `php -d memory_limit=…` on the artisan command does NOT reach it, which is its own
+             confusing dead end. Verified empirically: the suite was green at 1,338 tests under
+             128M and fatal at 1,360, and green at both under this. -->
+        <ini name="memory_limit" value="512M"/>
         <env name="APP_ENV" value="testing"/>
         <env name="APP_TIMEZONE" value="Asia/Riyadh"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>

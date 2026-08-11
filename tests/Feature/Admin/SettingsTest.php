@@ -221,6 +221,57 @@ class SettingsTest extends TestCase
         \Illuminate\Support\Facades\Mail::assertNothingSent();
     }
 
+    /*
+     * AC-02's configurable invitation lifetime. It lives here rather than on the account
+     * console because it is a credential-exposure parameter — how long a bearer link that
+     * leads to a child's clinical records stays live — and the person issuing invitations
+     * all day is exactly the person for whom "make the links last longer" is a convenience.
+     */
+
+    public function test_the_invitation_lifetime_is_saved_and_read_back(): void
+    {
+        $this->actingAs($this->admin())
+            ->put('/admin/settings', ['invitation_lifetime_days' => 14])
+            ->assertRedirect();
+
+        $this->assertDatabaseHas('app_settings', ['key' => 'invitation_lifetime_days']);
+        $this->assertSame('14', AppSettings::get('invitation_lifetime_days'));
+        $this->assertSame(14, \App\Models\Invitation::lifetimeDays());
+    }
+
+    public function test_the_lifetime_is_validated_against_its_bounds(): void
+    {
+        $admin = $this->admin();
+
+        foreach ([0, -1, 31, 'soon'] as $rejected) {
+            $this->actingAs($admin)
+                ->put('/admin/settings', ['invitation_lifetime_days' => $rejected])
+                ->assertSessionHasErrors('invitation_lifetime_days');
+        }
+
+        $this->assertDatabaseMissing('app_settings', ['key' => 'invitation_lifetime_days']);
+        $this->assertSame(\App\Models\Invitation::LIFETIME_DAYS, \App\Models\Invitation::lifetimeDays());
+    }
+
+    public function test_the_lifetime_write_is_audited_by_key_never_by_value(): void
+    {
+        $this->actingAs($this->admin())->put('/admin/settings', ['invitation_lifetime_days' => 14]);
+
+        $detail = (string) AuditLog::where('action', 'settings_update')->latest('id')->firstOrFail()->detail;
+
+        $this->assertStringContainsString('invitation_lifetime_days', $detail);
+        $this->assertStringNotContainsString('14', $detail);
+    }
+
+    public function test_the_lifetime_setting_is_behind_settings_manage(): void
+    {
+        $this->actingAs(User::factory()->create(['position' => 4]))
+            ->put('/admin/settings', ['invitation_lifetime_days' => 14])
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('app_settings', ['key' => 'invitation_lifetime_days']);
+    }
+
     public function test_unknown_setting_keys_are_rejected_not_stored(): void
     {
         $this->actingAs($this->admin())->put('/admin/settings', [

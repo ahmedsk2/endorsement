@@ -99,6 +99,17 @@ class InvitationAcceptController extends Controller
             // one at issue time (Task 8 / design §5.2.4). A null person_id only happens for a row
             // minted before P0c (or by a direct `Invitation::issue()` caller with no $person) —
             // for those, and only those, a person is created here, exactly as before.
+            //
+            // NOTE THE ASYMMETRY, AND DO NOT "FIX" IT: `position` is written on the CREATE branch
+            // only. The claim branch leaves `people.position` exactly as the roster has it, because
+            // that column has one writer (`App\Support\PositionChange`, which carries the
+            // last-administrator guard and the capability-cache flush) and because an invitee must
+            // not be able to re-rank the roster row they are claiming — the invitation would be
+            // deciding a role the department had since changed its mind about. What that means is
+            // that a redeemed account resolves its capabilities from the PERSON, never from the
+            // invitation, which is why `InvitationIssue::issue()` authorizes against the bound
+            // person's position rather than the row's (see its assertion, and
+            // `tests/Feature/Security/InvitationPositionEscalationTest.php`).
             $person = $locked->person_id === null
                 ? Person::create([
                     'institution_id' => $locked->institution_id,

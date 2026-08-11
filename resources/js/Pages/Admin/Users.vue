@@ -20,8 +20,11 @@ const props = defineProps({
     // to residents; the page additionally hides the full-manager-only controls
     // (role changes, profile edits) the server would 403 anyway.
     canManageAll: { type: Boolean, default: true },
-    // Open invitations, and the roles THIS manager may invite into — a Chief Resident sees
-    // Resident only, matching the server rule in App\Support\ManagerScope.
+    // Every invitation with its DERIVED claim state (AC-02), and the roles THIS manager may invite
+    // into — a Chief Resident sees Resident only, matching the server rule in
+    // App\Support\ManagerScope, which `InvitationController::statusList()` now applies itself
+    // rather than leaving to its caller. `state`, `state_label` and every date are composed
+    // server-side; this component formats nothing.
     invitations: { type: Array, default: () => [] },
     invitablePositions: { type: Object, default: () => ({}) },
 });
@@ -66,6 +69,30 @@ const copyLink = async () => {
 const revokeInvite = (i) => {
     if (!confirm(`Revoke the invitation for ${i.member_email}? The link stops working immediately.`)) return;
     router.delete(`/admin/invitations/${i.id}`, { preserveScroll: true });
+};
+
+/*
+ * AC-02's "resendable singly". OFFERED WHERE THE SERVER WOULD ACCEPT IT and nowhere else (D9's
+ * offer-matches-write rule): `open` because the first link was lost, `expired` because it aged
+ * out, and neither `claimed` (the account exists) nor `revoked` (somebody deliberately killed
+ * that link — re-inviting is a different act, through the form above).
+ *
+ * The confirmation says the old link dies, because it does: a resend ROTATES the token. Re-mailing
+ * the same one would extend the life of a credential that may already be in the wrong hands.
+ */
+const resendableStates = ['open', 'expired'];
+
+const canResend = (i) => resendableStates.includes(i.state);
+
+const resendInvite = (i) => {
+    if (!confirm(`Send a new invitation link to ${i.member_email}? The previous link stops working immediately.`)) return;
+
+    copied.value = false;
+
+    router.post(`/admin/invitations/${i.id}/resend`, {}, {
+        preserveScroll: true,
+        onSuccess: (page) => { invitationLink.value = page.props.flash?.invitation_link ?? null; },
+    });
 };
 
 const filteredUsers = computed(() => {
@@ -116,6 +143,33 @@ const saveProfile = (u) => {
         preserveScroll: true,
         onSuccess: () => { editingId.value = null; },
     });
+};
+
+/*
+ * AC-03 — turnover. Unbinding clears the person link, deactivates the account and KEEPS it as
+ * history: who signed off what, who invited whom. It is not a deletion and there is no rebind —
+ * a colleague who returns gets a NEW invitation, and an administrator grants their roles again.
+ *
+ * The confirmation names the person and states all four consequences, because none of them is
+ * visible afterwards: the row leaves this table (the console inner-joins `people`), the account
+ * cannot be reactivated, its roles do not come back, and there is no undo.
+ *
+ * Full managers only — the server route sits in the `cap:users.manage` group, so a scoped (Chief
+ * Resident) manager never sees a control the server would refuse.
+ */
+const unbind = (u) => {
+    const who = u.full_name || u.member_name;
+
+    if (!confirm(
+        `Unbind the account for ${who}?\n\n`
+        + '• The account is deactivated and can never be reactivated.\n'
+        + '• It is kept as history and disappears from this list.\n'
+        + `• ${who} stays on the roster and can still be named and scheduled.\n`
+        + '• Any roles granted to this account are NOT restored if they return — invite them for a new account and grant the roles again.\n\n'
+        + 'There is no undo.'
+    )) return;
+
+    router.patch(`/admin/users/${u.id}/unbind`, {}, { preserveScroll: true });
 };
 
 // There is deliberately NO delete affordance here (owner ruling, 2026-07-19). Deactivate is the
@@ -174,15 +228,23 @@ const saveProfile = (u) => {
                             @click="copyLink">{{ copied ? 'Copied' : 'Copy link' }}</button>
                 </div>
 
+                <!-- AC-02's "claim status visible". This table used to drop a row the moment it
+                     was accepted, revoked or expired, which could answer "who is still waiting"
+                     but never "who ever claimed theirs" — the question Munawib §35's "residents
+                     claimed accounts" is made of. The header below also loses a soft-panel utility
+                     that compiles to nothing — no such colour token is declared (P1c-2 finding 15)
+                     — for the token every other table header in this codebase already uses. -->
                 <div v-if="invitations.length" class="mt-4 overflow-x-auto rounded-md border border-line">
                     <table class="w-full text-left text-sm">
-                        <thead class="bg-panel-soft">
+                        <caption class="sr-only">Invitations issued, with the state each has reached</caption>
+                        <thead class="bg-ground-deep">
                             <tr>
-                                <th class="channel-tag px-3 py-2">Email</th>
-                                <th class="channel-tag px-3 py-2">Role</th>
-                                <th class="channel-tag px-3 py-2">Invited by</th>
-                                <th class="channel-tag px-3 py-2">Expires</th>
-                                <th class="channel-tag px-3 py-2"></th>
+                                <th scope="col" class="channel-tag px-3 py-2">Email</th>
+                                <th scope="col" class="channel-tag px-3 py-2">Role</th>
+                                <th scope="col" class="channel-tag px-3 py-2">Invited by</th>
+                                <th scope="col" class="channel-tag px-3 py-2">Status</th>
+                                <th scope="col" class="channel-tag px-3 py-2">Expires</th>
+                                <th scope="col" class="channel-tag px-3 py-2"><span class="sr-only">Actions</span></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -190,16 +252,26 @@ const saveProfile = (u) => {
                                 <td class="px-3 py-2 text-ink">{{ i.member_email }}</td>
                                 <td class="px-3 py-2 text-muted">{{ i.position_label }}</td>
                                 <td class="px-3 py-2 text-muted">{{ i.invited_by || '—' }}</td>
-                                <td class="readout px-3 py-2 text-muted">{{ i.expires_at }}</td>
+                                <td class="px-3 py-2" :data-testid="`invitation-state-${i.id}`">
+                                    <span class="channel-tag">{{ i.state_label }}</span>
+                                </td>
+                                <td class="readout px-3 py-2 text-muted">
+                                    {{ i.expires_at.date }} {{ i.expires_at.time }}
+                                    <span class="block">{{ i.expires_at.hijri }}</span>
+                                </td>
                                 <td class="px-3 py-2 text-right">
-                                    <button type="button" class="text-xs font-semibold text-critical hover:underline"
+                                    <button v-if="canResend(i)" type="button"
+                                            :data-testid="`resend-${i.id}`"
+                                            class="mr-3 text-xs font-semibold text-channel-ink hover:underline"
+                                            @click="resendInvite(i)">Resend</button>
+                                    <button v-if="i.open" type="button" class="text-xs font-semibold text-critical hover:underline"
                                             @click="revokeInvite(i)">Revoke</button>
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
-                <p v-else class="mt-3 text-sm text-muted">No invitations are waiting to be accepted.</p>
+                <p v-else class="mt-3 text-sm text-muted">No invitations have been issued yet.</p>
             </section>
 
             <!-- Pending registrations -->
@@ -360,11 +432,16 @@ const saveProfile = (u) => {
                                                 : 'bg-ok text-white hover:bg-ok/90']">
                                         {{ u.active ? 'Deactivate' : 'Activate' }}
                                     </button>
+                                    <button v-if="canManageAll" type="button" :data-testid="`unbind-${u.id}`" @click="unbind(u)"
+                                            :aria-label="`Unbind and retire the account for ${u.member_name}, keeping it as history`"
+                                            class="ml-2 rounded-md border border-critical px-3 py-1.5 text-xs font-semibold text-critical transition hover:bg-critical-soft">
+                                        Unbind
+                                    </button>
                                     </template>
                                 </td>
                             </tr>
                             <tr v-if="!filteredUsers.length">
-                                <td colspan="7" class="px-4 py-6 text-center text-sm text-muted">No users match the search.</td>
+                                <td colspan="8" class="px-4 py-6 text-center text-sm text-muted">No users match the search.</td>
                             </tr>
                         </tbody>
                     </table>

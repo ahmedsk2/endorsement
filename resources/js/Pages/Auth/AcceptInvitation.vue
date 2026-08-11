@@ -40,7 +40,7 @@ const submit = () =>
                 subheading="Choose a username and password. Your access is already approved.">
         <form @submit.prevent="submit" class="space-y-4">
             <!-- What was decided for you, shown so it can be checked before accepting. -->
-            <div class="rounded-md border border-line bg-panel-soft px-3 py-2.5">
+            <div class="rounded-md border border-line bg-ground-deep px-3 py-2.5">
                 <p class="channel-tag mb-1">Invited as</p>
                 <p class="text-sm font-semibold text-ink" data-testid="invited-role">{{ position_label }}</p>
                 <p class="mt-1 text-sm text-muted" data-testid="invited-email">{{ member_email }}</p>

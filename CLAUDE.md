@@ -232,6 +232,124 @@ SCBU and WARD are seed data for the QCH institution.
   people to delete it. The stripper therefore needs its own calibration test
   (`test_the_scan_strips_comments_and_still_sees_the_code`) — a stripper that over-reached would
   disable the guard and look exactly like a clean tree.
+- **The invitation lifetime is configurable, default 7, bounded [1, 30], behind `settings.manage`**
+  (`Invitation::lifetimeDays()`, `app_settings.invitation_lifetime_days`, P1c-2 Task 1). Seven is a
+  **deliberate, logged override** of Munawib AC-02's "default 14 days" — recorded in the design
+  doc's §1.2 overrides table, not left in an open-items list — because a redeemed invitation
+  reaches a child's clinical records, so a forwarded link stays live for half as long.
+  `LIFETIME_DAYS` is the DEFAULT, not the value: an unset or out-of-bounds setting falls back to
+  it. The clamp is not belt-and-braces over the FormRequest — `app_settings` is a plain key/value
+  table an operator can also reach from a database console, and that write never passes a
+  validator. The key sits in `AppSettings::KEYS` with **no** entry in `applyOverrides()`'s `$map`
+  (it overrides no framework config, exactly like `alert_email`); do not "fix" the omission.
+- **`App\Support\Invitations\InvitationIssue` is the only writer of `invitations`** (P1c-2
+  Decision C), and a **resend rotates the token** — the superseded row is kept, `revoked_at` and
+  `revoked_by_user_id` set, never deleted. Re-mailing the same token would extend the life of a
+  credential that may already be in the wrong hands and make revoking the first link meaningless.
+  `InvitationWritersAreSingularTest` proves the single writer. Two real defects the refactor
+  surfaced, both worth not reintroducing: the supersede predicate **ignored the clock**, so
+  re-inviting somebody stamped `revoked_at` onto a merely *expired* row, rewriting "this expired"
+  as "a person killed this" in the claim-status projection; and the superseded set matched on
+  **address alone**, so correcting somebody's address and resending left a live link addressed to
+  the old mailbox. `InvitationIssue::liveFor()` now matches `person_id = X OR member_email = Y`,
+  because the invariant "at most one live link" is per-PERSON. **Bulk resend sends mail AFTER the
+  transaction commits, never inside it** — mail cannot be rolled back, and recipients holding live
+  links to invitations that do not exist has no recovery; the reverse (rows exist, some mail did
+  not go) is visible, reportable per person and fixable by resending.
+- **An invitation is authorized against the BOUND PERSON's position, never `invitations.position`**
+  (`InvitationIssue::issue()`, adversarial review F1, 2026-08-11). `InvitationAcceptController`
+  takes the `person_id !== null` branch for every row this system mints and that branch does **not**
+  write `position` — deliberately, because `people.position` has one writer (`PositionChange`) and
+  an invitee must not re-rank the roster row they are claiming. So a redeemed account resolves its
+  capabilities from the ROSTER (`$user->position` is a read-through accessor; `AccessControl::
+  resolve()` joins `role_capabilities` on it) while all four endpoints were checking a column
+  nothing downstream consults. The two diverge with **no misuse at any step**: an admin invites a
+  new joiner at 4, later corrects that roster row to 0, and the live invitation still reads 4 — a
+  Chief Resident may target 4, so resend, bulk resend and (via `Person::matchByEmail()`) invite each
+  handed them a link that mints an Administrator. Asserted at the ONE WRITER beside the supersede
+  loop and before the transaction opens, so all three doors close together; on `store()`'s create
+  branch the person is opened at exactly `$position`, making it a no-op there.
+  `InvitationStatus::mayInvite()` already gated the OFFER on `people.position` — offer and write now
+  agree (D9). Do **not** "fix" the asymmetry by writing `position` at redemption.
+  `tests/Feature/Security/InvitationPositionEscalationTest.php`, whose
+  `test_a_redeemed_account_resolves_capabilities_from_the_roster_not_the_invitation` passed on the
+  tree *before* the fix — the escalation stated as a fact about the system, not inferred.
+- **`BulkResend::positionsToAuthorize()` returns a UNION and is never empty for a non-empty
+  selection** (review F3/F4, 2026-08-11): every selected person's `people.position` **plus** the
+  live invitations from `InvitationIssue::supersededBy()`. Both halves are load-bearing. The
+  invitation half alone returned `[]` for a selection that had all claimed or was never invited —
+  and these two endpoints sit in an **`auth`-only** route group (invitations are this codebase's one
+  deliberate exception to a `cap:` middleware, the rule being two-tier and position-dependent), so
+  the controller's `foreach` asserted nothing and any authenticated account received the plan: per
+  person, their invitation state, invitation id and whether they hold an account. **An `auth`-only
+  group is only sound while the in-controller pass is guaranteed to assert something.**
+  `supersededBy()` is the ONE definition of "the set this operation will supersede", shared by the
+  writer and its pre-authorization — they diverged both ways before: the pass matched `person_id`
+  alone (so an invitation reached only by the ADDRESS axis fired `assertMayTarget()` from *inside*
+  `commit()`'s transaction and the `user_scope_denied` row rolled back with it — P1c-1 finding 12
+  through a different door) and had no expiry filter (so a merely aged-out higher-position row
+  refused a batch the operator was entitled to run).
+- **Unbinding an account is `App\Support\AccountUnbind` and nothing else, and it SNAPSHOTS
+  `handover_signoffs.signed_off_by_name` before it clears the link.** For any handover signed
+  before 2026-07-27 that column is null and the signer's name resolves live through
+  `users.person_id` → `people.full_name`, so clearing the link blanks the attestation on
+  medico-legal evidence — precisely the failure the freeze migration exists to prevent, reached
+  through a different door. The snapshot writes a currently-null column with the value the sheet
+  already renders; `whereNull` is what keeps it a snapshot rather than a rewrite. It clears the
+  link and deactivates in ONE atomic act (an active-but-unbound account is nameless and
+  positionless on every screen with no error at all), never touches `people`, refuses the last
+  active Administrator, and an unbound account **cannot be reactivated** — there is deliberately no
+  rebind action. `AccountLinkHasOneWriterTest` and `PersonActiveHasOneWriterTest` are two separate
+  guards on purpose: deactivating a **person** and retiring an **account** are different acts, and
+  `AccountUnbind` needing no entry in the second is what proves they are disjoint.
+- **`App\Support\CapabilityGrant` is the only writer of `user_capabilities`** (P1c-2 Decision F,
+  `CapabilityWritersAreSingularTest`), and both doors go through it — Admin → Access Control and
+  the People screen's roles panel. Grants stay keyed to the ACCOUNT; AC-04's "roles granted per
+  person" is a second **surface**, not a second table, so `AccessControl::resolve()`, `holdersOf()`
+  and the cache key are untouched. The panel is gated `access.manage`, **never `people.manage`** —
+  a role-granting control served from the roster console's own route group would let a holder of
+  "who exists and what level they hold" grant themselves the security console. A colleague who
+  leaves and returns on a new account does **not** regain old roles; an administrator re-grants
+  them. Auto-restoring on re-bind means a departed administrator's grants silently reattach to
+  whoever claims that identity next, reviewed by nobody.
+- **Placing somebody at position 0 requires `users.manage`** (`PositionChange::write()`, review F2,
+  2026-08-11) — and that **falsifies AC-04's stated premise**. Decision F's gate is right, but its
+  reason ("hanging a role control off the roster gate *would* create an escalation path") described
+  a path that already existed one field to the left: `PersonRequest::POSITIONS` offers 0, position 0
+  holds `access.manage` by seeded role default, and `AccessControl::resolve()` reads
+  `people.position` — so a `people.manage` holder promoted their own roster row, had their
+  capability cache flushed for them by the write itself, and held the security console. Gated in
+  `PositionChange::write()`, the single definition all three writers pass through: a rule in the
+  FormRequest alone would not reach `RosterImport`, which calls `applyWithoutAudit()` from a
+  `cap:people.manage` route and resolves its position column by NAME against `positions` — a CSV
+  cell reading "Administrator" never meets a FormRequest rule at all. `applyWithoutAudit()`
+  therefore takes the actor **positionally and non-optionally**. It is the **TRANSITION** that is
+  gated, not the value: a `people.manage` holder may still edit a sitting Administrator's roster row
+  (the edit form submits the position it was rendered with, and refusing that would make every
+  administrator's row unsaveable by the console that exists to edit rows); a CREATE is a placement,
+  which is what `wasRecentlyCreated` distinguishes. It throws rather than auditing — a refusal
+  written from inside `PersonController`'s or `RosterImport`'s transaction would roll back with it.
+  The offer narrows to match: `grantable_positions` (`PositionChange::grantableBy()`) is what the
+  People screen's two role `<select>`s offer, PLUS whatever the row already holds; the full
+  `positions` catalog still ships beside it, because it is what renders an existing Administrator's
+  role NAME.
+- **OPEN, and pre-existing: `assertNoSelfLockout()` guards the ROLE matrix only.** It never runs on
+  the per-user override path, so a holder of `access.manage` can deny it to the last account
+  holding it — after which `AccessControl::holdersOf('access.manage')` answers nobody and the
+  security console is unreachable without database access. Measured against the tree in P1c-2 Task
+  6, not inferred; deliberately **not** fixed there, because the extraction had to be
+  behaviour-preserving. `PersonRolesTest::test_the_two_doors_agree_about_denying_the_last_access
+  _manage_holder` asserts the two surfaces AGREE rather than that either permits — so a lockout
+  guard added to `CapabilityGrant` (now the only place it *can* be added) keeps that case green and
+  makes it the proof the guard reached both doors. Recorded as design §14 open item 20.
+- **Claim status is DERIVED, never stored** (`App\Support\Invitations\InvitationStatus`, P1c-2
+  Decision B): five states folded, in precedence order, from `accepted_at`/`revoked_at`/
+  `expires_at`, plus `hidden` for a target the viewer may not manage. A stored status column is the
+  `person_status` lifecycle enum D3 removed, wearing a different name. It is per-caller `$extra` on
+  `PersonPresenter::one()` and **never a base key** — the base map reaches every `rota.view` holder,
+  and "who has not claimed their account" is not a fact the whole department gets. It takes Person
+  MODELS, not ids: a person with no invitation row has nothing to join a position from, so an
+  id-only signature could not scope exactly the people whose state is `none`.
 - **An index or unique key led by `institution_id` is a recurring mistake, not a one-off.**
   D11 keeps `institution_id` as provenance/in-instance grouping, never a query filter — but a
   plan-supplied migration snippet has twice proposed one anyway (P1a Task 4's `periods` unique
@@ -267,6 +385,13 @@ SCBU and WARD are seed data for the QCH institution.
 - **Run test/build commands via Bash, not PowerShell.** PowerShell's PATH on this machine lacks
   `openssl`, so the backup tests self-skip there rather than fail — a false "green" that looks
   identical to a real one unless you know to check for it.
+- **`phpunit.xml` sets `memory_limit=512M`, and that is not decoration.** The suite crossed PHP's
+  stock 128M CLI ceiling somewhere between 1,338 and 1,360 tests (measured, P1c-2 Task 4: green at
+  1,338 under 128M, fatal at 1,360, green at both under 512M). It exhausts CUMULATIVELY, so the
+  fatal lands on a different test each run and is reported from inside `vendor/` — which reads
+  exactly like a real defect and is not one. Do not remove it, and do not chase it with
+  `php -d memory_limit=… artisan test`: `artisan test` runs PHPUnit in a **subprocess**, so the
+  flag never reaches it. That dead end cost an hour once already.
 
 ## Domain vocabulary
 

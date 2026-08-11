@@ -96,6 +96,16 @@ class AuditAnomalies extends Command
             // behind one confirmation, which is why it is audited as ONE row (P1 finding 11) and
             // why that one row always deserves a human look.
             'rota_fill' => 'a bulk rota fill rewrote many cells at once',
+            // P1c-2 Decision D: the bulk invitation resend's two actions are BOTH deliberately
+            // absent, and the honest reason is not "we forgot" — resending links to residents who
+            // have not claimed theirs is ordinary departmental work, unlike a cohort promotion or a
+            // fill, which rewrite many rows behind one confirmation. Its summary row is the one a
+            // human should look at, and its per-person companion would page an operator fifty
+            // times for one act. Named here so a later reader does not "fix" the omission.
+            //
+            // (Described rather than quoted: writing either action's literal string inside this
+            // array's own comment is how a self-referential docblock trips the guard it explains,
+            // which has happened four times in this programme.)
         ] as $action => $meaning) {
             $n = AuditLog::where('action', $action)->where('created_at', '>=', $since)->count();
 

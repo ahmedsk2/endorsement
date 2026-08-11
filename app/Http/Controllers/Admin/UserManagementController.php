@@ -7,6 +7,7 @@ use App\Models\AuditLog;
 use App\Models\PendingRegistration;
 use App\Models\Position;
 use App\Models\User;
+use App\Support\AccountUnbind;
 use App\Support\PositionChange;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -108,12 +109,15 @@ class UserManagementController extends Controller
                 ]),
             'positions' => Position::orderBy('id')->get(['id', 'name']),
 
-            // Invitations are how accounts are created now. A Chief Resident sees only the
-            // ones they could act on, matching how `pending` and `users` are scoped above.
-            'invitations' => collect(InvitationController::openInvitations($request->user()))
-                ->when(! $all, fn ($c) => $c->where('position', self::RESIDENT))
-                ->values()
-                ->all(),
+            // Invitations are how accounts are created now, and since P1c-2 the list carries
+            // every one of them with its derived claim state (AC-02), not just the open ones.
+            //
+            // THE SCOPING MOVED, AND THAT IS THE POINT. A Chief Resident still sees only the
+            // invitations they could act on — but the rule now lives inside `statusList()` rather
+            // than in this `->when(! $all, …)`, because it had become a rule a SECOND caller could
+            // not see (P1c-2 finding 4: the projection declared a `?User $viewer` and ignored it
+            // while this line did the work). The People screen is that second caller.
+            'invitations' => InvitationController::statusList($request->user()),
             'invitablePositions' => $all
                 ? InvitationController::OFFERABLE
                 : [self::RESIDENT => InvitationController::OFFERABLE[self::RESIDENT]],
@@ -249,6 +253,23 @@ class UserManagementController extends Controller
 
         $active = (bool) $data['active'];
 
+        // AC-03's load-bearing guard (P1c-2 Decision E). Without it this endpoint is the other
+        // door back to the trap the unbind exists to avoid: `$user->full_name` and
+        // `$user->position` are read-through accessors onto the linked person, so a REACTIVATED
+        // unbound account is a live, nameless, positionless login holding whatever explicit
+        // capability overrides it kept. There is deliberately no rebind action — owner decision
+        // 2's whole point is that a returning colleague gets a new account and freshly granted
+        // roles — so the message names the remedy that actually exists.
+        //
+        // (`authorizeTarget()` above reads `(int) $user->position`, which is 0 for an unbound
+        // account, so a scoped manager is already refused before reaching this line. That is the
+        // safe direction and is stated here rather than left to be rediscovered.)
+        if ($active && $user->person_id === null) {
+            throw ValidationException::withMessages([
+                'active' => 'This account was unbound from its person and is kept only as history. Invite the person again to give them a new account.',
+            ]);
+        }
+
         if (! $active && PositionChange::isLastActiveAdministrator($user)) {
             throw ValidationException::withMessages([
                 'active' => 'This is the last active Administrator account — it cannot be deactivated.',
@@ -270,6 +291,31 @@ class UserManagementController extends Controller
         );
 
         return back()->with('status', $active ? 'Account activated.' : 'Account deactivated.');
+    }
+
+    /**
+     * AC-03 — turnover. Unbind this account from its person, deactivate it, and KEEP it.
+     *
+     * Delegates to `App\Support\AccountUnbind::apply()`, the one definition (P1c-2 Decision E),
+     * which snapshots the signer's name onto any handover this account signed before that name
+     * was frozen, clears the link and deactivates in one transaction, then flushes the
+     * capability cache and audits — ids and a count only.
+     *
+     * DISTINCT from `PersonStatus::apply()`, deliberately. That one deactivates a PERSON
+     * (`people.active` plus the linked account); this one retires an ACCOUNT and never touches
+     * `people` at all — a colleague can turn over to a new account (a hospital address change, a
+     * returning locum) while remaining a perfectly active member of the roster, and conflating
+     * the two would take a person the department still schedules off the rota.
+     *
+     * There is no undo in the UI, exactly as for clearing a period's rota assignments: the
+     * audit row is the trace. `index()` inner-joins `people`, so the row leaves this screen —
+     * the flash says so rather than leaving it to be discovered.
+     */
+    public function unbind(Request $request, User $user): RedirectResponse
+    {
+        AccountUnbind::apply($user, $request->user(), $request->ip());
+
+        return back()->with('status', 'Account unbound and deactivated. It is kept as history and no longer appears in this list.');
     }
 
     /**
@@ -340,6 +386,20 @@ class UserManagementController extends Controller
                 Rule::unique('people', 'email')->ignore($user->person_id),
             ],
         ]);
+
+        // AN UNBOUND ACCOUNT HAS NOWHERE TO PUT TWO OF THESE THREE FIELDS (review F5's fifth
+        // path). `full_name` and `member_email` are read-through accessors onto the linked Person
+        // and are written below through `$user->person?->update(...)` — which, once `AccountUnbind`
+        // has cleared the link, is a no-op that raises nothing. Without this the operator submitted
+        // three corrections, one landed, two evaporated, an audit row said the profile was updated
+        // and the screen flashed "Account details updated." A control that silently does nothing is
+        // the shape this programme has refused twice already; `setPosition()` above already refuses
+        // an unbound account by name, and this is the same refusal on the same console.
+        if ($user->person === null) {
+            throw ValidationException::withMessages([
+                'full_name' => 'This account is not linked to a person on the roster. Its name and email live on that roster row, so there is nothing here to correct.',
+            ]);
+        }
 
         // One email column now, on `people` (owner decision 2026-08-08, overriding the plan's
         // original dual-column draft). `member_email` is a read-through accessor on User, not a

@@ -79,16 +79,8 @@ from Excel with File → Save As → CSV UTF-8 before each import, and the impor
 plainly rather than rejecting an `.xlsx` with "invalid file". *Blocks:* nothing in P1c-1; it is a
 follow-on task either way. *Default if unanswered:* CSV-only, as shipped.
 
-### G. Where does the configurable invitation lifetime live — `settings.manage` or `users.manage`?
-
-Owner decision 5 (round 2, 2026-08-08, below) settled the *value* — 7 days stays the default,
-becomes admin-configurable, validated — it did not settle who turns the knob. `settings.manage`
-matches every other runtime setting and the existing write precedent (SMTP, VAPID, the
-operational-alert address all live there); `users.manage` matches who actually thinks about
-invitations day to day. *Blocks:* P1c-2 task 1 (`docs/superpowers/plans/
-2026-08-09-p1c-people-roster.md`'s own scoping). *Default if unanswered:* `settings.manage`,
-because the write path already exists there and a second settings surface is a second place for
-a validated write to go wrong.
+*(Item G — where the configurable invitation lifetime lives — was **ANSWERED on 2026-08-10** and has
+moved to the dated decided section below.)*
 
 ---
 
@@ -232,9 +224,13 @@ P0c. The owner kept 7 **deliberately**: an invitation is a credential that reach
 clinical records once redeemed, and a shorter window means a forwarded link stays live for
 less time. The decision goes beyond "keep 7 as a constant" — lifetime is to become an
 **admin-configurable setting**, default 7, with validation (a sane upper bound, an integer, no
-zero-or-negative) so the knob cannot be turned to something absurd. *Blocks:* the P1c task that
+zero-or-negative) so the knob cannot be turned to something absurd. ~~*Blocks:* the P1c task that
 builds the configurable setting (not yet implemented as of P1a). *Until then:* the constant
-stays 7, exactly as today.
+stays 7, exactly as today.~~ **The "until then" clause is SUPERSEDED as of 2026-08-10: the setting
+shipped in P1c-2 Task 1.** `Invitation::LIFETIME_DAYS = 7` is now the **default, not the value** —
+`Invitation::lifetimeDays()` reads `app_settings.invitation_lifetime_days`, clamped to [1, 30], and
+falls back to the constant when it is unset or out of bounds. Who turns the knob was the separate
+question (item G), answered in the **2026-08-10** section below.
 
 ### The missed-days compliance denominator — UNCHANGED, deliberately
 
@@ -294,6 +290,59 @@ mistake, made once already in this programme.
 - **I. Nothing in P1c-1 creates an account.** `tests/Feature/Build/
   RosterNeverMintsCredentialsTest.php` asserts it at source level; the invitation flow remains
   the only path from a roster entry to a credential.
+
+---
+
+## DECIDED — 2026-08-10 (P1c-2, the account-lifecycle plan)
+
+Four owner decisions, plus the answer to STILL OPEN item G. Full reasoning lives in
+`docs/superpowers/plans/2026-08-10-p1c2-account-lifecycle.md`'s Decisions A–H; recorded here so
+they are findable from this index. All four shipped 2026-08-10/11.
+
+- **1. Sign-in stays password-based. There is no passwordless login and no magic-link sign-in.**
+  Munawib AC-01's *"email link; password optional"* is read as: the **invitation** is the email
+  link, reaching the claim screen once, where the person sets a password. **That is exactly what
+  P0c already built and what is live today** — verified against the tree before any task was
+  written, and so **AC-01 needed no new work at all and was deliberately given no task.** The
+  finding belongs in the record rather than in one plan's findings list: a future reader must not
+  reopen *"password optional"* as an unbuilt requirement. The People screen's Invite button (P1c-2
+  Task 2) is a convenience on top of a satisfied requirement, not a gap being closed.
+- **2. Capability grants stay keyed to the ACCOUNT** (`user_capabilities.user_id`). AC-04's *"roles
+  granted per person"* is satisfied by a second **surface** — a roles panel on the People screen,
+  gated **`access.manage`** and never `people.manage`, writing through to the person's linked
+  account via the one writer `App\Support\CapabilityGrant`. No move to `people`, no change to
+  `AccessControl::resolve()`, `holdersOf()` or the cache key. **The deliberate consequence, stated
+  on the screen as well as here: a colleague who leaves and later returns on a new account does NOT
+  regain their old roles — an administrator grants them again.** Auto-restoring privileges on
+  re-bind means a departed administrator's grants silently reattach to whoever claims that identity
+  next, reviewed by nobody. A person with no account gets a sentence saying so, not a control that
+  silently does nothing.
+- **3. Unbinding deactivates the account and keeps it.** AC-03's unbind clears the person link,
+  deactivates the account so nobody can log in, and preserves it as history — who signed off what,
+  who invited whom. **Accounts are never deleted.** It is one atomic act (an active-but-unbound
+  account is nameless and positionless on every screen with no error), it refuses the last active
+  Administrator, an unbound account cannot be reactivated, and there is deliberately no rebind
+  action. It also **snapshots the signer's name onto every handover it signed** before clearing the
+  link — see the ruling in `docs/spec/15-rulings.md`.
+- **4/G. The invitation lifetime is configurable, default 7, bounded [1, 30], and it lives behind
+  `settings.manage` — the answer to STILL OPEN item G.** Two reasons, the second deciding: every
+  other runtime knob (SMTP, VAPID, the operational-alert address) already lives there, and a second
+  settings surface is a second place for a validated write to go wrong; and this is a
+  **credential-exposure parameter** — how long a bearer link to children's clinical records stays
+  live — so it belongs on the screen an administrator reviews in one pass alongside the other
+  security parameters, not on the console where invitations are issued all day by exactly the person
+  for whom "make the links last longer" is a convenience. Seven is a **logged override** of Munawib
+  AC-02's fourteen, now carried in the design doc's §1.2 overrides table.
+
+**One thing P1c-2 deliberately did NOT close, and one it found:** `invitations` still has no
+retention rule (design §14 item 7) and rows now accumulate *faster*, because a resend rotates the
+token and keeps the superseded row — a data-disposal decision on a table holding staff email
+addresses belongs in a plan reviewing the whole retention policy. And a **pre-existing** security
+gap was measured rather than inferred: `assertNoSelfLockout()` guards the role matrix only and never
+runs on the per-user capability path, so an `access.manage` holder can deny it to the last holder
+and lock the security console out, recoverable only with database access. Recorded as design §14
+open item 20, with the test that pins both doors in agreement so a future fix is proved to reach
+each of them.
 
 ---
 

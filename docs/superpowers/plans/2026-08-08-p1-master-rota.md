@@ -531,7 +531,7 @@ revoked stays revoked — which is the intended behaviour.
 | Design §7: implies the calendar reads a **per-institution timezone** | Overridden by owner decision 3 and finding 5: timezone stays `APP_TIMEZONE`. |
 | Munawib ST-01 lists *"slots and coverage templates from a preset; conditions from a preset"* as setup-wizard steps | Those are **P3 and P2** content (design §13). The Stage 1 wizard covers profile/branding, calendar, level ladder, units, holidays, roster import and invitations, and must say plainly that the slot and condition steps arrive later rather than presenting empty steps. |
 | Munawib §5 permits *"link-public"* viewer access, and MR-05 asks for a rota *"publishable to residents"* | D7 and design §9.1: **no unauthenticated route exists anywhere**. MR-05's publish view is a logged-in, `cap:`-gated screen in P1d. Tokenized share links are **P3**, not Stage 1. |
-| Munawib AC-02: invitations *"expire (default 14 days)"* | `Invitation::LIFETIME_DAYS = 7` (`app/Models/Invitation.php:18`). One constant, but **an owner decision, not a developer one** — invitation lifetime is a credential-exposure window. Listed in [Owner decisions still needed](#owner-decisions-still-needed). |
+| Munawib AC-02: invitations *"expire (default 14 days)"* | `Invitation::LIFETIME_DAYS = 7` (`app/Models/Invitation.php:18`). One constant, but **an owner decision, not a developer one** — invitation lifetime is a credential-exposure window. Listed in [Owner decisions still needed](#owner-decisions-still-needed). **Answered and shipped, P1c-2 Task 1, 2026-08-10:** configurable, default 7, bounded [1, 30], behind `settings.manage`; the constant is now the default rather than the value, and the deviation has its own row in the design doc's §1.2 overrides table. |
 | Munawib PE-03: external people *"flagged everywhere"* | The `people.external` column exists and **nothing ever sets it true.** Both writers hard-code `false` (`UserManagementController.php:162`, backfill `120001:113`); `SignoffPickers::rosteredIn()` neither filters nor surfaces it, and `offer()` returns only `{id,name,retired?}`. P1c makes the flag real. |
 | Munawib AR-05 `masterRota/{periodId} { assignments: { [personId]: {…} } }` | A Firestore document shape. The relational equivalent (design §6.3) is one row per person per period with date-bounded split rows — **never** a JSON blob keyed by person id, which would reintroduce SC-03's whole-document last-write-wins that SC-03 itself forbids. |
 | Munawib AR-05 `people/{personId} { levelId, levelHistory: [...] }` | Both a current pointer **and** a history array. This repo deliberately has only the history (`2026_08_10_120002:10-14`: *"a denormalized current pointer beside a history table is two definitions of one fact"*). Keep it that way; finding 10's set-wise resolver is the performance answer, not a pointer column. |
@@ -2168,6 +2168,53 @@ roster import including its CSV-only dependency answer) **shipped 2026-08-09**; 
 per-person roles, plus LV-02's bulk resend) is scoped but not yet built, planned once P1c-1
 merges, per `docs/superpowers/plans/2026-08-09-p1c-people-roster.md`'s own "P1c-2" section.
 
+**2026-08-11 — P1c-2 SHIPPED, and with it the whole of P1c.** Seven tasks, one branch,
+`docs/superpowers/plans/2026-08-10-p1c2-account-lifecycle.md`; the split is complete and P1c is
+closed. What landed: AC-02's configurable lifetime (default 7, bounded [1, 30], behind
+`settings.manage`), the five-state derived claim-status projection with its `ManagerScope`
+parity matrix, single and bulk resend through one writer, AC-03's unbind with the signoff
+snapshot, and AC-04's second surface onto one capability writer. Five things this scoping said,
+or left unsaid, are worth correcting here rather than only in the sub-plan:
+
+- **AC-01 was found ALREADY SATISFIED end to end, and deliberately given no task.** This list's
+  item 10 groups it with AC-02's gaps, and the P1c reconnaissance above says *"AC-01 is largely
+  done; AC-02's gaps are additive"* — "largely" undersold it. The whole chain (mint a 64-hex
+  token, store only its sha256, mail the link, throttled claim routes, one redemption predicate,
+  claim-the-existing-person-never-create-a-second) shipped in P0c and is covered by
+  `tests/Feature/Auth/InvitationTest.php`. Owner decision 1 (2026-08-10) fixes the reading of
+  Munawib's *"password optional"*: the **invitation** is the email link, the claim screen sets the
+  password, and **there is no passwordless or magic-link sign-in**. Verified against the tree
+  before a line was written; recorded because "we have not built it" and "it was already built"
+  are different states, and only the second is safe to plan against.
+- **The `2026_08_14_1201*` migration slot this document's own sequencing reserved for P1c-2 is
+  RELEASED, unclaimed.** P1c-2 adds **no migration at all** — every column it needed already
+  existed (`invitations.person_id`, `users.person_id`, `user_capabilities.effect`,
+  `app_settings.key`/`value`, `handover_signoffs.signed_off_by_name`). P1d's `2026_08_15_*` and
+  P1e's `2026_08_16_*` are unaffected either way.
+- **P1c-1's `bg-panel-soft` count was wrong, and so was the count that corrected it.** P1c-1
+  finding 18 named one site; the P1c-2 plan's finding 15 named three. **Two** were live when Task
+  7 opened the tree — `StaffPrivacyNotice.vue:25` and `AcceptInvitation.vue:43` — because Task 2
+  had already closed `Users.vue:179` on markup it was rewriting anyway. All are now
+  `bg-ground-deep`, and `resources/css/app.css` declares no `--color-panel-soft`, which is why the
+  class compiled to nothing and this was a defect rather than a preference.
+- **P1c-1's "widen `AppSettings` or give the setting its own home" dilemma was a false one.**
+  `alert_email` has been a `KEYS` entry with **no** `applyOverrides()` `$map` entry, read directly
+  at three sites, since before the question was asked. The lifetime key is the second of that
+  species, not the first — no class was widened and nothing was rehomed.
+- **AC-04 needed no move, and the boundary change this scoping anticipated is not the one that
+  mattered.** Item 12 warns that moving grants off the account touches `AccessControl::resolve()`,
+  `holdersOf()` and the cache key — true of a move, and owner decision 2 is that there is no move.
+  The *real* hazard was the opposite direction: serving a role-granting control from the People
+  screen's own `cap:people.manage` route group would have made the roster console a path to the
+  security console. The panel is gated `access.manage` for that reason, and a test asserting a
+  `people.manage`-only viewer gets 403 is the single most load-bearing case in the task.
+
+One **pre-existing** security gap was measured in passing and deliberately left open:
+`assertNoSelfLockout()` guards the role matrix only and never runs on the per-user capability path,
+so an `access.manage` holder can deny it to the last holder and lock the security console out,
+recoverable only with database access. Design §14 open item 20 carries it with the test that pins
+both doors in agreement, so a future fix is proved to reach each of them.
+
 - **Item 3's claim is false, and was corrected at the source rather than repeated here
   uncorrected: `Person::$hidden = ['phone','notes']` was never "the only thing keeping staff
   phone numbers out of Inertia props."** It bites on `toArray()`/`toJson()` only; every admin
@@ -2285,11 +2332,14 @@ shipped, MR-04 excepted, which was never in P1d.
 
 Neither blocks P1a. Both block a specific later task, and both have a stated default.
 
-1. **Invitation lifetime: 7 days or 14?** `Invitation::LIFETIME_DAYS = 7`
-   (`app/Models/Invitation.php:18`); Munawib AC-02 says 14. A one-constant change, but
-   invitation lifetime is a credential-exposure window and that is not a developer's call.
-   *Blocks:* P1c task 10. *Default if unanswered:* stays 7, and the P1c plan records the
-   spec deviation explicitly rather than silently.
+1. ~~**Invitation lifetime: 7 days or 14?**~~ **ANSWERED — round-2 owner decision 5 (2026-08-08),
+   SHIPPED P1c-2 Task 1 (2026-08-10).** Configurable, **default 7**, bounded **[1, 30]**, behind
+   **`settings.manage`** — the *who turns the knob* half was `docs/OPEN-DECISIONS.md` item G,
+   answered 2026-08-10. `Invitation::LIFETIME_DAYS` is now the **default, not the value**:
+   `Invitation::lifetimeDays()` reads `app_settings.invitation_lifetime_days` and falls back to the
+   constant when it is unset or out of bounds. The deviation from AC-02's fourteen now has a row in
+   the design doc's §1.2 overrides table, which is where a deviation belongs — until then it lived
+   only in an open-items entry, which is where deviations go to be forgotten.
 
 2. **Does the missed-days denominator become weekend- and holiday-aware?** `MissedDays` is the
    system's only aggregate and the metric the product exists to improve. Making it skip

@@ -96,6 +96,13 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:access.manage'])
         Route::put('/access-control/roles', [AccessControlController::class, 'updateRoles'])->name('access-control.roles');
         Route::put('/access-control/role', [AccessControlController::class, 'updateRole'])->name('access-control.role');
         Route::put('/access-control/user', [AccessControlController::class, 'updateUser'])->name('access-control.user');
+        // AC-04. The People screen's roles panel posts HERE, not to anything under
+        // `/admin/people` — a role-granting control served from that screen's own
+        // `cap:people.manage` group would make the roster gate a path to `access.manage`, which
+        // is a privilege escalation created by a UI convenience (P1c-2 Decision F). The screen
+        // is shared, the authorization is not, and the endpoint is a second SURFACE onto the
+        // same `App\Support\CapabilityGrant` writer `access-control/user` above already uses.
+        Route::put('/access-control/person', [AccessControlController::class, 'updatePerson'])->name('access-control.person');
     });
 
 /*
@@ -125,10 +132,53 @@ Route::middleware('auth')
         // ruling exists to enforce. Same reasoning covers users.position/users.profile below.
         Route::patch('/users/{user}/active', [UserManagementController::class, 'setActive'])->name('users.active');
 
+        /*
+         * SIX A MINUTE ON EVERY INVITATION ENDPOINT THAT SENDS (review F6).
+         *
+         * Each of `store`, `resend` and `bulk-resend` ends in `Mail::to(...)`, so each is an
+         * authenticated account's route to the department's SMTP relay — and unlike a test email,
+         * each send also MINTS A BEARER CREDENTIAL and revokes the one it replaces, so a held-down
+         * button churns links that may already be in somebody's inbox. This group carries `auth`
+         * alone (invitations are this codebase's one deliberate exception to a `cap:` middleware,
+         * the rule being two-tier and position-dependent), so it does not even inherit the
+         * `throttle:clinical` the access-control group above it has.
+         *
+         * `store` and `resend` shipped with NO throttle at all while `bulk-resend`'s comment here
+         * claimed six a minute matched "the only other endpoint in this application that sends on
+         * a button press" — naming `admin.settings.test-email` and missing the two sitting three
+         * lines away. The bound is now derived rather than asserted:
+         * `MailSendingRoutesAreThrottledTest` walks the router, follows one level of same-class
+         * call into `deliver()`/`mailAll()`, and fails the build for any handler that reaches the
+         * mailer without a `throttle:`. A future mailing endpoint is covered the day it registers.
+         *
+         * Six is deliberately tight for a hand-driven control, and the cohort case is not what it
+         * limits: fifty people at once is exactly what `bulk-resend` is for, and it counts as ONE
+         * press.
+         */
+
         // Invitations are the only way an account is created. Same two-tier rule, applied
         // in-controller via ManagerScope: a Chief Resident may invite Residents alone.
         Route::post('/invitations', [\App\Http\Controllers\Admin\InvitationController::class, 'store'])
-            ->name('invitations.store');
+            ->middleware('throttle:6,1')->name('invitations.store');
+        // LV-02's bulk resend, preview then confirm. Registered BEFORE the `{invitation}` routes
+        // below so the literal segment can never be read as a bound id — the two shapes do not
+        // actually collide today, and stating the order here is cheaper than the day one of them
+        // grows a segment.
+        //
+        // The PREVIEW writes nothing and sends nothing, so it gets a looser bound of its own — an
+        // operator adjusting a selection and re-previewing is ordinary work, not abuse.
+        Route::post('/invitations/bulk-resend/preview', [\App\Http\Controllers\Admin\InvitationController::class, 'bulkPreview'])
+            ->middleware('throttle:20,1')->name('invitations.bulk-preview');
+        Route::post('/invitations/bulk-resend', [\App\Http\Controllers\Admin\InvitationController::class, 'bulkResend'])
+            ->middleware('throttle:6,1')->name('invitations.bulk-resend');
+
+        // AC-02's "resendable singly". A POST, not a PATCH: it does not amend the bound row, it
+        // mints a NEW credential and revokes that one. The gate is the same in-controller
+        // ManagerScope check, applied to the bound invitation's own position.
+        Route::post('/invitations/{invitation}/resend', [\App\Http\Controllers\Admin\InvitationController::class, 'resend'])
+            ->middleware('throttle:6,1')->name('invitations.resend');
+        // Revoking sends nothing — it is a DELETE on one bound row — so it carries no send
+        // bound of its own, and the scan above correctly does not name it.
         Route::delete('/invitations/{invitation}', [\App\Http\Controllers\Admin\InvitationController::class, 'revoke'])
             ->name('invitations.revoke');
     });
@@ -139,6 +189,20 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:users.manage'])
     ->group(function () {
         Route::patch('/users/{user}/position', [UserManagementController::class, 'setPosition'])->name('users.position');
         Route::patch('/users/{user}/profile', [UserManagementController::class, 'updateProfile'])->name('users.profile');
+
+        // AC-03's turnover action. FULL MANAGER ONLY, and that is a narrowing: activate/
+        // deactivate sits in the `auth`-only group above under ManagerScope's two-tier rule, so a
+        // Chief Resident may ground a resident account. Unbinding is a strictly larger act — it
+        // is irreversible (there is no rebind, by design), it has no undo in the UI, and it
+        // writes a clinical table to preserve an attestation — so it belongs beside the other
+        // acts this group already reserves for an Administrator. A second in-controller
+        // ManagerScope gate is deliberately NOT added: every request that reaches here holds
+        // `users.manage`, for which that check can only ever return true, and a gate that cannot
+        // refuse is the declared-and-never-used defect P1c-2 finding 4 named.
+        //
+        // PATCH, not DELETE: nothing is deleted. Account deletion was withdrawn as a capability
+        // (owner ruling, 2026-07-19) and a DELETE here would read as its return.
+        Route::patch('/users/{user}/unbind', [UserManagementController::class, 'unbind'])->name('users.unbind');
     });
 
 /*

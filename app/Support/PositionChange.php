@@ -29,12 +29,61 @@ use Illuminate\Validation\ValidationException;
  */
 final class PositionChange
 {
+    /** The Administrator role. Placing anybody here is the ACCOUNT console's act, not the roster's. */
+    public const ADMINISTRATOR = 0;
+
     /**
-     * @throws ValidationException when this would demote the last active Administrator
+     * The capability that may place somebody at {@see ADMINISTRATOR} — `users.manage`, the account
+     * console's own, NOT the roster's `people.manage`.
+     *
+     * WHY THIS EXISTS (adversarial review F2). P1c-2 Decision F gated the People screen's roles
+     * panel on `access.manage` rather than on that route's `people.manage`, reasoning that hanging
+     * a role control off the roster gate would create a privilege-escalation path. The gate is
+     * right; the premise was already false. `PersonRequest::POSITIONS` offers 0, position 0 holds
+     * `access.manage` by seeded role default, and `AccessControl::resolve()` reads
+     * `people.position` — so a `people.manage` holder promoted their own roster row, had their
+     * capability cache flushed for them by the write below, and held the security console. The
+     * path was one field to the left of the panel the decision was about.
+     */
+    public const GRANT_ADMINISTRATOR_CAPABILITY = 'users.manage';
+
+    /** May this actor place somebody AT `ADMINISTRATOR` who is not already there? */
+    public static function mayGrantAdministrator(?User $actor): bool
+    {
+        return $actor !== null && AccessControl::allows($actor, self::GRANT_ADMINISTRATOR_CAPABILITY);
+    }
+
+    /**
+     * The positions this actor may PLACE somebody at — the OFFER half of the gate in `write()`,
+     * so a screen never presents a role the endpoint would refuse (D9 applied to a select).
+     *
+     * It narrows a CATALOG rather than owning one: the caller passes whatever list of positions it
+     * was going to render, and gets back the subset that is assignable. The full catalog is still
+     * needed alongside it — it is what renders an existing Administrator's role NAME, and a screen
+     * that dropped position 0 outright would show "Role 0" on every administrator's row.
+     *
+     * @param  list<int>  $catalog
+     * @return list<int>
+     */
+    public static function grantableBy(?User $actor, array $catalog): array
+    {
+        if (self::mayGrantAdministrator($actor)) {
+            return array_values($catalog);
+        }
+
+        return array_values(array_filter(
+            $catalog,
+            static fn (int $position): bool => $position !== self::ADMINISTRATOR,
+        ));
+    }
+
+    /**
+     * @throws ValidationException when this would demote the last active Administrator, or when
+     *                             the actor may not place somebody at Administrator
      */
     public static function apply(Person $person, int $position, Request $request, string $field = 'position'): void
     {
-        $user = self::write($person, $position, $field);
+        $user = self::write($person, $position, $request->user(), $field);
 
         AuditLog::record(
             'user_role_change',
@@ -52,16 +101,29 @@ final class PositionChange
      * whole chain for the batch's duration — the exact reason `LevelAssignment::assign()` and
      * `Promotion::commit()` already write no audit row themselves (Decision H).
      *
-     * @throws ValidationException when this would demote the last active Administrator
+     * `$actor` is REQUIRED here even though nothing is audited: the Administrator gate below is an
+     * authorization question, and a bulk caller is not exempt from it — `App\Support\Roster\
+     * RosterImport` runs from a `cap:people.manage` route and resolves its position column by NAME
+     * against the `positions` table, so a CSV cell reading "Administrator" is valid input that
+     * never passes a FormRequest rule about positions at all. Positional and non-optional so a
+     * future caller cannot omit it and silently skip the gate.
+     *
+     * @throws ValidationException when this would demote the last active Administrator, or when
+     *                             the actor may not place somebody at Administrator
      */
-    public static function applyWithoutAudit(Person $person, int $position, string $field = 'position'): void
+    public static function applyWithoutAudit(Person $person, int $position, ?User $actor, string $field = 'position'): void
     {
-        self::write($person, $position, $field);
+        self::write($person, $position, $actor, $field);
     }
 
-    /** @throws ValidationException when this would demote the last active Administrator */
-    private static function write(Person $person, int $position, string $field): ?User
+    /**
+     * @throws ValidationException when this would demote the last active Administrator, or when
+     *                             the actor may not place somebody at Administrator
+     */
+    private static function write(Person $person, int $position, ?User $actor, string $field): ?User
     {
+        self::assertMayPlaceAtAdministrator($person, $position, $actor, $field);
+
         $user = $person->user()->first();
 
         if ($position !== 0 && self::isLastActiveAdministrator($user)) {
@@ -78,6 +140,53 @@ final class PositionChange
         }
 
         return $user;
+    }
+
+    /**
+     * Refuse a write that would PLACE somebody at Administrator when the actor may not.
+     *
+     * IT IS THE TRANSITION THAT IS GATED, NOT THE VALUE, and that distinction is deliberate. The
+     * People screen's edit form submits the position it was rendered with, so refusing every write
+     * carrying 0 would leave every administrator's roster row unsaveable by the roster console
+     * that exists to edit rows — a `people.manage` holder could no longer correct an
+     * administrator's phone number or level. What they may not do is place somebody at 0 who is not
+     * already there.
+     *
+     * A CREATE IS A PLACEMENT. `PersonController::store()` and `RosterImport::applyCreate()` both
+     * `Person::create()` with the position already in the insert and then call through here, so
+     * `getOriginal('position')` would report 0 for a row that was 0 for the first time a
+     * millisecond ago. `wasRecentlyCreated` is what tells those two cases apart.
+     *
+     * NO AUDIT ROW. It throws, and a throw from inside `PersonController`'s transaction (or
+     * `RosterImport`'s) rolls back — an audit row written here would unwind with it and the attempt
+     * would vanish from the trail, which is the exact defect P1c-1 finding 12 records. The
+     * last-administrator guard below has always refused the same way and for the same reason.
+     *
+     * @throws ValidationException
+     */
+    private static function assertMayPlaceAtAdministrator(
+        Person $person,
+        int $position,
+        ?User $actor,
+        string $field,
+    ): void {
+        if ($position !== self::ADMINISTRATOR) {
+            return;
+        }
+
+        $alreadyThere = ! $person->wasRecentlyCreated
+            && (int) $person->getOriginal('position') === self::ADMINISTRATOR;
+
+        if ($alreadyThere || self::mayGrantAdministrator($actor)) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            // The refusal names the unlock rather than only saying no — an operator who cannot see
+            // why is an operator who tries the import next.
+            $field => 'Only an account holding “'.self::GRANT_ADMINISTRATOR_CAPABILITY
+                .'” may make somebody an Administrator. Ask one to do it from Admin → Users.',
+        ]);
     }
 
     /**

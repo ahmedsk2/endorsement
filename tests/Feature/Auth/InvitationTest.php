@@ -192,6 +192,111 @@ class InvitationTest extends TestCase
             ->assertSessionHasErrors('member_email');
     }
 
+    // ------------------------------------------------------------------ how long it lives
+
+    /*
+     * AC-02: invitations expire, and the window is a department decision rather than a
+     * constant. Seven days is a DELIBERATE override of Munawib AC-02's fourteen (P1 owner
+     * decision 5, round 2) — a redeemed link reaches a child's clinical records, so a
+     * forwarded one stays live for half as long.
+     */
+
+    public function test_an_invitation_expires_after_the_configured_number_of_days(): void
+    {
+        \App\Support\AppSettings::set('invitation_lifetime_days', '14');
+
+        [$invitation] = $this->invite();
+
+        $this->assertSame(14, Invitation::lifetimeDays());
+        $this->assertSame(
+            now()->addDays(14)->format('Y-m-d H:i'),
+            $invitation->expires_at->format('Y-m-d H:i'),
+        );
+    }
+
+    public function test_an_unset_or_absurd_setting_falls_back_to_seven(): void
+    {
+        // Nothing configured at all: the deployed default applies untouched.
+        $this->assertSame(7, Invitation::lifetimeDays());
+
+        // And a value written straight into the table — a database-console edit the
+        // FormRequest never saw, which is the ONLY reason the clamp exists.
+        \App\Models\AppSetting::updateOrCreate(
+            ['key' => 'invitation_lifetime_days'],
+            ['value' => '999'],
+        );
+        \Illuminate\Support\Facades\Cache::flush();
+
+        $this->assertSame(7, Invitation::lifetimeDays());
+
+        [$invitation] = $this->invite();
+        $this->assertSame(
+            now()->addDays(7)->format('Y-m-d H:i'),
+            $invitation->expires_at->format('Y-m-d H:i'),
+        );
+    }
+
+    public function test_the_default_is_seven_and_the_constant_is_the_default_not_the_value(): void
+    {
+        $this->assertSame(7, Invitation::LIFETIME_DAYS);
+        $this->assertSame(1, Invitation::LIFETIME_MIN);
+        $this->assertSame(30, Invitation::LIFETIME_MAX);
+
+        // With nothing stored, the constant IS what is returned — but through the method,
+        // which is the one definition every caller must read.
+        $this->assertSame(Invitation::LIFETIME_DAYS, Invitation::lifetimeDays());
+
+        // A configured value inside the bounds wins over the constant.
+        \App\Support\AppSettings::set('invitation_lifetime_days', '1');
+        $this->assertSame(1, Invitation::lifetimeDays());
+    }
+
+    // ------------------------------------------------------------------ what the row means
+
+    /*
+     * P1c-2 Decision G. `invitations.position` is an AUTHORIZATION SUBJECT — what `ManagerScope`
+     * was asked to approve when the link was minted — and not a role assignment. The claim path
+     * already reads it that way (finding 17: it is taken only on the branch that CREATES a person,
+     * commented in place as "FROM THE INVITATION, never from the request"), but nothing asserted
+     * it, so a refactor could have turned a stale link into a demotion with no test going red.
+     */
+
+    public function test_claiming_an_invitation_never_changes_an_existing_roster_persons_position(): void
+    {
+        $person = \App\Models\Person::create([
+            'full_name' => 'Dr Established', 'position' => 5, 'email' => 'chief@example.org', 'active' => true,
+        ]);
+
+        // Issued at 4 — a lower role than the roster records. The link is what expires; the
+        // roster is the record.
+        [, $token] = Invitation::issue('chief@example.org', 4, $this->admin(), $person);
+
+        $this->post("/invitation/{$token}", [
+            'full_name' => 'Dr Renamed',
+            'member_name' => 'established',
+            'password' => 'Str0ng!Passw0rd', 'password_confirmation' => 'Str0ng!Passw0rd',
+        ])->assertRedirect('/login');
+
+        $person->refresh();
+
+        $this->assertSame(5, (int) $person->position, 'A stale invitation must not demote a roster person.');
+        // And the roster stays the name of record: an invitee cannot rename themselves onto a
+        // signed sheet.
+        $this->assertSame('Dr Established', $person->full_name);
+    }
+
+    public function test_the_offerable_positions_are_unchanged(): void
+    {
+        // Finding 13, pinned because P1c-2 adds a SECOND door onto the same mint. Widening this
+        // list would make an invitation a route to privilege: 0 (Administrator) is never granted
+        // this way, 1 (Nurse) is retired, and 5 (Chief Resident) is a promotion applied to an
+        // existing account rather than a role anyone is created into.
+        $this->assertSame(
+            [2, 3, 4],
+            array_keys(\App\Http\Controllers\Admin\InvitationController::OFFERABLE),
+        );
+    }
+
     // ------------------------------------------------------------------ redeeming
 
     public function test_accepting_an_invitation_creates_an_active_verified_account(): void

@@ -10,9 +10,17 @@ use App\Models\Institution;
 use App\Models\Level;
 use App\Models\Person;
 use App\Models\Position;
+// Type-hint only. `RosterNeverMintsCredentialsTest` is what keeps this class from ever WRITING
+// an account — naming the class in a signature is not a write, and the guard's needles are the
+// write shapes, not the symbol.
+use App\Models\User;
+use App\Support\AccessControl;
 use App\Support\Calendar;
+use App\Support\CapabilityGrant;
 use App\Support\ContactVisibility;
 use App\Support\Csv;
+use App\Support\Invitations\BulkResend;
+use App\Support\Invitations\InvitationStatus;
 use App\Support\LevelAssignment;
 use App\Support\LevelPickers;
 use App\Support\PersonPresenter;
@@ -86,7 +94,16 @@ class PersonController extends Controller
         // promotion preview, P1d's rota grid) never invent a second copy.
         $levels = Person::levelsAt($people);
 
-        return [
+        // AC-02's claim status, on the same one-query-for-the-page terms (P1c-2 Decision B). It is
+        // passed as `$extra` and `PersonPresenter` is not modified at all: the presenter's BASE map
+        // reaches every `rota.view` holder through `contactFree()` — that is every seeded position
+        // — so a base key would publish "who has not claimed their account yet" to the whole
+        // department. `RotaReadViewTest` asserts it never gets there.
+        $invitations = InvitationStatus::forPeople($people, $request->user());
+
+        $positions = Position::orderBy('id')->get(['id', 'name']);
+
+        return $this->capabilityGrantProps($people, $request->user()) + [
             'people' => $people->map(fn (Person $p): array => PersonPresenter::one(
                 $p,
                 $request->user(),
@@ -94,9 +111,22 @@ class PersonController extends Controller
                     'id' => (int) $l->getKey(),
                     'code' => (string) $l->code,
                     'name' => (string) $l->name,
-                ]],
+                ],
+                    'invitation' => $invitations[(int) $p->getKey()] ?? null],
             ))->values()->all(),
-            'positions' => Position::orderBy('id')->get(['id', 'name']),
+            'positions' => $positions,
+            // WHICH of those positions this viewer may PLACE somebody at (review finding F2). The
+            // full catalog above still ships and must: it is what renders an existing
+            // Administrator's role NAME, and a screen that dropped position 0 outright would show
+            // "Role 0" on every administrator's row. This is the narrower list the two role
+            // <select>s offer, and `PositionChange::grantableBy()` is the ONE definition it and
+            // `PositionChange::write()`'s refusal both come from — offer and write, one predicate
+            // (D9). `people.manage` is the roster gate; making somebody an Administrator is the
+            // ACCOUNT console's act, because position 0 carries `access.manage` by role default.
+            'grantable_positions' => PositionChange::grantableBy(
+                $request->user(),
+                $positions->pluck('id')->map(intval(...))->all(),
+            ),
             // LV-02's bulk "set level" picker. `App\Support\LevelPickers::bulkAssignable()` is
             // the ONE predicate this offer and `PersonBulkRequest`'s write-side rule both read
             // from (review finding 5) — every ACTIVE level, EXT included — unlike Task 10's
@@ -106,6 +136,55 @@ class PersonController extends Controller
             'levels' => LevelPickers::bulkAssignable()->get(['id', 'code', 'name']),
             'contact_visibility' => ContactVisibility::current(),
             'contact_visibilities' => Institution::CONTACT_VISIBILITIES,
+            // LV-02's bulk resend cap (P1c-2 Task 4). ONE definition, offered and enforced from
+            // the same constant: `BulkResend::CAP` is what the button states and what
+            // `InvitationBulkResendRequest` validates against, so the screen can never promise a
+            // batch size the endpoint refuses.
+            'invitation_resend_cap' => BulkResend::CAP,
+        ];
+    }
+
+    /**
+     * AC-04's per-person roles panel, or NOTHING AT ALL (P1c-2 Decision F, Task 6).
+     *
+     * GATED ON `access.manage`, NOT ON THIS ROUTE'S `people.manage`. That is the whole security
+     * content of the panel: `people.manage` is "who exists and what level they hold" (P1c
+     * Decision A), and its holder is a departmental administrator who may rename a ward. If the
+     * roster gate also decided who may see and set capabilities, it would be a path to
+     * `access.manage` — a privilege escalation created by a UI convenience. The endpoint the
+     * panel posts to sits in the `cap:access.manage` route group for the same reason; this is the
+     * matching half, so the control is not offered where the endpoint would refuse it.
+     *
+     * ABSENT, NOT EMPTY, for a viewer without the capability — `PersonPresenter`'s discipline for
+     * a withheld contact field, for the same reason: an empty override map and a withheld one
+     * look identical on screen, and a future reader eventually renders one as the other.
+     *
+     * ONE KEY RATHER THAN A PER-PERSON `$extra`, and `PersonPresenter` is not touched at all. Its
+     * BASE map reaches every `rota.view` holder through `contactFree()` — that is every seeded
+     * position — so "who holds which capability" must not be able to arrive there by a later
+     * refactor of the presenter's own map.
+     *
+     * TWO QUERIES FOR THE WHOLE SCREEN, at any roster size: the catalog, and one join for every
+     * override on the page. The People screen's query cost may not move with the size of the
+     * department (`InvitationStatusTest`'s budget case), and a per-row capability lookup is
+     * exactly the N+1 that case exists to catch.
+     *
+     * @param  Collection<int, Person>  $people
+     * @return array<string, mixed>
+     */
+    private function capabilityGrantProps(Collection $people, ?User $viewer): array
+    {
+        if ($viewer === null || ! AccessControl::allows($viewer, 'access.manage')) {
+            return [];
+        }
+
+        return [
+            'capability_grants' => [
+                'capabilities' => CapabilityGrant::catalog(),
+                'overrides' => CapabilityGrant::overridesByPerson(
+                    $people->map(static fn (Person $p): int => (int) $p->getKey())->all(),
+                ),
+            ],
         ];
     }
 
@@ -203,9 +282,13 @@ class PersonController extends Controller
     }
 
     /**
-     * LV-02's bulk operations: set level, set status (active), export. Bulk "resend invitations"
-     * is P1c-2 — it is an ACCOUNT action needing AC-02's resend endpoint, which does not exist
-     * yet, so the screen names it disabled rather than shipping a dead button.
+     * LV-02's bulk operations: set level, set status (active), export.
+     *
+     * Bulk "resend invitations" is deliberately NOT one of them. It is an ACCOUNT action, so it
+     * posts to `InvitationController`'s own bulk endpoints under `ManagerScope`'s two-tier gate
+     * (P1c-2 Task 4) — never here, where the gate is `cap:people.manage`. The selection comes from
+     * this screen; the authorization does not, and routing a credential operation through the
+     * roster's capability would make `people.manage` a path to minting bearer links.
      *
      * THE ORDER IS THE FEATURE (findings 12 and 13):
      *

@@ -37,6 +37,11 @@ final class AppSettings
         'remind_delay_minutes' => false,
         'handover_time_morning' => false,
         'handover_time_afternoon' => false,
+        // How long an invitation link stays redeemable (AC-02). Like `alert_email` above,
+        // it deliberately has NO entry in applyOverrides()'s $map: it is a value read
+        // directly (`Invitation::lifetimeDays()`), not an override of any framework config.
+        // Adding a mapping for it would be inventing a config path nothing reads.
+        'invitation_lifetime_days' => false,
     ];
 
     private const CACHE_KEY = 'app_settings.all';

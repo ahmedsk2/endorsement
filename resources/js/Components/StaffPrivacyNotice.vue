@@ -22,7 +22,7 @@ defineProps({
 </script>
 
 <template>
-    <section class="rounded-md border border-line bg-panel-soft p-4 text-sm" data-testid="staff-privacy-notice">
+    <section class="rounded-md border border-line bg-ground-deep p-4 text-sm" data-testid="staff-privacy-notice">
         <h2 class="text-sm font-semibold text-ink">What this system records about you</h2>
 
         <p class="mt-2 text-muted">

@@ -5,11 +5,12 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Capability;
+use App\Models\Person;
 use App\Models\Position;
 use App\Models\RoleCapability;
 use App\Models\User;
-use App\Models\UserCapability;
 use App\Support\AccessControl;
+use App\Support\CapabilityGrant;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,13 @@ use Inertia\Response;
  * ids/effects against the known catalog (never free-form), audits PHI-free (ids/counts only),
  * and busts the resolver cache (generation bump for role changes; per-user forget for user
  * overrides).
+ *
+ * AC-04 (P1c-2 Task 6) added `updatePerson()` beside `updateUser()`. It is the endpoint the
+ * People screen's roles panel posts to, and it sits in THIS group deliberately: the People
+ * screen's own group is `cap:people.manage`, and serving a role-granting control from there
+ * would let a roster manager grant themselves `access.manage`. Both endpoints delegate to
+ * `App\Support\CapabilityGrant`, so the two surfaces cannot drift — the only difference between
+ * them is which id the caller happens to hold, an account's or a person's.
  */
 class AccessControlController extends Controller
 {
@@ -35,9 +43,9 @@ class AccessControlController extends Controller
 
     public function index(Request $request): Response
     {
-        $capabilities = Capability::query()
-            ->orderBy('key')
-            ->get(['id', 'key', 'label', 'description']);
+        // ONE catalog definition, shared with the People screen's panel and with the writer's own
+        // validation — the offer and the write-side rule read from the same list (D9).
+        $capabilities = CapabilityGrant::catalog();
 
         // position => list of capability ids that role currently holds.
         $roleMatrix = [];
@@ -232,6 +240,18 @@ class AccessControlController extends Controller
     /**
      * Replace a user's explicit overrides with exactly the submitted map (upsert grant/deny,
      * delete any override omitted from the map) inside a transaction, then bust that user's cache.
+     *
+     * The body of that act lives in `App\Support\CapabilityGrant` since P1c-2 Task 6, so this
+     * console and the People screen's panel share it rather than carrying two copies. Nothing
+     * about the behaviour moved — the catalog check, the in-transaction diff, the flush and the
+     * summary-plus-per-change audit rows are the same code, called from one place instead of two.
+     *
+     * `withTrashed()` is deliberate and is what the raw `exists:users,id` rule above already
+     * meant: `Rule::exists` runs on the query builder and never sees the SoftDeletes global
+     * scope, so a trashed id has always passed validation here. Nothing in this codebase sets
+     * `users.deleted_at` (account deletion was withdrawn as a capability on 2026-07-19), so this
+     * matches the same set either way — it just does not turn a validation rule's blind spot
+     * into a 404 that never used to happen.
      */
     public function updateUser(Request $request): RedirectResponse
     {
@@ -241,84 +261,56 @@ class AccessControlController extends Controller
             'overrides.*' => [Rule::in(['grant', 'deny'])],
         ]);
 
-        $overrides = $data['overrides'];
+        $user = User::withTrashed()->findOrFail((int) $data['user_id']);
 
-        // Keys are capability ids — validate them against the catalog (never free-form).
-        $knownCapabilityIds = Capability::pluck('id')->map(static fn ($id): int => (int) $id)->all();
-        foreach (array_keys($overrides) as $capabilityId) {
-            if (! in_array((int) $capabilityId, $knownCapabilityIds, true)) {
-                throw ValidationException::withMessages([
-                    'overrides' => 'Unknown capability id in the submitted overrides.',
-                ]);
-            }
-        }
-
-        $userId = (int) $data['user_id'];
-
-        $changes = DB::transaction(function () use ($userId, $overrides): array {
-            $keepIds = array_map('intval', array_keys($overrides));
-
-            $before = UserCapability::where('user_id', $userId)
-                ->pluck('effect', 'capability_id')
-                ->mapWithKeys(static fn ($effect, $id): array => [(int) $id => (string) $effect])
-                ->all();
-
-            // Delete overrides that are no longer present (omitted == inherit).
-            UserCapability::where('user_id', $userId)
-                ->when($keepIds !== [], fn ($query) => $query->whereNotIn('capability_id', $keepIds))
-                ->delete();
-
-            foreach ($overrides as $capabilityId => $effect) {
-                UserCapability::updateOrCreate(
-                    ['user_id' => $userId, 'capability_id' => (int) $capabilityId],
-                    ['effect' => $effect],
-                );
-            }
-
-            // capability_id => 'grant' | 'deny' | 'clear' for every override that CHANGED.
-            $changes = [];
-            foreach ($overrides as $capabilityId => $effect) {
-                $capabilityId = (int) $capabilityId;
-                if (($before[$capabilityId] ?? null) !== $effect) {
-                    $changes[$capabilityId] = $effect;
-                }
-            }
-            foreach ($before as $capabilityId => $effect) {
-                if (! in_array($capabilityId, $keepIds, true)) {
-                    $changes[$capabilityId] = 'clear';
-                }
-            }
-
-            return $changes;
-        });
-
-        AccessControl::flush($userId);
-
-        $actorId = $request->user()->getKey();
-        $ip = $request->ip();
-
-        AuditLog::record(
-            'access_user_update',
-            'user='.$userId.';overrides='.count($overrides),
-            $actorId,
-            $ip,
-        );
-
-        // One row PER override changed — a per-user grant, a per-user deny (a REVOCATION, the
-        // change most likely to be questioned later) and a return-to-inherit are each named.
-        $keys = $this->capabilityKeys(array_keys($changes));
-        $action = ['grant' => 'access_user_grant', 'deny' => 'access_user_deny', 'clear' => 'access_user_override_clear'];
-
-        foreach ($changes as $capabilityId => $effect) {
-            AuditLog::record(
-                $action[$effect],
-                'user='.$userId.';cap='.($keys[$capabilityId] ?? $capabilityId),
-                $actorId,
-                $ip,
-            );
-        }
+        CapabilityGrant::applyForUser($user, $data['overrides'], $request->user(), $request->ip());
 
         return back()->with('status', 'User overrides updated.');
+    }
+
+    /**
+     * AC-04 — the same act addressed by PERSON, which is how the People screen reaches it.
+     *
+     * WHY THIS ENDPOINT IS IN THIS FILE AND NOT `PersonController`. It is served from the
+     * `cap:access.manage` group; the People screen's own group is `cap:people.manage`, scoped in
+     * P1c Decision A as "who exists and what level they hold" and explicitly not the account
+     * console. A role-granting control hung off the roster gate would let its holder — a
+     * departmental administrator who may rename a ward — grant themselves `access.manage`, which
+     * is a privilege escalation created by a UI convenience. The screen is shared; the
+     * authorization is not, exactly as it already is for the Invite and Resend controls beside it.
+     *
+     * THE GRANT STILL LANDS ON THE ACCOUNT (owner decision 2). This method resolves the person's
+     * linked `users` row and hands it to the same writer; `user_capabilities.user_id` does not
+     * move, and `AccessControl::resolve()`/`holdersOf()`/the cache key are untouched.
+     *
+     * A PERSON WITH NO ACCOUNT IS REFUSED WITH A SENTENCE. A roster-only person has no `users`
+     * row and cannot authenticate by construction (D3), so there is nothing for a capability to
+     * attach to. Saying so is the point: a control that silently does nothing is the shape this
+     * programme has refused twice already.
+     */
+    public function updatePerson(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'person_id' => ['required', 'integer', 'exists:people,id'],
+            'overrides' => ['present', 'array'],
+            'overrides.*' => [Rule::in(['grant', 'deny'])],
+        ]);
+
+        // `withTrashed()` mirrors the People screen, which lists retired colleagues on purpose
+        // (people are deactivated, never deleted) — and `exists:people,id` never saw the
+        // soft-delete scope anyway, so refusing here would be a new refusal, not a preserved one.
+        $person = Person::withTrashed()->findOrFail((int) $data['person_id']);
+        $user = $person->user;
+
+        if ($user === null) {
+            throw ValidationException::withMessages([
+                'person_id' => 'This person has no account. Roles are granted to an account — invite them first.',
+            ]);
+        }
+
+        CapabilityGrant::applyForUser($user, $data['overrides'], $request->user(), $request->ip());
+
+        return back()->with('status', 'Roles updated.');
     }
 
     /**
@@ -359,15 +351,32 @@ class AccessControlController extends Controller
             return null;
         }
 
-        $user = User::find($userId);
+        // AN UNBOUND ACCOUNT IS NOT A SELECTABLE ACCOUNT (review F5), and this
+        // `whereNotNull('person_id')` is the same set `index()`'s picker above already produces
+        // with its inner join on `people` — stated as one predicate on both sides so the list and
+        // the detail panel cannot disagree about which accounts exist.
+        //
+        // It is not a cosmetic disagreement. `full_name` and `position` are read-through
+        // accessors onto the linked Person (P0c), so both answer NULL once `AccountUnbind` has
+        // cleared the link — and the projection below casts `(int) $user->position`, where
+        // `(int) null` is 0, the ADMINISTRATOR role id. `AccessControl.vue` renders
+        // `positionName(0)` as "Administrator" beside the login name the panel falls back to, so
+        // a dead, nameless account was announced as the most privileged role this system has, on
+        // the one screen whose whole subject is privilege. Every other read of this link fails
+        // toward a blank; this one failed toward the top of the ladder.
+        //
+        // Returning null rather than throwing is deliberate: it is already this method's answer
+        // for an unknown or array-shaped `user_id`, so the page renders its existing
+        // no-selection state and no Vue change is needed to describe a new refusal.
+        $user = User::query()->whereNotNull('person_id')->find($userId);
         if ($user === null) {
             return null;
         }
 
-        $overrides = UserCapability::where('user_id', $user->getKey())
-            ->pluck('effect', 'capability_id')
-            ->map(static fn ($effect): string => (string) $effect)
-            ->all();
+        // One projection of "what does this account explicitly override", shared with the People
+        // panel — the read moved to `CapabilityGrant` alongside the write so that the guard which
+        // keeps `user_capabilities` to one writer has nothing to allow-list here.
+        $overrides = CapabilityGrant::overridesFor($user);
 
         return [
             'id' => (int) $user->getKey(),

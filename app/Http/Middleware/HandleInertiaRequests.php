@@ -76,6 +76,23 @@ class HandleInertiaRequests extends Middleware
                 // and is never persisted in readable form, so losing it means issuing a new
                 // invitation rather than looking this one up.
                 'invitation_link' => $request->session()->get('invitation_link'),
+                // LV-02's bulk resend (P1c-2 Task 4). Same one-shot channel, and listed here in
+                // the task that adds it rather than in an amendment after it: a session key no
+                // `share()` names is invisible to every page in the app, and this file has been
+                // missed by a plan's own Files list three times already (P1c-1 Tasks 7, 9 and 10),
+                // each time leaving a feature whose tests were green and whose screen showed
+                // nothing.
+                //
+                // ONE-SHOT IS THE POINT, not an accident of the mechanism: the confirm is pinned to
+                // a digest of the state the preview was computed against (`BulkResend::digest()`),
+                // so a preview surviving a navigation would be one the operator could confirm
+                // against a roster that has since changed under them.
+                //
+                // Person ids, invitation ids and counts only — and above all NO LINK. A bulk path
+                // has nowhere to surface fifty one-time bearer credentials, so `BulkResend` keeps
+                // them in a separate `deliveries` list the controller mails from and never flashes.
+                'invitation_bulk_preview' => $request->session()->get('invitation_bulk_preview'),
+                'invitation_bulk_report' => $request->session()->get('invitation_bulk_report'),
                 // Results of the two "prove it works" buttons: {ok, message}. Separate from
                 // `status`/`error` on purpose — these render BESIDE the button that caused
                 // them, because on a long settings or profile page the page-top banner is a

@@ -325,7 +325,10 @@ describe('AppLayout — role-gated navigation', () => {
      * representative would have proved one of them.
      */
     it('announces the current Administration entry on every one of its links', () => {
+        // HAND-WRITTEN, and a new Administration link is unswept until it is added here — the
+        // property finding 3 restored is only proved for the entries this list names.
         const adminHrefs = [
+            '/admin/setup',
             '/admin/users', '/admin/people', '/admin/promotion', '/admin/roster-import',
             '/admin/access-control', '/admin/structure/department',
             '/admin/structure/units', '/admin/structure/levels',

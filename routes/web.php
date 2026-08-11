@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AccessControlController;
 use App\Http\Controllers\Admin\CalendarSettingsController;
 use App\Http\Controllers\Admin\ClinicController;
 use App\Http\Controllers\Admin\DepartmentProfileController;
+use App\Http\Controllers\Admin\DepartmentSetupController;
 use App\Http\Controllers\Admin\HolidayController;
 use App\Http\Controllers\Admin\LevelController;
 use App\Http\Controllers\Admin\MasterRotaController;
@@ -222,6 +223,31 @@ Route::middleware(['auth', 'throttle:clinical', 'cap:settings.manage'])
         // left wide open it is a small relay. Six a minute is plenty for testing a config.
         Route::post('/settings/test-email', [SettingsController::class, 'sendTestEmail'])
             ->middleware('throttle:6,1')->name('settings.test-email');
+    });
+
+/*
+ * Admin → Set up this department (Munawib ST-01/ST-02, P1e Decisions D and E). A DERIVED checklist
+ * over the structure screens below, holding no state of its own — no column, no table, no
+ * `app_settings` key, no session key — so there is nothing here to write and nothing to resume.
+ *
+ * ITS OWN GROUP, AND THAT IS WHAT MAKES THE GET-ONLY PROPERTY ASSERTABLE. It shares
+ * `cap:structure.manage` with the group below, which legitimately carries the write endpoints of
+ * every structure screen, so the capability cannot be the scope of a read-only sweep.
+ * `DepartmentSetupScreenTest::test_every_route_under_admin_setup_is_a_get` enumerates by URI prefix
+ * over the ROUTER instead — holding for routes nobody has written yet — and carries a vacuity twin,
+ * because P1e-1 Task 4's DELETE sweep passed on its first red run against an empty route set.
+ *
+ * `/setup` IS A DIFFERENT THING AND IS NOT TOUCHED. That route, `SetupController`, `Setup.vue`,
+ * `RequireSetup` and `users.setup_completed_at` are the per-USER first-login two-factor flow.
+ * `/admin/setup` is deliberately NOT added to `RequireSetup`'s allowed paths: an administrator
+ * finishes their own second factor before configuring a system that holds children's records, and
+ * the redirect that enforces it is the point rather than a bug to route around.
+ *
+ * Deliberately NOT under `/endorsement`, so Unit::RESERVED_CODES is untouched.
+ */
+Route::middleware(['auth', 'throttle:clinical', 'cap:structure.manage'])
+    ->group(function () {
+        Route::get('/admin/setup', [DepartmentSetupController::class, 'index'])->name('admin.setup');
     });
 
 /*

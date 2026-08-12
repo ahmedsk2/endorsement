@@ -120,8 +120,11 @@ class RotaController extends Controller
      * so the measured grid budget is unchanged for every link, bookmark and filter submission the
      * screen produces. `Calendar::todayYmd()` is the one converter (ST-06); the comparison itself
      * is the database's, between two `Y-m-d` values, and `whereDate` rather than equality for the
-     * reason `Period::booted()` records — the `date` cast round-trips from MySQL as
-     * `'Y-m-d 00:00:00'`, which never equals a plain `Y-m-d` string.
+     * reason `Period::booted()` records and `EndorsementController::updateSignoff()` states
+     * canonically — against a plain `Y-m-d` string a `date`-cast column compares wrongly on the
+     * boundary day, which here is the day a period starts or ends, i.e. exactly the day this
+     * lookup has to get right. `whereDate()` is correct on both engines; naming one, as this
+     * comment used to, got the direction backwards and was never what the rule rested on.
      *
      * @param  Collection<int, string>  $years
      */

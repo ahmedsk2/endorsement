@@ -63,8 +63,12 @@ class Vacation extends Model
 
     /**
      * The invariants the database cannot express. Modelled on `MasterRotaAssignment::booted()` —
-     * same shape, same `whereDate` caveat (the `date` cast round-trips from MySQL as
-     * `'Y-m-d 00:00:00'`, so an equality comparison against a plain `Y-m-d` string never matches).
+     * same shape, same `whereDate` caveat: against a plain `Y-m-d` string a `date`-cast column
+     * compares wrongly on the BOUNDARY DAY — measured on SQLite, a bare `=` matches nothing, a
+     * bare `<=` drops that day and a bare `>` gains it — so leave booked to end on a date would
+     * be one day short of what was booked. `EndorsementController::updateSignoff()` carries the
+     * canonical statement, the measurement, and the note that the engine attribution these
+     * comments used to share was backwards.
      *
      * Overlap is checked per PERSON only — a vacation carries no period, so there is no
      * containment check to make, and two people may be on leave the same week without conflict.

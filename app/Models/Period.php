@@ -63,9 +63,13 @@ class Period extends Model
      * `institution_id` as a query filter anywhere in app/ (it is provenance/grouping, never an
      * isolation boundary — the migration's docblock explains why the unique index matches).
      *
-     * `whereDate`, not equality — EndorsementController.php documents the live hazard: the
-     * `date` cast round-trips from MySQL as `'Y-m-d 00:00:00'`, so an equality comparison
-     * against a plain `Y-m-d` string never matches.
+     * `whereDate`, not equality — `EndorsementController::updateSignoff()` carries the canonical
+     * statement and the measurement behind it. In short: against a plain `Y-m-d` string a
+     * `date`-cast column compares wrongly on the BOUNDARY DAY, because the stored value sorts
+     * after the bare needle for the same day. Measured on SQLite, a bare `=` matches nothing, a
+     * bare `<=` drops the boundary day and a bare `>` gains it. `whereDate()` is the answer on
+     * both engines, so the rule needs no engine attribution — and the attribution this comment
+     * used to carry was backwards.
      */
     protected static function booted(): void
     {

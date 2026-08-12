@@ -106,9 +106,17 @@ class DepartmentSetup
         // "Still to run", not "exists": a department whose only generated year ended in a
         // previous academic year is not configured for this one, and a checklist that called
         // that done would be lying in the direction nobody re-checks. `whereDate()` rather than
-        // a string comparison because both bounds are `date`-cast and MySQL 8.4 round-trips
-        // such a column as 'Y-m-d 00:00:00' — the caveat MasterRotaAssignment::booted() and
-        // Vacation::scopeIntersecting() each already carry.
+        // a string comparison because `ends_on` is `date`-cast, and against a plain 'Y-m-d'
+        // string such a column compares wrongly on the BOUNDARY DAY — here, a period ending
+        // exactly today. Honestly stated: '>=' happens to be one of the two operators a bare
+        // comparison gets right (measured on SQLite; '=' , '<=' and '>' are the three it gets
+        // wrong), so this call site would survive being written bare. It is written the same way
+        // as every other date read anyway, because the rule is stated over the column and not
+        // over the operator — a reader should not have to re-derive which comparisons are safe,
+        // and the safe set is not a fact anybody should be relying on. The caveat
+        // MasterRotaAssignment::booted() and Vacation::scopeIntersecting() each already carry;
+        // EndorsementController::updateSignoff() is the canonical statement, including the note
+        // that these comments used to name the wrong engine.
         $periods = DemoLedger::notLedgered(
             Period::query()->whereDate('ends_on', '>=', Calendar::todayYmd()),
             'periods',

@@ -397,10 +397,40 @@ class EndorsementController extends Controller
             'sign_off' => ['sometimes', 'boolean'],
         ]);
 
-        // `whereDate`, not a plain equality on the attribute: the `date` cast persists
-        // 'Y-m-d 00:00:00', so firstOrNew(['handover_date' => 'Y-m-d']) never matches the existing
-        // row and inserts a duplicate — which the (unit_id, handover_date) unique index then
-        // rejects with a raw 500 instead of the "already signed" guard below.
+        // `whereDate`, not a plain equality on the attribute. THIS IS THE CANONICAL STATEMENT of
+        // the hazard; `Period::booted()`, `MasterRotaAssignment::booted()`, `Vacation::booted()`
+        // (whose `scopeIntersecting()` writes the same `whereDate` pair), `ClinicRoster::
+        // rotatingOn()`, `RotaController::landingYear()` and `DepartmentSetup::steps()` all cite
+        // it rather than restating it.
+        //
+        // MEASURED, in-process on this tree (SQLite 3.53): Laravel's base query grammar formats a
+        // `date` cast as `Y-m-d H:i:s` — only the SQL Server grammar overrides that, so both
+        // engines are SENT 'Y-m-d 00:00:00' — and SQLite has no date type, so a NUMERIC-affinity
+        // column keeps that string verbatim. The stored value therefore sorts strictly AFTER the
+        // bare `Y-m-d` needle for the very same day, and the whole error is confined to that
+        // BOUNDARY DAY. Measured over five consecutive rows against a plain `Y-m-d` string,
+        // comparing a bare operator with the `whereDate()` it should equal:
+        //
+        //     =    bare matches NOTHING                    (the boundary day is lost)
+        //     <=   bare EXCLUDES the boundary day          (an inclusive bound silently isn't)
+        //     >    bare INCLUDES the boundary day          (an exclusive bound silently isn't)
+        //     <    bare agrees with whereDate()
+        //     >=   bare agrees with whereDate()
+        //
+        // Three of five are wrong and two are right by luck, which is the reason the rule is
+        // stated over the COLUMN and not over the operator: nobody should have to work out per
+        // call site which of five comparisons happens to be safe. Here it meant
+        // firstOrNew(['handover_date' => 'Y-m-d']) never matching the existing row and inserting
+        // a duplicate — which the (unit_id, handover_date) unique index then rejects with a raw
+        // 500 instead of the "already signed" guard below.
+        //
+        // WHICH ENGINE BEHAVES WHICH WAY IS NOT THE POINT, and six comments citing this one used
+        // to get it backwards (they blamed the engine production runs). Only the SQLite half above
+        // is measured. A MySQL DATE column is REASONED to truncate the time component on storage,
+        // which would make the bare comparison succeed there — reasoned from the column type,
+        // never measured, because nothing in this repository has ever run against MySQL. The rule
+        // does not depend on settling that: use `whereDate()`, never a bare comparison against a
+        // cast date column. It is correct on both engines, which is why nothing here is broken.
         $signoff = HandoverSignoff::where('unit_id', $u->id)
             ->whereDate('handover_date', $date)
             ->first()

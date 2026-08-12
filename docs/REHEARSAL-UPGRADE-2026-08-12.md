@@ -458,6 +458,16 @@ that answer differently — or cannot be asked at all — on the engine producti
    `migrations` — the `1050 Table already exists` trap the plan's §4.2 documents. Migrations #1,
    #7, #10, #13, #16, #19, #20 and #21 all emit more than one statement. **Nothing in this
    rehearsal could have produced that failure.**
+
+   > **Corrected 2026-08-12, while folding this report into the deploy plan: that list of eight
+   > undercounts by ten.** Compiled against Laravel v13.21.1's MySQL grammar,
+   > **18 of the 22** emit more than one statement — because `MySqlGrammar::compileAdd()` returns
+   > one `alter table … add` **per column** (measured: a five-column `Schema::table()` compiles to
+   > five statements), `compileForeign()` is a standalone `alter table … add constraint`, and
+   > `compileCreate()` inlines neither indexes nor foreign keys (measured: `demo_rows`, a create
+   > with one unique and one index, is three statements). Only **#3, #14 and #15** are a single
+   > DDL statement, and **#18** a single `UPDATE`. The per-migration table is in the plan's §9.0.
+   > This makes the item above more true, not less.
 3. **Collation.** `utf8mb4_unicode_ci` is case- and accent-insensitive and PAD SPACE.
    `users.member_name`, `people.short_name`, `levels.code` and `unit_field_definitions.key` all
    compare differently there. The rehearsal deliberately created a case-colliding pair MySQL would

@@ -70,6 +70,22 @@ class InvitationWritersAreSingularTest extends TestCase
      * `AccountLinkHasOneWriterTest` records for `->person_id = `: without it `->revoked_at` also
      * matches `->revoked_at === null`, which is a READ that `InvitationStatus` and `isOpen()` both
      * perform legitimately.
+     *
+     * ---------------------------------------------------------------------------------------
+     * THE 2026-08-12 SWEEP (ruling 66). Twenty-two probes were planted against this guard and
+     * SEVENTEEN were named — mid-table of the eleven. The ONE lesson worth keeping is how nearly a
+     * pass was a false pass:
+     * `Invitation::query()->create([...])` registered as CAUGHT only because the plant's payload
+     * opened with `'revoked_at' =>`. A builder create writing what minting an invitation actually
+     * writes — `token_hash`, `expires_at`, `member_email` — matched nothing at all. A probe that
+     * uses the guard's own vocabulary in its plant proves less than it looks like it proves.
+     *
+     * RESIDUALS. No substring reaches these and none is closed:
+     *   - `$invitation->delete()` on an already-bound instance (already stated below, unchanged).
+     *   - `Invitation::query()->where(...)->delete()` — a `where` between the model and the verb.
+     *     The bare `Invitation::query(` that would span it names five files, two of them readers.
+     *   - `'expires_at' =>` and `'token_hash' =>` remain deliberately unneedled, for the reason
+     *     stated below: both are columns of `login_otps`, `email_otps` and `trusted_devices` too.
      */
     private const NEEDLES = [
         'Invitation::issue(',
@@ -77,8 +93,24 @@ class InvitationWritersAreSingularTest extends TestCase
         'Invitation::insert(',
         'Invitation::updateOrCreate(',
         'Invitation::firstOrCreate(',
+        'Invitation::upsert(',
         'Invitation::destroy(',
         'Invitation::truncate(',
+        // THE SIXTH WRITER SHAPE (2026-08-12 sweep, ruling 66), verb-qualified.
+        // `Invitation::query()->create([...])` reaches the table through the builder and matches
+        // none of the statics above. It was CAUGHT on the probe only by accident — the plant's
+        // payload happened to open with `'revoked_at' =>`, one of the four column needles below —
+        // so a builder create writing `token_hash`, `expires_at` and `member_email` (which is what
+        // minting an invitation actually writes) walked straight through. Bare `Invitation::query(`
+        // measures FIVE files (`InvitationController`, `InvitationAcceptController`,
+        // `InvitationStatus`, `DepartmentSetup`, plus the writer); `InvitationStatus` and
+        // `DepartmentSetup` are readers this guard has no business naming, so the whole form was
+        // withdrawn and this one bought instead. MEASURED: ZERO matches each.
+        'Invitation::query()->create(',
+        'Invitation::query()->insert(',
+        'Invitation::query()->firstOrCreate(',
+        'Invitation::query()->updateOrCreate(',
+        'Invitation::query()->upsert(',
         // The front half of `find()->delete()`. Every legitimate single-row read in this codebase
         // arrives by route-model binding or through `InvitationIssue`/`InvitationStatus`, so
         // nothing needs this today and a future caller that thinks it does should be named here.
@@ -88,6 +120,9 @@ class InvitationWritersAreSingularTest extends TestCase
         '->invitations()->updateOrCreate(',
         '->invitations()->firstOrCreate(',
         '->invitations()->save(',
+        '->invitations()->saveMany(',
+        '->invitations()->insert(',
+        '->invitations()->upsert(',
         '->invitations()->update(',
         '->invitations()->delete(',
         "DB::table('invitations')",
@@ -152,5 +187,26 @@ class InvitationWritersAreSingularTest extends TestCase
         foreach (self::ALLOW_LIST as $relative) {
             $this->assertFileExists(base_path($relative), "Allow-listed file {$relative} is gone — prune the list.");
         }
+    }
+
+    /**
+     * THE VACUITY TWIN (2026-08-12 sweep, ruling 66). The scan above is satisfied by a tree in
+     * which nothing writes `invitations` at all — the offender loop iterates files that mention
+     * nothing and `assertSame([], $offenders)` passes. `DemoRowsAreLedgeredTest` has carried this
+     * twin since P1e and nine siblings did not, so the writer must actually match a needle.
+     */
+    public function test_the_one_writer_really_does_write_invitations(): void
+    {
+        $source = (string) File::get(base_path('app/Support/Invitations/InvitationIssue.php'));
+
+        $matched = array_values(array_filter(
+            self::NEEDLES,
+            static fn (string $needle): bool => str_contains($source, $needle),
+        ));
+
+        $this->assertNotSame([], $matched,
+            'InvitationIssue matches none of this guard\'s needles, so the guard is scanning for a '
+            .'shape nothing in the tree uses — it would stay green against a second writer '
+            .'spelled the way the real one is.');
     }
 }

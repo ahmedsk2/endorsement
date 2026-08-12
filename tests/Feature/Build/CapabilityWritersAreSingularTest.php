@@ -86,6 +86,25 @@ class CapabilityWritersAreSingularTest extends TestCase
      *
      * `->effect = ` keeps its trailing space for `AccountLinkHasOneWriterTest`'s reason: the bare
      * form also matches `->effect === 'deny'`, which is a read.
+     *
+     * ---------------------------------------------------------------------------------------
+     * THE 2026-08-12 SWEEP (ruling 66) ADDED NOTHING HERE, AND THAT IS THE RESULT RATHER THAN A
+     * SKIPPED GUARD. Twenty-two probes were planted against this list and it named NINETEEN,
+     * second only to `DemoRowsAreLedgeredTest`'s twenty — and it was one of only two guards of the
+     * eleven that already covered the
+     * sixth shape (`UserCapability::query()->create(`), because `UserCapability::query(` is
+     * needled WHOLE. It could afford that where four siblings could not: this model is reached
+     * only through `CapabilityGrant` and `AccessControl`, so the bare form matches two files and
+     * both are allow-listed for stated reasons. `MasterRotaAssignment::query(` matches nine,
+     * `Person::query(` twelve — which is why they got the verb-qualified form and this one did
+     * not need it. Taking `::query(` whole is strictly wider: it spans
+     * `::query()->where(...)->delete()` and a chain broken across lines, neither of which any
+     * one-token needle can reach.
+     *
+     * THE ONE RESIDUAL, stated rather than implied: `$override->delete()` on an already-bound
+     * instance. Invisible to any substring scan, here as in every sibling guard — and the reason
+     * `UserCapability::find(`, `::destroy(`, `::where(` and `::query(` are all needled, since
+     * between them they are every route TO such an instance.
      */
     private const NEEDLES = [
         'UserCapability::create(',
@@ -147,5 +166,25 @@ class CapabilityWritersAreSingularTest extends TestCase
         foreach (self::ALLOW_LIST as $relative) {
             $this->assertFileExists(base_path($relative), "Allow-listed file {$relative} is gone — prune the list.");
         }
+    }
+
+    /**
+     * THE VACUITY TWIN (2026-08-12 sweep, ruling 66). The scan above is satisfied by a tree in
+     * which nothing writes `user_capabilities` at all. `DemoRowsAreLedgeredTest` has carried this
+     * twin since P1e and nine siblings did not, so the writer must actually match a needle.
+     */
+    public function test_the_one_writer_really_does_write_the_overrides(): void
+    {
+        $source = (string) File::get(base_path('app/Support/CapabilityGrant.php'));
+
+        $matched = array_values(array_filter(
+            self::NEEDLES,
+            static fn (string $needle): bool => str_contains($source, $needle),
+        ));
+
+        $this->assertNotSame([], $matched,
+            'CapabilityGrant matches none of this guard\'s needles, so the guard is scanning for a '
+            .'shape nothing in the tree uses — it would stay green against a second writer '
+            .'spelled the way the real one is.');
     }
 }

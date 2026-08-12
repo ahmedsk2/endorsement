@@ -100,6 +100,26 @@ class DemoRowsAreLedgeredTest extends TestCase
      * batch column is `promotion_batch_id`, which `->batch_id = ` does not match. So this list buys
      * no allow-list entry and blinds no file, which is the test the clinic guard's withdrawn
      * `->update(['active'` needle failed.
+     *
+     * ---------------------------------------------------------------------------------------
+     * THE 2026-08-12 SWEEP (ruling 66) ADDED NOTHING HERE EITHER. Twenty-two probes were planted
+     * and this list named TWENTY — the best of the eleven guards, one ahead of
+     * `CapabilityWritersAreSingularTest`, and for the same structural reason: `DemoRow::query()`
+     * is needled WHOLE, which is only affordable because nothing outside the writer reads this
+     * table. The sweep's job here was to confirm that the sixth shape stayed closed and to carry
+     * the fix to the four siblings that still had it open, which design §14 item 26 recorded as
+     * queued and this sweep discharges.
+     *
+     * THE ONE RESIDUAL, stated rather than implied: `$demoRow->delete()` on an already-bound
+     * instance. Invisible to any substring scan. `DemoRow::find(`, `::destroy(` and `::query()`
+     * are every route TO such an instance, which is as far as this species of guard reaches — and
+     * `DemoRoundTripTest`'s whole-schema count comparison is what actually holds the line, as this
+     * file's own header says twice.
+     *
+     * ALSO MEASURED AND NOT BOUGHT: `forceFill(['batch_id'` and its two siblings, ZERO matches.
+     * Their reach is a single-line `forceFill` whose FIRST array key is that column, a fraction of
+     * what `->batch_id = ` and `$demoRow->update(` already see, and this codebase formats payload
+     * arrays across lines. A needle bought for nothing is clutter, not defence.
      */
     private const NEEDLES = [
         'DemoRow::create(',

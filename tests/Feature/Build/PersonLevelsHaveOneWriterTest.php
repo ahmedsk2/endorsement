@@ -16,10 +16,16 @@ use Tests\TestCase;
  * substring scan over app/ + database/ + routes/, deliberately coarse rather than a static
  * analyser, because the point is a stop-sign a future PR trips over, not perfect precision.
  *
- * `tests/` is NOT scanned: `LevelHistoryTest`'s own fixtures call `PersonLevel::create()`
+ * `tests/` IS NOT SCANNED: `LevelHistoryTest`'s own fixtures call `PersonLevel::create()`
  * directly to seed history for `levelAt()`'s tests (it predates this guard, and asserting
  * `levelAt()`'s read semantics is exactly what that file is for) — a test fixture is not the
- * production integrity surface this guard exists to close.
+ * production integrity surface this guard exists to close. `database/` IS SCANNED, factories and
+ * seeders included — the verdict every sibling now states in the same words (made uniform by the
+ * 2026-08-12 sweep, ruling 66; the code has always scanned it, since `base_path('database')`
+ * contains `factories/`). A factory writing the guarded table IS a second writer of the shape this
+ * guard is about, merely one whose blast radius stops at the suite, which is why
+ * `PersonLevelFactory` is NAMED on the allow-list rather than exempted by directory — a reviewable
+ * exemption where excluding the directory makes every future factory exempt in advance, invisibly.
  *
  * ONE PATH DELETES THIS TABLE WITHOUT THIS GUARD BEING ABLE TO SEE IT, AND IT IS NOT AN OVERSIGHT.
  * `App\Support\Demo\DemoDepartment::remove()` (P1e Task 13) hard-deletes every row the demo
@@ -94,11 +100,65 @@ class PersonLevelsHaveOneWriterTest extends TestCase
      * overlap breaks those, at the assertion rather than at the grep. The file-level entry was
      * checked for this specifically and not merely inherited: it costs nothing NEW, because it was
      * already total.
+     *
+     * ---------------------------------------------------------------------------------------
+     * THE 2026-08-12 SWEEP (ruling 66). Twenty-two probes were planted against this guard — the
+     * seventeen writer shapes, with the column-sensitive ones run against both a signature column
+     * and a shared one — and THIRTEEN walked through, level with `vacations` and behind only
+     * `PersonActiveHasOneWriterTest`'s eighteen.
+     * `PersonLevel::query()->create(['effective_from' => …])`,
+     * `firstOrCreate`, `updateOrCreate`, `upsert`, `destroy`, `truncate`, every relation write
+     * except `create`, and the property-assign that is this codebase's house idiom were all
+     * invisible. On a SPAN table, `PersonLevel::query()->create(...)` is the exact Finding-4
+     * state: two open spans for one person, `levelAt()` silently resolving whichever sorted last.
+     *
+     * MEASURED, per ruling 42, over app/ + database/ + routes/ before anything below was added:
+     * every new needle matched ZERO files, in either quote style. No allow-list entry bought.
+     *
+     * WITHDRAWN ON MEASUREMENT: `PersonLevel::query(` taken whole — FOUR files (`Person.php`,
+     * `DemoDepartment`, `Promotion`, plus the writer). `Promotion` is the natural home of the
+     * annual-promotion writer and `Person.php` holds `levelAt()`; an entry for either is the
+     * blinding ruling 42 forbids. Verb-qualified instead, at the residual cost stated below.
+     *
+     * RESIDUALS. No substring reaches these and none is closed:
+     *   - `$span->delete()` on an already-bound instance.
+     *   - `PersonLevel::query()->where(...)->delete()` — a `where` between the model and the verb,
+     *     which no one-token needle spans.
+     *   - A MULTI-LINE builder chain (`PersonLevel::query()` then `->create(` on the next line).
+     *   - The column-qualified `->update(['col'` family matches only a SINGLE-LINE call whose
+     *     FIRST array key is that column — which is why the symmetric `->create(['effective_from'`
+     *     family measures zero for a reason that has nothing to do with safety, and was not
+     *     bought: this codebase formats create payloads across lines.
      */
     private const NEEDLES = [
         'PersonLevel::create(',
         'PersonLevel::insert(',
+        // Added by the 2026-08-12 sweep: the static verbs this list never carried, plus the sixth
+        // writer shape verb-qualified. `firstOrCreate`/`updateOrCreate`/`upsert` open a span
+        // without ever calling `create`, and `destroy`/`truncate` remove history LV-04 exists to
+        // keep. Each was proved by planting a file of exactly that shape under `app/`.
+        'PersonLevel::firstOrCreate(',
+        'PersonLevel::updateOrCreate(',
+        'PersonLevel::upsert(',
+        'PersonLevel::destroy(',
+        'PersonLevel::truncate(',
+        'PersonLevel::find(',
+        'PersonLevel::query()->create(',
+        'PersonLevel::query()->insert(',
+        'PersonLevel::query()->firstOrCreate(',
+        'PersonLevel::query()->updateOrCreate(',
+        'PersonLevel::query()->upsert(',
         '->levels()->create(',
+        // The rest of the relation surface. `Person::levels()` is a real hasMany, so every one of
+        // these is reachable today — naming only `create` and `update` drew an arbitrary line
+        // through one API, the same objection `InvitationWritersAreSingularTest` records.
+        '->levels()->insert(',
+        '->levels()->firstOrCreate(',
+        '->levels()->updateOrCreate(',
+        '->levels()->upsert(',
+        '->levels()->save(',
+        '->levels()->saveMany(',
+        '->levels()->delete(',
         "DB::table('person_levels')",
         // The double-quoted twin of the raw-builder needle above, absent until now for no reason
         // but oversight — every sibling guard carries both spellings. ZERO pre-existing matches.
@@ -117,6 +177,17 @@ class PersonLevelsHaveOneWriterTest extends TestCase
         // Variable-qualified: catches it whatever the COLUMN is, which is the only reach this guard
         // has over `level_id`, `reason` and `created_by` — each withdrawn by name above.
         '$personLevel->update(',
+        // PROPERTY-ASSIGN then `->save()`, added by the 2026-08-12 sweep and previously absent
+        // altogether. `$span->effective_to = $date;` matched NO needle here — and it is one
+        // refactor away from live code, since `close()` writes exactly that column through
+        // `update([...])` today. Column-qualified so it fires whatever the local is called
+        // (`$span` itself is withdrawn as a variable name above, for colliding with a rota span).
+        // TRAILING SPACE load-bearing: without it, `->effective_to` also matches
+        // `->effective_to === null`, the open-span READ `levelAt()` performs. These three columns
+        // are carried by `person_levels` and by no other table. MEASURED: ZERO matches each.
+        '->effective_from = ',
+        '->effective_to = ',
+        '->promotion_batch_id = ',
     ];
 
     public function test_only_level_assignment_writes_person_levels(): void
@@ -156,5 +227,27 @@ class PersonLevelsHaveOneWriterTest extends TestCase
         foreach (self::ALLOW_LIST as $relative) {
             $this->assertFileExists(base_path($relative), "Allow-listed file {$relative} is gone — prune the list.");
         }
+    }
+
+    /**
+     * THE VACUITY TWIN (2026-08-12 sweep, ruling 66). The scan above is satisfied by a tree in
+     * which nothing writes `person_levels` at all. `DemoRowsAreLedgeredTest` has carried this twin
+     * since P1e and nine siblings did not, so the writer must actually match a needle. It does so
+     * through `->update(['effective_to'` — the ONE pre-existing match this guard's own docblock
+     * explains at length, which is what makes the twin non-trivial here rather than decoration.
+     */
+    public function test_the_one_writer_really_does_write_person_levels(): void
+    {
+        $source = (string) File::get(base_path('app/Support/LevelAssignment.php'));
+
+        $matched = array_values(array_filter(
+            self::NEEDLES,
+            static fn (string $needle): bool => str_contains($source, $needle),
+        ));
+
+        $this->assertNotSame([], $matched,
+            'LevelAssignment matches none of this guard\'s needles, so the guard is scanning for a '
+            .'shape nothing in the tree uses — it would stay green against a second writer '
+            .'spelled the way the real one is.');
     }
 }

@@ -234,6 +234,12 @@ not inferred from a document.
     `'Y-m-d 00:00:00'`, so a comparison must be `whereDate(...)`, never equality against a plain
     `Y-m-d` string.
 
+    > **2026-08-12 correction.** Left as written — this is what was believed at the time. The
+    > engine is backwards: measured in-process, **SQLite** is where the bare comparison fails;
+    > MySQL is reasoned (not measured) to truncate and therefore succeed. And the failure is not
+    > "never matches" but a boundary-day error affecting `=`, `<=` and `>`. The instruction —
+    > `whereDate(...)`, never bare equality — was and remains correct on both engines. Ruling 72.
+
 11. **`AccessControlParityTest::expectedByPosition()` carries a hardcoded Administrator-default
     capability list, and it is not mentioned in any task's Files list until it goes red.** P1b Task 2's
     amendment records this exactly: adding a key to `AccessControlSeeder::ROLE_DEFAULTS[0]` fails
@@ -1926,6 +1932,14 @@ protected static function booted(): void
     });
 }
 ```
+
+> **2026-08-12 correction to the docblock quoted above.** It is reproduced here as the code this
+> plan shipped, and is left intact. Its last paragraph names the wrong engine: measured
+> in-process, **SQLite** is where a bare comparison against a plain `'Y-m-d'` string fails, while
+> a MySQL `DATE` column is reasoned — not measured, nothing here has run against MySQL — to
+> truncate and therefore compare successfully. *"Never matches"* also understates it: the error is
+> confined to the boundary day, and affects `=`, `<=` and `>` while `<` and `>=` happen to agree.
+> The `whereDate` instruction is correct on both engines and is unchanged in the tree. Ruling 72.
 
 Add `database/factories/MasterRotaAssignmentFactory.php` — it will be allow-listed by Task 5's guard,
 exactly as `PersonLevelFactory` is by `PersonLevelsHaveOneWriterTest`.

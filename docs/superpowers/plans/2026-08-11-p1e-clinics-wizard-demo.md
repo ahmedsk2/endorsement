@@ -952,6 +952,16 @@ arithmetic — this plan's own PHPUnit baseline was measured on a dirty tree and
    own docblocks. P1d-2 Decision B's four-way string comparison is for values ALREADY IN PHP (what
    `AvailabilitySummary` does, over an array the grid built); it is not a query idiom, and using it
    as one would have passed under SQLite and failed in production.
+
+   > **2026-08-12 correction — this item states the engine backwards TWICE, and the second is the
+   > more misleading of the two.** Left as written, being the record of what was decided. Measured
+   > in-process on this tree: it is **SQLite** that stores the serialised `'Y-m-d 00:00:00'`
+   > verbatim, so a raw string comparison fails *under SQLite* and is reasoned (not measured) to
+   > succeed on MySQL — the exact inverse of the closing sentence, which would send someone
+   > debugging this to production rather than to the suite that would in fact have caught it. The
+   > *conclusion* — use `whereDate()` — is correct and unchanged, and it is what the shipped code
+   > does. Note also that "never matches" understates the failure: it is confined to the boundary
+   > day, where `<=` silently drops it and `>` silently gains it. Ruling 72.
 4. **Vacation verdict: neither excluded nor flagged — returned, unmarked, and the leave table is
    never queried at all.** Decision B says so in terms ("a person on vacation is returned,
    unmarked"), and CL-04 is P3. The reason it is worth stating as an implementation fact rather
@@ -1509,6 +1519,10 @@ gains item 23.
    `test_a_year_that_has_already_ended_does_not_satisfy_the_period_step` pins the first.
    `whereDate()`, not a string comparison: both bounds are `date`-cast and MySQL 8.4 round-trips
    such a column as `'Y-m-d 00:00:00'` — the same caveat Task 3 amendment 3 recorded.
+
+   > **2026-08-12 correction.** Same inverted attribution as Task 3 amendment 3, corrected in the
+   > same place: the engine on which the bare comparison fails is **SQLite** (measured), not MySQL
+   > (reasoned to truncate, never measured here). `whereDate()` remains right. Ruling 72.
 5. **`count()`, not `exists()`, on every REQUIRED step — the same one query, and it buys the
    summary line.** The plan says `exists()`; a REQUIRED step whose summary cannot say *how many* is
    a tick with nothing behind it, and the REVIEW steps would then be the only ones an administrator

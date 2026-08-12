@@ -20,6 +20,14 @@ the PDPL data-residency position simple). Coolify 4.1.2, Traefik owns :80/:443 o
 Identifiers (project/app/DNS-record/deploy-key UUIDs) are recorded in
 `ORACLE MCP/infra/state.env` as `ENDORSE_*`, alongside the other apps on this host.
 
+> **Deploying P1 (2026-08-12): read `docs/DEPLOY-P1-2026-08-12.md` first.** This file is the
+> standing document — how the deployment is wired, the grant/revoke shape, the per-slice
+> verification queries, the outage post-mortems. That one is the ordered, single-use runbook for
+> the 22-migration P1 release: pre-flight, the migration list with the two that are not routine,
+> the environment variables that must be set before the seed, the post-deploy queries, the
+> operator actions that are not migrations, and an honest rollback picture (there is no clean
+> code-only rollback past `2026_08_10_120003`). It also records three corrections to this file.
+
 **A second customer gets its own row in this table and its own entry in
 `docs/RUNBOOK-PROVISION.md`.** Never reuse this deployment's UUID or slug for another
 customer, and never select the database container by matching the shared MySQL image name —
@@ -388,8 +396,14 @@ Expect `200`, plus `strict-transport-security`, `content-security-policy`,
 - Open a unit, add a patient row, type in a rich-text field, **reload** — the text must
   still be there and still coloured. That is the legacy production bug this system fixes.
 - Print a signed day; confirm names and signatures render.
-- `php artisan schedule:list` — six jobs: handover reminders at 07:30 and 15:30,
-  `audit:verify` hourly, `backup:run` 01:30, `data:retention` 02:30.
+- `php artisan schedule:list` — **eight** entries: `endorsement:remind` at 07:40 and 15:40
+  (the handover times 07:30/15:30 plus `remind_delay_minutes`, default 10) **and** every
+  fifteen minutes as an idempotent safety net; `audit:verify` hourly; `audit:anomalies`
+  hourly; `backup:run` 01:30; `data:retention --force` 02:30; `users:dormant` Monday 08:00.
+  (This said "six jobs … reminders at 07:30 and 15:30" until 2026-08-12. The six is
+  `docker/smoke.sh`'s figure, which greps `schedule:list` for four command names only and so
+  cannot see `audit:anomalies` or `users:dormant`; the times were the handover times, not the
+  reminder times. Enumerated from `routes/console.php`.)
 - `php artisan audit:verify` — the hash chain is intact.
 
 ---
@@ -667,11 +681,27 @@ SELECT COUNT(*) FROM holidays;
 
 A `hijri_offset_days` other than what you expect almost always means `HIJRI_OFFSET_DAYS` was
 not set (or not passed through the compose file — see the D11/P0d Task 9 pattern this repeats)
-before `db:seed --force` ran. Re-running `db:seed --force` after fixing the environment
-variable will NOT overwrite an existing non-null value — `ReferenceSeeder` deliberately never
-reverts a live department's calibration — so a wrong value must be corrected by hand:
+before `db:seed --force` ran. Fix the Coolify variable and re-seed; that is enough.
+
+> **CORRECTED 2026-08-12.** This paragraph used to say `db:seed --force` "will NOT overwrite an
+> existing non-null value — `ReferenceSeeder` deliberately never reverts a live department's
+> calibration — so a wrong value must be corrected by hand". **In this deployment it always
+> overwrites**, and the hand `UPDATE` below is a fallback, not the remedy.
+> `ReferenceSeeder` writes this column whenever `config('endorsement.hijri_offset_days')` is
+> neither `null` nor `''`, and `docker-compose.production.yml` passes
+> `HIJRI_OFFSET_DAYS: ${HIJRI_OFFSET_DAYS:-0}` — so the variable is **always present** in the
+> container, defaulting to the string `"0"`. The seeder's own docblock claim ("NEVER reverted to
+> 0 by a re-seed") holds only when the variable is *absent*, which this compose file guarantees
+> it is not.
+>
+> The consequence that matters going forward: `hijri_offset_days` is also editable at
+> **Admin → Structure → Calendar**. An administrator who recalibrates there and does not also
+> change the Coolify variable will have it **silently reverted on the next deploy**. Treat the
+> Coolify value as the source of truth and change both together.
 
 ```sql
+-- Fallback only — prefer setting HIJRI_OFFSET_DAYS in Coolify and re-seeding, or the
+-- Admin → Structure → Calendar screen (which is audited; this is not).
 UPDATE institutions SET hijri_offset_days = -1 WHERE code = 'QCH';
 ```
 
@@ -1012,7 +1042,9 @@ read the preview, then commit.
 at all** — every column it needed already existed (`invitations.person_id`, `users.person_id`,
 `user_capabilities.effect`, `app_settings.key`/`value`, `handover_signoffs.signed_off_by_name`). The
 `2026_08_14_1201*` slot the P1c-1 plan reserved for it is **released, unclaimed**; P1d's
-`2026_08_15_*` remains the last migration in the tree. A runbook that is silent about a release reads
+`2026_08_15_*` was the last migration in the tree *when this section was written* — P1e's
+`2026_08_16_120001`/`2026_08_16_120002` are now last (see the P1e section below). A runbook that is
+silent about a release reads
 as an oversight, so: there is genuinely nothing to run, and `php artisan migrate --pretend` should
 report no pending migrations after this deploy.
 

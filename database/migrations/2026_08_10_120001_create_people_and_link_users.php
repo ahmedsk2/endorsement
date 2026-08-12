@@ -123,18 +123,28 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Order matters on MySQL/InnoDB and did not on the original SQLite-tested order:
-        // dropUnique(['person_id']) before dropConstrainedForeignId('person_id') hit
-        // `SQLSTATE[HY000]: 1553 Cannot drop index 'users_person_id_unique': needed in a
-        // foreign key constraint` — InnoDB requires an index on an FK column, and that
-        // unique index was the only one. SQLite rebuilds the whole table for both
-        // operations, so statement order never mattered there. dropConstrainedForeignId()
-        // drops the foreign key constraint AND its column (and, with it, the unique index
-        // that lived on that same column) in one pass — see docs/RUNBOOK-DEPLOY.md's
-        // "Verifying the 2026-08-10 identity migrations" section for the verified-clean
-        // rollback sequence this is one step of.
+        // THREE STATEMENTS, IN THIS ORDER, BECAUSE THE TWO ENGINES CONSTRAIN OPPOSITE ENDS OF IT.
+        //
+        // InnoDB refuses `dropUnique(['person_id'])` while the foreign key still exists —
+        // `SQLSTATE[HY000]: 1553 Cannot drop index 'users_person_id_unique': needed in a foreign
+        // key constraint`, because an FK column must keep an index and this unique one was the
+        // only candidate. That is what the 2026-08-09 MySQL rehearsal found.
+        //
+        // SQLite refuses the opposite: it will not drop a column while any index still names it —
+        // `error in index users_person_id_unique after drop column: no such column: "person_id"`.
+        // The fix for MySQL was `dropConstrainedForeignId('person_id')` alone, on the belief that
+        // it "drops the unique index that lived on that same column" too. It does not: it emits
+        // dropForeign + dropColumn and nothing that removes the separate unique index, so on
+        // SQLite the column drop fails and `migrate:rollback` stops mid-batch. Measured
+        // 2026-08-12 in the upgrade-path rehearsal (docs/REHEARSAL-UPGRADE-2026-08-12.md).
+        //
+        // Dropping the constraint FIRST, then the index, then the column satisfies both: once the
+        // FK is gone InnoDB has no reason to hold the index, and once the index is gone SQLite has
+        // no reason to hold the column.
         Schema::table('users', function (Blueprint $table) {
-            $table->dropConstrainedForeignId('person_id');
+            $table->dropForeign(['person_id']);
+            $table->dropUnique(['person_id']);
+            $table->dropColumn('person_id');
         });
 
         Schema::dropIfExists('people');

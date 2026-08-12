@@ -71,7 +71,12 @@ return new class extends Migration
             $table->dropConstrainedForeignId('created_by');
         });
 
+        // `promotion_batch_id` was added `->index()`, and SQLite will not drop a column while an
+        // index still names it (`error in index person_levels_promotion_batch_id_index after drop
+        // column`). MySQL drops the index with the column and does not need this line; it is
+        // harmless there. Measured 2026-08-12 (docs/REHEARSAL-UPGRADE-2026-08-12.md).
         Schema::table('person_levels', function (Blueprint $table) {
+            $table->dropIndex(['promotion_batch_id']);
             $table->dropColumn(['promotion_batch_id', 'reason']);
         });
     }

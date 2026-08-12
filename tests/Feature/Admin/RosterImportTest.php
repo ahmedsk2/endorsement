@@ -566,8 +566,23 @@ class RosterImportTest extends TestCase
         ]);
 
         // The unchanged two must carry NO row-level role-change audit at all.
-        $this->assertDatabaseMissing('audit_log', ['action' => 'user_role_change', 'detail' => 'like', 'person='.$existing[0]->id.';%']);
-        $this->assertDatabaseMissing('audit_log', ['action' => 'user_role_change', 'detail' => 'like', 'person='.$existing[1]->id.';%']);
+        //
+        // These two assertions used to be written as
+        //   assertDatabaseMissing('audit_log', ['action' => …, 'detail' => 'like', 'person=1;%'])
+        // — a `LIKE` written as if it were a where-triple, in a method that takes column => value.
+        // The third element got the numeric key 0, so the query became
+        //   … and `detail` = 'like' and `0` = 'person=1;%'
+        // On SQLite that is not an error: a quoted identifier that resolves to no column FALLS
+        // BACK TO A STRING LITERAL, so it compared '0' with 'person=1;%', matched nothing, and
+        // the assertion passed vacuously — it had never tested anything. MySQL says
+        // `1054 Unknown column '0' in 'where clause'`, which is how it was found (2026-08-12
+        // MySQL rehearsal). Written as an explicit count so the LIKE is really a LIKE.
+        foreach ([$existing[0], $existing[1]] as $unchanged) {
+            $this->assertSame(0, AuditLog::query()
+                ->where('action', 'user_role_change')
+                ->where('detail', 'like', 'person='.$unchanged->id.';%')
+                ->count(), "person {$unchanged->id} kept its position and must not be audited");
+        }
     }
 
     /** A brand-new person's position is always a genuine assignment, never "unchanged". */

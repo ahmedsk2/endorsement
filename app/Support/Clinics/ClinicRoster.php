@@ -131,10 +131,16 @@ final class ClinicRoster
      * The ids the master rota has on one unit on one day.
      *
      * `whereDate()` rather than a raw string comparison, and that is not decoration: the model
-     * casts both bounds to `date`, and MySQL round-trips such a column as `'Y-m-d 00:00:00'`, so a
-     * plain equality against `'Y-m-d'` never matches on the engine production runs. It is the same
-     * caveat `MasterRotaAssignment::booted()` and `Vacation::scopeIntersecting()` both already
-     * carry.
+     * casts both bounds to `date`, and against a plain `'Y-m-d'` string such a column compares
+     * wrongly on the BOUNDARY DAY — the stored value sorts after the bare needle for the same
+     * day. Concretely, and measured on SQLite: the `starts_on <=` bound below written bare would
+     * EXCLUDE a span on the day it starts, so a person would appear on this clinic from their
+     * second day on the unit and nothing would report an error. (The `ends_on >=` bound is one of
+     * the two operators a bare comparison gets right by luck; the rule is stated over the column
+     * rather than the operator precisely so no one has to know which.) It is the same caveat
+     * `MasterRotaAssignment::booted()` and `Vacation::scopeIntersecting()` both already carry;
+     * `EndorsementController::updateSignoff()` is the canonical statement, including the note
+     * that these comments used to name the wrong engine.
      *
      * `pluck()` on a rota row is not the narrowed-projection trap the class docblock names — that
      * one is about narrowing a PERSON query past the column its accessors resolve through. This

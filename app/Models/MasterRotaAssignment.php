@@ -55,9 +55,13 @@ class MasterRotaAssignment extends Model
      * overlap across two different periods. A second, global per-person check would be a weaker
      * duplicate of a fact already guaranteed.
      *
-     * `whereDate`, not equality — `Period::booted()` documents the live hazard: the `date` cast
-     * round-trips from MySQL as 'Y-m-d 00:00:00', so equality against a plain 'Y-m-d' never
-     * matches.
+     * `whereDate`, not equality — `EndorsementController::updateSignoff()` carries the canonical
+     * statement and the measurement behind it. Against a plain 'Y-m-d' string a `date`-cast
+     * column compares wrongly on the BOUNDARY DAY: measured on SQLite, a bare '=' matches
+     * nothing, a bare '<=' drops that day and a bare '>' gains it. That is exactly the
+     * containment question this guard asks, where being one day out at either end is the whole
+     * invariant. `whereDate()` is correct on both engines; the engine attribution this comment
+     * used to carry was backwards, and the rule never needed one.
      */
     protected static function booted(): void
     {

@@ -1450,6 +1450,16 @@ Note the `whereDate` — not equality. `EndorsementController.php:325-331` docum
 hazard: a `'date'` cast round-trips from MySQL as `'Y-m-d 00:00:00'`, so equality comparisons
 against a `Y-m-d` string never match. Every date comparison in this module uses `whereDate`.
 
+> **2026-08-12 correction — the engine named above is wrong, and the rule is understated.** The
+> paragraph is left as written because it records what was believed when this plan was executed.
+> Measured in-process on this tree: it is **SQLite** that stores the serialised `'Y-m-d 00:00:00'`
+> verbatim, so the bare comparison fails *there*; a MySQL `DATE` column is reasoned (not measured
+> — nothing here has run against MySQL) to truncate it, which would make the bare comparison
+> succeed. Also, *"never match"* is true only of `=`: the error is confined to the boundary day,
+> where `<=` silently drops it and `>` silently gains it. **The instruction itself was correct and
+> is unchanged** — `whereDate` everywhere, which is right on both engines. See ruling 72 and
+> `docs/DEPLOY-P1-2026-08-12.md` §9.1.
+
 - [x] **Step 4: `App\Support\PeriodGenerator`**
 
 Pure functions returning arrays; **no database writes**, so a preview screen and the committing

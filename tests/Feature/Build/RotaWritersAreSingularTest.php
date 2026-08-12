@@ -16,9 +16,14 @@ use Tests\TestCase;
  * invariant each model's `booted()` guard enforces — the writer is where "refuse before writing"
  * lives; a second insertion path bypasses it entirely.
  *
- * `tests/` is NOT scanned — same reasoning `PersonLevelsHaveOneWriterTest` states: a test fixture
- * seeding rows directly for an unrelated test's own purposes is not the production integrity
- * surface this guard exists to close.
+ * `tests/` IS NOT SCANNED; `database/` IS, factories and seeders included — the verdict every
+ * sibling now states in the same words (made uniform by the 2026-08-12 sweep, ruling 66; the code
+ * has always scanned `database/`, since `base_path('database')` contains `factories/`). A factory
+ * writing the guarded table IS a second writer of the shape this guard is about; it is merely one
+ * whose blast radius stops at the suite, which is why `MasterRotaAssignmentFactory` and
+ * `VacationFactory` are NAMED on the allow-list rather than exempted by directory — a reviewable
+ * exemption where excluding the directory makes every future factory exempt in advance, invisibly.
+ * `tests/` stays out because a guard that named its own fixtures would be unusable.
  *
  * ONE PATH DELETES THESE TABLES WITHOUT THIS GUARD BEING ABLE TO SEE IT, AND IT IS NOT AN
  * OVERSIGHT. `App\Support\Demo\DemoDepartment::remove()` (P1e Task 13) hard-deletes every row the
@@ -106,18 +111,111 @@ class RotaWritersAreSingularTest extends TestCase
      * screen ever arrives, the answer is to NARROW this needle, not to allow-list
      * `PeriodController` — that controller already refuses a delete while assignments reference the
      * year, which makes it a plausible future home for a real rota write.
+     *
+     * ---------------------------------------------------------------------------------------
+     * THE 2026-08-12 SWEEP (ruling 66). Twenty-two probes — the seventeen writer shapes, with the
+     * column-sensitive ones run against both a signature column and a shared one — were planted
+     * against this guard, one at a time. TWELVE walked straight through for
+     * `master_rota_assignments` and THIRTEEN for `vacations`, which is the second-worst score of
+     * the eleven guards and the asymmetry the vacuity twin below now pins. `MasterRotaAssignment::query()
+     * ->create(['granularity' => 'day'])` was planted as a real file under `app/` and this test
+     * stayed GREEN — the sixth writer shape `DemoRowsAreLedgeredTest` closed a week earlier and
+     * design §14 item 26 recorded as still open here. So were `firstOrCreate`, `upsert`,
+     * `destroy`, `truncate`, every relation write, and the property-assign that is this
+     * codebase's house idiom for a single-column change.
+     *
+     * MEASURED, per ruling 42, over app/ + database/ + routes/ before anything below was added:
+     * every one of the new needles matched ZERO files, in either quote style. No allow-list entry
+     * was bought by any of them.
+     *
+     * WITHDRAWN ON MEASUREMENT, and this is the important one:
+     *   - `MasterRotaAssignment::query(` — NINE files (`PeriodController`, `ClinicRoster`,
+     *     `DemoDepartment`, `RotaExport`, `RotaFill`, `RotaGrid`, `RotaImport`, `E2eSeeder`, plus
+     *     the writer). `Vacation::query(` — FOUR (`RotaExport`, `RotaGrid`, `RotaImport`,
+     *     `E2eSeeder`). That is the needle `DemoRowsAreLedgeredTest` could afford, because
+     *     `DemoRow::query(` matched its writer and nothing else; here it would buy an entry for
+     *     `RotaFill`, `RotaGrid` and `RotaImport` — the three files a second rota writer is most
+     *     likely to be born in. Withdrawn, and replaced by the VERB-QUALIFIED form below, which
+     *     reaches the same shape at zero cost. The price is stated in the residuals.
+     *
+     * RESIDUALS. No substring reaches these and none is closed:
+     *   - `$assignment->delete()` / `$vacation->delete()` on an already-bound instance. Invisible
+     *     to any substring scan, here as in every sibling guard.
+     *   - A builder chain with a `where` BETWEEN the model and the write verb —
+     *     `MasterRotaAssignment::query()->where(...)->delete()`. The verb-qualified needles below
+     *     are one token wide and cannot span it; only the withdrawn `::query(` could, at the cost
+     *     above. `PeriodController::destroy()`'s refusal and `RotaAssignmentTest` are what hold
+     *     that line behaviourally.
+     *   - A MULTI-LINE chain: `MasterRotaAssignment::query()` then `->create(` on the next line.
+     *     Same one-token limit.
+     *   - The column-qualified `->update(['col'` family matches only a SINGLE-LINE call whose
+     *     FIRST array key is that column. Both halves of that were observed on plants, not
+     *     reasoned about: this codebase formats create payloads across lines, which is why the
+     *     symmetric `->create(['starts_on'` family measured zero for a reason that has nothing to
+     *     do with safety and was not bought.
      */
     private const NEEDLES = [
         'MasterRotaAssignment::create(',
         'MasterRotaAssignment::insert(',
         'MasterRotaAssignment::updateOrCreate(',
+        // Added by the 2026-08-12 sweep: the static verbs this list never carried. `firstOrCreate`
+        // and `upsert` insert rows without ever calling `create`, and `destroy`/`truncate` remove
+        // them — a span deleted outside `RotaAssignment` leaves the department a hole nothing
+        // refuses, which is the same overlap/containment invariant read from the other side.
+        'MasterRotaAssignment::firstOrCreate(',
+        'MasterRotaAssignment::upsert(',
+        'MasterRotaAssignment::destroy(',
+        'MasterRotaAssignment::truncate(',
+        'MasterRotaAssignment::find(',
+        // THE SIXTH WRITER SHAPE, verb-qualified. `Model::query()->create(` reaches the table
+        // through the builder and matches none of the statics above — proved by planting exactly
+        // that file and watching this test stay green. Verb-qualified rather than the bare
+        // `::query(` the demo guard could afford, for the measurement in the docblock.
+        'MasterRotaAssignment::query()->create(',
+        'MasterRotaAssignment::query()->insert(',
+        'MasterRotaAssignment::query()->firstOrCreate(',
+        'MasterRotaAssignment::query()->updateOrCreate(',
+        'MasterRotaAssignment::query()->upsert(',
         "DB::table('master_rota_assignments')",
         'DB::table("master_rota_assignments")',
         'Vacation::create(',
         'Vacation::insert(',
         'Vacation::updateOrCreate(',
+        'Vacation::firstOrCreate(',
+        'Vacation::upsert(',
+        'Vacation::destroy(',
+        'Vacation::truncate(',
+        'Vacation::find(',
+        'Vacation::query()->create(',
+        'Vacation::query()->insert(',
+        'Vacation::query()->firstOrCreate(',
+        'Vacation::query()->updateOrCreate(',
+        'Vacation::query()->upsert(',
         "DB::table('vacations')",
         'DB::table("vacations")',
+        // RELATION WRITES. Neither `Person::assignments()` nor `Person::vacations()` exists today;
+        // both are needled anyway, for the reason `ClinicWritersAreSingularTest` needles
+        // `->clinics()` — a `Person::vacations()` hasMany is the natural next addition and would
+        // be a second writer the moment somebody called `create()` on it. Enumerated per verb
+        // rather than taken as the wide `->vacations()->`: the wide form would also name every
+        // READ through such a relation, and the remedy for that would be an allow-list entry for
+        // `RotaGrid` — blinding this guard at a file that touches both tables.
+        '->assignments()->create(',
+        '->assignments()->insert(',
+        '->assignments()->updateOrCreate(',
+        '->assignments()->firstOrCreate(',
+        '->assignments()->save(',
+        '->assignments()->saveMany(',
+        '->assignments()->update(',
+        '->assignments()->delete(',
+        '->vacations()->create(',
+        '->vacations()->insert(',
+        '->vacations()->updateOrCreate(',
+        '->vacations()->firstOrCreate(',
+        '->vacations()->save(',
+        '->vacations()->saveMany(',
+        '->vacations()->update(',
+        '->vacations()->delete(',
         // Column-qualified: catches the idiom whatever the variable is called. Every one of these
         // five columns is written by `RotaAssignment`/`VacationBooking` and by nothing else.
         "->update(['starts_on'",
@@ -148,6 +246,26 @@ class RotaWritersAreSingularTest extends TestCase
         // control. No allow-list entry bought. Proved by planting a file under `app/` that
         // re-pointed a span this way — named, red, reverted.
         '$assignment->unit_id = ',
+        // THE REST OF THE PROPERTY-ASSIGN SHAPE, added by the 2026-08-12 sweep. `unit_id` was
+        // needled in isolation last time because item 23's fix happened to touch that one column;
+        // the shape was never closed over the columns that DEFINE these two tables, and
+        // `$assignment->granularity = 'week';` matched nothing at all. Column-qualified rather
+        // than variable-qualified, so it fires whatever the local is called. TRAILING SPACE
+        // load-bearing throughout, for the reason `->attendee_mode = ` records next door.
+        // MEASURED: ZERO matches each, over app/ + database/ + routes/. `starts_on`/`ends_on`
+        // carry the `periods` caveat stated above for their `update([` twins, unchanged and
+        // accepted on the same terms; `granularity` and `period_id` belong to these two tables
+        // and to nothing else in the schema.
+        '->granularity = ',
+        '->period_id = ',
+        '->starts_on = ',
+        '->ends_on = ',
+        // The vacations half of `$assignment->unit_id = `. `vacations` carries no `unit_id`
+        // deliberately (a vacation overlays whatever unit the rota has a person on), so the
+        // shared column a shortcut would reach for here is `person_id` — which
+        // `AccountLinkHasOneWriterTest` states cannot be needled bare, hence the variable
+        // qualification. ZERO matches.
+        '$vacation->person_id = ',
     ];
 
     public function test_only_the_rota_writers_write_the_rota_tables(): void
@@ -187,6 +305,36 @@ class RotaWritersAreSingularTest extends TestCase
     {
         foreach (self::ALLOW_LIST as $relative) {
             $this->assertFileExists(base_path($relative), "Allow-listed file {$relative} is gone — prune the list.");
+        }
+    }
+
+    /**
+     * THE VACUITY TWIN (2026-08-12 sweep, ruling 66). Everything above is satisfied by a tree in
+     * which nothing writes these tables at all: the offender loop iterates files that mention
+     * nothing and `assertSame([], $offenders)` passes. `DemoRowsAreLedgeredTest` has carried this
+     * twin since P1e; nine sibling guards did not, so nine guards were green without anything
+     * having proved the shapes they scan for exist. So each CONTROL — the writer the whole guard is
+     * named after — must actually match one.
+     *
+     * It is checked PER WRITER rather than over the pair, because a needle list can be perfectly
+     * healthy for `master_rota_assignments` and blind for `vacations`, which is exactly the
+     * asymmetry the sweep's probe found (`$assignment->unit_id = ` existed; `$vacation`'s
+     * equivalent did not).
+     */
+    public function test_each_writer_really_does_write_its_table(): void
+    {
+        foreach (['app/Support/Rota/RotaAssignment.php', 'app/Support/Rota/VacationBooking.php'] as $control) {
+            $source = (string) File::get(base_path($control));
+
+            $matched = array_values(array_filter(
+                self::NEEDLES,
+                static fn (string $needle): bool => str_contains($source, $needle),
+            ));
+
+            $this->assertNotSame([], $matched,
+                $control.' matches none of this guard\'s needles, so the guard is scanning for a '
+                .'shape nothing in the tree uses — it would stay green against a second writer '
+                .'spelled the way the real one is.');
         }
     }
 }

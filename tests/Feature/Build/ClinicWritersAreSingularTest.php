@@ -155,6 +155,34 @@ class ClinicWritersAreSingularTest extends TestCase
      * belong to these two tables and to nothing else in the schema (verified by grep over app/ +
      * database/ + routes/ before this list was written: zero pre-existing matches for any of them,
      * in either spelling).
+     *
+     * ---------------------------------------------------------------------------------------
+     * THE 2026-08-12 SWEEP (ruling 66). Twenty-two probes were planted against this guard — the
+     * seventeen writer shapes, with the column-sensitive ones run against both a signature column
+     * and a shared one. It scored among the strongest of the eleven, EIGHTEEN named for `clinics`
+     * and SEVENTEEN for `clinic_attendees` (behind only `DemoRowsAreLedgeredTest`'s twenty and
+     * `CapabilityWritersAreSingularTest`'s nineteen), and it still had the sixth shape open:
+     * `Clinic::query()->create([...])` was planted as a real file under `app/` and this test stayed
+     * GREEN. Closed above, verb-qualified for `Clinic` and whole for `ClinicAttendee`, on the
+     * measurements recorded at each.
+     *
+     * RESIDUALS. No substring reaches these and none is closed:
+     *   - `$clinic->delete()` / `$attendee->delete()` on an already-bound instance. Invisible to
+     *     any substring scan, here as in every sibling guard — and the reason `Clinic::find(`,
+     *     `Clinic::destroy(` and the relation shapes are needled: they are every route TO such an
+     *     instance that does not go through route-model binding.
+     *   - `Clinic::query()->where(...)->delete()` — a `where` between the model and the verb, which
+     *     no one-token needle spans. `ClinicAttendee` does not share this gap (its `::query(` is
+     *     needled whole); `Clinic` does, at the price of not blinding `ClinicController`.
+     *   - `$clinic->forceFill(['weekday' => 3])->save()`. Measured ZERO and deliberately NOT
+     *     bought: `forceFill(['weekday'` reaches only a single-line call whose FIRST key is that
+     *     column, which is a fraction of what `$clinic->update(` already sees, and this codebase
+     *     formats payload arrays across lines.
+     *   - The column-qualified `->update(['col'` family matches only a SINGLE-LINE call whose
+     *     FIRST array key is that column — the first half was already recorded here from a plant;
+     *     the same-line half was added by the sweep, and it is why the symmetric
+     *     `->create(['weekday'` family measures zero for a reason that has nothing to do with
+     *     safety.
      */
     private const NEEDLES = [
         'Clinic::create(',
@@ -165,6 +193,19 @@ class ClinicWritersAreSingularTest extends TestCase
         'Clinic::destroy(',
         'Clinic::truncate(',
         'Clinic::find(',
+        // THE SIXTH WRITER SHAPE (2026-08-12 sweep, ruling 66). `Clinic::query()->create([...])`
+        // reaches the table through the builder and matched none of the eight statics above —
+        // proved by planting exactly that file and watching this test stay green, the same
+        // mutation that found it in `DemoRowsAreLedgeredTest`. Verb-qualified rather than the
+        // bare `Clinic::query(`, which measures FIVE files (`ClinicController`,
+        // `ClinicMapController`, `DepartmentSetup`, `E2eSeeder`, plus the writer) — an entry for
+        // `ClinicController` is precisely the blinding this guard's own docblock warns about, at
+        // the file where a second writer is most likely to appear.
+        'Clinic::query()->create(',
+        'Clinic::query()->insert(',
+        'Clinic::query()->firstOrCreate(',
+        'Clinic::query()->updateOrCreate(',
+        'Clinic::query()->upsert(',
         'ClinicAttendee::create(',
         'ClinicAttendee::insert(',
         'ClinicAttendee::updateOrCreate(',
@@ -173,6 +214,14 @@ class ClinicWritersAreSingularTest extends TestCase
         'ClinicAttendee::destroy(',
         'ClinicAttendee::truncate(',
         'ClinicAttendee::find(',
+        // `ClinicAttendee::query(` measures ZERO across the whole tree — this model is reached
+        // only through `Clinic::attendees()` — so unlike `Clinic::query(` it can be taken WHOLE,
+        // which is strictly wider than the verb-qualified form: it also covers
+        // `::query()->where(...)->delete()` and a chain broken across lines, neither of which any
+        // one-token needle can span. Same trade `DemoRowsAreLedgeredTest` took for
+        // `DemoRow::query()`, available here for the same reason (nothing reads it directly) and
+        // NOT available for `Clinic`.
+        'ClinicAttendee::query(',
         "DB::table('clinics')",
         'DB::table("clinics")',
         "DB::table('clinic_attendees')",
@@ -264,5 +313,26 @@ class ClinicWritersAreSingularTest extends TestCase
         foreach (self::ALLOW_LIST as $relative) {
             $this->assertFileExists(base_path($relative), "Allow-listed file {$relative} is gone — prune the list.");
         }
+    }
+
+    /**
+     * THE VACUITY TWIN (2026-08-12 sweep, ruling 66). The scan above is satisfied by a tree in
+     * which nothing writes these tables at all — the offender loop iterates files that mention
+     * nothing and `assertSame([], $offenders)` passes. `DemoRowsAreLedgeredTest` has carried this
+     * twin since P1e and nine siblings did not, so the writer must actually match a needle.
+     */
+    public function test_the_one_writer_really_does_write_the_clinic_tables(): void
+    {
+        $source = (string) File::get(base_path('app/Support/Clinics/ClinicWriter.php'));
+
+        $matched = array_values(array_filter(
+            self::NEEDLES,
+            static fn (string $needle): bool => str_contains($source, $needle),
+        ));
+
+        $this->assertNotSame([], $matched,
+            'ClinicWriter matches none of this guard\'s needles, so the guard is scanning for a '
+            .'shape nothing in the tree uses — it would stay green against a second writer '
+            .'spelled the way the real one is.');
     }
 }

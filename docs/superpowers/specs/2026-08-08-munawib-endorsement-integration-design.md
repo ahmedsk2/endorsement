@@ -1399,8 +1399,27 @@ None block starting P0.
     `ReferenceSeeder`'s `firstOrNew` key, so re-coding a live institution makes the next
     `db:seed --force` create a *second* row and `Institution::current()` return null. A re-code is a
     provisioning operation with a migration behind it and belongs in `docs/RUNBOOK-PROVISION.md`.
-26. **`Model::query()->create(` is a sixth writer shape, and three single-writer guards are still
-    blind to it.** Found by mutation rather than by reading a needle list (P1e-2 Task 11): mutating
+26. **CLOSED (2026-08-12, rulings 66-71): `Model::query()->create(` is a sixth writer shape, and the
+    sweep this item queued has been done — across ELEVEN guards, not the three named below.** Every
+    guard in `tests/Feature/Build/` was probed with a plant of each of seventeen writer shapes and
+    the result recorded per shape, because this item's own closing sentence asked for the method
+    rather than the conclusion. **100 needles added, every one proved by planting a file of exactly
+    its shape; 6 measured and withdrawn; 1 found dead (`->person?->active = ` is a PHP parse error);
+    10 vacuity twins added.** Reading the lists would have found none of it and would have ranked
+    the guards backwards: the two that needed nothing added (`CapabilityWritersAreSingularTest`,
+    `DemoRowsAreLedgeredTest`) are the two that could afford `Model::query(` taken WHOLE — they
+    named 19 and 20 probes of 22 — and the one that needed most
+    (`PersonActiveHasOneWriterTest`, which named 4 of 22, from only two needle families) has the
+    tidiest-looking needle list in the suite. **Two real second writers were already in the tree and
+    only the plants could have found them** — `InvitationAcceptController` writing
+    `$person->active = true; $person->save();`, and three files binding `users.person_id` on a
+    create payload (`CreateAdmin`, `DemoSeeder`, `E2eSeeder`); all four are benign and all four are
+    now allow-listed with a reason. Ruling 71 records the limit the whole family shares and nobody
+    had written down: a `->update(['col'` needle reaches only a SINGLE-LINE call whose FIRST array
+    key is that column, and this codebase formats payload arrays across lines. The original text
+    follows.
+
+    Found by mutation rather than by reading a needle list (P1e-2 Task 11): mutating
     `DemoRow::create([` to `DemoRow::query()->create([` left `DemoRowsAreLedgeredTest`'s offender
     sweep **green** while the writer still wrote the table — the vacuity twin is what went red. It
     joins ruling 42's three shapes (property-assign-then-`save()`, the relation-write spellings,
@@ -1410,10 +1429,11 @@ None block starting P0.
     **`ClinicWritersAreSingularTest`, `RotaWritersAreSingularTest` and
     `PersonLevelsHaveOneWriterTest` carry no `::query()` needle at all** (verified 2026-08-11: zero
     occurrences in each file), so the same bypass is open on `clinics`, `clinic_attendees`,
-    `master_rota_assignments`, `vacations` and `person_levels`. **A sweep across the three is queued
-    and was not done here**, the same scope line item 23 draws: they guard P1c's, P1d's and P1e-1's
-    tables. Whoever takes it should follow the method rather than the conclusion — the shape was
-    found by attacking the guard, and reading the needle lists would not have found it.
+    `master_rota_assignments`, `vacations` and `person_levels`. ~~**A sweep across the three is
+    queued and was not done here**~~ — done 2026-08-12, across eleven guards; see the closing note
+    above. Whoever takes it should follow the method rather than the conclusion — the shape was
+    found by attacking the guard, and reading the needle lists would not have found it. *(That
+    instruction is what the sweep followed, and it is why it found more than this item predicted.)*
 27. **Stage 1 acceptance (§35) is met, and this item states exactly what that does and does not
     mean.** The criterion reads *"the pilot's real master rota and clinics live; residents claimed
     accounts; availability summaries match reality."* All four clauses now have the product behind

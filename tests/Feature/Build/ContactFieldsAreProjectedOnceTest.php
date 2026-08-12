@@ -31,7 +31,30 @@ use Tests\TestCase;
  * Every allow-listed file below was read in full before being added.
  *
  * Scanned: app/ + database/ + routes/. NOT database/factories/ — a factory populating a fixture
- * phone number is not a disclosure surface.
+ * phone number is not a disclosure surface. `tests/` is not scanned either, for the reason every
+ * sibling guard states. This is the ONE guard of the eleven that excludes a directory rather than
+ * naming its exceptions, and it is deliberate: the exclusion is scoped to `factories/` alone (not
+ * `database/`), and the two SEEDERS that touch these fields are named on the allow-list below
+ * rather than swept up with them.
+ *
+ * ---------------------------------------------------------------------------------------
+ * THE 2026-08-12 SWEEP (ruling 66). This guard is a PROJECTION guard, not a writer guard, so it
+ * was probed with FIFTEEN read shapes rather than the seventeen writer shapes: arrow read,
+ * single- and double-quoted array-key literal, `getAttribute()`, array access, `only()`,
+ * `makeVisible()`, `toArray()`, `data_get()`, `pluck()`, `select()`, `DB::table()->value()`, a
+ * variable property and a concatenated one. Every named shape was caught in its SINGLE-QUOTED
+ * spelling and none in its double-quoted one — the whole miss was a single one-character fact, so
+ * `["phone" => $v]`, `getAttribute("phone")` and `pluck("email")` were invisible. Every sibling
+ * guard in this suite carries both spellings of its array-key needles; this one carried one.
+ * Closed below.
+ *
+ * RESIDUALS, stated rather than implied:
+ *   - `$person->toArray()` / `->toJson()`. `Person::$hidden` covers `phone` and `notes` there and
+ *     covers NEITHER `email` NOR `constraints` — both of which this guard watches. Measured at
+ *     zero occurrences in `app/` today, which is why it is a residual and not a finding, but it is
+ *     the one read shape where the model's own defence and this guard's watch list disagree.
+ *   - `$person->{$col}` where the column name is a variable, and any concatenated spelling. No
+ *     substring scan reaches a name that is not written down.
  */
 class ContactFieldsAreProjectedOnceTest extends TestCase
 {
@@ -151,6 +174,14 @@ class ContactFieldsAreProjectedOnceTest extends TestCase
         // P1d Task 7: `email` is now gated exactly like `phone` (OWNER DECISIONS #7 / finding 1)
         // — watched the same way, for the same reason.
         '->email', "'email'",
+        // THE DOUBLE-QUOTED TWINS, added by the 2026-08-12 sweep (ruling 66). Every sibling guard
+        // in this suite carries both spellings of an array-key needle and this one carried only
+        // single quotes, so `return ["phone" => $person->phone];` was caught by `->phone` while
+        // `Person::pluck("email")` and `$p["phone"]` were caught by nothing at all. MEASURED
+        // before adding: all four match ZERO files across app/ + database/ + routes/ — this
+        // codebase single-quotes consistently, which is exactly why the gap survived review and
+        // why closing it buys no allow-list entry.
+        '"phone"', '"notes"', '"constraints"', '"email"',
     ];
 
     public function test_only_the_presenter_reads_a_persons_contact_fields(): void
@@ -190,5 +221,27 @@ class ContactFieldsAreProjectedOnceTest extends TestCase
         foreach (self::ALLOW_LIST as $relative) {
             $this->assertFileExists(base_path($relative), "Allow-listed file {$relative} is gone — prune the list.");
         }
+    }
+
+    /**
+     * THE VACUITY TWIN (2026-08-12 sweep, ruling 66). The scan above is satisfied by a tree in
+     * which nothing reads a contact field at all. `DemoRowsAreLedgeredTest` has carried this twin
+     * since P1e and nine siblings did not, so the ONE PROJECTION must actually match a needle —
+     * otherwise this guard is watching for a spelling `PersonPresenter` does not use, and a second
+     * projection written in the house style would sail past it.
+     */
+    public function test_the_one_projection_really_does_read_the_contact_fields(): void
+    {
+        $source = (string) File::get(base_path('app/Support/PersonPresenter.php'));
+
+        $matched = array_values(array_filter(
+            self::NEEDLES,
+            static fn (string $needle): bool => str_contains($source, $needle),
+        ));
+
+        $this->assertNotSame([], $matched,
+            'PersonPresenter matches none of this guard\'s needles, so the guard is scanning for a '
+            .'shape nothing in the tree uses — it would stay green against a second projection '
+            .'spelled the way the real one is.');
     }
 }

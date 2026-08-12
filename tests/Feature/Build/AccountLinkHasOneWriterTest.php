@@ -57,6 +57,25 @@ class AccountLinkHasOneWriterTest extends TestCase
         // Backfills `institution_id` only (`whereNull('institution_id')->update([...])`) —
         // matched solely because the raw-builder needle cannot tell which column a query writes.
         'database/migrations/2026_08_11_120001_backfill_institution_on_identity_rows.php',
+
+        // --- THREE BINDERS THE 2026-08-12 SWEEP SURFACED (ruling 66). Each writes
+        // `users.person_id` on a `User::create(`/`User::updateOrCreate(` payload, so each is a
+        // real creation path for the link this guard claims to own, and none was named until the
+        // `User::create(`/`updateOrCreate(` needles below existed to find them. These are the GOOD
+        // kind of allow-list entry ruling 42 distinguishes — earned by a genuine write of the
+        // guarded column, not by an incidental match on another table's.
+        //
+        // The bootstrap admin: creates the `people` row, then the `users` row bound to it, inside
+        // one transaction. It is the THIRD creation path (redemption and approval are the other
+        // two, both already above) and it is how an instance gets its first account at all — there
+        // is nothing to unbind FROM at that point.
+        'app/Console/Commands/CreateAdmin.php',
+        // Fixture seeders creating demo/e2e accounts bound to fixture people, the same way a
+        // factory would. Both throw in production (unlike `App\Support\Demo\DemoDepartment`, which
+        // is ledgered, removable, may be run on a live instance — and mints NO `users` row at all,
+        // which is why it needs no entry here).
+        'database/seeders/DemoSeeder.php',
+        'database/seeders/E2eSeeder.php',
     ];
 
     /**
@@ -98,6 +117,26 @@ class AccountLinkHasOneWriterTest extends TestCase
      * need no entry, and a guard that fails on prose describing a bug it is not about. The
      * unspelt-out gap is stated instead: `$user->delete()` on a bound instance is invisible to a
      * substring scan, here as everywhere.
+     *
+     * ---------------------------------------------------------------------------------------
+     * THE 2026-08-12 SWEEP (ruling 66) FOUND THIS GUARD BLIND TO THE WHOLE CREATION HALF OF ITS
+     * OWN FENCE. Of the twenty-two probes planted, ELEVEN walked through:
+     * `User::create(['person_id' => …])` and its five
+     * siblings were named by nothing — while the allow-list above had, from the day it was
+     * written, named two creation paths as though creation were covered. Three more existed in
+     * the tree unnamed, and the guard could not have told anybody. Closed above; the three are
+     * named with reasons.
+     *
+     * RESIDUALS. No substring reaches these and none is closed:
+     *   - `$user->delete()` on a bound instance (stated above, unchanged).
+     *   - `User::query()->where(...)->delete()` — a `where` between the model and the verb. The
+     *     bare `User::query(` that would span it names five readers, one of them from a comment.
+     *   - `->create(['person_id'` and the rest of the column-qualified CREATE family measure zero
+     *     and were NOT bought: `CreateAdmin` writes `'person_id' => $person->id` on the line AFTER
+     *     `User::create([`, so this codebase's own formatting puts the key out of a one-line
+     *     needle's reach. The same limit applies to the `->update(['person_id'` needles already
+     *     here — they see a single-line call whose FIRST array key is that column, and nothing
+     *     else. That was observed on the real file, not reasoned about.
      */
     private const NEEDLES = [
         "'person_id' => null",
@@ -117,8 +156,33 @@ class AccountLinkHasOneWriterTest extends TestCase
         '->user()->updateOrCreate(',
         '->user()->firstOrCreate(',
         '->user()->save(',
+        '->user()->saveMany(',
+        '->user()->upsert(',
         '->user()->update(',
         '->user()->delete(',
+        // MINTING an account IS binding it — `users.person_id` is written on the create payload —
+        // and until the 2026-08-12 sweep (ruling 66) nothing here saw it. The allow-list already
+        // named two creation paths, so creation was always inside this fence; the needles simply
+        // could not reach it. `RosterNeverMintsCredentialsTest` does not cover the gap either: it
+        // scans FIVE named files, so a sixth file minting an account was unguarded by both.
+        // MEASURED: `User::create(` ONE file (`CreateAdmin`), `User::updateOrCreate(` TWO
+        // (`DemoSeeder`, `E2eSeeder`) — all three real binders, all three now named above with a
+        // reason. `User::insert(`, `User::upsert(`, `User::firstOrCreate(` — ZERO.
+        'User::create(',
+        'User::insert(',
+        'User::upsert(',
+        'User::firstOrCreate(',
+        'User::updateOrCreate(',
+        // The sixth writer shape, verb-qualified. Bare `User::query(` measures FIVE files
+        // (`ReportDormantAccounts`, `AccessControlController`, `PersonController`,
+        // `UserManagementController`, `AccessControl`), every one of them a READER — and
+        // `AccessControlController` matches only inside a comment quoting an array-shaped-query
+        // defect, which is the same prose-matching trap that got `User::find(` withdrawn below.
+        'User::query()->create(',
+        'User::query()->insert(',
+        'User::query()->firstOrCreate(',
+        'User::query()->updateOrCreate(',
+        'User::query()->upsert(',
         // Removing the account row takes the link with it, and account DELETION is a withdrawn
         // capability rather than an unimplemented one — these are how it returns.
         'User::destroy(',
@@ -167,5 +231,25 @@ class AccountLinkHasOneWriterTest extends TestCase
         foreach (self::ALLOW_LIST as $relative) {
             $this->assertFileExists(base_path($relative), "Allow-listed file {$relative} is gone — prune the list.");
         }
+    }
+
+    /**
+     * THE VACUITY TWIN (2026-08-12 sweep, ruling 66). The scan above is satisfied by a tree in
+     * which nothing writes the link at all. `DemoRowsAreLedgeredTest` has carried this twin since
+     * P1e and nine siblings did not, so the writer must actually match a needle.
+     */
+    public function test_the_one_writer_really_does_write_the_link(): void
+    {
+        $source = (string) File::get(base_path('app/Support/AccountUnbind.php'));
+
+        $matched = array_values(array_filter(
+            self::NEEDLES,
+            static fn (string $needle): bool => str_contains($source, $needle),
+        ));
+
+        $this->assertNotSame([], $matched,
+            'AccountUnbind matches none of this guard\'s needles, so the guard is scanning for a '
+            .'shape nothing in the tree uses — it would stay green against a second writer '
+            .'spelled the way the real one is.');
     }
 }

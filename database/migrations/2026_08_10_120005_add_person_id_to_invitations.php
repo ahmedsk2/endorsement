@@ -27,8 +27,16 @@ return new class extends Migration
 
     public function down(): void
     {
+        // Constraint, then index, then column — the same cross-engine order as
+        // 2026_08_10_120001's `down()`, and for the same two reasons. `up()` adds an explicit
+        // `index('person_id')` on top of the foreign key, and `dropConstrainedForeignId()` does
+        // not remove it, so on SQLite the column drop fails with
+        // `error in index invitations_person_id_index after drop column`. Measured 2026-08-12
+        // (docs/REHEARSAL-UPGRADE-2026-08-12.md).
         Schema::table('invitations', function (Blueprint $table) {
-            $table->dropConstrainedForeignId('person_id');
+            $table->dropForeign(['person_id']);
+            $table->dropIndex(['person_id']);
+            $table->dropColumn('person_id');
         });
     }
 };

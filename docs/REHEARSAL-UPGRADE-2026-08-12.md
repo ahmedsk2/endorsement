@@ -7,6 +7,12 @@ it**, which is the only path production will take.
 
 This document records a rehearsal that did exactly that, and what it found.
 
+> **SUPERSEDED IN PART, SAME DAY.** This rehearsal ran on **SQLite** because Docker was down. §11
+> below lists the ten things that engine structurally could not show. **Nine of them have since
+> been run on real MySQL 8.4** — see `docs/REHEARSAL-MYSQL-2026-08-12.md`. Everything in §1–§10
+> here still stands (it is the same forward path and the same defects), but read §11 as a list of
+> questions that now have answers, not open ones. Item 10, the deploy mechanics, is still open.
+
 **Method.** A `git worktree` checked out at `8886f8d`; `composer install` at that commit's lock;
 `migrate` + `db:seed --force` to reach the schema production is on; then a hand-built department —
 13 accounts across every shape (linked, deactivated, soft-deleted, `full_name IS NULL`,

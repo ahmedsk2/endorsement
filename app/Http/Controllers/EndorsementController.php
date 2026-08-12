@@ -425,12 +425,23 @@ class EndorsementController extends Controller
         // 500 instead of the "already signed" guard below.
         //
         // WHICH ENGINE BEHAVES WHICH WAY IS NOT THE POINT, and six comments citing this one used
-        // to get it backwards (they blamed the engine production runs). Only the SQLite half above
-        // is measured. A MySQL DATE column is REASONED to truncate the time component on storage,
-        // which would make the bare comparison succeed there — reasoned from the column type,
-        // never measured, because nothing in this repository has ever run against MySQL. The rule
-        // does not depend on settling that: use `whereDate()`, never a bare comparison against a
-        // cast date column. It is correct on both engines, which is why nothing here is broken.
+        // to get it backwards (they blamed the engine production runs). BOTH halves are now
+        // measured — the MySQL half on 2026-08-12 against MySQL 8.4.10, the digest
+        // docker-compose.production.yml pins (docs/REHEARSAL-MYSQL-2026-08-12.md section 8). MySQL
+        // stores 'Y-m-d 00:00:00' into a DATE column as 'Y-m-d', and ALL FIVE operators agree with
+        // whereDate() there; every divergence in the table above is SQLite's. A DATETIME column
+        // written by the same cast agrees too, so the safety is not only DATE's truncation — MySQL
+        // coerces the 'Y-m-d' LITERAL to the column's type before comparing, where SQLite compares
+        // two strings. The rule never depended on settling that: use `whereDate()`, never a bare
+        // comparison against a cast date column. It is correct on both engines, which is why
+        // nothing here is broken.
+        //
+        // The rule is not free, and that is also measured now. `whereDate()` compiles to
+        // `date(col) = ?` on MySQL, which cannot use an index on the wrapped column. On
+        // handovers(unit_id, handover_date) the plan falls back to the index's LEADING column
+        // only — 8,108 rows examined in 3.22 ms to return 4, against 4 rows in 0.043 ms for the
+        // bare form. Do not "fix" it by removing whereDate(); the sargable rewrite is a half-open
+        // range (>= $from AND < $toPlusOne), correct on both engines, and it is P2 work.
         $signoff = HandoverSignoff::where('unit_id', $u->id)
             ->whereDate('handover_date', $date)
             ->first()

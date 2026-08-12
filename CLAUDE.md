@@ -409,16 +409,26 @@ SCBU and WARD are seed data for the QCH institution.
   rename survives `db:seed --force` because `ReferenceSeeder` writes `name` on CREATE only —
   asserted, not assumed. `institutions.code` is **not** `App\Support\Instance::slug()`
   (`INSTANCE_SLUG`, which names the backup archive); they are different values.
-- **`Model::query()->create(` slips past every `Model::create(` needle, and three single-writer
-  guards still share that blind spot.** Found by mutation rather than by reading the needle list:
-  mutating `DemoRow::create([` to `DemoRow::query()->create([` left `DemoRowsAreLedgeredTest`'s
-  offender sweep GREEN while the writer still wrote the table — a sixth writer shape after ruling
-  42's three and ruling 50's two. That guard now needles `DemoRow::query()` whole (which also covers
-  `::query()->…->delete()`, the shape `forgetBatch()` itself uses), measured at zero matches outside
-  the writer. `ClinicWritersAreSingularTest`, `RotaWritersAreSingularTest` and
-  `PersonLevelsHaveOneWriterTest` do **not** yet carry the equivalent and a sweep across them is
-  queued (design §14 item 26). When you add or audit a single-writer guard, needle the
-  `::query()->` form as well — and prove it by mutating the writer, not by reading the list.
+- **A single-writer guard is audited by PLANTING, never by reading its needle list** (rulings 66-71,
+  the 2026-08-12 sweep; design §14 item 26 closed). Every guard in `tests/Feature/Build/` was probed
+  with a plant of each of seventeen writer shapes, and the ranking that produced is the opposite of
+  the one the lists suggest: `PersonActiveHasOneWriterTest` has the tidiest list in the suite and
+  named 4 probes of 22 — `$person->active = false; $person->save();` walked straight past it, which
+  is review finding 4's original defect in the idiom this codebase uses for a single-column change.
+  **Prove every needle you add by planting a file of exactly its shape, then revert; measure every
+  needle's cost before adding it; state every residual in the guard's own docblock.** The recurring
+  facts: `Model::query()->create(` is a sixth writer shape after ruling 42's three and ruling 50's
+  two, and `Model::query(` taken WHOLE is the only needle that spans `::query()->where(…)->delete()`
+  or a chain broken across lines — affordable **only** where nothing outside the writer reads the
+  table (`UserCapability`, `DemoRow`, `ClinicAttendee`), and withdrawn for `MasterRotaAssignment`
+  (9 files), `Person` (12), `Clinic` (5), `Invitation` (5) and `PersonLevel` (4), because the entry
+  it buys blinds the guard at `RotaFill`, `RotaGrid`, `ClinicController`, `Promotion` or
+  `InvitationStatus` — the files a real second writer is born in. A `->update(['col'` needle reaches
+  only a **single-line** call whose **first** array key is that column (ruling 71); the symmetric
+  `->create(['col'` family measures zero for a formatting reason, not a safety one, and was not
+  bought. Each guard also carries a VACUITY TWIN asserting its control writer still matches a needle
+  — per control file where a guard names two, since a list healthy for one and blind for the other
+  passes a pooled check and is half a guard.
 - **The invitation lifetime is configurable, default 7, bounded [1, 30], behind `settings.manage`**
   (`Invitation::lifetimeDays()`, `app_settings.invitation_lifetime_days`, P1c-2 Task 1). Seven is a
   **deliberate, logged override** of Munawib AC-02's "default 14 days" — recorded in the design

@@ -43,11 +43,42 @@ use Illuminate\Support\Facades\Schema;
  */
 return new class extends Migration
 {
+    /**
+     * A GUARD MUST COVER ONE STATEMENT, NOT ONE BLOCK — measured on MySQL 8.4, 2026-08-12
+     * (docs/REHEARSAL-MYSQL-2026-08-12.md §5.6).
+     *
+     * MySQL has no transactional DDL, so a migration can stop between any two statements it
+     * emits, and `hasColumn` guards exist so the retry picks up where the previous attempt
+     * stopped. This migration emits FIVE statements, not three — `->index()` is a separate
+     * `alter table … add index` and `->constrained()` a separate `alter table … add constraint`:
+     *
+     *   1. alter table `person_levels` add `promotion_batch_id` char(36) null after `effective_to`
+     *   2. alter table `person_levels` add index `person_levels_promotion_batch_id_index`(…)
+     *   3. alter table `person_levels` add `reason` varchar(255) null after `promotion_batch_id`
+     *   4. alter table `person_levels` add `created_by` bigint unsigned null after `reason`
+     *   5. alter table `person_levels` add constraint `person_levels_created_by_foreign` …
+     *
+     * Written as one `hasColumn` per BLOCK, a failure landing between 1 and 2 (or 4 and 5) left
+     * the column present, so the retry skipped the whole block, recorded the migration as Ran and
+     * **the index — or the foreign key — was silently missing for ever, with no error anywhere**.
+     * Reproduced: `migrate` reported the migration DONE, restored `reason`, `created_by` and its
+     * constraint, and left `person_levels_promotion_batch_id_index` absent.
+     *
+     * So the index and the constraint carry their own existence checks. All three checks read
+     * pre-migration state, which is correct because the three objects are independent. On a
+     * database where this migration already ran, every check is false and this is a no-op.
+     */
     public function up(): void
     {
         Schema::table('person_levels', function (Blueprint $table) {
             if (! Schema::hasColumn('person_levels', 'promotion_batch_id')) {
-                $table->uuid('promotion_batch_id')->nullable()->after('effective_to')->index();
+                $table->uuid('promotion_batch_id')->nullable()->after('effective_to');
+            }
+        });
+
+        Schema::table('person_levels', function (Blueprint $table) {
+            if (! Schema::hasIndex('person_levels', 'person_levels_promotion_batch_id_index')) {
+                $table->index('promotion_batch_id', 'person_levels_promotion_batch_id_index');
             }
         });
 
@@ -59,8 +90,17 @@ return new class extends Migration
 
         Schema::table('person_levels', function (Blueprint $table) {
             if (! Schema::hasColumn('person_levels', 'created_by')) {
-                $table->foreignId('created_by')->nullable()->after('reason')
-                    ->constrained('users')->nullOnDelete();
+                $table->unsignedBigInteger('created_by')->nullable()->after('reason');
+            }
+        });
+
+        Schema::table('person_levels', function (Blueprint $table) {
+            $hasForeignKey = collect(Schema::getForeignKeys('person_levels'))
+                ->contains(fn (array $key) => in_array('created_by', $key['columns'], true));
+
+            if (! $hasForeignKey) {
+                $table->foreign('created_by', 'person_levels_created_by_foreign')
+                    ->references('id')->on('users')->nullOnDelete();
             }
         });
     }

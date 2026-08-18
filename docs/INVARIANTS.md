@@ -1,0 +1,505 @@
+# Area invariants
+
+Split out of `CLAUDE.md` on 2026-08-07 so that file stays small enough to be read in full
+every session. **Nothing here is optional and nothing has been reworded** — these are the
+same rules, moved.
+
+**Read the section for the area you are about to touch, before you touch it.** Each one
+exists because something broke, and most say what broke. Many are enforced by
+`tests/Feature/Build/*`, which fails the build — but a guard tells you *that* you are wrong,
+never *why*, and the why is what stops you re-introducing it a different way.
+
+
+---
+
+## Legacy import
+
+- The legacy import is one-way, read-only against its source, idempotent (provenance
+  keyed), audited — and only the owner runs it against production.
+
+
+---
+
+## Calendar and dates
+
+- **All date logic goes through `App\Support\Calendar`** (Munawib AR-08, P1a). Nothing else
+  constructs an `IntlCalendar`/`IntlDateFormatter`, or does date arithmetic — including
+  `resources/js`, which receives formatted labels, enumerated date ranges and day types as
+  Inertia props and performs none of its own (Decision A: the `packages/engine` mirror design
+  §7 once described is deferred to P2, not built twice now). Guarded by
+  `tests/Feature/Build/CalendarIsTheOnlyConverterTest.php`, asserted over the whole match set,
+  never a `foreach` that stops guarding once the last offender is fixed. `strtotime()` is
+  allow-listed for exactly three files, each commented at its site with why: `LegacyImport`,
+  `LegacyReconcile`, `Plausibility::plausibleDates()` — all read a FOREIGN system's date
+  strings from the frozen legacy import source, never an application date. Two further,
+  conceptually separate exemptions that never route through Calendar at all: `AuditChain`
+  (v3 hashes the stored datetime byte-verbatim; re-parsing it in the current timezone is the
+  exact defect that once made the live system declare its own audit trail tampered) and
+  `App\Casts\EncryptedDateTime` (PHI, unqueryable, whose getter can return a string marker for
+  foreign ciphertext). Timezone is per-INSTANCE (`APP_TIMEZONE`); the Hijri offset
+  (`institutions.hijri_offset_days`) is per-DEPARTMENT — never add an `institutions.timezone`
+  column "for symmetry" (D11: one institution per database makes it one fact in two places).
+
+- **A shared, framework-free fixture corpus is the contract between this PHP calendar and
+  P2's future TypeScript mirror.** `tests/fixtures/calendar/golden.json`
+  (`tests/Feature/Calendar/GoldenFixtureTest.php` asserts it here) is a durable artifact, not
+  test scaffolding — P2's `packages/engine` calendar must assert the same file against itself.
+  A change to one side not matched on the other is the drift this file exists to catch.
+
+- **Any write path touching `institutions`' calendar columns or a `holidays` row must call
+  `App\Support\Calendar::flush()`.** `Calendar::settings()`/`::activeHolidays()` are memoised in
+  statics for the life of the process; before P1b Task 10, `flush()` had NO production caller at
+  all, so the redirect that followed a save would have rendered from the pre-save memo — the
+  admin presses Save, the row changes, and the page still shows the old value. Guarded at source
+  level by `tests/Feature/Build/CalendarWritersFlushTest.php` (same file-must-also-call-flush()
+  discipline as the SQL-injection/dark-mode guards above), which has itself been observed
+  failing against a deliberately non-flushing throwaway file before being trusted. Also from
+  P1b Task 10: a calendar-month period system must begin on the FIRST of a month
+  (`App\Support\PeriodGenerator::assertMonthAligned()`, called from both `months()` itself and
+  the calendar-settings FormRequest — one definition, two consumers, never re-typed) or
+  `months()` mislabels every period; and `period_type`/`academic_year_start` hard-lock, both
+  server- and client-side, the moment any `periods` row exists (Decision D) — the refusal names
+  the unlock ("delete this academic year's periods first"), and P1b Task 11 is what makes that
+  unlock actually work.
+
+
+---
+
+## Rota
+
+- **A master-rota assignment is always a date-bounded span** (`master_rota_assignments`, one row
+  per span, `starts_on`/`ends_on` NOT NULL on every row — no nullable range meaning "the whole
+  period", no parent/child span pair). Overlaps for one person in one period are refused by the
+  model; gaps are allowed and counted, never silently invisible. `App\Support\Rota\RotaAssignment`
+  is the only writer, `RotaWritersAreSingularTest` proves it.
+
+- **`vacations` carries no `period_id`, deliberately.** A vacation crosses period boundaries and
+  is not a rotation — it overlays whatever unit the master rota already has a person on, and it
+  must survive a department regenerating or switching its period system. Which period(s) it
+  touches is a range intersection computed at read time, never a foreign key.
+  `App\Support\Rota\VacationBooking` is the only writer, same guard.
+
+- **Deleting an academic year's periods is refused while any `master_rota_assignments` row
+  references it** (`PeriodController::destroy()`). Neither rota table soft-deletes — this is
+  schedule structure, not a clinical row, and the hash-chained `audit_log` is the history; a
+  mistaken clear is a real delete with no undo in the UI.
+
+- **There is NO publish gate on the master rota** (owner decision, 2026-08-10). No `status`
+  column, no draft state, no publish action, no "visible from" date. `/rota` always shows the
+  current rota. This closes design §14's open item rather than deferring it: the option was
+  listed as open until the owner answered it, and it is no longer. `rota.manage` defaults
+  **Administrator-only** (same owner decision, **reversing** what P1d-1 shipped on 2026-08-09);
+  `rota.view` is unchanged, seeded for every authenticated member, which is exactly why the read
+  view must not leak contact data. An instance that already seeded the old Chief Resident grant
+  **keeps it** — `AccessControlSeeder` applies each (position, capability) default once via
+  `applied_role_defaults` and never re-asserts, so the remedy is an operator un-tick on Admin →
+  Access Control (`docs/RUNBOOK-DEPLOY.md`), and **there is no migration and must not be one**:
+  revoking a capability an administrator may since have kept deliberately is precisely what that
+  seeder's design refuses to do.
+
+- **`App\Support\Rota\AvailabilitySummary` is the ONE computation behind MR-07**, a pure fold over
+  `RotaGrid`'s output that touches no model and issues **zero** queries
+  (`AvailabilitySummaryTest::test_it_issues_no_query`), fed the same way by the editor and the
+  read view (`AvailabilitySummaryParityTest`) so the two screens cannot disagree about how many
+  R2s are on PICU in Block 11. It counts `uncovered_days` and `people_with_a_gap` **separately**,
+  because a gap is a legal state (P1d owner decision 3) and 26 uncovered days is one person's whole
+  block *or* 26 people missing a day each — rounding that difference away is what §35's
+  "availability summaries match reality" forbids. `people_with_a_gap` and `unassigned_people` are
+  disjoint, so they add up. The field is `stale_people`, a HEADCOUNT — it was `stale_assignments`
+  until the adversarial review found it counting cells while its label said assignments, and
+  "assignment" already means a `master_rota_assignments` row everywhere else here. **Order matters:**
+  the summary is computed over the FULL grid including stale rows, and the read view filters rows for
+  display afterwards; filtering first loses `stale_people` entirely and silently.
+
+- **Every bulk rota operation goes through `App\Support\Rota\RotaFill`** and writes through
+  `RotaAssignment`/`VacationBooking` like everything else — `RotaWritersAreSingularTest` fails the
+  build for a second writer, with no allow-list entry. `plan()` and `apply()` share ONE `analyse()`;
+  `apply()` re-derives inside its own transaction and trusts nothing the client sent. The whole set
+  is validated and authorized before the first mutation — a refusal refuses the **whole** operation,
+  never "412 of 780 applied". **A target cell carrying a split is SKIPPED unless that cell is
+  explicitly confirmed** (per cell, absent means false), because a blanket fill destroying deliberate
+  split work is silent data loss; a "cell carrying a split" is any span set other than empty or
+  exactly one span covering the period end to end, never `count > 1`. **One `rota_fill` audit row per
+  OPERATION**, ids and counts only, written **after** the transaction commits — never one per cell,
+  which would serialise the chain tail and put hundreds of findings in one alert body. `rota_fill` is
+  on `AuditAnomalies`' single-occurrence watch list and is the first rota action there; the five
+  per-cell actions (`rota_assign`, `rota_split`, `rota_clear`, `vacation_book`, `vacation_cancel`)
+  deliberately are not, and `AuditAnomaliesTest` asserts both halves. The commit is pinned to a
+  `RotaFill::digest()` over the plan's own state projection (the source cell, and per target what it
+  currently holds and what would be written over it) — deliberately **excluding** outcomes and the
+  operator's confirmations, so ticking a box does not invalidate the pin or force a re-preview.
+
+- **The rota exports as TWO files and imports through `App\Support\Rota\RotaImport`.**
+  An assignments file (one row per span) and a vacations file (one row per vacation) —
+  `rota-<year>.csv` and `vacations-<year>.csv`, one `RotaExport::filename()` so the two cannot drift
+  into two conventions — on two `cap:rota.manage` GET routes, never one file mixing two row shapes
+  and never a zip. A person is identified by
+  `short_name` (the app-wide unique human handle) plus `full_name`: **no email, no phone, no
+  `person_id`** — ids are instance-local, and D11 makes cross-instance identity a non-question.
+  The importer **invents nothing** — an unknown handle, unit or `(academic_year, position)` pair is
+  a named skip, there is no create path for any of the three, and `app/Support/Rota/RotaImport.php`
+  is in `RosterNeverMintsCredentialsTest::SCANNED_FILES` so it cannot grow one for `users` either
+  (that list brings the bare `->save()` needle with it, not only `User::create(`). Its unit of
+  outcome is the **(person, period) CELL, not the line** — `RotaAssignment::split()` replaces a
+  whole span set, so two lines describing two halves of one period are one outcome, and a cell whose
+  spans do not all resolve is skipped WHOLE rather than half-applied. `SKIP_DUPLICATE` exists on the
+  vacations file only, because assignments are keyed on (person, period) and REPLACE while a vacation
+  has no natural key, so the same file imported twice would otherwise double every leave row.
+  `week`-granularity leave snaps through `VacationBooking::snap()` — the same code path as the
+  booking screen, never a parallel rule re-typed in the importer (owner decision, 2026-08-10) — and
+  the preview reports the adjustment.
+
+- **NO rota surface projects a contact field, for any viewer** (P1d-2 Decision C).
+  `RotaGrid::forYear()` takes **no viewer at all** — the parameter was removed so no future caller
+  can pass one and expect it to mean something — and calls `PersonPresenter::contactFree()`, which
+  is `one()` with the contact question answered "no" at the call site rather than by a department
+  toggle. The gate was never sufficient on its own: `PersonPolicy::viewContact()` is
+  `people.manage || ContactVisibility::membersMaySeeContact()`, so the **first branch alone** was
+  releasing email and phone into `/admin/rota`'s props for its ordinary viewer on a **default**
+  department (`contact_visibility = admins`) — not, as the P1d-2 plan's own finding 3 claimed, only
+  on one that had opted in. Nothing rendered them, which made it invisible in review rather than
+  harmless. Asserted at the most permissive combination the system can produce — an administrator
+  holding `people.manage` on a department set to `members` — by
+  `RotaReadViewTest::test_the_editor_grid_is_contact_free_too`; the export asserts the same property
+  over the file's BYTES.
+
+- **MR-04 — the rota driving on-call eligibility — is Stage 2.** Nothing in the rota infers
+  eligibility: no `off_roster` flag, no call-roster derivation, no per-person include/exclude
+  override. P1d ships the rota's data and screens and records the hook only. The guard is two scans
+  that fail for different reasons (`RotaAccessTest`): four identifier needles over the whole of
+  `app/`, and a narrow, case-insensitive eight-needle scan over `app/Support/Rota/` in full plus the
+  rota's controllers, form requests and Vue screens. **That second scan strips comments before
+  matching**, deliberately departing from `CalendarIsTheOnlyConverterTest`'s prose-matching
+  discipline: three rota classes open with a paragraph saying they must never become an eligibility
+  computation, so a literal needle scan would fail the build on the rule's own statement and teach
+  people to delete it. The stripper therefore needs its own calibration test
+  (`test_the_scan_strips_comments_and_still_sees_the_code`) — a stripper that over-reached would
+  disable the guard and look exactly like a clean tree.
+
+
+---
+
+## Clinics
+
+- **A clinic is CONFIGURATION, and `App\Support\Clinics\ClinicWriter` is the only writer of
+  `clinics` and `clinic_attendees`** (`ClinicWritersAreSingularTest`). Its owning unit is a `units`
+  row and a foreign key — never a code string in a column, never a hardcoded list, never a `match`
+  on `'WARD'`; the screen offers `clinic_owner = true AND active = true` from a query, so a fifth
+  department that ticks that box gets a clinic screen with no code change. **WARD is the sole
+  clinic owner** (owner Decision B, P1b 2026-08-09; `ReferenceSeeder` on cold start, and
+  `2026_08_15_120002_correct_ward_clinic_owner` because the upgrade path left it `false` and unit
+  profile columns are written on CREATE only). Neither table soft-deletes and **there is no
+  `destroy()` route at all** — a clinic that stopped running is deactivated (UN-04) — and the one
+  path that hard-deletes a `clinics` row is `DemoDepartment::remove()`, which is ledger-scoped.
+  `name`, `location` and `note` are PLAIN text, never purified server-side (the
+  `handovers.extra_fields` contract), so every consumer escapes on render.
+
+- **`clinics.weekday` is a plain ISO-8601 integer — Monday = 1 … Sunday = 7 — and Carbon's
+  `dayOfWeek` (Sunday = 0) is NOT it.** Ordering and labelling the department's week are
+  `Calendar` concerns and go nowhere else: `Calendar::weekdayColumns()` returns the seven columns
+  already rotated to `weekStartIsoDay()` (itself DERIVED from `weekend_days` — there is no
+  `institutions.week_start` column and never was), each flagged `weekend`, and both the clinic form
+  and the map consume that one array. A department that changes its weekend re-orders its clinic
+  map with no stored value changing. `resources/js` names no day: `CalendarIsTheOnlyConverterTest`
+  carries a repo-wide QUOTED-WHOLE-WORD needle for the seven names in any of the three JS string
+  delimiters, with no allow-list — the bare substrings were measured and rejected, `Mon` matching
+  `Month`. The vocabulary lives in `lang/en/calendar.php` beside `hijri_months` (AR-07), not as a
+  `const`, and `golden.json`'s `weekday_columns` block is the contract P2's mirror must satisfy.
+
+- **`clinic_attendees` holds the RULE; attendance is resolved at READ time and never stored.**
+  CL-02's refinement is a MODE on the clinic (`rotators` default, `levels`, `named`) rather than a
+  bag of include/exclude rules with an unstated precedence, and the mode moves only through
+  `ClinicWriter::setAttendees()` together with its rows, in one transaction, so `levels` mode can
+  never briefly hold a person row. `App\Support\Clinics\ClinicRoster::forDate()` answers *"who does
+  this clinic come down to on this day"* from the master rota, on demand — so moving somebody on
+  the rota moves them on the clinic with **no write anywhere**, and a snapshot would have needed
+  every rota, vacation and level writer to know about clinics. A person on vacation is returned
+  **unmarked** (the leave tables are never queried at all); a departed or deactivated person is
+  returned and FLAGGED, never dropped — an invisible one hides a cell somebody has to clear.
+  **CL-05's map has no date and therefore shows the RULE, not a roster** — resolving a Tuesday cell
+  as of today reports the wrong day with complete confidence — and it ships no person-shaped value
+  at all behind `cap:clinics.view`, a key seeded to every position. Munawib §5's footnote
+  contemplates that map being link-public; **D7 overrides it** (design §1.2), and the whole
+  `cap:clinics.view` group is asserted GET-only over the router.
+
+
+---
+
+## Department setup
+
+- **The department setup checklist holds NO state, anywhere** — no column, no table, no
+  `app_settings` key, no session key. `App\Support\Setup\DepartmentSetup::steps()` derives all nine
+  steps from the data on every request, so an already-configured department reads as complete with
+  no backfill and abandoning the wizard is a non-event. Steps are REQUIRED (derivable, binary) or
+  REVIEW (`profile`, `calendar`, `holidays` — **never** marked done, because no query tells a
+  reviewed default from an unexamined one; the Hijri offset is the specification's own example).
+  `blocked_by` is advisory and never becomes the gate — the target screen refuses on its own terms,
+  because a checklist that authorizes is a second authorization boundary. **`Setup*` names belong
+  to the per-USER first-login 2FA flow** — `SetupController`, `Setup.vue`, `/setup`,
+  `setup.show`/`setup.complete`, `RequireSetup`, `users.setup_completed_at` — and none of them was
+  touched: the department wizard is `DepartmentSetup*` at `/admin/setup`, and `/admin/setup` is
+  deliberately NOT on `RequireSetup`'s allowed list, so an administrator finishes their own second
+  factor before configuring a system holding children's records.
+
+- **A ledgered row is not configuration.** `DepartmentSetup::steps()` asks through
+  `DemoLedger::notLedgered()` for `units`, `periods`, `roster`, `clinics` and the clinic step's
+  separate "does any unit run clinics" question, or pressing the demo button takes `/admin/setup`
+  from two required steps to five on a live department where nothing real was configured. It is a
+  SUBQUERY, chosen so the measured ten-query bound holds exactly. The invitations step is a
+  different question again — "can anybody get in", i.e. `Invitation::scopeOpen()` **or** accepted —
+  because a bare count ticked the box for a link that was revoked or had expired unclaimed, and an
+  `open()`-only predicate would un-tick it the moment the whole roster claimed their accounts.
+
+
+---
+
+## Demo department
+
+- **The demo department is LEDGERED, removable, and may be created in production** (owner ruling,
+  2026-08-11) — which is exactly what `DemoSeeder`/`E2eSeeder` are not, and why those two keep
+  their production throw and were not modified. Provenance is a JOIN, not a column: `demo_rows`
+  `(table_name, row_id)` grouped by a batch UUID, written only by `App\Support\Demo\DemoLedger`.
+  **It mints no `users` row**, so a roster-only demo person cannot authenticate by construction
+  (P0c) and pressing this on a live instance creates no way in. `DemoDepartment::remove()` refuses
+  **WHOLE** — naming `(table, count)` pairs and never a name — the moment a non-ledgered row
+  references a ledgered one; the pre-flight's load-bearing clause is *"and not itself ledgered"*,
+  without which the demo's own clinic on its own unit would block its own removal forever with
+  every refusal test still green. **The asymmetry is the thing to remember: the pre-flight catches
+  an unledgered CHILD, and only `DemoRoundTripTest`'s whole-schema count comparison catches an
+  unledgered PARENT** — forgetting to ledger a `people` row removes cleanly and leaves five rows
+  behind. Both screen actions are preview-then-confirm pinned with `App\Support\Rota\StatePin`
+  (`DemoDepartment::planDigest()`/`removalDigest()`), and removal needs the demo unit code typed.
+
+- **`remove()`'s pre-flight runs INSIDE the transaction that deletes, under `lockForUpdate()`, and
+  the outer call is only the cheap early refusal** (ruling 59). The database is NOT a backstop here
+  the way it is for `PeriodController::destroy()`: of the nineteen inbound keys in
+  `DemoReferences::MAP` only **three** are RESTRICT, nine are `ON DELETE SET NULL` and seven
+  CASCADE — so a blocker landing after an outside-the-transaction check does not raise, it
+  **succeeds**. Measured on this tree: `rows=21`, a clean `demo_department_remove` audit row, and
+  `handover_signoffs.endorsed_by_person_id` silently NULLed with `endorsed_by_name` left beside it.
+  The refusal is audited from OUTSIDE the transaction in both directions, or the row recording it
+  rolls back with what it records. **This is the first defect here whose worst form a SQLite-only
+  suite structurally cannot show**: `SQLiteGrammar::compileLock()` returns the empty string and
+  SQLite serialises writers, so a plain re-read passes — while on MySQL 8.4 under REPEATABLE READ a
+  `DELETE` is a *current* read and sees rows committed after the snapshot the `SELECT` beside it
+  still reads. The lock, and the `Schema::hasTable()` loop hoisted out of the transaction body (an
+  uncached `information_schema` query per ledgered row on MySQL), are therefore asserted at SOURCE
+  level. Nothing in this repository has ever run against MySQL.
+
+- **A blocker is only honest if its remedy exists, and `invitations` was not** (ruling 60).
+  Invitations are never deleted anywhere in this product — `revoke()` stamps `revoked_at`, a resend
+  supersedes and KEEPS the superseded row, design §14 item 7 records no retention rule at all — so
+  an invitation to a demo person pinned the demo in place permanently. `DemoReferences::SWEPT` is
+  the subset removal DELETES instead of refusing over; it stays in `MAP` so the schema
+  introspection still covers it. **Merely un-blocking it would have been WORSE than the bug**:
+  `invitations.person_id` is `nullOnDelete` and `InvitationAcceptController` reads a null
+  `person_id` as "create the person at redemption time", so a link left behind would mint a
+  brand-new person AND account for whoever still held it. The sweep runs inside the transaction,
+  BEFORE the ledgered rows, and is reported on screen, inside the pin and as `swept=N` in the audit
+  detail — a cleanup button reaching outside its own ledger says so. `DemoReferences::REMEDIES`
+  gives every referencing table its own sentence, consumed by both the refusal message and the
+  screen's blocked panel: `users` stays a blocker and names UNBINDING (accounts are deactivated,
+  never deleted), `handover_signoffs` says plainly that a sign-off naming a demo person has NO
+  remedy and the demo stays, and `reminder_preferences` does not point at a unit merge, being one
+  of the three tables design §14 item 23 records that merge as stranding.
+
+
+---
+
+## Identity, access and positions
+
+- **`access.manage` must always have an active holder, and the ONE guard is
+  `App\Support\AccessManageGuard::guarding($couldLose, $field, $write)`** (rulings 44 and 45). It
+  holds the whole shape in one body — open the transaction, run the write, ask the oracle, throw to
+  unwind — because a door that asks without a transaction refuses a write it already committed, and
+  a door that opens one and forgets to ask is what ruling 45 measured **six** times. Every door
+  calls it: both override surfaces through `CapabilityGrant::applyForUser()`, plus
+  `users/{u}/active`, `users/{u}/unbind`, `users/{u}/position`, `people/{p}` and
+  `people/bulk`'s `set_active`. The guard **asks the oracle rather than deriving the answer**:
+  `holdersOf()` is consulted INSIDE the transaction, after the write, and an empty answer throws
+  (audit rows are written after the commit, so nothing claims it happened). Never re-derive it —
+  **the danger is neither the word `deny` nor the word `Administrator`**: clearing a per-user
+  *grant* that was somebody's only claim strips the capability just as completely (an omitted key is
+  how that API spells it), and a position-0 account that has been DENIED the capability is cover to
+  a role check and none at all to the real question. Phrased over the HOLDER SET, never over the
+  actor — do **not** shorten it to "you may not deny yourself", which is only equivalent while
+  `capabilitiesFor()` (which consults neither `users.active` nor the person link) and `holdersOf()`
+  (which consults both) agree, and nothing enforces that. It is a **POSTCONDITION, not a causal
+  test** ("is it held after this write", not "did this write take it"): one five-query answer
+  instead of two, and in an already-unheld world it still permits every recovery — promotion to 0
+  grants it by role default, reactivation passes null and is never asked — while refusing what keeps
+  it broken. `$couldLose` null means "no account can be affected", which is both sound
+  (`holdersOf()` inner-joins `people`) and the reason `RosterImport`'s per-row loop pays **nothing**:
+  `SKIP_HAS_ACCOUNT` means no importable row ever has an account. `AccessManageLockoutTest` pins all
+  of it — five doors, the permitted direction, and both halves of the cost — verified by planting a
+  disabled guard and watching 13 of 19 cases go red.
+
+- **`PositionChange::isLastActiveAdministrator()` and `wouldLeaveNoActiveAdministrator()` are GONE
+  (ruling 45) — do not reintroduce either, or a third predicate shaped like them.** Both asked
+  whether another active `people.position = 0` account remained, which stopped implying "somebody
+  holds `access.manage`" the day the capability became deniable per account; five doors guarded on
+  them and all five were measured emptying the capability with a 302. They were deleted rather than
+  kept beside the new guard because every caller was a lockout guard asking the wrong question, and
+  a role-shaped check left lying about is an invitation for the next door to ask it again — which is
+  how it became five. `PositionChangeTest::test_the_account_console_delegates_to_the_one_definition`
+  bans both names across five files, **matched against comment-stripped source**: while this fix was
+  being made the controller's own prose mentioned the deleted method and the old substring assertion
+  went on passing against a method that no longer existed. `assertMayPlaceAtAdministrator()` (who may
+  hand out position 0) and `AccessControlController::assertNoSelfLockout()` (the position-0 role
+  DEFAULT keeps `access.manage`) are different questions and both stay.
+
+- **`PersonPresenter` gates BOTH `email` and `phone` behind `viewContact`.** `email` shipped
+  ungated until P1d's rota grid became the first consumer holding a narrower capability
+  (`rota.view`, every seeded position) than every prior caller (`people.manage`, which also grants
+  `viewContact`) — a rota surface reaches a person only through the presenter, never a second
+  projection.
+
+- **Unbinding an account is `App\Support\AccountUnbind` and nothing else, and it SNAPSHOTS
+  `handover_signoffs.signed_off_by_name` before it clears the link.** For any handover signed
+  before 2026-07-27 that column is null and the signer's name resolves live through
+  `users.person_id` → `people.full_name`, so clearing the link blanks the attestation on
+  medico-legal evidence — precisely the failure the freeze migration exists to prevent, reached
+  through a different door. The snapshot writes a currently-null column with the value the sheet
+  already renders; `whereNull` is what keeps it a snapshot rather than a rewrite. It clears the
+  link and deactivates in ONE atomic act (an active-but-unbound account is nameless and
+  positionless on every screen with no error at all), never touches `people`, refuses the last
+  active Administrator, and an unbound account **cannot be reactivated** — there is deliberately no
+  rebind action. `AccountLinkHasOneWriterTest` and `PersonActiveHasOneWriterTest` are two separate
+  guards on purpose: deactivating a **person** and retiring an **account** are different acts, and
+  `AccountUnbind` needing no entry in the second is what proves they are disjoint.
+
+- **`App\Support\CapabilityGrant` is the only writer of `user_capabilities`** (P1c-2 Decision F,
+  `CapabilityWritersAreSingularTest`), and both doors go through it — Admin → Access Control and
+  the People screen's roles panel. Grants stay keyed to the ACCOUNT; AC-04's "roles granted per
+  person" is a second **surface**, not a second table, so `AccessControl::resolve()`, `holdersOf()`
+  and the cache key are untouched. The panel is gated `access.manage`, **never `people.manage`** —
+  a role-granting control served from the roster console's own route group would let a holder of
+  "who exists and what level they hold" grant themselves the security console. A colleague who
+  leaves and returns on a new account does **not** regain old roles; an administrator re-grants
+  them. Auto-restoring on re-bind means a departed administrator's grants silently reattach to
+  whoever claims that identity next, reviewed by nobody.
+
+- **Placing somebody at position 0 requires `users.manage`** (`PositionChange::write()`, review F2,
+  2026-08-11) — and that **falsifies AC-04's stated premise**. Decision F's gate is right, but its
+  reason ("hanging a role control off the roster gate *would* create an escalation path") described
+  a path that already existed one field to the left: `PersonRequest::POSITIONS` offers 0, position 0
+  holds `access.manage` by seeded role default, and `AccessControl::resolve()` reads
+  `people.position` — so a `people.manage` holder promoted their own roster row, had their
+  capability cache flushed for them by the write itself, and held the security console. Gated in
+  `PositionChange::write()`, the single definition all three writers pass through: a rule in the
+  FormRequest alone would not reach `RosterImport`, which calls `applyWithoutAudit()` from a
+  `cap:people.manage` route and resolves its position column by NAME against `positions` — a CSV
+  cell reading "Administrator" never meets a FormRequest rule at all. `applyWithoutAudit()`
+  therefore takes the actor **positionally and non-optionally**. It is the **TRANSITION** that is
+  gated, not the value: a `people.manage` holder may still edit a sitting Administrator's roster row
+  (the edit form submits the position it was rendered with, and refusing that would make every
+  administrator's row unsaveable by the console that exists to edit rows); a CREATE is a placement,
+  which is what `wasRecentlyCreated` distinguishes. It throws rather than auditing — a refusal
+  written from inside `PersonController`'s or `RosterImport`'s transaction would roll back with it.
+  The offer narrows to match: `grantable_positions` (`PositionChange::grantableBy()`) is what the
+  People screen's two role `<select>`s offer, PLUS whatever the row already holds; the full
+  `positions` catalog still ships beside it, because it is what renders an existing Administrator's
+  role NAME.
+
+- **CLOSED (rulings 44 and 45): `assertNoSelfLockout()` guards the ROLE matrix only, and never did
+  more.** It does not run on the per-user override path, nor on any account-lifecycle door — which
+  is why a holder of `access.manage` could deny it to the last account holding it (measured in P1c-2
+  Task 6 and deliberately left, because that extraction had to be behaviour-preserving), and why
+  five more doors were still open after ruling 44. All six now go through
+  `App\Support\AccessManageGuard`; `assertNoSelfLockout()` stays where it is, guarding the position-0
+  role DEFAULT, which is a third question again.
+  `PersonRolesTest::test_the_two_doors_agree_about_denying_the_last_access_manage_holder` asserts the
+  two override surfaces AGREE rather than that either permits, which is what makes it the proof the
+  guard reached both. Design §14 open item 20 is discharged.
+
+
+---
+
+## Invitations
+
+- **The invitation lifetime is configurable, default 7, bounded [1, 30], behind `settings.manage`**
+  (`Invitation::lifetimeDays()`, `app_settings.invitation_lifetime_days`, P1c-2 Task 1). Seven is a
+  **deliberate, logged override** of Munawib AC-02's "default 14 days" — recorded in the design
+  doc's §1.2 overrides table, not left in an open-items list — because a redeemed invitation
+  reaches a child's clinical records, so a forwarded link stays live for half as long.
+  `LIFETIME_DAYS` is the DEFAULT, not the value: an unset or out-of-bounds setting falls back to
+  it. The clamp is not belt-and-braces over the FormRequest — `app_settings` is a plain key/value
+  table an operator can also reach from a database console, and that write never passes a
+  validator. The key sits in `AppSettings::KEYS` with **no** entry in `applyOverrides()`'s `$map`
+  (it overrides no framework config, exactly like `alert_email`); do not "fix" the omission.
+
+- **`App\Support\Invitations\InvitationIssue` is the only writer of `invitations`** (P1c-2
+  Decision C), and a **resend rotates the token** — the superseded row is kept, `revoked_at` and
+  `revoked_by_user_id` set, never deleted. Re-mailing the same token would extend the life of a
+  credential that may already be in the wrong hands and make revoking the first link meaningless.
+  `InvitationWritersAreSingularTest` proves the single writer. Two real defects the refactor
+  surfaced, both worth not reintroducing: the supersede predicate **ignored the clock**, so
+  re-inviting somebody stamped `revoked_at` onto a merely *expired* row, rewriting "this expired"
+  as "a person killed this" in the claim-status projection; and the superseded set matched on
+  **address alone**, so correcting somebody's address and resending left a live link addressed to
+  the old mailbox. `InvitationIssue::liveFor()` now matches `person_id = X OR member_email = Y`,
+  because the invariant "at most one live link" is per-PERSON. **Bulk resend sends mail AFTER the
+  transaction commits, never inside it** — mail cannot be rolled back, and recipients holding live
+  links to invitations that do not exist has no recovery; the reverse (rows exist, some mail did
+  not go) is visible, reportable per person and fixable by resending.
+
+- **An invitation is authorized against the BOUND PERSON's position, never `invitations.position`**
+  (`InvitationIssue::issue()`, adversarial review F1, 2026-08-11). `InvitationAcceptController`
+  takes the `person_id !== null` branch for every row this system mints and that branch does **not**
+  write `position` — deliberately, because `people.position` has one writer (`PositionChange`) and
+  an invitee must not re-rank the roster row they are claiming. So a redeemed account resolves its
+  capabilities from the ROSTER (`$user->position` is a read-through accessor; `AccessControl::
+  resolve()` joins `role_capabilities` on it) while all four endpoints were checking a column
+  nothing downstream consults. The two diverge with **no misuse at any step**: an admin invites a
+  new joiner at 4, later corrects that roster row to 0, and the live invitation still reads 4 — a
+  Chief Resident may target 4, so resend, bulk resend and (via `Person::matchByEmail()`) invite each
+  handed them a link that mints an Administrator. Asserted at the ONE WRITER beside the supersede
+  loop and before the transaction opens, so all three doors close together; on `store()`'s create
+  branch the person is opened at exactly `$position`, making it a no-op there.
+  `InvitationStatus::mayInvite()` already gated the OFFER on `people.position` — offer and write now
+  agree (D9). Do **not** "fix" the asymmetry by writing `position` at redemption.
+  `tests/Feature/Security/InvitationPositionEscalationTest.php`, whose
+  `test_a_redeemed_account_resolves_capabilities_from_the_roster_not_the_invitation` passed on the
+  tree *before* the fix — the escalation stated as a fact about the system, not inferred.
+
+- **`BulkResend::positionsToAuthorize()` returns a UNION and is never empty for a non-empty
+  selection** (review F3/F4, 2026-08-11): every selected person's `people.position` **plus** the
+  live invitations from `InvitationIssue::supersededBy()`. Both halves are load-bearing. The
+  invitation half alone returned `[]` for a selection that had all claimed or was never invited —
+  and these two endpoints sit in an **`auth`-only** route group (invitations are this codebase's one
+  deliberate exception to a `cap:` middleware, the rule being two-tier and position-dependent), so
+  the controller's `foreach` asserted nothing and any authenticated account received the plan: per
+  person, their invitation state, invitation id and whether they hold an account. **An `auth`-only
+  group is only sound while the in-controller pass is guaranteed to assert something.**
+  `supersededBy()` is the ONE definition of "the set this operation will supersede", shared by the
+  writer and its pre-authorization — they diverged both ways before: the pass matched `person_id`
+  alone (so an invitation reached only by the ADDRESS axis fired `assertMayTarget()` from *inside*
+  `commit()`'s transaction and the `user_scope_denied` row rolled back with it — P1c-1 finding 12
+  through a different door) and had no expiry filter (so a merely aged-out higher-position row
+  refused a batch the operator was entitled to run).
+
+- **Claim status is DERIVED, never stored** (`App\Support\Invitations\InvitationStatus`, P1c-2
+  Decision B): five states folded, in precedence order, from `accepted_at`/`revoked_at`/
+  `expires_at`, plus `hidden` for a target the viewer may not manage. A stored status column is the
+  `person_status` lifecycle enum D3 removed, wearing a different name. It is per-caller `$extra` on
+  `PersonPresenter::one()` and **never a base key** — the base map reaches every `rota.view` holder,
+  and "who has not claimed their account" is not a fact the whole department gets. It takes Person
+  MODELS, not ids: a person with no invitation row has nothing to join a position from, so an
+  id-only signature could not scope exactly the people whose state is `none`.
+
+
+---
+
+## Provisioning and institutions
+
+- **`institutions.code` stays env-only, and this is not a UI omission.** It is
+  `ReferenceSeeder`'s `firstOrNew` key, so re-coding a live institution makes the next
+  `db:seed --force` — a mandatory step of every deploy — CREATE a second `institutions` row instead
+  of updating the first, at which point `Institution::current()` returns null (two active rows means
+  no right answer, D11) and every screen reading the department's configuration goes blank. It is
+  also provenance already stamped on `users`, `people`, `levels`, `periods` and `clinics`. That is a
+  provisioning operation with a migration behind it, not a settings change. `institutions.name` IS
+  editable (`/admin/structure/department`, `structure.manage`, audited by field name), and the
+  rename survives `db:seed --force` because `ReferenceSeeder` writes `name` on CREATE only —
+  asserted, not assumed. `institutions.code` is **not** `App\Support\Instance::slug()`
+  (`INSTANCE_SLUG`, which names the backup archive); they are different values.

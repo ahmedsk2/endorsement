@@ -1241,8 +1241,15 @@ None block starting P0.
     cannot arrive there unnoticed. Should a later owner want a gate it remains additive — one
     nullable column, one controller branch — but it would be a new decision reversing this one, not
     the resumption of an open question.
-20. **`assertNoSelfLockout()` guards the ROLE matrix only — a holder of `access.manage` can lock the
-    security console out entirely. PRE-EXISTING, MEASURED, and deliberately not fixed in P1c-2.**
+20. ~~**`assertNoSelfLockout()` guards the ROLE matrix only — a holder of `access.manage` can lock the
+    security console out entirely.**~~ **CLOSED — SHIPPED 2026-08-11 (`f3d0a22`), and it was SIX doors,
+    not one.** `App\Support\AccessManageGuard::guarding()` is now the single predicate: open the
+    transaction, take the write, ask `holdersOf('access.manage')`, unwind if the answer is nobody.
+    The five account-lifecycle doors listed below all guarded on `PositionChange::isLastActiveAdministrator()`
+    — a question about the Administrator ROLE, which stopped implying anybody holds the capability the
+    day it became deniable per account. Both role-shaped predicates were DELETED rather than kept beside
+    the new one. See ruling 45 for the measurements. The record of the gap as first found follows.
+    **ORIGINAL ENTRY (P1c-2 Task 6, historical):**
     `AccessControlController::assertNoSelfLockout()` runs on the two role-matrix endpoints and
     **never on the per-user override path at all**. Measured against the tree in P1c-2 Task 6, not
     inferred: an administrator can deny `access.manage` to themselves — and so to the last account

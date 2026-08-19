@@ -260,7 +260,18 @@ something the application can do for you:
 
 ---
 
-## 11. GitHub Actions has not run a single job since 2026-08-08 — it is a billing block
+## 11. ~~GitHub Actions has not run a single job since 2026-08-08~~ — RESOLVED 2026-08-11
+
+**Fixed by making the repository public**, which puts Actions on free unmetered runners and
+sidesteps the spending limit entirely. CI has been green on all three jobs (`test`, `audit`,
+`docker-build`) since. Nothing further is required of you. The account-level payment state was
+never repaired — if the repository is ever made private again, the block returns.
+
+**What the blind week cost, for the record:** the first run after it lifted found three defects in
+`.env.example`, two sets of dependency CVEs published during the outage, and an e2e suite that had
+never once run from a clean checkout. All fixed.
+
+### The original entry follows
 
 **Nothing in CI has executed for two days of work.** Every run since `2026-08-08T07:45Z` ends in
 2–4 seconds with the same annotation on every job:
@@ -319,7 +330,15 @@ stays on every seeded position: reading the rota is not editing it.
 
 ---
 
-## 13. Keep a SECOND account holding `access.manage` — and know what the invitation knob does
+## 13. Keep a SECOND account holding `access.manage` — now belt AND braces
+
+**The lockout this item existed to prevent is now refused in code** (`App\Support\AccessManageGuard`,
+shipped 2026-08-11): no write may leave zero active holders of `access.manage`, across all six doors
+that could previously reach that state. Keeping a second administrator is still good operational
+practice — an account can be lost to a forgotten password or a lost 2FA device, which no code guard
+covers — but it is no longer the *only* thing standing between you and a database console.
+
+### The original entry follows
 
 Two things arrived with the 2026-08-10 account-lifecycle release (P1c-2). Neither needs a command;
 both are yours to decide.

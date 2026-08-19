@@ -1,18 +1,24 @@
 # Owner checklist — endorse.towardpcc.com
 
-> ## ⚠ Deploying the 2026-07-26 work? Run the migration.
+> ## ⚠ The pending release is P1, and it crosses a one-way door
 >
-> ```bash
-> php artisan migrate --force
-> ```
+> **Do not follow this banner's old instruction.** The 2026-07-26 keyed-HMAC migration it used to
+> describe shipped on 30 July and is long applied. What is pending now is three weeks of work —
+> P0c through P1e — sitting in git and never deployed.
 >
-> One additive, nullable column (`audit_log.hash_version`). The audit chain moved from an
-> unkeyed hash to a keyed HMAC, because the old one could be recomputed by anyone with
-> database write access — so the trail could be rewritten and still report "chain intact".
-> Rows record which algorithm wrote them, so existing history keeps verifying.
+> **It has its own runbook: [`docs/DEPLOY-P1-2026-08-12.md`](DEPLOY-P1-2026-08-12.md). Use that,
+> top to bottom, not a bare `migrate --force`.** Twenty-two migrations, rehearsed twice — once on
+> SQLite and once against real MySQL 8.4 — and both rehearsals found real defects that are now fixed.
 >
-> Without the migration the application will error on its first audited action. Deploy,
-> migrate, then run `bash scripts/verify-live.sh`.
+> Three things to know before you start:
+>
+> - **One-way door.** Migration `2026_08_10_120003` drops `users.full_name` and `users.position`.
+>   Past it, redeploying the current image gives a site that is up, reports healthy, and refuses
+>   every user. Recovery past that point is restore-from-backup, not a rollback.
+> - **`migrate:status --pending` will tell you 0, and it is lying.** The running July code can only
+>   see the migrations it ships with. Count applied rows instead: 22 of the repo's 44.
+> - **There is no clinical data yet** — 2 throwaway handover rows, 0 sign-offs ever. This is the
+>   cheapest this deploy will ever be, and it gets dearer with every real handover written.
 
 Everything the system needs from you, in the order it has to happen. The site is live and
 healthy; nothing below is a bug fix, it is the handover of the things only you can hold.
@@ -210,27 +216,44 @@ eval "$(sudo bash docker/instance-env.sh oo7d7si62yhyi7fx10hrck6q)" && \
 sudo docker exec -i "$DB" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot '"$DBNAME"' -e "UPDATE audit_log SET action=\"x\" WHERE id=1"'
 ```
 
-## 7. Restrict `/register`
+## 7. ~~Restrict `/register`~~ — CLOSED IN CODE 2026-07-27, nothing to do
 
-It is currently open to the internet. Anyone who finds the domain can submit a registration.
-They cannot get in — an administrator must approve, and the email must be verified — but it
-is an unauthenticated write endpoint on a system holding children's health data, and it is
-the largest remaining exposure. Options, cheapest first:
+Self-registration is gone. `routes/auth.php` points `/register` at `RegisteredUserController::closed()`,
+so the endpoint answers but writes nothing — the third option below is the one that was taken.
+**No action is required of you, and there is no exposure here to close.**
 
-- Put Cloudflare Access in front of `/register` only (you already use it elsewhere).
-- Restrict by IP to the hospital network.
-- Replace self-registration with admin-issued invitations.
+The account path is now admin-issued invitations only; see section 8. One leftover is tracked as a
+code item rather than an owner one: the `pending_registrations` table and its approval endpoint still
+exist with no writer, and `approve()` would mint an active account outside the invitation path. It is
+on the outstanding list.
 
 ---
 
-## 8. Create the real accounts
+## 8. Create the real accounts — by invitation, not self-registration
 
-Order matters: Residents and Chief Residents **register themselves** at `/register`, then an
-administrator (or a Chief Resident, for Residents only) activates them from **Admin → Access
-Control**. Chief Residents register as Residents and are promoted by you. Consultants and
-Charge Nurses are created the same way.
+**Rewritten 2026-08-19.** The previous version of this section told you to have staff register
+themselves at `/register`. That endpoint has been closed since 27 July, so following it would have
+stalled go-live on a step nobody could perform.
 
-This needs step 4 done first — registration cannot complete without a verification email.
+The path, in order:
+
+1. **Put the person on the roster** — Admin → People → Add, or import the whole department from CSV
+   (Admin → People → Import, dry-run first). A roster entry is a name, a position and an email; it is
+   not an account and cannot sign in.
+2. **Invite them** — the Invite control sits beside any roster person who has no account yet. They get
+   an emailed link, claim it once, and set their own password. You never handle their password.
+3. **Resend** singly, or in bulk for a cohort, from the same screen. The link is rotated on every
+   resend, so the previous one dies — which is the point.
+
+The invitation lifetime is **7 days** by default and is configurable in Admin → Settings.
+
+**This needs section 4 (SMTP) working first** — an invitation that cannot be delivered is not an
+invitation. Verify SMTP by issuing one real invitation and watching it arrive, *not* by the throwaway
+self-registration check that older runbooks describe; that check cannot run any more.
+
+**Positions:** Administrator (0), Charge Nurse (2), Consultant (3), Resident (4), Chief Resident (5).
+Position 1 is retired and must never be reused. Granting somebody position 0 requires `users.manage`,
+so an ordinary roster manager cannot make an administrator.
 
 ---
 

@@ -2098,3 +2098,50 @@ keyed on top-level fixture blocks, so a new **field inside an existing block** i
 (the `clipped_starts_on` probe is bought explicitly because that field is the one already identified
 as likely); and a TSDoc line containing `lang/*/calendar.php` closes the block comment and is a parse
 error.
+
+### From Task 7/8 (2026-08-20) — four places the plan and the tree disagreed, and how each was settled
+
+None is a change of scope; each is recorded because the next reader will otherwise take the plan's
+wording as the tree's state.
+
+**1. `contract/schema.json` is `contract/schema.ts`.** Task 7's file list names a `.json` file. The
+tree already refuses that and says why: `packages/engine/src/index.ts` records that a JSON import
+*"would need `resolveJsonModule` and would resolve differently under the bundler, under plain Node
+and under `tsc`, which is three answers to a question worth none."* Reading it from disk instead is
+worse — the package ships to the browser, where `node:fs` is fatal. It is a JSON Schema document by
+value; only the extension differs, and the deviation is stated in the file's own docblock. **If P3
+or P4 needs a `.json` artifact for a non-TypeScript consumer, emit it from Task 23's Node entrypoint
+rather than checking a second copy in.**
+
+**2. `RegistryEntry.evaluate` does not return `Violation[]`.** Decision E types it
+`(…) => Violation[]`. It cannot: Decision D's `coverage()` needs a per-type producer for the windows
+a floor skipped, and two independent functions per type can disagree — a type reporting a window as
+skipped in one and firing on it in the other, invisible on a green suite, which is the exact failure
+`coverage()` exists to surface one level up. So a type answers ONE call returning
+`{ findings, coverage }`, and `evaluate()`/`coverage()` are two projections of it. A `Finding` is
+`{ location, explanation }`: severity, rank and `conditionId` are stamped centrally from the
+condition row, which makes *"the engine never overrides the row"* structural rather than a rule
+twenty-two files each have to remember. **Decision E's field list should be read as amended.**
+
+**3. Task 7 creates `registry.ts`, empty.** It is not in Task 7's file list, but Task 8's own
+sentence — *"It fails on the first run because the registry is empty"* — requires the file to exist
+first. It lands at Task 7 carrying `RegistryEntry` and `CATALOG = []`, and Task 8 fills it.
+
+**4. `catalogDefault` covers THREE rows, not two.** Task 8's prose names `vacation_block` and
+`unwanted_day_block`. CG-07 marks a third — `overlap_block`, *"(Hard, built-in)"* — and Decision E
+itself says *"three of twenty-three rows carry a class"*. All three carry `catalogDefault`;
+`assertedClass` remains on `overlap_block` alone. **This turned out to be worth more than a
+correction:** because the marking is machine-readable in the parameters cell, the parity guard
+derives the marked SET AND THE VALUE from `SPEC.md` and compares both against the registry, so the
+documentation cannot rot away from the thing it documents. That is a third parity beside the key set
+and the `(Stage 5)` marking, and it was free.
+
+*Two smaller findings from the same tasks.* Task 1's footnote under CG-07's table shipped citing §35
+and §36 at lines 252 and 256 — their positions **before the footnote's own two dozen lines were
+inserted**; corrected to 276 and 280, and the guards now anchor on the table's HEADER and on the
+citation TEXT rather than on any line number. And the `timezone` needle for *"read by nothing"* had
+to be narrowed from the bare word to the read shapes (`.timezone`, `{ timezone`), because the bare
+word matched `calendar/index.ts`'s own docblock sentence declaring that there is no timezone here —
+a guard failing on its own explanation. Bracket access is a stated residual: its needle is the quoted
+word, which already appears in `schema.ts`'s `required` array, so buying it would cost the first
+entry in an allow-list whose emptiness is the point.

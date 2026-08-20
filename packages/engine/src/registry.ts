@@ -10,11 +10,12 @@
  * markings as DOCUMENTATION the engine never applies, and `evaluate()` stamps severity from the
  * condition row. A comment saying so would rot; a field with a test cannot.
  *
- * ## The empty catalog, and why this file exists before it has entries
+ * ## The count is DERIVED, never declared
  *
- * P2 Task 7 authors this file with `CATALOG` EMPTY, so that Task 8's catalog-parity guard — which
- * derives the key set from CG-07's own table in `docs/munawib/SPEC.md` and compares it in both
- * directions — has something to be red against on its first run. The registry is filled in Task 8.
+ * `catalog-parity.test.ts` parses CG-07's table out of `docs/munawib/SPEC.md` and compares it
+ * against {@link CATALOG} in both directions. No number appears in this file, on purpose: the
+ * catalog's size has been miscounted repeatedly in this repository, in writing, and a number
+ * written down here would be a fourth chance to get it wrong.
  */
 
 import type {
@@ -83,13 +84,229 @@ export interface RegistryEntry {
 }
 
 /**
- * Every CG-07 type key, in the spec's own order.
+ * Every CG-07 type key, in the catalog's own order.
  *
- * EMPTY at P2 Task 7, filled at Task 8. `catalog-parity.test.ts` derives the key set from CG-07's
- * table itself and compares it against this array in both directions, so the count cannot drift
- * again and a twenty-fourth row appearing in the spec fails the build until somebody classifies it.
+ * ## The arithmetic is not written down here, it is derived
+ *
+ * `catalog-parity.test.ts` parses CG-07's table out of `docs/munawib/SPEC.md` and compares it
+ * against this array in BOTH directions — the key set, the `(Stage 5)` marking, and the class
+ * markings, each derived from the source it documents. The count has been miscounted repeatedly in
+ * this repository, in writing, which is why no number appears in this file: a twenty-fourth row in
+ * the spec fails the build until somebody classifies it, and an entry here with no row behind it
+ * fails it too. A second SOURCE rather than a second implementation, which is
+ * `UnitMergeCoversEveryUnitReferenceTest`'s device.
+ *
+ * The order is the catalog's own so the two can be read side by side, and that is asserted rather
+ * than merely intended.
+ *
+ * ## `evaluate` is absent on every entry, at this task
+ *
+ * Tasks 10–20 fill them in. Until then a condition naming an implemented key throws
+ * `UnimplementedConditionTypeError`, which is the honest answer: this engine cannot yet evaluate it,
+ * and a silently ignored Hard rule is a control that appears to do nothing.
  */
-export const CATALOG: readonly RegistryEntry[] = [];
+export const CATALOG: readonly RegistryEntry[] = [
+    {
+        typeKey: 'min_gap',
+        implemented: true,
+        direction: 'spacing',
+        locationKind: 'placement',
+        // The gap between the last night of month M and the first duty of M+1 is the case a
+        // scheduler hits first, and it is measured entirely outside the horizon on one side.
+        needsCarryIn: true,
+    },
+    {
+        typeKey: 'max_gap',
+        implemented: true,
+        direction: 'spacing',
+        locationKind: 'window',
+        needsCarryIn: true,
+    },
+    {
+        typeKey: 'count_max',
+        implemented: true,
+        direction: 'cap',
+        locationKind: 'window',
+        needsCarryIn: true,
+    },
+    {
+        // TWO keys, not one with a direction parameter, and it was measured rather than assumed:
+        // CG-01 and §30 store one typeKey per condition row, CG-04's preview text differs by
+        // direction, a department will enable a cap without a floor — and a single key would fail
+        // the parity guard, because CG-07 names two. They share an evaluator module and a params
+        // schema; they are not one entry.
+        typeKey: 'count_min',
+        implemented: true,
+        direction: 'floor',
+        locationKind: 'window',
+        needsCarryIn: true,
+    },
+    {
+        typeKey: 'target_per_period',
+        implemented: true,
+        direction: 'target',
+        locationKind: 'window',
+        needsCarryIn: true,
+    },
+    {
+        typeKey: 'composition',
+        implemented: true,
+        direction: 'target',
+        locationKind: 'window',
+        needsCarryIn: true,
+    },
+    {
+        typeKey: 'we_pairing',
+        implemented: true,
+        direction: 'target',
+        locationKind: 'cohort',
+        // A weekend straddling the month boundary is one weekend, and the half in the tail is what
+        // says whether it was covered as a block or split.
+        needsCarryIn: true,
+    },
+    {
+        typeKey: 'fairness_distribution',
+        implemented: true,
+        direction: 'equity',
+        locationKind: 'cohort',
+        // Measured over the schedule under evaluation against its own eligible-day denominator.
+        // Last month's load is a different period's fairness question.
+        needsCarryIn: false,
+    },
+    {
+        typeKey: 'vacation_block',
+        implemented: true,
+        catalogDefault: 'hard',
+        direction: 'block',
+        locationKind: 'placement',
+        needsCarryIn: false,
+    },
+    {
+        typeKey: 'unwanted_day_block',
+        implemented: true,
+        catalogDefault: 'soft-top',
+        direction: 'block',
+        locationKind: 'placement',
+        needsCarryIn: false,
+    },
+    {
+        typeKey: 'clinic_conflict',
+        implemented: true,
+        direction: 'block',
+        locationKind: 'placement',
+        // The post-call variant reads the PREVIOUS day's duty, so a clinic on the 1st is judged
+        // against a duty in the already-published month before it.
+        needsCarryIn: true,
+    },
+    {
+        typeKey: 'eligibility',
+        implemented: true,
+        direction: 'block',
+        locationKind: 'placement',
+        needsCarryIn: false,
+    },
+    {
+        typeKey: 'same_unit_conflict',
+        implemented: true,
+        direction: 'block',
+        locationKind: 'placement',
+        // Same-date pairs only. Nothing outside the horizon can make two people share a date in it.
+        needsCarryIn: false,
+    },
+    {
+        typeKey: 'dow_restriction',
+        implemented: true,
+        direction: 'block',
+        locationKind: 'placement',
+        needsCarryIn: false,
+    },
+    {
+        typeKey: 'post_duty_exclusion',
+        implemented: true,
+        direction: 'spacing',
+        locationKind: 'placement',
+        needsCarryIn: true,
+    },
+    {
+        typeKey: 'overlap_block',
+        implemented: true,
+        // The ONE class the engine may assert, and the only row that states one it could: CG-07
+        // calls it Hard AND built-in. The engine still never overrides the condition row — this is
+        // a fact P3's gate may refuse a relaxation against, not an input to a severity.
+        assertedClass: 'hard',
+        catalogDefault: 'hard',
+        direction: 'block',
+        locationKind: 'placement',
+        // A night call on the last of the previous month runs past midnight into the 1st.
+        needsCarryIn: true,
+    },
+    {
+        typeKey: 'consecutive_max',
+        implemented: true,
+        direction: 'cap',
+        locationKind: 'placement',
+        // A run spanning the 31st into the 1st is one run, and its length is only knowable from
+        // the tail.
+        needsCarryIn: true,
+    },
+    {
+        typeKey: 'rolling_hours_max',
+        implemented: true,
+        direction: 'cap',
+        locationKind: 'window',
+        needsCarryIn: true,
+    },
+    {
+        typeKey: 'free_day_min',
+        implemented: true,
+        direction: 'floor',
+        locationKind: 'window',
+        needsCarryIn: true,
+    },
+    {
+        typeKey: 'call_frequency_max',
+        implemented: true,
+        direction: 'cap',
+        locationKind: 'window',
+        needsCarryIn: true,
+    },
+    {
+        typeKey: 'onboarding_grace',
+        implemented: true,
+        direction: 'block',
+        locationKind: 'placement',
+        // Measured from `joinedAt`, a date on the person. No neighbouring duty enters into it.
+        needsCarryIn: false,
+    },
+    {
+        typeKey: 'holiday_equity',
+        implemented: true,
+        direction: 'equity',
+        locationKind: 'cohort',
+        // Its history arrives as `priorCredits` and `historyAvailableFrom`, not as prior DUTIES —
+        // a lookback of years is not a carry-in tail of days.
+        needsCarryIn: false,
+    },
+    {
+        typeKey: 'forbidden_transition',
+        implemented: false,
+        notImplementedBecause:
+            'CG-07 marks this row "(Stage 5)" inside its own parameters cell; SPEC.md §35 names ' +
+            'forbidden transitions in the Stage 5 — Shift mode deliverable list, which "starts only ' +
+            'on explicit go-ahead"; and SPEC.md §36 "Not doing (and why)" makes "Shift features ' +
+            'before Stage 5" a NAMED non-goal, which is decisive — building it here contradicts a ' +
+            'stated non-goal rather than merely running ahead of a stage. It is cheap in code, since ' +
+            'slot.kind is opaque and the predicate needs no shift substrate; what it has no source ' +
+            'for is a shift vocabulary to parameterise, a preset to seed it, a gate screen to offer ' +
+            'it, or a real input to prove it against. A type whose only fixture is one its author ' +
+            'invented is a stub with tests.',
+        // Declared as the shape it WOULD take, so a later implementer inherits a decision rather
+        // than a blank. Nothing reads either field while `implemented` is false.
+        direction: 'block',
+        locationKind: 'placement',
+        needsCarryIn: true,
+    },
+];
 
 /** The one entry for a type key, or `undefined`. Callers decide what an absence means. */
 export function registryEntry(typeKey: string, catalog: readonly RegistryEntry[] = CATALOG): RegistryEntry | undefined {

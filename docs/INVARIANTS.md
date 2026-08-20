@@ -517,6 +517,35 @@ place a scheduling rule is allowed to exist.*
   implemented key count — the arithmetic lives under CG-07's table in `docs/munawib/SPEC.md` and is
   not to be restated as a bare number anywhere. `forbidden_transition` is **registered with
   `implemented: false`** and its three citations, because an entry is a decision, not documentation.
+  **`packages/engine/test/catalog-parity.test.ts` now DERIVES all of that from the table itself**
+  (P2 Task 8) and compares it against `src/registry.ts` in both directions, on three axes: the key
+  set, the `(Stage 5)` marking, and the three class markings (`overlap_block`, `vacation_block`,
+  `unwanted_day_block`) against `catalogDefault` — value included. So a twenty-fourth row in the
+  spec fails the build until somebody classifies it, and a registry entry with no row behind it
+  fails it too. No count is written in `registry.ts`, deliberately: a number there would be a fourth
+  chance to get it wrong. The guard locates the table by its HEADER, never by line number — Task 1's
+  own footnote under that table shipped citing §35 and §36 at the lines they occupied *before* the
+  footnote's own insertion pushed them down, so `registry.test.ts` asserts the citation TEXT.
+
+- **The CG-10 contract widens in exactly one place — `location` — and `evaluate()`'s return type
+  does not.** `Location` is a three-member union (placement / window / cohort), authored in full at
+  Task 7 before the first predicate, because `max_gap` alone cannot be expressed in
+  `{personKey, date, slotKey}` and retrofitting the other two members after eleven types, a schema
+  and a corpus is not a thing that happens. `contributing` is MANDATORY on a window violation: WB-03
+  badges a cell and WB-04 orders a picker, and neither can act on a range. **A window a floor could
+  not honestly evaluate is reported through the sibling `coverage()`, never smuggled into
+  `violations[]`** — that separation is what makes CG-10's *"new types are additive"* true, since
+  P2-2 adds eleven predicates and touches no shared shape. **Severity and the emission rule are
+  stamped centrally by `evaluate()`, once**, from `Condition.class` — a type reports only WHERE and
+  WHY — so Decision E's *"the engine never overrides the row"* is structural rather than a rule
+  twenty-two files each have to remember. **A type answers ONE call returning findings and coverage
+  together**, so `evaluate()` and `coverage()` cannot disagree about a window. **The emission rule is
+  asymmetric and that is deliberate**: a placement must fall inside `[from, to]`, a WINDOW need only
+  touch it (a window beginning in the tail constrains a duty on the 1st — the containment reading is
+  silently correct for eleven types and silently deletes the left edge for eight), and a cohort
+  always, having no date. **An unresolvable `typeKey` throws** — `UnknownConditionTypeError` or
+  `UnimplementedConditionTypeError` — **even when the condition is switched off**, and an inactive
+  condition is reported through `coverage()` with nothing evaluated and the reason stated.
 
 - **The TS calendar mirror is the ONE deliberate second implementation, and
   `tests/fixtures/calendar/golden.json` is its contract in BOTH directions.** §7 Decision A of P1a

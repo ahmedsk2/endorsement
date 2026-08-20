@@ -113,8 +113,8 @@ CG-01 — The gate screen lists all conditions: type, plain-language parameters,
 scope).** The table is **22 data rows** (lines 89–110) carrying **23 distinct type keys**:
 `count_max / count_min` is one row with two keys, and every other row carries one. Exactly one row —
 `forbidden_transition`, line 110 — is marked `(Stage 5)` **inside its own parameters cell**; it is
-also named verbatim in §35's Stage 5 deliverable list (line 252, *"forbidden transitions"*) and is
-covered by §36's non-goal *"Shift features before Stage 5."* (line 256). So **22 rows − 1 = 21 rows**
+also named verbatim in §35's Stage 5 deliverable list (line 276, *"forbidden transitions"*) and is
+covered by §36's non-goal *"Shift features before Stage 5."* (line 280). So **22 rows − 1 = 21 rows**
 — which is exactly D13's number in
 `docs/superpowers/specs/2026-08-08-munawib-endorsement-integration-design.md:36` (*"All 21 types in
 P2"*) — and **23 keys − 1 = 22 implemented type keys.**
@@ -125,6 +125,13 @@ that it was, and that assertion is wrong and is withdrawn here. P2 implements th
 registers `forbidden_transition` with `implemented: false` carrying the three citations above, so its
 absence reads as a decision rather than an omission — the same device `UnitMerge::REFERENCES` uses
 for a table a merge deliberately leaves alone. **An entry is a decision, not documentation.**
+
+*(Line numbers corrected 2026-08-20, P2 Task 8: this footnote originally cited lines 252 and 256 for
+§35 and §36, which were their positions BEFORE the footnote itself was inserted — its own two dozen
+lines had already pushed them down. `packages/engine/test/registry.test.ts` therefore asserts the
+citation TEXT rather than the line numbers, and `catalog-parity.test.ts` locates the table below by
+its header row for the same reason. A citation that no longer resolves reads as evidence and is
+not.)*
 
 A competing arithmetic reaches 21 by a different route — 23 keys minus `forbidden_transition` minus
 `overlap_block`, reading *"Hard, built-in"* as meaning `overlap_block` is not department-configurable

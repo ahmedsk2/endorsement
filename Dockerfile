@@ -99,7 +99,7 @@ COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-interaction --prefer-dist --no-scripts --optimize-autoloader
 
 # ---------- stage 3: runtime ----------
-FROM php:8.4-fpm-alpine@sha256:913ddd6934a805429618a16aa36da47cd8a8aec8b2f111c294936ba4003fded6 AS runtime
+FROM php:8.5-fpm-alpine@sha256:9dc81f4086ea5402227a6bcc489b04b4baba12394624d9621faa92ed812fb8ee AS runtime
 
 RUN apk add --no-cache \
         nginx supervisor tzdata icu-data-full \

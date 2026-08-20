@@ -75,3 +75,17 @@ export function postDutyDates(window: AbsInterval): Ymd[] {
 function dateOfAbsolute(absolute: number): Ymd {
     return civilFromDays(Math.floor(absolute / MINUTES_PER_DAY));
 }
+
+/**
+ * Owner decision H's other half: does `interval` START inside this window?
+ *
+ * `post_duty_exclusion` anchors on the END of the earlier duty and tests the later one by
+ * START-IN-WINDOW rather than by overlap, and the difference is a real configuration: a long duty
+ * beginning one minute before the exclusion closes is inside it, and one beginning one minute after
+ * it closes is not, however far back its own window would reach. Half-open at both ends, so a duty
+ * starting exactly when the exclusion closes is clean — the same rule `intersects()` states for
+ * abutting windows, and for the same reason.
+ */
+export function startsWithin(window: AbsInterval, interval: AbsInterval): boolean {
+    return interval.start >= window.start && interval.start < window.end;
+}

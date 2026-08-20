@@ -303,7 +303,13 @@ describe('DUTY_DATE_READING — which type uses which reading', () => {
         'vacation_block',
         'we_pairing',
     ];
-    const occupiedIntervalTypes = ['free_day_min', 'min_gap', 'overlap_block', 'post_duty_exclusion'];
+    const occupiedIntervalTypes = [
+        'consecutive_max',
+        'free_day_min',
+        'min_gap',
+        'overlap_block',
+        'post_duty_exclusion',
+    ];
     const splitAtMidnightTypes = ['rolling_hours_max'];
 
     const withReading = (reading: DutyDateReading): string[] =>
@@ -329,13 +335,23 @@ describe('DUTY_DATE_READING — which type uses which reading', () => {
         expect(withReading('split-at-midnight')).toEqual(splitAtMidnightTypes);
     });
 
-    it('min_gap is the one type carrying two readings, because its own unit parameter picks one', () => {
+    /**
+     * TWO types carry two readings, and both for the same reason: a PARAMETER of their own picks
+     * which one applies. `min_gap`'s `unit` is owner decision H's; `consecutive_max`'s is owner
+     * decision V's, added after Decision A's table was written — `days` and `nights` count the dates
+     * duties start on, and `hours` measures a contiguous chain on the absolute-minute line, which
+     * anchor dates cannot express. Declaring one reading for a type that has two is precisely the
+     * silent divergence this table exists to prevent, so the list is asserted rather than the count.
+     */
+    it('names every type whose own parameter picks between two readings', () => {
         const twoReadings = Object.entries(DUTY_DATE_READING)
             .filter(([, readings]) => readings.length > 1)
-            .map(([key]) => key);
+            .map(([key]) => key)
+            .sort();
 
-        expect(twoReadings).toEqual(['min_gap']);
+        expect(twoReadings).toEqual(['consecutive_max', 'min_gap']);
         expect(DUTY_DATE_READING['min_gap']).toEqual(['occupied-interval', 'anchor-date']);
+        expect(DUTY_DATE_READING['consecutive_max']).toEqual(['anchor-date', 'occupied-interval']);
     });
 });
 

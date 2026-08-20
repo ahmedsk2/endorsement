@@ -159,6 +159,24 @@ export function personIndex(context: EvaluationContext): { get(key: string): Per
     };
 }
 
+/**
+ * Minutes as hours, for an explanation: `4 h`, `26 h`, `10.5 h`.
+ *
+ * ONE definition, because `min_gap` and `consecutive_max` both render a duration and two
+ * formatters would eventually disagree about the same number on two badges of the same cell.
+ * Whole hours print whole — a scheduler reading `4.0 h` wonders what the missing precision was.
+ */
+export function hoursText(minutes: number): string {
+    const hours = minutes / 60;
+
+    return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+}
+
+/** Whether a slot's kind is one this condition names. An EMPTY list names every kind. */
+export function kindMatches(kind: string, kinds: readonly string[]): boolean {
+    return kinds.length === 0 || kinds.includes(kind);
+}
+
 /** The precomputed day vector, by date. `get` throws on a date the context does not describe. */
 export interface DayIndex {
     get(date: Ymd): Day;

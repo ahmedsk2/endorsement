@@ -237,6 +237,8 @@ describe('the matrix — every parameter a type reads is named by its preview', 
             // Task 13 — the two the tree could not resolve without the owner: decision S's three
             // attendee modes, and decision U's confirmed reading (a).
             'clinic_conflict',
+            // Task 14 — owner decision V's third unit, and the transition allowance CG-08 drops.
+            'consecutive_max',
             // Task 12 — the three placement types owner decisions R, T and the ISO-integer half of
             // the day-of-week ban settle. Their sentences live in the message table (AR-07).
             'dow_restriction',
@@ -248,6 +250,7 @@ describe('the matrix — every parameter a type reads is named by its preview', 
             'min_gap',
             'onboarding_grace',
             'overlap_block',
+            'post_duty_exclusion',
             'rolling_hours_max',
             'same_unit_conflict',
             'target_per_period',
@@ -643,6 +646,76 @@ describe('same_unit_conflict — owner decision U, and the exception that LIFTS'
         expect(render({ exceptDates: ['2026-08-07'] })).toMatch(/lifted/i);
         expect(render({})).toMatch(/every day of the schedule/i);
         expect(render({})).toMatch(/any one unit/i);
+    });
+});
+
+describe('post_duty_exclusion — owner decision H, and the degenerate case named out loud', () => {
+    const render = (params: Record<string, unknown>): string =>
+        preview(condition('post_duty_exclusion', params), CONTEXT);
+
+    /**
+     * The clock runs from the END of the first duty, which is the half a reader assumes wrongly:
+     * anchored on the START, a 24 h call would block nothing at all after it finished. The sentence
+     * says which endpoint it measures from, because the alternative is a department discovering it
+     * from a warning that did not appear.
+     */
+    it('says the clock runs from the end of the first duty', () => {
+        const sentence = render({ from: ['call'], to: ['clinic'], hours: 10 });
+
+        expect(sentence).toContain('call');
+        expect(sentence).toContain('clinic');
+        expect(sentence).toContain('10 h');
+        expect(sentence).toContain('runs from the END of the first duty');
+        expect(sentence).toMatch(/may not START/);
+    });
+
+    /**
+     * When a kind is on BOTH sides the type degenerates into `min_gap` in hours — the same kind
+     * spacing itself — and a department that wrote that configuration deliberately should see it
+     * confirmed, while one that wrote it by accident should see it at all. The plan asks for this
+     * explicitly, and the two types are asserted to AGREE on such a pair in `conditions.test.ts`.
+     */
+    it('names the from/to intersection and what it degenerates into', () => {
+        expect(render({ from: ['call'], to: ['call'], hours: 10 })).toMatch(/both sides/i);
+        expect(render({ from: ['call'], to: ['call'], hours: 10 })).toMatch(/from each other/i);
+        expect(render({ from: ['call'], to: ['clinic'], hours: 10 })).not.toMatch(/both sides/i);
+    });
+});
+
+describe('consecutive_max — owner decision V, three units and one allowance', () => {
+    const render = (params: Record<string, unknown>): string =>
+        preview(condition('consecutive_max', params), CONTEXT);
+
+    it('renders the 24 h continuous cap as a joined chain, with the allowance that joins it', () => {
+        const sentence = render({ count: 24, unit: 'hours', transitionMinutes: 60, kinds: [] });
+
+        expect(sentence).toContain('24 h');
+        expect(sentence).toContain('60 minutes or less apart are ONE stretch');
+        expect(sentence).toMatch(/does not restart the clock/i);
+    });
+
+    /**
+     * `transitionMinutes` is read by the `hours` unit ALONE, and the sentence says so under the
+     * other two rather than printing a number that does nothing. A parameter carried on a condition
+     * row and silently ignored is rulings 41/49's shape — and the person who set it has every
+     * reason to believe it applies.
+     */
+    it('says the transition allowance is not read under the day and night units', () => {
+        for (const unit of ['days', 'nights']) {
+            const sentence = render({ count: 3, unit, transitionMinutes: 60, kinds: [] });
+
+            expect(sentence).toMatch(/read only by the hours version/i);
+            expect(sentence).toContain('60-minute');
+        }
+
+        expect(render({ count: 3, unit: 'days', transitionMinutes: 0, kinds: [] })).toContain('3 days on duty');
+        expect(render({ count: 3, unit: 'nights', transitionMinutes: 0, kinds: [] })).toContain('3 nights on duty');
+    });
+
+    it('states that two duties on one date are one date', () => {
+        expect(render({ count: 3, unit: 'days', transitionMinutes: 0, kinds: [] })).toMatch(
+            /two duties on one date are one date/i,
+        );
     });
 });
 

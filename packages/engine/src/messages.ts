@@ -101,6 +101,17 @@ export interface PreviewMessages {
 
     /** Owner decision U: reading (a), and day exceptions LIFT the ban rather than applying it. */
     sameUnitConflict(args: { units: readonly string[]; exceptDates: readonly string[] }): string;
+
+    /** Owner decision H: anchored on the END of the first duty, the second tested by its START. */
+    postDutyExclusion(args: { from: readonly string[]; to: readonly string[]; hours: number }): string;
+
+    /** Owner decision V: three units, and the transition allowance the hours one actually reads. */
+    consecutiveMax(args: {
+        count: number;
+        unit: 'days' | 'nights' | 'hours';
+        transitionMinutes: number;
+        kinds: readonly string[];
+    }): string;
 }
 
 /**
@@ -216,6 +227,44 @@ export const EN: PreviewMessages = {
             `their join date as day 1 — somebody joining on 1 Aug may first be scheduled on ` +
             `${days + 1} Aug. A person whose join date is not recorded is NOT blocked by this rule, ` +
             'and the evaluation reports whom it could not judge rather than passing them silently.'
+        );
+    },
+
+    postDutyExclusion({ from, to, hours }) {
+        const opens = from.length === 0 ? 'any duty' : `a duty of kind ${EN.conjoin(from as string[])}`;
+        const blocked = to.length === 0 ? 'any duty' : `duties of kind ${EN.conjoin(to as string[])}`;
+        const shared = (to as string[]).filter((kind) => (from as string[]).includes(kind));
+
+        const both =
+            shared.length === 0
+                ? ''
+                : ` Because ${EN.conjoin(shared)} is on both sides, this also spaces such duties from ` +
+                  'each other by the same hours.';
+
+        return (
+            `After ${opens} ends, ${blocked} may not START for ${hours} h. The clock runs from the END ` +
+            `of the first duty, so a longer duty pushes the block further out on its own.${both}`
+        );
+    },
+
+    consecutiveMax({ count, unit, transitionMinutes, kinds }) {
+        const over = kinds.length === 0 ? 'duties' : `duties of kind ${EN.conjoin(kinds as string[])}`;
+
+        if (unit === 'hours') {
+            return (
+                `At most ${count} h of duty in one unbroken stretch, counting ${over}. Two duties ` +
+                `${transitionMinutes} minutes or less apart are ONE stretch, so a handover does not ` +
+                'restart the clock; a longer gap does.'
+            );
+        }
+
+        const counted = unit === 'nights' ? ['night on duty', 'nights on duty'] : ['day on duty', 'days on duty'];
+
+        return (
+            `At most ${EN.plural(count, counted[0] as string, counted[1] as string)} in a row, counting ` +
+            `${over} by the date each one starts on — two duties on one date are one date, and a night ` +
+            `running past midnight belongs to the date it started. The ${transitionMinutes}-minute ` +
+            'transition allowance is read only by the hours version of this rule.'
         );
     },
 

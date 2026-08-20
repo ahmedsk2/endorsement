@@ -1,0 +1,175 @@
+{
+    "name": "min-gap-the-pair-the-two-readings-disagree-about",
+    "why": "A FIXTURE BOTH READINGS PASS PROVES NOTHING ABOUT THE DECISION. A 24 h call starting 1 Aug 08:00 ends 2 Aug 08:00, and a night starting 2 Aug 20:00 is twelve hours later -- legal at 10 h END-TO-START and illegal at 2 days BETWEEN START DATES, because the start dates are one day apart. Both conditions run over the same pair in the same world, so an implementation that quietly used one reading for both units is red on exactly one of them rather than green on both.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R2",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-08-01",
+                    "2026-08-02",
+                    "2026-08-03"
+                ],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "day24",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "days"
+            },
+            {
+                "key": "night20",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1200,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-03",
+            "evaluableFrom": "2026-07-25",
+            "evaluableTo": "2026-08-08"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "day24"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "night20"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-hours",
+            "typeKey": "min_gap",
+            "class": "hard",
+            "active": true,
+            "params": {
+                "value": 10,
+                "unit": "hours"
+            }
+        },
+        {
+            "id": "c-days",
+            "typeKey": "min_gap",
+            "class": "soft",
+            "rank": 1,
+            "active": true,
+            "params": {
+                "value": 2,
+                "unit": "days"
+            }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-days",
+            "severity": "soft",
+            "rank": 1,
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "day24"
+            },
+            "explanation": "1 day between this duty and \"night20\" on 2026-08-02, counted between the dates they start on; at least 2 are required."
+        },
+        {
+            "conditionId": "c-days",
+            "severity": "soft",
+            "rank": 1,
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "night20"
+            },
+            "explanation": "1 day between this duty and \"day24\" on 2026-08-01, counted between the dates they start on; at least 2 are required."
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-hours",
+            "evaluatedWindows": 2,
+            "skipped": []
+        },
+        {
+            "conditionId": "c-days",
+            "evaluatedWindows": 2,
+            "skipped": []
+        }
+    ]
+}

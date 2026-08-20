@@ -7,9 +7,9 @@ import { isoWeekday, parseYmd, type Ymd } from '../src/calendar/ymd';
 import type { Condition, EvaluationContext, Fixture, Schedule } from '../src/contract/types';
 import { validate } from '../src/contract/validate';
 import { coverage } from '../src/coverage';
-import { evaluate, sortViolations } from '../src/evaluate';
+import { evaluate, locationIsReportable, sortViolations } from '../src/evaluate';
 import { preview } from '../src/preview';
-import { registryEntry } from '../src/registry';
+import { CATALOG, registryEntry } from '../src/registry';
 
 /**
  * The three Hard placement types (P2 Task 10): `overlap_block`, `vacation_block`, `eligibility`.
@@ -77,10 +77,16 @@ describe('the condition corpus', () => {
             'clinic-conflict-levels-mode-reads-the-level-on-the-clinic-date',
             'clinic-conflict-post-call-reaches-the-day-after-the-last-horizon-date',
             'clinic-conflict-the-same-day-variant-is-a-calendar-day-not-a-time-overlap',
+            'consecutive-max-days-a-run-of-count-is-clean-and-the-next-date-breaks-it',
+            'consecutive-max-hours-joins-a-chain-across-a-short-transition',
+            'consecutive-max-the-run-spans-the-thirty-first-into-the-first',
             'dow-restriction-a-ban-on-one-iso-weekday',
             'dow-restriction-a-rotation-scoped-ban-follows-the-unit-on-the-date',
             'eligibility-mid-window-promotion',
             'eligibility-wrong-rotation-and-an-unnamed-slot',
+            'min-gap-days-counts-between-start-dates-on-both-sides-of-the-boundary',
+            'min-gap-hours-across-the-carry-in-from-the-published-month',
+            'min-gap-the-pair-the-two-readings-disagree-about',
             'onboarding-grace-a-duty-before-the-join-date',
             'onboarding-grace-an-unknown-join-date-is-reported-not-silent',
             'onboarding-grace-day-n-and-day-n-plus-one',
@@ -88,6 +94,8 @@ describe('the condition corpus', () => {
             'overlap-block-carry-in-at-the-left-edge',
             'overlap-block-is-per-person-not-per-slot',
             'overlap-block-night-crosses-into-the-next-date',
+            'post-duty-exclusion-a-weekly-cadence-from-duty-ends-by-spandays',
+            'post-duty-exclusion-the-window-opens-on-the-thirty-first-and-closes-on-the-first',
             'same-unit-conflict-a-day-exception-lifts-the-ban-on-that-date-alone',
             'same-unit-conflict-two-rotators-on-one-unit-and-a-colleague-elsewhere',
             'unwanted-day-block-a-registered-day-and-a-colleague-with-none',
@@ -485,7 +493,153 @@ describe('same_unit_conflict — the params the schema will not take on trust', 
     });
 });
 
-describe('the eight types are registered as implemented, with a preview and a schema', () => {
+describe('min_gap and post_duty_exclusion, beyond the corpus', () => {
+    const world = FIXTURES.find(
+        (f) => f.name === 'min-gap-hours-across-the-carry-in-from-the-published-month',
+    ) as Fixture;
+
+    /**
+     * Two duties that OVERLAP have no gap at all, and a subtraction reports that as a negative
+     * number. "Only -4 h between this duty and …" reads as a defect in the tool rather than as a
+     * defect in the rota, and a scheduler who does not believe one warning stops believing the
+     * others. The pair is a real configuration: overlap_block and min_gap are both on, and both
+     * fire.
+     */
+    it('says two duties overlap rather than reporting a negative gap', () => {
+        const schedule: Schedule = {
+            ...world.schedule,
+            duties: [
+                { personKey: 'p-ali', date: d('2026-08-01'), slotKey: 'late' },
+                { personKey: 'p-ali', date: d('2026-08-01'), slotKey: 'night' },
+            ],
+        };
+
+        const explanations = evaluate(schedule, { ...world.context, priorDuties: [] }, world.conditions).map(
+            (violation) => violation.explanation,
+        );
+
+        expect(explanations).toHaveLength(2);
+        expect(explanations.every((text) => text.includes('overlap'))).toBe(true);
+        expect(explanations.some((text) => /-\d/.test(text.replace(/20\d\d-\d\d-\d\d/g, '')))).toBe(false);
+    });
+
+    /**
+     * When a kind is in BOTH `from` and `to`, `post_duty_exclusion` degenerates into `min_gap` in
+     * hours — the same duty kind blocking itself for H hours. That is a legitimate configuration
+     * rather than a mistake, and the two types then produce the SAME judgement on the same pair,
+     * which is what this asserts. What must not happen is the two disagreeing: they measure from
+     * the same end, through `postDutyWindow()`, and owner decision H's start-in-window is the same
+     * test as "the gap is shorter than H".
+     */
+    it('degenerates into min_gap in hours when from and to intersect, and agrees with it', () => {
+        const context = { ...world.context, priorDuties: [] };
+        const schedule: Schedule = {
+            ...world.schedule,
+            duties: [
+                { personKey: 'p-ali', date: d('2026-08-01'), slotKey: 'night' },
+                { personKey: 'p-ali', date: d('2026-08-02'), slotKey: 'late' },
+            ],
+        };
+
+        const gap = evaluate(schedule, context, [
+            { id: 'c-x', typeKey: 'min_gap', class: 'hard', active: true, params: { value: 10, unit: 'hours' } },
+        ]);
+
+        const exclusion = evaluate(schedule, context, [
+            {
+                id: 'c-x',
+                typeKey: 'post_duty_exclusion',
+                class: 'hard',
+                active: true,
+                params: { from: ['call', 'clinic-cover'], to: ['call', 'clinic-cover'], hours: 10 },
+            },
+        ]);
+
+        expect(gap.map((violation) => violation.location)).toContainEqual(exclusion[0]?.location);
+        expect(exclusion).toHaveLength(1);
+        expect(gap).toHaveLength(2);
+    });
+});
+
+describe('the horizon-edge corpus — what the carry-in tail is actually asserted to do', () => {
+    const seamCases = FIXTURES.filter((fixture) => fixture.context.priorDuties.length > 0);
+
+    /**
+     * DERIVED FROM THE REGISTRY, in both directions. `needsCarryIn` is a claim each entry makes
+     * about itself, and a claim nothing checks is a comment. So every implemented type that claims
+     * to need the tail must have a corpus case that actually supplies one — and the named list
+     * below is the non-vacuity floor, because a derivation that produced the empty set would
+     * satisfy the first assertion on a tree with no corpus at all.
+     *
+     * `clinic_conflict` is deliberately NOT in this list: its entry was corrected to
+     * `needsCarryIn: false` at Task 13, on the measurement that every finding it produces is
+     * located at a DUTY, so one derived from a tail duty is dropped by the emission rule before
+     * anybody sees it. A seam fixture for it could assert nothing, which is exactly what this guard
+     * would otherwise have demanded.
+     */
+    it('has a carry-in case for every implemented type that claims to need one', () => {
+        const claiming = CATALOG.filter((entry) => entry.needsCarryIn && entry.evaluate !== undefined)
+            .map((entry) => entry.typeKey)
+            .sort();
+
+        const covered = new Set(
+            seamCases.flatMap((fixture) => fixture.conditions.map((condition) => condition.typeKey)),
+        );
+
+        expect(claiming).toEqual(['consecutive_max', 'min_gap', 'overlap_block', 'post_duty_exclusion']);
+        expect(claiming.filter((typeKey) => !covered.has(typeKey))).toEqual([]);
+    });
+
+    /**
+     * THE ASYMMETRIC EMISSION RULE, over the corpus rather than over a constructed violation. A
+     * PLACEMENT must fall inside `[from, to]`; a WINDOW need only touch it, because a window
+     * beginning in the tail constrains a duty on the 1st. Task 7 measured that the intuitive
+     * containment reading is silently correct for eleven types and silently deletes the left edge
+     * for eight, and this is what keeps the corpus honest about which one it is asserting: every
+     * expected violation in every case satisfies the rule for ITS OWN location kind.
+     */
+    it('expects no violation whose location the emission rule would have dropped', () => {
+        const escaping = FIXTURES.flatMap((fixture) =>
+            fixture.expected
+                .filter((violation) => !locationIsReportable(violation.location, fixture.schedule.horizon))
+                .map((violation) => `${fixture.name}: ${JSON.stringify(violation.location)}`),
+        );
+
+        expect(escaping).toEqual([]);
+        expect(FIXTURES.flatMap((fixture) => fixture.expected).length).toBeGreaterThan(15);
+    });
+
+    /**
+     * THE PAIR THE CARRY-IN TYPES OWE, ASSERTED TOGETHER. Take away the history and the violation
+     * that depended on it disappears — which is correct, and on its own is indistinguishable from a
+     * type that never read the tail at all. So the same call must also produce the coverage row
+     * saying the left edge could not be examined. `evaluate()` going quiet and `coverage()` staying
+     * quiet with it is the failure this catches.
+     */
+    it.each(seamCases.map((fixture) => fixture.name))('%s says so in coverage when no history was supplied', (name) => {
+        const fixture = seamCases.find((candidate) => candidate.name === name) as Fixture;
+        const context: EvaluationContext = { ...fixture.context, historyAvailableFrom: null, priorDuties: [] };
+
+        expect(evaluate(fixture.schedule, context, fixture.conditions)).toEqual([]);
+
+        for (const row of coverage(fixture.schedule, context, fixture.conditions)) {
+            expect(row.skipped).toHaveLength(1);
+            expect(row.skipped[0]?.reason).toMatch(/historyAvailableFrom is null/);
+            expect(row.skipped[0]?.to).toBe(d('2026-07-31'));
+        }
+    });
+
+    it('runs over the four carry-in cases, named', () => {
+        expect(seamCases.map((fixture) => fixture.name)).toEqual([
+            'consecutive-max-the-run-spans-the-thirty-first-into-the-first',
+            'min-gap-hours-across-the-carry-in-from-the-published-month',
+            'overlap-block-carry-in-at-the-left-edge',
+            'post-duty-exclusion-the-window-opens-on-the-thirty-first-and-closes-on-the-first',
+        ]);
+    });
+});
+
+describe('the eleven placement types are registered as implemented, with a preview and a schema', () => {
     it.each([
         'overlap_block',
         'vacation_block',
@@ -495,6 +649,9 @@ describe('the eight types are registered as implemented, with a preview and a sc
         'dow_restriction',
         'clinic_conflict',
         'same_unit_conflict',
+        'min_gap',
+        'post_duty_exclusion',
+        'consecutive_max',
     ])('%s', (typeKey) => {
         const entry = registryEntry(typeKey);
 

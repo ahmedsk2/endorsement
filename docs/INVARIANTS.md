@@ -619,6 +619,77 @@ place a scheduling rule is allowed to exist.*
   report a skipped window on every correctly-supplied month and train a reader to ignore the field.
   STATED RESIDUAL: there is no `futureAvailableTo` counterpart, so the RIGHT edge is not reported.
 
+- **The eleven placement-located types are shipped (P2-1, Tasks 10, 12, 13, 14)** — `overlap_block`,
+  `vacation_block`, `eligibility`, `unwanted_day_block`, `onboarding_grace`, `dow_restriction`,
+  `clinic_conflict`, `same_unit_conflict`, `min_gap`, `post_duty_exclusion`, `consecutive_max` — each
+  with a params schema, a CG-04 preview and corpus cases named for the SHAPE they catch. **Four
+  answered owner decisions bind them and are not to be re-derived**: `same_unit_conflict` is reading
+  **(a)** (two people rotating on the SAME unit are never on call together, the unit read at the date,
+  and day exceptions **LIFT** the ban); `min_gap`'s `hours` measures **end-to-start** and its `days`
+  measures **between start dates**, at least N apart; `post_duty_exclusion` anchors on the **END** of
+  the first duty and tests the second by **start-in-window**; and `consecutive_max` carries
+  `unit: 'days'|'nights'|'hours'` with `transitionMinutes`, where `'hours'` is CG-08's 24 h continuous
+  cap on a chain joined across gaps of at most that allowance. **`'nights'` means the slot CROSSES
+  MIDNIGHT** — a structural fact, never a kind called `night`, because SL-01's vocabulary is stored
+  nowhere in this repository.
+
+- **`onboarding_grace`'s unknown join date is REPORTED, not merely tolerated.** Owner decision T makes
+  a missing `joined_at` no violation; P2 Task 1's finding 18 is that the column is written by no
+  seeder, factory or demo path anywhere in this repository and production already holds people without
+  one — so on the live instance *"no violation"* and *"this rule never ran"* are the same answer.
+  Every person whose join date is unknown AND who holds a placement the condition would have judged is
+  named in `coverage()` with the placement count; a person with no join date and no duty is not, since
+  that noise is what `carryInLeftEdge()` already refuses. A duty BEFORE the join date is a violation
+  with its own explanation — the closed-range reading reports nothing for a rota drafted before
+  somebody starts, which is when the rule is most needed.
+
+- **`DUTY_DATE_READING` has TWO entries carrying two readings, not one.** `min_gap` (owner decision H)
+  and **`consecutive_max`** (owner decision V), each because a parameter of its own picks between them:
+  `days`/`nights` count the dates duties start on and `hours` measures a contiguous chain on the
+  absolute-minute line, which anchor dates cannot express. Decision A's table predates the `hours`
+  unit; this is a correction to it, not a departure from it. `duty-core.test.ts` asserts the LIST.
+
+- **`postDutyWindow()` is the ONE definition of "after this duty"**, in `duty/post-duty-window.ts`,
+  shared by `post_duty_exclusion` (hour-granular, `startsWithin`) and `clinic_conflict` (day-granular,
+  `postDutyDates`). SL-02 already says post-duty semantics follow slot windows automatically, and on a
+  real configuration two implementations disagree — a 24 h call ending Tue 08:00 with a Tue PM clinic
+  is a violation under the day reading and clean under an `H = 4` hour one, and a scheduler shown one
+  warning and not the other cannot tell which is right. A **zero-length** window answers with the date
+  its end instant falls on, which is what keeps the post-call and same-day variants apart without a
+  second notion of *"the day after"*. **Clinics are never modelled as slots or duties** to reuse it.
+
+- **`clinic_conflict` needs NO carry-in tail, and that was measured rather than assumed.** Its registry
+  entry said otherwise until Task 13. Every finding it produces is located at a DUTY, so one derived
+  from a tail duty is dropped by the emission rule before anybody sees it — reading the tail changes no
+  output, and the seam fixture the corpus guard demands for such a claim could assert nothing. What it
+  reaches past the horizon for is a CLINIC, and clinics are a weekly recurrence carried in the context
+  for every weekday. `conditions.test.ts` derives the claim set from the registry in both directions,
+  so a type claiming carry-in with no case supplying one fails the build.
+
+- **`support.ts`'s `isoWeekdayAt()` is the one permitted fallback off the day vector**, and it exists
+  because a post-duty window opened on the last date of the horizon closes on the day after it, where a
+  clinic runs and the violation is located INSIDE the horizon. AR-08 forbids re-deriving the
+  DEPARTMENT's facts — `dayType`, the week start, the weekend days — and the ISO weekday of a civil
+  date is universal arithmetic `golden.test.ts` already asserts against `golden.json`'s own
+  `iso_weekday`. The corpus pins the two answers agreeing on every date every fixture's vector
+  describes. `dow_restriction` uses `dayIndex().get()` instead and THROWS on a date the vector omits:
+  every date it asks about is inside the horizon.
+
+- **`dow_restriction` takes ISO INTEGERS and refuses a day NAME with the schema's own error.** There is
+  no name-to-number table in the package and there is deliberately never going to be one (AR-07 keeps
+  the names in `lang/en/calendar.php`; owner decision X keeps the week's shape in the context), so a
+  ban written with a name would match nothing — a control that appears to do nothing. **The test
+  proving the refusal cannot spell one**: `CalendarIsTheOnlyConverterTest`'s quoted-weekday pattern
+  scans that file too, so the name is assembled from two literals. Eighth occurrence in this phase of
+  *"a docblock is scanned source"*, and the first where the scanned file is the test asserting the very
+  rule the scan enforces.
+
+- **A pair scan in this package carries NO early exit.** `overlap_block`'s did and made the phase's
+  defining fixture unfalsifiable (Task 10); `min_gap` and `post_duty_exclusion` are written without one
+  for that reason, and `post_duty_exclusion` tests BOTH orderings of every pair even though only the
+  earlier duty can be the anchor — a provable skip is still a second, invisible statement of the rule
+  the fixture exists to test. The scans are per person over one month.
+
 - **The TS calendar mirror is the ONE deliberate second implementation, and
   `tests/fixtures/calendar/golden.json` is its contract in BOTH directions.** §7 Decision A of P1a
   overruled the design doc's own "PHP plus a mirrored package" wording with *"ONE implementation, not

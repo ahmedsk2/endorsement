@@ -1,0 +1,185 @@
+{
+    "name": "min-gap-days-counts-between-start-dates-on-both-sides-of-the-boundary",
+    "why": "Owner decision H's off-by-one, with both sides of it in one world: days is measured between the dates the two duties START on and N means AT LEAST N APART, so at N = 3 the pair 1 Aug / 4 Aug is legal and 1 Aug / 3 Aug is not. p-ali holds the illegal pair and p-noor the legal one, which is the only arrangement that tells 'at least N apart' from 'at least N clear days between' -- one character in an implementation, a month of different behaviour on a rota, and invisible in review. BOTH placements of the offending pair are reported, because a scheduler may move either of them.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R2",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-08-01",
+                    "2026-08-03"
+                ],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R2",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-08-01",
+                    "2026-08-04"
+                ],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-04",
+            "evaluableFrom": "2026-07-25",
+            "evaluableTo": "2026-08-08"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-04",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-gap",
+            "typeKey": "min_gap",
+            "class": "hard",
+            "active": true,
+            "params": {
+                "value": 3,
+                "unit": "days"
+            }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-gap",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            },
+            "explanation": "2 days between this duty and \"night\" on 2026-08-03, counted between the dates they start on; at least 3 are required."
+        },
+        {
+            "conditionId": "c-gap",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            },
+            "explanation": "2 days between this duty and \"night\" on 2026-08-01, counted between the dates they start on; at least 3 are required."
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-gap",
+            "evaluatedWindows": 4,
+            "skipped": []
+        }
+    ]
+}

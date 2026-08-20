@@ -1,0 +1,145 @@
+{
+    "name": "consecutive-max-the-run-spans-the-thirty-first-into-the-first",
+    "why": "A run spanning the month boundary is ONE run, and its length is only knowable from the carry-in tail: 30 and 31 July are in the already-published month and 1 and 2 August are in the horizon, so the cap of three is broken on the 2nd. Horizon-local evaluation sees a run of two and reports nothing at all -- which is the defect this whole tail exists to prevent, and it is invisible on any mid-month corpus. The violation is located inside the horizon; the two July dates are read as context and never re-reported.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R2",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-08-01",
+                    "2026-08-02",
+                    "2026-08-03"
+                ],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-07-30",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-07-31",
+                "slotKey": "night"
+            }
+        ],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-03",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-06"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-run",
+            "typeKey": "consecutive_max",
+            "class": "hard",
+            "active": true,
+            "params": {
+                "count": 3,
+                "unit": "days"
+            }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-run",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            "explanation": "Day 4 of a run of consecutive duty days; the cap is 3."
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-run",
+            "evaluatedWindows": 2,
+            "skipped": []
+        }
+    ]
+}

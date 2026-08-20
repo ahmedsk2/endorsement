@@ -111,7 +111,12 @@ export const DUTY_DATE_READING = {
     call_frequency_max: ['anchor-date'],
     clinic_conflict: ['anchor-date'],
     composition: ['anchor-date'],
-    consecutive_max: ['anchor-date'],
+    // TWO readings, and the second entry in this table to carry them after `min_gap` — a
+    // CORRECTION to Decision A's table rather than a departure from it. That table was written
+    // before owner decision V added `unit: 'hours'`, and a contiguous chain joined by the GAP
+    // between two duties cannot be measured from anchor dates. `days` and `nights` count the dates
+    // duties start on; `hours` measures the absolute-minute line.
+    consecutive_max: ['anchor-date', 'occupied-interval'],
     count_max: ['anchor-date'],
     count_min: ['anchor-date'],
     dow_restriction: ['anchor-date'],

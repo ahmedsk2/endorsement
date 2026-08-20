@@ -1,0 +1,202 @@
+{
+    "name": "post-duty-exclusion-a-weekly-cadence-from-duty-ends-by-spandays",
+    "why": "Owner decision K: a weekly-cadence duty's end is spanDays' business, so the backup week starting 1 August at 08:00 ends on the SEVENTH date, 7 August at 18:00 -- not the eighth, which the plan's original + spanDays formula would have given. The 10 h exclusion therefore runs to 8 August 04:00. The night starting 7 August at 17:00 is BEFORE the window opens and is clean; the dawn duty starting 8 August at 03:00 is inside it and is not. Owner decision H's start-in-window is what those two placements are measuring: the second duty is tested by where it STARTS, not by whether it overlaps.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-06",
+                "isoWeekday": 4,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-07",
+                "isoWeekday": 5,
+                "dayType": "WE",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-08",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": null,
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R2",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-08-07",
+                    "2026-08-08"
+                ],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "backup-week",
+                "kind": "home-call",
+                "unitKey": "PICU",
+                "cadence": "weekly",
+                "spanDays": 7,
+                "startMinute": 480,
+                "endMinute": 1080,
+                "crossesMidnight": false,
+                "countsHours": false,
+                "tallyKey": "backup"
+            },
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "dawn",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 180,
+                "endMinute": 720,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-08",
+            "evaluableFrom": "2026-07-25",
+            "evaluableTo": "2026-08-15"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "backup-week"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-07",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-08",
+                "slotKey": "dawn"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-post",
+            "typeKey": "post_duty_exclusion",
+            "class": "hard",
+            "active": true,
+            "params": {
+                "from": [
+                    "home-call"
+                ],
+                "to": [
+                    "call"
+                ],
+                "hours": 10
+            }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-post",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-08",
+                "slotKey": "dawn"
+            },
+            "explanation": "Starts inside the 10 h exclusion after \"backup-week\" on 2026-08-01, which ends 2026-08-07."
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-post",
+            "evaluatedWindows": 3,
+            "skipped": []
+        }
+    ]
+}

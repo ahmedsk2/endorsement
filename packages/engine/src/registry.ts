@@ -25,12 +25,14 @@ import type {
 } from './contract/types';
 import type { JsonSchema } from './contract/schema';
 import * as clinicConflict from './conditions/clinic_conflict';
+import * as consecutiveMax from './conditions/consecutive_max';
 import * as dowRestriction from './conditions/dow_restriction';
 import * as eligibility from './conditions/eligibility';
 import * as fairnessDistribution from './conditions/fairness_distribution';
 import * as minGap from './conditions/min_gap';
 import * as onboardingGrace from './conditions/onboarding_grace';
 import * as overlapBlock from './conditions/overlap_block';
+import * as postDutyExclusion from './conditions/post_duty_exclusion';
 import * as rollingHoursMax from './conditions/rolling_hours_max';
 import * as sameUnitConflict from './conditions/same_unit_conflict';
 import * as targetPerPeriod from './conditions/target_per_period';
@@ -127,6 +129,7 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'min_gap',
         implemented: true,
+        evaluate: minGap.evaluate,
         paramsSchema: minGap.PARAMS_SCHEMA,
         preview: minGap.preview,
         direction: 'spacing',
@@ -272,6 +275,9 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'post_duty_exclusion',
         implemented: true,
+        evaluate: postDutyExclusion.evaluate,
+        preview: postDutyExclusion.preview,
+        paramsSchema: postDutyExclusion.PARAMS_SCHEMA,
         direction: 'spacing',
         locationKind: 'placement',
         needsCarryIn: true,
@@ -295,6 +301,9 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'consecutive_max',
         implemented: true,
+        evaluate: consecutiveMax.evaluate,
+        preview: consecutiveMax.preview,
+        paramsSchema: consecutiveMax.PARAMS_SCHEMA,
         direction: 'cap',
         locationKind: 'placement',
         // A run spanning the 31st into the 1st is one run, and its length is only knowable from

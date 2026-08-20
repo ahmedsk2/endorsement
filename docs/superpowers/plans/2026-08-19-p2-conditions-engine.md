@@ -2336,3 +2336,68 @@ explanation reads like, so threading a table now fixes the shape before that kno
 rejected because the table is a *lookup*, not a schema — a key and an interpolation map — and
 learning better wording later changes the values, not the shape. Hardcoded English is the thing that
 would be expensive to revisit.
+
+### From Tasks 12–14 (2026-08-20) — P2-1 complete: what the answers did not cover, and one fixture that could not catch its own parameter
+
+**The eleven placement types are shipped.** Six findings are recorded here because the next reader
+will otherwise take the plan's wording, or an owner decision's wording, as the whole of the answer.
+
+**1. Owner decision T is answered, and on the live instance it is indistinguishable from a broken
+rule.** `joined_at` is written by no seeder, factory or demo path anywhere in this repository
+(Task 1's finding 18) and production holds people without one, so *"a missing join date is NO
+violation"* and *"`onboarding_grace` never fired"* produce identical output. The decision is
+implemented verbatim and the state is made VISIBLE rather than silent: every person whose join date
+is unknown **and who holds a placement the condition would otherwise have judged** is named in
+`coverage()` with the count of placements not evaluated, and the CG-04 preview says the same thing in
+words on the gate screen. A person with no join date and no duty is deliberately NOT reported — a row
+per roster gap would appear on almost every evaluation and train a reader to ignore the field, which
+is `carryInLeftEdge()`'s own recorded reason for refusing that noise. Planting `joinedAt ?? today`
+turns three assertions red, in both halves (violations and coverage).
+
+**2. One step beyond decision T, taken deliberately: a duty BEFORE the join date is a violation.**
+The literal reading of *"the first N days"* is `[joinedAt, joinedAt + N - 1]`, and a rota drafted
+before somebody starts — precisely when the rule earns its keep — puts duties outside it on the early
+side, where a range test reports nothing at all. The grace therefore opens at the start of time, and
+the two shapes carry different explanations because *"day 0"* on a gate screen is a number nobody
+would believe.
+
+**3. `clinic_conflict` does NOT need the carry-in tail, and the registry said it did.** Corrected at
+Task 13 by measurement: every finding this type produces is located at a DUTY, so one derived from a
+tail duty is dropped by the emission rule before anybody sees it — reading the tail changes no output,
+and the seam fixture Task 14's corpus guard would have demanded for the claim could have asserted
+nothing. What the type reaches past the horizon for is a CLINIC, and clinics are a weekly recurrence
+carried in the context for every weekday. **The guard is the reason this was caught**: derive a claim
+from the registry in both directions and it stops being a comment.
+
+**4. `consecutive_max` carries TWO duty→date readings, and Decision A's table did not say so.** Owner
+decision V's `unit: 'hours'` measures a chain joined by the GAP between two duties, which anchor dates
+cannot express, so `DUTY_DATE_READING.consecutive_max` is `['anchor-date', 'occupied-interval']` —
+the second entry to carry two after `min_gap`, and for the same reason: a parameter of its own picks.
+Decision A's table predates the `hours` unit. Declaring one reading for a type that has two is exactly
+the silent divergence that table exists to prevent.
+
+**5. A FIXTURE THAT COULD NOT CATCH ITS OWN PARAMETER, found by planting.** The first version of
+`consecutive-max-hours-joins-a-chain-across-a-short-transition` gave its second person a duty that
+stayed under the 24 h cap whether or not the chain was joined, so deleting the `transitionMinutes`
+comparison entirely left the case GREEN — the parameter owner decision V exists to add was untested by
+the case written to test it. The second person now holds the same evening duty as the first, 9.5 hours
+after their night ends: joined it is 26 h, unjoined it is two clean stretches. This is Task 9's species
+of green plant (an assertion made at an input where the defect cannot appear) in the corpus rather than
+in a guard, and it is the third green plant of the phase.
+
+**6. `src/duty/post-duty-window.ts` landed at Task 13, not Task 14.** Its first consumer is
+`clinic_conflict`, and a shared definition that arrives after its first caller has been written is
+shared in name only. Task 14 added `startsWithin()` to it for `post_duty_exclusion`.
+
+*Smaller things from the same three tasks.* The preview sentences of all seven new types go through
+`messages.ts`, because the accepted P2-2 note asserts *"`preview` already goes through the table"* —
+which is true of Task 9's four and **not** of Task 10's three (`overlap_block`, `vacation_block` and
+`eligibility` carry their English inline). New types follow the table so the residual shrinks rather
+than doubles; migrating those three is a five-line job for P2-2's first task, which is already
+chartered to thread the table through `explanation`. `preview.test.ts`'s probe generator learned
+`$ref` and pattern-constrained strings so that `same_unit_conflict`'s `exceptDates: $ref Ymd` is
+varied by the matrix instead of crashing it — one pattern in the table, throwing for any other, so a
+second is a decision somebody takes. And the quoted-weekday scan over `packages/` bites on the TEST
+that proves a weekday NAME is refused, so the name is assembled from two literals there: the eighth
+*"a docblock is scanned source"* of the phase, and the first where the scanned file is the test
+asserting the rule the scan enforces.

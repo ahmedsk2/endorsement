@@ -816,6 +816,75 @@ place a scheduling rule is allowed to exist.*
   earlier duty can be the anchor — a provable skip is still a second, invisible statement of the rule
   the fixture exists to test. The scans are per person over one month.
 
+- **The engine has TWO runtimes and the Node one reaches the package only through `src/index.ts`**
+  (P2 Task 23, owner decision Y). `packages/engine/bin/evaluate.mjs` reads CG-10's three arguments
+  as one JSON object on stdin — `{schedule, context, conditions}` — and writes
+  `{violations, coverage}` on stdout. `violations` is CG-10's array unchanged; Decision D is about
+  `evaluate()`'s return TYPE and is untouched, and `coverage` travels in the same envelope rather
+  than being smuggled into the list as a half-violation. **Exit codes: 0 evaluated, 2 not the
+  contract, 3 the engine refused a type key, 1 a bug — and deliberately NO "violations were found"
+  code**, because a CLI whose exit status means both *"I could not do this"* and *"I did it and the
+  answer was non-empty"* is one every caller has to special-case, and the caller that forgets treats
+  a malformed context as a clean schedule. All eight refusal and success cases are asserted by exit
+  code AND message; planted by flipping one code constant, which named five of them.
+
+- **`services/engine` is P3, not P2** (owner decision Y). A container with no caller can be verified
+  *running* and never verified *working*, and a third compose service touches fifteen pinned
+  deployment invariants for nobody. CG-05's publish gate is its first real caller.
+
+- **The Node bundle is `npm run build:engine`, gitignored, and NOT part of `npm run build`.** Node
+  cannot load the sources at all, for two independent reasons measured on Node v24.15.0 rather than
+  assumed: `moduleResolution: bundler` makes `import … from './calendar'` a directory import the ESM
+  resolver refuses, and strip-only TypeScript mode refuses `evaluate.ts`'s constructor parameter
+  properties. `packages/engine/vite.config.js` bundles `src/index.ts` with the app's own bundler into
+  `packages/engine/dist/`, which is gitignored (so it cannot drift in the tree), rebuilt by CI before
+  every run, and `.dockerignore`d — the production image has no caller for it, and a bundle whose
+  presence depends on whether the building machine happened to run a script is Task 2's finding
+  again. `npm run build` stays exactly what the Dockerfile's asset stage runs.
+
+- **The CI step is named for what it does, and it is NOT cross-validation.** `Engine corpus and CLI
+  through the compiled Node entrypoint (one implementation, not cross-validation)` — because the
+  phase table's original *"the CI cross-validation job"* is precisely what a later reader takes as a
+  commitment already met. The conditions corpus is NF-08/QA-01 regression coverage over ONE
+  implementation. The repository's single genuine cross-implementation check is
+  `packages/engine/test/golden.test.ts` against `tests/fixtures/calendar/golden.json`, which PHP
+  produced, and it runs under `npm test`. §4.3's real job arrives in P4 with the solver.
+
+- **What that step adds is RUNTIME coverage, not answers.** `npm test` already asserts all 90
+  fixtures through `evaluate()` and `coverage()`; re-asserting them would be a duplicate step, which
+  reads as extra assurance and provides none. Three things are new: the package running under plain
+  Node outside a bundler and outside jsdom; the PUBLIC SURFACE, since every test in
+  `packages/engine/test` imports by deep path and `index.ts` re-exporting `evaluate` was asserted by
+  nothing (`smoke.test.ts` and `tests/js/EngineAlias.test.js` read one export between them,
+  `version`); and the CLI contract per case. **Proved by planting exactly that gap:** removing
+  `export * from './evaluate'` left `tsc --noEmit` green and `npm test` green at 773, and turned the
+  new step red with 95 named failures.
+
+- **A harness that crashes instead of reporting is worse than its own success.** That same plant
+  first produced ONE stack trace in place of ninety collected failures, because the report was the
+  last statement in the file. The run is now inside one try and a throw is one more entry in the
+  list. Found by planting; unreachable by reading.
+
+- **NF-01 IS MISSED on this machine, and the measurement does not fail the build.** 93 duties
+  (20 people × 3 slots × 31 days), all 22 implemented types active, 998 findings from 14 conditions:
+  `evaluate()` median **~120 ms against a 100 ms budget** (76/94/104/112/122/123 across six runs; the
+  two consecutive quiet-machine runs both read ~122, so 76 was an early outlier and not the truth).
+  The number is printed on every run either way — a budget quietly missed is worse than a budget
+  missed out loud. Three things belong with it: the case is deliberately violation-DENSE (round-robin
+  duties), so it is an UPPER BOUND and a publishable schedule produces a handful of findings;
+  `coverage()` is a second full traversal, so `evaluate() + coverage()` — what the entrypoint does per
+  request — is roughly double at 181–231 ms, which is the first place to look if the budget matters at
+  request scale; and the CI runner's own figure is unknown, which the first CI log answers.
+  **The measurement is gated on not being VACUOUS** — the run must produce findings from more than
+  one condition — because a step that cannot fail is worse than none, and a benchmark of an engine
+  that resolved nothing measures process startup and reports it as headroom.
+
+- **The benchmark builds its synthetic month with the engine's own `Ymd` core**, not with epoch
+  helpers. `CalendarIsTheOnlyConverterTest` refused the first draft, and then refused the DOCBLOCK
+  that explained the first draft — the needles are substrings over whole files, so naming a
+  forbidden call in prose is the same offence as calling it. Both written around; the allow-list
+  stays empty in both directions.
+
 - **The TS calendar mirror is the ONE deliberate second implementation, and
   `tests/fixtures/calendar/golden.json` is its contract in BOTH directions.** §7 Decision A of P1a
   overruled the design doc's own "PHP plus a mirrored package" wording with *"ONE implementation, not

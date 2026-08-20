@@ -17,6 +17,11 @@ storage/framework/views/*
 storage/framework/testing
 # Same policy one level down: a package's test corpus is not production cargo.
 packages/*/test
+# Nor is the engine's Node bundle (P2 Task 23). It is gitignored, so whether it exists at all
+# depends on whether the machine running `docker build` happened to run `npm run build:engine` —
+# which is precisely the shape of Task 2's finding, where the image carried a different resolution
+# from the one CI produced. The image has no caller for it either: services/engine is P3.
+packages/*/dist
 storage/app/private
 storage/app/public
 # Built with DEV dependencies present: shipping it makes Laravel load providers

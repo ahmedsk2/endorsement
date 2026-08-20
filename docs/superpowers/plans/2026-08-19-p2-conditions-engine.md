@@ -1762,7 +1762,13 @@ Three things it is not, each stated in the command's own docblock and asserted:
       lookup) and **113** (`$assignment->unit` per span). A third planted trap — a narrowed
       `select()` on the person query — is CHEAPER than the correct code and no budget can see it;
       a behavioural assertion on the join date is what caught it.
-- [ ] NF-01 measured with **all 22 types active** and the number recorded, met or not.
+- [x] NF-01 measured with **all 22 types active** and the number recorded, met or not — **NOT MET**:
+      93 duties (20 people × 3 slots × 31 days), 998 findings from 14 conditions, `evaluate()` median
+      **~120 ms** on this machine against the 100 ms budget (76/94/104/112/122/123 across six runs;
+      the two consecutive quiet-machine runs both read ~122, so 76 was an early outlier). The case is
+      deliberately violation-dense and is therefore an upper bound, `evaluate() + coverage()` is
+      roughly double because `coverage()` is a second full traversal, and the CI runner's own figure
+      is unknown — the harness prints it on every run. See Task 23's amendment.
 - [ ] **No migration in P2 at all:** `git diff --stat main..<P2-2 head> -- database/migrations` empty.
 - [ ] `RotaAccessTest`, `ClinicHooksTest` and every single-writer guard unchanged.
 - [ ] `docker-compose.production.yml` unchanged; `DeploymentInvariantsTest` untouched and green.
@@ -3039,3 +3045,151 @@ department's own gesture over its own list, and five distinct ranks would be fiv
 judgements no document makes, arriving pre-made on the screen whose whole purpose is to make them.
 `comparePrecedence` returns 0 between them, which is the honest answer to *"which of these five
 matters more"*.
+
+### From Task 23 (2026-08-20) — the Node entrypoint, what CI actually gained, and forty CSS rules compiled out of documentation
+
+`packages/engine/bin/evaluate.mjs` ships, with `bin/corpus.mjs` as its CI harness, two steps in the
+`test` job, and **no new job**: the plan says *"added to CI's `test` job"* and a second job would
+re-run checkout, `setup-node` and `npm ci` to save nothing.
+
+**1. THE NAME IS ON THE STEP, AND IT SAYS WHAT THE STEP IS NOT.** `Engine corpus and CLI through the
+compiled Node entrypoint (one implementation, not cross-validation)`. The parenthesis is the whole
+point of the task's *"named honestly"*: the phase table's original *"the CI cross-validation job"* is
+what a later reader takes as a commitment already met, and Task 1 had to rewrite that row for the same
+reason. The step's comment names the three things separately — this corpus is NF-08/QA-01 regression
+coverage over ONE implementation; `golden.test.ts` under `npm test` is the repository's only genuine
+cross-implementation check and needs nothing from this step; §4.3's real job arrives in P4 with the
+solver that gives it a second side.
+
+**2. WHAT CI GENUINELY GAINED, ESTABLISHED BEFORE ANYTHING WAS ADDED.** The task's warning was right
+to insist: the plan's list is out of date, because `npx tsc --noEmit -p packages/engine` is already a
+step and `npm test` already collects `packages/*/test/**/*.test.ts`, so **all 90 fixtures' ANSWERS
+were already asserted in CI** and re-asserting them buys nothing. Three things were not covered:
+
+- **Plain Node.** Vitest transpiles per file through Vite and runs in jsdom. Neither it nor
+  `tsc --noEmit` answers whether the graph bundles or whether the result runs outside a bundler.
+- **The public surface.** Every test in `packages/engine/test` imports by deep path
+  (`../src/evaluate`). `smoke.test.ts` and `tests/js/EngineAlias.test.js` read exactly one export
+  between them — `version` — so `index.ts` re-exporting `evaluate` at all was asserted by NOTHING,
+  and `@engine` resolves to that file. This is the gap P3's workbench would have found while wiring
+  live hints.
+- **The CLI contract per case** — stdin, stdout, exit code — rather than described.
+
+A fourth candidate was considered and rejected: `npm run build` does not bundle the engine, because
+nothing imports `@engine` yet. The standing rule *"`npm run build` must actually bundle it"* is
+therefore not true today and is not made true here — adding a lib build to that script would put an
+artifact into the production image that nothing in the image calls (owner decision Y), and
+`npm run build` is exactly what the Dockerfile's asset stage runs.
+
+**3. THE PROOF THE STEP ADDS COVERAGE IS THE PLANT, NOT THE ARGUMENT.** `export * from './evaluate'`
+removed from `src/index.ts`: `tsc --noEmit` **rc=0**, `npm test` **773 passed, rc=0**, the new step
+**rc=1 with 95 named failures**. That is the second bullet above, demonstrated rather than asserted.
+Four more plants: a `cohort` location made unreportable (13 fixtures red); `EXIT_BAD_REQUEST` flipped
+to 0 (five refusal cases red, by name); and the three CSS plants in item 6.
+
+**4. THE HARNESS FAILED ITS OWN FIRST PLANT — BY CRASHING INSTEAD OF REPORTING.** Plant 3 collected
+ninety fixture failures and then printed ONE `TypeError` from the benchmark, because the report was
+the last statement in the file and a throw skipped it. A harness whose failure tells the reader less
+than its success did is not a gate. The run is now inside one try, a throw is one more entry in the
+failure list, and the refusal phase's final `JSON.parse` is guarded the same way. **This is only
+findable by planting** — the finished tree is green and the defect is invisible in it.
+
+**5. THE ENTRYPOINT HAS NO "VIOLATIONS WERE FOUND" EXIT CODE, AND THAT IS THE LOAD-BEARING ONE.**
+0 evaluated, 2 not the contract, 3 the engine refused a type key, 1 a bug. A CLI whose status means
+both *"I could not do this"* and *"I did it and the answer was non-empty"* is one every caller has to
+special-case, and the caller that forgets treats a malformed context as a clean schedule. 2 and 3 are
+separated for the reason `evaluate()` raises two distinguishable errors: *"your JSON is the wrong
+shape"* and *"your condition names a type this engine does not implement"* are repaired by different
+people. All eight cases are asserted by **exit code AND message** — rulings 41/49's pairing, one layer
+along, where a refusal nothing asserts is a control that appears to do nothing.
+
+Node cannot load the sources at all, and both reasons were measured on Node v24.15.0 rather than
+assumed: `moduleResolution: bundler` makes `import … from './calendar'` a directory import the ESM
+resolver refuses (`ERR_UNSUPPORTED_DIR_IMPORT`), and strip-only mode refuses `evaluate.ts`'s
+constructor parameter properties (`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`). The first fires first and
+would fire on a JavaScript tree. So the bundle is not a convenience; it is the only way this runtime
+exists. `dist/` is gitignored, `.dockerignore`d, and rebuilt by CI before every run, so it cannot
+drift in the tree and cannot vary with whether the building machine ran a script — which is Task 2's
+finding restated.
+
+**6. UNPLANNED AND NOT SMALL: TAILWIND WAS COMPILING PRODUCTION CSS OUT OF DOCUMENTATION, DOCKER
+CONFIGS AND TESTS.** Found by diffing the built bundle before and after adding `bin/corpus.mjs`,
+while checking the Dockerfile hazard the task named. One new rule appeared — `.block-10`, from a
+benchmark period key — and the diff also showed `.block-13` **already present on the clean tree**.
+Automatic source detection scans every tracked, non-gitignored file and extracts anything that spells
+a utility; it does not care that the file is a supervisord config or a Markdown plan. The shipped
+stylesheet was carrying, at minimum:
+
+- `.[program:nginx]`, `.[program:php-fpm]`, `.[program:scheduler]`, `.[no-new-privileges:true]` —
+  from `docker/supervisord.conf` and `docker-compose.production.yml`. Four rules whose declarations
+  are not CSS.
+- `.min-h-[34vh]`, `.rounded-2xl`, `.bg-blue-600`, `.text-gray-600` and the rest of a raw palette
+  this project forbids in markup — from a **superseded draft** inside
+  `docs/superpowers/specs/2026-07-26-login-redesign-design.md`. The layout that ships uses `34dvh`,
+  so the emitted rule was not even the one on screen.
+- `.block-3` and `.block-13` from `packages/engine`, and a dozen bare English words — `container`,
+  `static`, `shrink`, `blur`, `outline`, `uppercase`, `shadow` — picked out of prose.
+
+Fixed with `@import 'tailwindcss' source(none)` plus `@source "../js"` and `@source "../views"`.
+**Not** an exclusion list — the three offenders are in three different directories, so a list has to
+guess where the next one is — and **not** a rename, which moves the collision to the next slice
+nobody is diffing CSS in. Verified class by class over the whole diff: nothing removed traces to
+`resources/js` or `resources/views`, and a `find` for `.blade.php` outside `resources/views` or
+`.vue` outside `resources/js` returns nothing. 1719 PHPUnit, 773 Vitest, 24 Playwright green after it.
+`TemplateScanningIsNarrowTest` asserts four halves — detection off, both roots declared, each canary
+still present in its own file, and no rule from either in the bundle — with **two canaries from two
+directories**, since a narrowing that survived for `packages/` alone would otherwise pass. Planted
+three ways: `source(none)` removed and rebuilt (2 red), `@source "../js"` removed (2 red), the canary
+renamed in `messages.ts` (2 red).
+
+*A note on the comment that documents it:* the first version of that comment named the offending
+strings in prose and **re-emitted both rules**, because `resources/css/app.css` was itself being
+scanned. Under `source(none)` it no longer is, which is why the shipped comment can describe the
+defect at all.
+
+**7. THE DATE GUARD FIRED TWICE, THE SECOND TIME ON THE DOCBLOCK EXPLAINING THE FIRST.**
+`CalendarIsTheOnlyConverterTest` refused `bin/corpus.mjs`'s first draft, which walked the calendar
+with the UTC epoch helpers behind a docblock arguing that a benchmark harness is different. It is not
+different, and the fix was better than the excuse: the synthetic month is now built with the package's
+own `addDays`/`datesBetween`/`isoWeekday`, so the benchmark's dates come from the same civil-date
+arithmetic the evaluators consume. Then the guard refused the sentence *describing* the removed call,
+because the needles are substrings over whole files. **A docblock is scanned source.** Both written
+around; the allow-list stays empty in both directions.
+
+**8. NF-01 IS MISSED, AND THE NUMBER IS RECORDED RATHER THAN MASSAGED.** 93 duties (20 people ×
+3 slots × 31 days), all 22 implemented types active, 998 findings from 14 conditions. `evaluate()`
+median across six runs on this machine: **76, 94, 104, 112, 122, 123 ms** against the 100 ms budget.
+The last two are consecutive and taken with nothing else running, so ~120 ms is the stable reading and
+**76 ms was an early outlier, not the truth**. A single sample would have been a precision the
+measurement does not have, so the harness takes nine after a warm-up and prints median with best and
+worst — on the settled runs, best ~107 and worst ~149.
+
+Three things belong with the number rather than after it:
+
+- **The case is deliberately violation-DENSE.** Duties are dealt round-robin, so spacing and cap types
+  fire across most of the month and 998 findings are constructed, each with a generated sentence. A
+  schedule a department would actually publish produces a handful. This is an upper bound, and
+  whether the budget is missed on a REAL month is not answered here.
+- **`coverage()` is a second full traversal**, so `evaluate() + coverage()` — what the entrypoint does
+  per request — is roughly double at 181–231 ms. If the budget matters at request scale, the second
+  traversal is the first place to look, not the evaluators.
+- **The CI runner's figure is unknown**; this is one developer machine. The harness prints the number
+  on every run, so the first CI log answers it.
+
+Recorded, not fixed: a budget quietly missed is worse than a budget missed out loud, and the fix — one
+traversal feeding both projections at the caller, or cheaper finding construction — is a change to
+`runConditions()`'s callers that belongs to whoever needs the budget, with a measurement in front of
+it rather than behind.
+
+The measurement does not fail the build, per the plan. A step that cannot fail is worse than none, so
+it is gated on not being VACUOUS instead: the run must produce findings from more than one condition,
+because a benchmark of an engine that resolved nothing measures process startup and reports it as
+headroom.
+
+**9. TWO SMALLER THINGS.** `bin/*.mjs` is plain JavaScript and is **not type-checked** —
+`packages/engine/tsconfig.json` includes only `src/` and `test/`, and pointing `checkJs` at `bin/`
+would fail on the `../dist/engine.mjs` import that does not exist at check time. The compensation is
+stronger than types for this file: every fixture and every exit code goes through it in CI. And the
+entrypoint matches the engine's two deliberate errors **by `name`, not `instanceof`** — it imports a
+bundle, and identity across a module boundary is a promise a second copy of the graph would quietly
+break.

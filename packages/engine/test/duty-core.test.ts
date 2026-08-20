@@ -15,6 +15,7 @@ import {
     type Slot,
 } from '../src/duty/interval';
 import { orderedDutiesFor, slotIndex } from '../src/duty/order';
+import { postDutyDates, postDutyWindow, startsWithin } from '../src/duty/post-duty-window';
 import {
     assertHorizon,
     enumerateWindows,
@@ -410,6 +411,89 @@ describe('orderedDutiesFor', () => {
 
     it('refuses a slot list with a duplicate key, which would make the lookup arbitrary', () => {
         expect(() => slotIndex([dayCall, { ...nightCall, key: 'day' }])).toThrow(/day/);
+    });
+});
+
+/**
+ * The post-duty window — the ONE definition of *"after this duty"*, and until now it had no test.
+ *
+ * It shipped at Task 13 with `clinic_conflict` and `post_duty_exclusion` as its only exercise, and
+ * a shared definition asserted only through its two consumers is asserted at whatever resolution
+ * those two happen to need: `post_duty_exclusion`'s corpus fires on a duty starting hours inside
+ * the exclusion, so neither of the half-open bounds, nor the window's LENGTH, could be moved by
+ * an hour without the suite staying green. This is the file the two types agree through, and the
+ * disagreement it exists to prevent is `AuditChain::canonical()`'s, which this repository has
+ * already paid for once — so the rule is asserted where it is written rather than downstream of it.
+ *
+ * PLANTED, one at a time, each reverted: `end + windowMinutes` → `+ 60` more; `>= window.start` →
+ * `>`; `< window.end` → `<=`; `Math.max(window.start, window.end - 1)` → `window.end - 1`; and
+ * `window.end - 1` → `window.end`. Every one of the five went red here and green before.
+ */
+describe('the post-duty window', () => {
+    /** 08:00 to midnight exactly — the shape the zero-length reading is decided on. */
+    const toMidnight: Slot = { ...dayCall, key: 'tomidnight', endMinute: MINUTES_PER_DAY };
+
+    const nightEnd = absMinute(d('2026-08-20'), 480);
+
+    it('opens where the duty ENDS and runs exactly as long as it was asked to', () => {
+        const window = postDutyWindow(duty('p1', '2026-08-19', 'night'), nightCall, 600);
+
+        expect(window.start).toBe(nightEnd);
+        expect(window.end - window.start).toBe(600);
+    });
+
+    it('is zero length by default, which is the day-granular question rather than a degenerate one', () => {
+        const window = postDutyWindow(duty('p1', '2026-08-19', 'night'), nightCall);
+
+        expect(window).toEqual({ start: nightEnd, end: nightEnd });
+    });
+
+    it('refuses a negative or fractional length rather than reversing the interval', () => {
+        expect(() => postDutyWindow(duty('p1', '2026-08-19', 'night'), nightCall, -1)).toThrow();
+        expect(() => postDutyWindow(duty('p1', '2026-08-19', 'night'), nightCall, 90.5)).toThrow();
+    });
+
+    /**
+     * Owner decision H's other half, at BOTH bounds. A duty beginning the minute the exclusion
+     * opens is inside it; one beginning the minute it closes is clean — `intersects()`'s rule for
+     * abutting windows, stated a second time here because this is a different question about it
+     * (start-in-window, not overlap) and the two must not drift apart.
+     */
+    it('is half-open at both ends: the opening minute is in, the closing minute is out', () => {
+        const window = postDutyWindow(duty('p1', '2026-08-19', 'night'), nightCall, 600);
+        const at = (start: number): { start: number; end: number } => ({ start, end: start + 720 });
+
+        expect(startsWithin(window, at(window.start - 1))).toBe(false);
+        expect(startsWithin(window, at(window.start))).toBe(true);
+        expect(startsWithin(window, at(window.end - 1))).toBe(true);
+        expect(startsWithin(window, at(window.end))).toBe(false);
+    });
+
+    /**
+     * A long duty beginning one minute before the exclusion closes is INSIDE it, however far past
+     * the close its own window reaches; overlap would answer the same question differently, and
+     * `post_duty_exclusion` would then disagree with the sentence its preview prints.
+     */
+    it('reads the START of the later duty, not its extent', () => {
+        const window = postDutyWindow(duty('p1', '2026-08-19', 'night'), nightCall, 600);
+
+        expect(startsWithin(window, { start: window.end - 1, end: window.end + 10_000 })).toBe(true);
+        expect(startsWithin(window, { start: window.end, end: window.end + 1 })).toBe(false);
+    });
+
+    it('answers a zero-length window with the date its end instant falls on, midnight included', () => {
+        expect(postDutyDates(postDutyWindow(duty('p1', '2026-08-19', 'night'), nightCall))).toEqual(['2026-08-20']);
+        expect(postDutyDates(postDutyWindow(duty('p1', '2026-08-19', 'tomidnight'), toMidnight))).toEqual([
+            '2026-08-20',
+        ]);
+    });
+
+    it('keeps a window closing exactly at midnight off the following date', () => {
+        expect(postDutyDates(postDutyWindow(duty('p1', '2026-08-19', 'day'), dayCall, 240))).toEqual(['2026-08-19']);
+        expect(postDutyDates(postDutyWindow(duty('p1', '2026-08-19', 'day'), dayCall, 241))).toEqual([
+            '2026-08-19',
+            '2026-08-20',
+        ]);
     });
 });
 

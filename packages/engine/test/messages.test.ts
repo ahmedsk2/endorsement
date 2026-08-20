@@ -153,6 +153,7 @@ describe('the violation half of the message table', () => {
             target_per_period: ['«targetPerPeriodAboveViolation»', '«targetPerPeriodBelowViolation»'],
             unwanted_day_block: ['«unwantedDayBlockViolation»'],
             vacation_block: ['«vacationBlockViolation»'],
+            we_pairing: ['«wePairingViolation»'],
         });
     });
 
@@ -173,6 +174,7 @@ describe('the violation half of the message table', () => {
             '«openGapSkip»',
             '«partialWindowSkip»',
             '«unknownJoinDateSkip»',
+            '«wePairingNoOccurrenceSkip»',
         ]);
     });
 
@@ -210,10 +212,10 @@ describe('the violation half of the message table', () => {
      * two tables genuinely differ and the checks above are not comparing a thing with itself.
      */
     it('found violations and reasons to render, and English under EN rather than tags', () => {
-        expect(FIXTURES.length).toBeGreaterThanOrEqual(83);
+        expect(FIXTURES.length).toBeGreaterThanOrEqual(89);
         expect(violationCount(SHOUTING)).toBeGreaterThanOrEqual(30);
         expect(violationCount(EN)).toBe(violationCount(SHOUTING));
-        expect(Object.keys(sentencesByTypeKey(EN))).toHaveLength(21);
+        expect(Object.keys(sentencesByTypeKey(EN))).toHaveLength(22);
 
         const underEn = [...Object.values(sentencesByTypeKey(EN)).flat(), ...coverageReasons(EN)];
 

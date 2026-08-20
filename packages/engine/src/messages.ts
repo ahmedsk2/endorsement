@@ -337,6 +337,21 @@ export interface PreviewMessages extends Vocabulary {
     }): string;
 
 
+    /**
+     * Owner decision Z: pairs of DAYS, and what this rule deliberately does NOT say.
+     *
+     * The sentence has to carry two absences a reader would otherwise supply for themselves. The
+     * pair is of DAYS rather than of PEOPLE — the competing reading needs a person-pair store that
+     * exists nowhere in this repository — and a weekend with only one of its days covered is not a
+     * split and is not reported, because WHO must be on duty at all is a coverage template (SL-03,
+     * P3) and not this rule. `fallbacks` does not ship, so the sentence promises no second choice.
+     *
+     * ISO integers, exactly as `dowRestriction` uses them: the day NAMES belong to the department's
+     * own calendar and are rendered by the server (AR-07), and there is no name table in this
+     * package.
+     */
+    wePairing(args: { pairs: readonly { first: number; second: number }[] }): string;
+
     /** Owner decision R: the days arrive from the caller; P2 stores none of them. No parameters. */
     unwantedDayBlock(): string;
 
@@ -670,6 +685,26 @@ export interface ViolationMessages extends Vocabulary {
     }): string;
 
     /**
+     * A weekend covered by two different people where the rule asks for one — owner decision Z.
+     *
+     * A cohort location carries no date and no slot, so BOTH are in the sentence: which weekend and
+     * which slot were split is the whole of what a scheduler acts on, and the location's
+     * `personKeys` names the people without saying which of them holds which day. §4.3's open
+     * *"shared definition of what 'preference broken' means"* is resolved here as the honoured
+     * pairing not being the preferred one, and with `fallbacks` unshipped there is no third answer.
+     */
+    wePairingViolation(args: {
+        slotKey: string;
+        firstDate: string;
+        secondDate: string;
+        firstHolders: readonly string[];
+        secondHolders: readonly string[];
+    }): string;
+
+    /** A preferred pair no two consecutive dates of the schedule form. `coverage()` only. */
+    wePairingNoOccurrenceSkip(args: { first: number; second: number; from: string; to: string }): string;
+
+    /**
      * A quantity nothing in the schedule tallies. `coverage()` only.
      *
      * SL-01's tally vocabulary is stored nowhere in this repository and is opaque to this package
@@ -932,6 +967,19 @@ export const EN: Messages = {
 
     anyPeriodClause() {
         return 'the period is any period at all';
+    },
+
+    wePairing({ pairs }) {
+        const named = EN.conjoin(pairs.map(({ first, second }) => `${first} then ${second}`));
+
+        return (
+            `Weekends run as BLOCKS: the pair of ISO weekdays ${named} is covered by the same person ` +
+            'rather than split between two, which is what gives everybody else a genuinely free ' +
+            'weekend. The days are ISO numbers because the day names belong to the department\'s own ' +
+            'calendar and are rendered by the server. A pair with only ONE of its days covered is ' +
+            'not a split and is not reported here — who has to be on duty at all is a coverage ' +
+            'requirement rather than a pairing preference.'
+        );
     },
 
     unwantedDayBlock() {
@@ -1340,6 +1388,25 @@ export const EN: Messages = {
             `where whoever holds the fewest holds ${fewest}. One credit per holiday per year, so a ` +
             'difference of more than one is a credit that could have gone to somebody else. ' +
             counted
+        );
+    },
+
+    wePairingViolation({ slotKey, firstDate, secondDate, firstHolders, secondHolders }) {
+        return (
+            `The weekend of ${firstDate} and ${secondDate} is split for slot "${slotKey}": ` +
+            `${EN.conjoin(firstHolders.map((key) => `"${key}"`))} on the first day and ` +
+            `${EN.conjoin(secondHolders.map((key) => `"${key}"`))} on the second. This rule asks for ` +
+            'the pair to be covered as a block by the same person, so that everybody else gets a ' +
+            'genuinely free weekend.'
+        );
+    },
+
+    wePairingNoOccurrenceSkip({ first, second, from, to }) {
+        return (
+            `No two consecutive dates reaching ${from} to ${to} are ISO weekdays ${first} then ` +
+            `${second}, so this pair could not be examined at all. A preferred pairing that names a ` +
+            'combination the calendar never produces is a rule that appears to be doing something ' +
+            'and is not.'
         );
     },
 

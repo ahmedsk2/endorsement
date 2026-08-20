@@ -10,7 +10,7 @@ import { clauseFor } from '../src/conditions/target_per_period';
 import { UnimplementedConditionTypeError, UnknownConditionTypeError } from '../src/evaluate';
 import { EN } from '../src/messages';
 import { NoPreviewForConditionTypeError, preview, previewWith } from '../src/preview';
-import { CATALOG, registryEntry, type RegistryEntry } from '../src/registry';
+import { CATALOG, type RegistryEntry } from '../src/registry';
 
 /**
  * CG-04's plain-language previews (P2 Task 9): *"preview text auto-generated from parameters"*.
@@ -274,6 +274,9 @@ describe('the matrix — every parameter a type reads is named by its preview', 
             'target_per_period',
             'unwanted_day_block',
             'vacation_block',
+            // Task 20 — owner decision Z's pairs of DAYS, and the two absences the sentence has
+            // to carry: `fallbacks` does not ship, and a half-covered weekend is not a split.
+            'we_pairing',
         ]);
 
         const parameters = previewed.flatMap((entry) =>
@@ -804,15 +807,40 @@ describe('what the dispatcher refuses, and how loudly', () => {
      * rendering a blank cell where a rule should be described is a control that appears to do
      * nothing, one layer along from rulings 41 and 49.
      */
+    /**
+     * THE EXEMPLAR RAN OUT OF REAL ROWS AT TASK 20, WHICH IS THE CATALOG BEING FINISHED.
+     *
+     * It was `count_max` until Task 15 wrote that row's preview, `holiday_equity` until Task 19 and
+     * `we_pairing` until Task 20 — a probe pointed at a row that has since been written checks
+     * nothing while still passing, because it throws the SCHEMA's refusal instead: a different
+     * error class reaching the same `toThrow`. Every implemented entry now carries a preview.
+     *
+     * So the state is CONSTRUCTED rather than borrowed, exactly as the coupling check's own plant
+     * and the restricted-catalog probe below already are. The floor under it is the second
+     * assertion: no SHIPPED entry is in this state either, because a constructed probe alone would
+     * stay green over a real row that lost its preview tomorrow.
+     */
     it('throws a distinguishable error for an implemented row with no preview yet', () => {
-        // The exemplar moves as tasks land, and it has to: it was `count_max` until Task 15 gave
-        // that row a preview and `holiday_equity` until Task 19 gave this one's neighbour theirs.
-        // A probe pointed at a row that has since been written checks nothing while still passing —
-        // it would throw the SCHEMA's refusal instead, a different error class reaching the same
-        // `toThrow`. `we_pairing` is Task 20's, and it is the LAST real row in this state.
-        expect(registryEntry('we_pairing')?.implemented).toBe(true);
-        expect(registryEntry('we_pairing')?.preview).toBeUndefined();
-        expect(() => preview(condition('we_pairing', {}), CONTEXT)).toThrow(NoPreviewForConditionTypeError);
+        const unwritten: RegistryEntry[] = [
+            {
+                typeKey: 'probe',
+                implemented: true,
+                direction: 'equity',
+                locationKind: 'cohort',
+                needsCarryIn: false,
+                evaluate: () => ({ findings: [], coverage: { evaluatedWindows: 0, skipped: [] } }),
+            },
+        ];
+
+        expect(() => previewWith(unwritten, condition('probe', {}), CONTEXT, EN)).toThrow(
+            NoPreviewForConditionTypeError,
+        );
+
+        expect(
+            CATALOG.filter((entry) => entry.implemented && entry.preview === undefined).map(
+                (entry) => entry.typeKey,
+            ),
+        ).toEqual([]);
     });
 
     it('takes the catalog as an argument, so P3 can preview against a restricted one', () => {

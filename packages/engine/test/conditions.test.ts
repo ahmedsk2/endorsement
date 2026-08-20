@@ -157,6 +157,12 @@ describe('the condition corpus', () => {
             'target-per-period-two-modifiers-and-the-first-match-wins',
             'unwanted-day-block-a-registered-day-and-a-colleague-with-none',
             'vacation-block-both-bounds-inclusive',
+            'we-pairing-a-pair-the-calendar-never-produces-is-reported-rather-than-silent',
+            'we-pairing-a-weekend-split-between-two-people-is-not-the-preferred-pairing',
+            'we-pairing-a-weekend-with-only-one-of-its-days-covered-is-not-a-split',
+            'we-pairing-an-adjacency-the-rule-does-not-name-is-not-a-weekend',
+            'we-pairing-the-scope-excludes-a-weekend-split-between-people-it-does-not-cover',
+            'we-pairing-the-weekend-that-straddles-the-month-boundary-is-one-weekend',
         ]);
 
         for (const fixture of FIXTURES) {
@@ -691,6 +697,7 @@ describe('the horizon-edge corpus — what the carry-in tail is actually asserte
             'post_duty_exclusion',
             'rolling_hours_max',
             'target_per_period',
+            'we_pairing',
         ]);
         expect(claiming.filter((typeKey) => !covered.has(typeKey))).toEqual([]);
     });
@@ -771,6 +778,7 @@ describe('the horizon-edge corpus — what the carry-in tail is actually asserte
             'post-duty-exclusion-the-window-opens-on-the-thirty-first-and-closes-on-the-first',
             'rolling-hours-max-the-window-that-begins-in-the-published-month',
             'target-per-period-the-period-that-begins-in-the-published-month',
+            'we-pairing-the-weekend-that-straddles-the-month-boundary-is-one-weekend',
         ]);
     });
 });
@@ -1045,6 +1053,86 @@ describe('the two cohort-located types of Task 19, beyond the corpus', () => {
 
         expect(label(unscoped)).toBe('everybody in this schedule');
         expect(label(scoped)).toBe('people at R1 and rotating on PICU');
+    });
+});
+
+describe('we_pairing — owner decision Z, and the half of it that does not ship', () => {
+    const world = FIXTURES.find(
+        (f) => f.name === 'we-pairing-a-weekend-split-between-two-people-is-not-the-preferred-pairing',
+    ) as Fixture;
+
+    /**
+     * `fallbacks` IS ABSENT AND THE ABSENCE IS ASSERTED, not merely omitted. Owner decision Z keeps
+     * it out of P2 on the ground that an ordered list of acceptable alternatives produces no
+     * violation when one is used — it produces a worse-but-acceptable placement, which is WB-04
+     * fitness and AU-02's rank-weighted penalty terms, exactly the split decision P already makes
+     * for `eligibility`'s auto-fill order.
+     *
+     * A department that writes the parameter must LEARN that this engine will not honour it. A
+     * silently ignored key is a control that appears to do nothing, and here what appears to do
+     * nothing is the second choice somebody believed the rule would fall back on.
+     */
+    it('refuses a condition row that carries a fallbacks list', () => {
+        expect(() =>
+            evaluate(world.schedule, world.context, [
+                {
+                    ...(world.conditions[0] as Condition),
+                    params: { preferredPairs: [{ first: 5, second: 6 }], fallbacks: [{ first: 6, second: 7 }] },
+                },
+            ]),
+        ).toThrow(/unknown property "fallbacks"/);
+    });
+
+    /**
+     * A DOCBLOCK IS SCANNED SOURCE — the ninth occurrence in this phase, and `we_pairing.ts`'s own
+     * prose explains at length why `fallbacks` is not here. So the scan strips comments, exactly as
+     * `eligibility.ts`'s absence scan does, and is pinned in BOTH directions for that file's
+     * recorded reason: eating the code would make every needle miss, which looks identical to a
+     * clean tree.
+     */
+    it('names no fallback vocabulary in its CODE, docblocks stripped', () => {
+        const path = join(import.meta.dirname, '..', 'src', 'conditions', 'we_pairing.ts');
+        const raw = readFileSync(path, 'utf8');
+        const code = withoutComments(raw);
+
+        expect(raw, 'the docblock should still explain the absence').toContain('fallbacks');
+        expect(code, 'the stripper ate the code, not just the prose').toContain('export const evaluate');
+
+        for (const needle of ['fallbacks', 'fallback', 'alternative']) {
+            expect(code, `we_pairing.ts names "${needle}" in code`).not.toContain(needle);
+        }
+    });
+
+    /**
+     * A pair is of DAYS, so both ends are ISO INTEGERS and a day NAME is refused with the schema's
+     * own error rather than quietly matching nothing — `dow_restriction`'s rule, one type along, and
+     * for its reason: there is no name-to-number table in this package and there deliberately never
+     * will be one.
+     *
+     * THE NAME IS ASSEMBLED RATHER THAN WRITTEN, for the reason `dow_restriction`'s own test
+     * records: `CalendarIsTheOnlyConverterTest`'s quoted-weekday pattern scans this file too, so a
+     * test proving a weekday name is refused cannot itself contain one.
+     */
+    it('refuses a weekday name and a number outside 1..7 at either end of a pair', () => {
+        const pairing = (pair: unknown): Condition => ({
+            ...(world.conditions[0] as Condition),
+            params: { preferredPairs: [pair] },
+        });
+
+        const name = ['Fri', 'day'].join('');
+
+        expect(() => evaluate(world.schedule, world.context, [pairing({ first: name, second: 6 })])).toThrow(
+            /expected integer/,
+        );
+        expect(() => evaluate(world.schedule, world.context, [pairing({ first: 5, second: 8 })])).toThrow(
+            /above the maximum 7/,
+        );
+        expect(() => evaluate(world.schedule, world.context, [pairing({ first: 5 })])).toThrow(/second/);
+        expect(() =>
+            evaluate(world.schedule, world.context, [
+                { ...(world.conditions[0] as Condition), params: { preferredPairs: [] } },
+            ]),
+        ).toThrow(/fewer than the 1 required/);
     });
 });
 

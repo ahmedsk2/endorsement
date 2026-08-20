@@ -73,13 +73,23 @@
  * one starting the evening before it is not. `needsCarryIn: false` — the history arrives as
  * `priorCredits`, and a lookback of years is not a carry-in tail of days.
  *
- * ## PLANTED
+ * ## PLANTED, AND TWO OF THEM STAYED GREEN THE FIRST TIME
  *
- * `personInScope` answering `true` — the standing FIRST plant; `null` read as UNKNOWN and held out
- * of the comparison; carried credits ignored when they were supplied; the credit counted per DAY
- * rather than per holiday-year; the spread relaxed so only a difference above two is reported; and
- * the holiday filter dropped so every duty in the horizon earns a credit. Each went red naming its
- * own case.
+ * Red on the first pass: `personInScope` answering `true` — the standing FIRST plant; `null` read as
+ * UNKNOWN and held out of the comparison; carried credits ignored when they were supplied; the
+ * credit counted per DAY rather than per holiday-year; {@link SPREAD_ALLOWANCE} widened to two; and
+ * a named holiday the schedule never reaches going unreported.
+ *
+ * Green, and both are now closed — they are the same species, *a filter asserted only where it
+ * matches and never where it must not*:
+ *
+ *  1. **The `holidays` filter dropped**, so a holiday the rule does NOT name earns a credit. No
+ *     case had one in its day vector. Closed by a National Day on the 4th that
+ *     `holiday-equity-a-carried-credit-of-zero-is-what-an-unrecorded-one-counts-as` does not name
+ *     and p-ali works.
+ *  2. **The horizon filter dropped from the day vector**, so a holiday day the schedule does not
+ *     cover earns a credit. Every case's vector stopped at its own horizon. Closed by an Eid date
+ *     on 31 July, one day before the horizon, that p-noor holds a duty on.
  */
 
 import type { JsonSchema } from '../contract/schema';

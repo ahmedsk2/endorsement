@@ -11,6 +11,18 @@
         "today": "2026-08-01",
         "days": [
             {
+                "date": "2026-07-31",
+                "isoWeekday": 5,
+                "dayType": "HOL",
+                "periodKey": "block-01",
+                "holidays": [
+                    {
+                        "key": "eid-al-fitr",
+                        "year": 1447
+                    }
+                ]
+            },
+            {
                 "date": "2026-08-01",
                 "isoWeekday": 6,
                 "dayType": "WE",
@@ -44,9 +56,14 @@
             {
                 "date": "2026-08-04",
                 "isoWeekday": 2,
-                "dayType": "WD",
+                "dayType": "HOL",
                 "periodKey": "block-01",
-                "holidays": []
+                "holidays": [
+                    {
+                        "key": "national-day",
+                        "year": 2026
+                    }
+                ]
             },
             {
                 "date": "2026-08-05",
@@ -158,6 +175,16 @@
             {
                 "personKey": "p-ali",
                 "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-04",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-07-31",
                 "slotKey": "night"
             },
             {

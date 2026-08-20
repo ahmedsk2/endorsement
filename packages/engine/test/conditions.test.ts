@@ -933,6 +933,61 @@ describe('the two cohort-located types of Task 19, beyond the corpus', () => {
     });
 
     /**
+     * A COHORT LOCATION CARRIES NO DATE, so `evaluate()`'s emission rule is unconditionally true
+     * for one and CG-03 has to be kept by the TYPE. Found by a plant that stayed green: deleting
+     * the horizon filter from the counted duties changed nothing anywhere, because every case's
+     * duties already sat inside their own horizon and no fixture could express otherwise without
+     * being confusing corpus data.
+     *
+     * A duty dated in the already-published month must not move the cohort's total, its
+     * denominator or anybody's expected share — and the check is that the whole answer is
+     * BYTE-IDENTICAL rather than merely the same length, because the arithmetic is what shifts:
+     * counting it would take the total from six to seven and every printed share with it.
+     */
+    it('counts no duty dated outside the horizon, however it arrived in the schedule', () => {
+        const withTail: Schedule = {
+            ...fairWorld.schedule,
+            duties: [
+                { personKey: 'p-ali', date: d('2026-07-31'), slotKey: 'night' },
+                ...fairWorld.schedule.duties,
+            ],
+        };
+
+        expect(evaluate(withTail, fairWorld.context, [fairness(DEVIATION)])).toEqual(
+            evaluate(fairWorld.schedule, fairWorld.context, [fairness(DEVIATION)]),
+        );
+    });
+
+    /**
+     * SPREAD'S BOUNDARY, EITHER SIDE OF IT, because the corpus case sits well past it and a
+     * threshold asserted only where it is exceeded is a threshold that could be any number below
+     * the one it is.
+     *
+     * Four nights spread 3–1 gives an expected share of two each, deviations of ±1, a gap of 2 and
+     * an allowance of `tolerance(2) + tolerance(2)` = 2 — clean at exactly the limit. One more
+     * night for the same person makes the expected share 2.5, the deviations ±1.5 and the gap 3
+     * against the same allowance, which is over. The pair is what makes the sum-of-two-tolerances
+     * derivation falsifiable rather than merely stated.
+     */
+    it('permits a gap of exactly the allowance and refuses the next duty past it', () => {
+        const spread = { quantity: 'nights', mode: 'spread', excludeExternal: true };
+        const nights = (count: number): Schedule => ({
+            ...fairWorld.schedule,
+            duties: [
+                { personKey: 'p-ali', date: d('2026-08-01'), slotKey: 'night' },
+                ...Array.from({ length: count }, (_unused, index) => ({
+                    personKey: 'p-noor',
+                    date: d(`2026-08-0${index + 2}`),
+                    slotKey: 'night',
+                })),
+            ],
+        });
+
+        expect(evaluate(nights(3), fairWorld.context, [fairness(spread)])).toEqual([]);
+        expect(evaluate(nights(4), fairWorld.context, [fairness(spread)])).toHaveLength(1);
+    });
+
+    /**
      * Owner decision W, ANSWERED, stated in words a reader can grep for rather than only encoded in
      * a fixture's arithmetic. An explicit `null` and an omitted key are the SAME answer, and both
      * are zero. The superseded default held a `null` person out of the comparison, which is what

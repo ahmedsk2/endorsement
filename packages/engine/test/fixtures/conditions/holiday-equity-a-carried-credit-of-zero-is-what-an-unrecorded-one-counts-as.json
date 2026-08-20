@@ -1,6 +1,6 @@
 {
     "name": "holiday-equity-a-carried-credit-of-zero-is-what-an-unrecorded-one-counts-as",
-    "why": "OWNER DECISION W, ANSWERED: A CARRIED CREDIT STARTS AT ZERO AND NEVER AT UNKNOWN. Three people, one Eid in the schedule. p-ali works one of its dates and has no recorded history; p-noor works none and carries two credits from earlier years; p-zaid works none and carries an explicit null. Read as zero, p-zaid holds the fewest and p-noor is two clear of them, so p-noor is named. Read as UNKNOWN and dropped from the comparison, the fewest becomes one, nobody is more than one clear, and the rule says nothing at all — which is the year-two mis-scheduling the answer was chosen to remove. Ignoring carried credits entirely also empties the finding, so the case pins both halves. p-noor's own contributing list is empty, which is a cohort violation saying NONE rather than forgetting to say.",
+    "why": "OWNER DECISION W, ANSWERED: A CARRIED CREDIT STARTS AT ZERO AND NEVER AT UNKNOWN. Three people, one Eid in the schedule. p-ali works one of its dates and has no recorded history; p-noor works none and carries two credits from earlier years; p-zaid works none and carries an explicit null. Read as zero, p-zaid holds the fewest and p-noor is two clear of them, so p-noor is named. Read as UNKNOWN and dropped from the comparison, the fewest becomes one, nobody is more than one clear, and the rule says nothing at all — which is the year-two mis-scheduling the answer was chosen to remove. Ignoring carried credits entirely also empties the finding, so the case pins both halves. p-noor's own contributing list is empty, which is a cohort violation saying NONE rather than forgetting to say. p-ali also works a National Day the condition does NOT name — added after a plant that stayed green, because no case had a holiday in the day vector the rule left out, and dropping the holidays filter altogether changed nothing anywhere in the corpus.",
     "context": {
         "timezone": "Asia/Riyadh",
         "weekStartIsoDay": 7,
@@ -10,6 +10,18 @@
         ],
         "today": "2026-08-01",
         "days": [
+            {
+                "date": "2026-07-31",
+                "isoWeekday": 5,
+                "dayType": "HOL",
+                "periodKey": "block-01",
+                "holidays": [
+                    {
+                        "key": "eid-al-fitr",
+                        "year": 1447
+                    }
+                ]
+            },
             {
                 "date": "2026-08-01",
                 "isoWeekday": 6,
@@ -44,9 +56,14 @@
             {
                 "date": "2026-08-04",
                 "isoWeekday": 2,
-                "dayType": "WD",
+                "dayType": "HOL",
                 "periodKey": "block-01",
-                "holidays": []
+                "holidays": [
+                    {
+                        "key": "national-day",
+                        "year": 2026
+                    }
+                ]
             },
             {
                 "date": "2026-08-05",
@@ -158,6 +175,16 @@
             {
                 "personKey": "p-ali",
                 "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-04",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-07-31",
                 "slotKey": "night"
             },
             {

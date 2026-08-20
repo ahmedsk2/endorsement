@@ -106,13 +106,27 @@
  * other calls it unfair, with nothing on either screen able to adjudicate. Recorded as an INFERENCE
  * rather than a citation: no document states it, and the alternative was rejected on that argument.
  *
- * ## PLANTED
+ * ## PLANTED, AND THREE OF THEM STAYED GREEN THE FIRST TIME
  *
- * `personInScope` answering `true` — the standing FIRST plant, and it bites harder on a cohort type
- * than on a window one because the scope decides the DENOMINATOR as well as who is judged; the
- * expected share replaced by a raw `total / cohortSize`; `excludeExternal` ignored;
- * {@link toleranceFor}'s floor removed; the comparison relaxed to greater-or-equal; and `spread`'s
- * allowance replaced by a single person's tolerance. Each went red naming its own case.
+ * Red on the first pass: `personInScope` answering `true` — the standing FIRST plant, and it bites
+ * harder on a cohort type than on a window one because the scope decides the DENOMINATOR as well as
+ * who is judged; the expected share replaced by a raw `total / cohortSize`; `excludeExternal`
+ * ignored; {@link toleranceFor}'s floor removed; `spread`'s allowance replaced by a single person's
+ * tolerance; the `quantity` filter dropped; and the no-quantity coverage row suppressed.
+ *
+ * Green, and each is now closed:
+ *
+ *  1. **`spread` never updating `quietest`** — the corpus world had two people in it, so the array
+ *     head WAS the quietest and never moving the marker changed nothing. Closed by a third person,
+ *     `p-mid`, listed FIRST and neither extreme, in
+ *     `fairness-distribution-spread-mode-measures-the-widest-gap-and-names-the-pair`.
+ *  2. **The horizon filter deleted from the counted duties** — no case had a duty dated outside its
+ *     own horizon, which is not something a fixture can express without becoming confusing corpus
+ *     data. Closed in `conditions.test.ts`, byte-identically rather than by length: counting one
+ *     would move the total, the denominator and every printed share.
+ *  3. **`<=` relaxed to `<`** — not a hole at all. See {@link COMPARISON_EPSILON}: the epsilon makes
+ *     the two spellings indistinguishable on any input, so the boundary is pinned by the numbers
+ *     either side of it and the operator is not the control.
  */
 
 import type { JsonSchema } from '../contract/schema';

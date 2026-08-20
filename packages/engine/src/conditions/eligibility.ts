@@ -35,6 +35,19 @@
  * department that has not restricted a slot has not restricted it. The second is the honest reading
  * of an absent fact — a person holding no level on a date cannot be shown to hold an allowed one,
  * and answering "eligible" for want of data is a Hard rule passing on incomplete input.
+ *
+ * ## Both halves of "levels/rotations" are now falsifiable, and only one of them was
+ *
+ * P2-1's review found the corpus proving the LEVEL half of everything above and the ROTATION half
+ * of none of it. The only rotation case put one person on one unit for the whole year, where
+ * resolving the unit once — at `horizon.from`, the natural place to hoist it to — gives the same
+ * answer; and no case had a person holding nothing at all on the date, so both `=== null` tests
+ * could be inverted into fail-OPEN with 587/587 green. Two cases close it:
+ * `eligibility-a-mid-window-rotation-change` and
+ * `eligibility-no-level-and-no-rotation-on-the-date-both-fail-closed`.
+ *
+ * PLANTED, each reverted, each red: `unitKeyAt(person, schedule.horizon.from)`;
+ * `level !== null && …`; `unit !== null && …`.
  */
 
 import type { JsonSchema } from '../contract/schema';

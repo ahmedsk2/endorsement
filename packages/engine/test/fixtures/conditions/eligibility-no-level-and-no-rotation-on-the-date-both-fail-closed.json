@@ -1,0 +1,118 @@
+{
+    "name": "eligibility-no-level-and-no-rotation-on-the-date-both-fail-closed",
+    "why": "A person between two rotations, or before their first level span, holds NOTHING on the date — a real roster state that a mid-year transfer and a late-entered promotion both produce — and the honest answer is that they cannot be shown to hold an allowed one. Answering 'eligible' for want of the row is a Hard rule passing on incomplete input, which is what this engine refuses everywhere else by throwing. p-ali has a gap in their level history over the duty date and p-noor a gap in their rotation history, so each null is asserted separately; p-sara holds both and is clean, which is what stops a predicate that flags everything from passing.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-01", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-02", "isoWeekday": 7, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-03", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-04", "isoWeekday": 2, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-05", "isoWeekday": 3, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    { "key": "R1", "from": "2026-01-01", "to": "2026-07-31" },
+                    { "key": "R2", "from": "2026-08-05", "to": "2026-12-31" }
+                ],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-02"],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [
+                    { "key": "PICU", "from": "2026-01-01", "to": "2026-07-31" },
+                    { "key": "PICU", "from": "2026-08-05", "to": "2026-12-31" }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-02"],
+                "external": false
+            },
+            {
+                "key": "p-sara",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-02"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-05",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-08"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-02", "slotKey": "night" },
+            { "personKey": "p-noor", "date": "2026-08-02", "slotKey": "night" },
+            { "personKey": "p-sara", "date": "2026-08-02", "slotKey": "night" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-eligibility",
+            "typeKey": "eligibility",
+            "class": "hard",
+            "active": true,
+            "params": { "allowed": { "night": { "levelKeys": ["R2"], "unitKeys": ["PICU"] } } }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-eligibility",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            "explanation": "Holds no level on 2026-08-02; slot \"night\" is limited to R2."
+        },
+        {
+            "conditionId": "c-eligibility",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-noor",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            "explanation": "Rotating on no unit on 2026-08-02; slot \"night\" is limited to PICU."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-eligibility", "evaluatedWindows": 3, "skipped": [] }]
+}

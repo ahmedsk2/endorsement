@@ -35,3 +35,13 @@ export const version = '0.0.0';
  * not expose is not part of the browser runtime D4 requires, whatever the test runner can reach.
  */
 export * from './calendar/ymd';
+
+/**
+ * The duty-time core (P2 Task 4): the absolute-minute line, half-open intervals, one person's
+ * ordered duties across the carry-in tail, and the windows measured over a horizon. Every
+ * condition type consumes these rather than re-deriving them — one definition of when a night
+ * call ends, for the same reason `AuditChain::canonical()` has exactly one.
+ */
+export * from './duty/interval';
+export * from './duty/order';
+export * from './duty/windows';

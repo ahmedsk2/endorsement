@@ -211,13 +211,44 @@ final class Calendar
      */
     public static function holidaysOn(DateTimeInterface|string $date): array
     {
+        return array_map(
+            static fn (array $occurrence): Holiday => $occurrence['holiday'],
+            self::holidayOccurrencesOn($date),
+        );
+    }
+
+    /**
+     * The same walk, plus the OWN-CALENDAR YEAR of the anchor the walk landed on.
+     *
+     * The walk is here rather than in `holidaysOn()` because the year is only knowable from the
+     * ANCHOR, and the anchor is what that loop already computes and used to throw away. A caller
+     * that re-derived it would be a second definition of where a span begins — and the two would
+     * disagree only on a span crossing a year end, which is exactly the case the year exists to
+     * distinguish. A four-day Gregorian rule anchored 30 December covers 2 January, and that day
+     * belongs to the 2026 occurrence, not to 2027.
+     *
+     * `year` follows the RULE's own calendar (`holidays.year`'s stated contract, and P2 owner
+     * decision W's `yearBasis: 'ruleCalendar'`): a Hijri rule's year is a Hijri year, resolved
+     * through `hijri()` so the department's offset calibration applies here as everywhere else.
+     *
+     * @return list<array{holiday:Holiday, year:int}>
+     */
+    public static function holidayOccurrencesOn(DateTimeInterface|string $date): array
+    {
         $day = self::coerce($date);
         $matches = [];
 
         foreach (self::activeHolidays() as $holiday) {
             for ($back = 0; $back < $holiday->duration_days; $back++) {
-                if ($holiday->anchoredOn($day->subDays($back))) {
-                    $matches[] = $holiday;
+                $anchor = $day->subDays($back);
+
+                if ($holiday->anchoredOn($anchor)) {
+                    $matches[] = [
+                        'holiday' => $holiday,
+                        'year' => $holiday->calendar === Holiday::HIJRI
+                            ? (int) self::hijri($anchor)['year']
+                            : (int) $anchor->format('Y'),
+                    ];
 
                     break;
                 }
@@ -244,11 +275,52 @@ final class Calendar
      */
     public static function dayType(DateTimeInterface|string $date): string
     {
-        if (self::isHoliday($date)) {
-            return self::DAY_HOLIDAY;
-        }
+        return self::dayFacts($date)['day_type'];
+    }
 
-        return self::isWeekend($date) ? self::DAY_WEEKEND : self::DAY_WEEKDAY;
+    /**
+     * EVERY per-date fact, resolved in ONE pass — the shape a per-day vector needs.
+     *
+     * The rule that holiday beats weekend now lives HERE and nowhere else. It used to live in
+     * `dayType()` and, separately, inline in `label()`; two copies of one three-branch decision is
+     * `AuditChain::canonical()`'s defect in miniature, and this method is what removes the second
+     * rather than adding a third.
+     *
+     * IT ALSO EXISTS FOR COST, and that is measured rather than assumed (P2 Task 1 finding 6):
+     * `holidaysOn()` walks backwards `duration_days` per rule, and a Hijri rule builds an
+     * `IntlCalendar` per probe — 30 consecutive days cost roughly 24 ms with four holidays
+     * configured, and the same 30 days re-asked nine times cost roughly 203 ms. A caller wanting
+     * both the day type and the holidays of a date would otherwise walk twice per date, and a year
+     * of dates twice over is the re-ask factor that measurement warns about.
+     *
+     * @return array{iso_weekday:int, day_type:string, holidays:list<array{holiday:Holiday, year:int}>}
+     */
+    public static function dayFacts(DateTimeInterface|string $date): array
+    {
+        $day = self::coerce($date);
+        $holidays = self::holidayOccurrencesOn($day);
+
+        return [
+            'iso_weekday' => self::isoWeekday($day),
+            'day_type' => $holidays !== []
+                ? self::DAY_HOLIDAY
+                : (self::isWeekend($day) ? self::DAY_WEEKEND : self::DAY_WEEKDAY),
+            'holidays' => $holidays,
+        ];
+    }
+
+    /**
+     * ISO-8601 weekday, Mon=1 … Sun=7.
+     *
+     * P2 Task 1 finding 21: the value was reachable only from INSIDE `isWeekend()` and `weekOf()`,
+     * while `golden.json` has contracted `iso_weekday` per date since version 2 and the engine's
+     * day vector carries one. It is a public surface here rather than a helper somewhere else
+     * because `CalendarIsTheOnlyConverterTest` forbids constructing a Carbon outside this module —
+     * so "the weekday of a date" has exactly one place it can honestly be answered.
+     */
+    public static function isoWeekday(DateTimeInterface|string $date): int
+    {
+        return (int) self::coerce($date)->isoWeekday();
     }
 
     /**
@@ -259,15 +331,17 @@ final class Calendar
     public static function label(DateTimeInterface|string $date): array
     {
         $day = self::coerce($date);
-        $holidays = self::holidaysOn($day);
+        $facts = self::dayFacts($day);
 
         return [
             'date' => $day->format(self::YMD),
             'hijri' => self::hijriLabel($day),
             'weekend' => self::isWeekend($day),
             // The first matching rule's name; a screen needs one label, not a list.
-            'holiday' => $holidays === [] ? null : $holidays[0]->name,
-            'day_type' => $holidays !== [] ? self::DAY_HOLIDAY : (self::isWeekend($day) ? self::DAY_WEEKEND : self::DAY_WEEKDAY),
+            'holiday' => $facts['holidays'] === [] ? null : $facts['holidays'][0]['holiday']->name,
+            // Through `dayFacts()`, not re-derived: this line used to carry its own copy of
+            // "holiday beats weekend", three methods away from `dayType()`'s.
+            'day_type' => $facts['day_type'],
         ];
     }
 
@@ -279,7 +353,7 @@ final class Calendar
 
     public static function isWeekend(DateTimeInterface|string $date): bool
     {
-        return in_array((int) self::coerce($date)->isoWeekday(), self::weekendDays(), true);
+        return in_array(self::isoWeekday($date), self::weekendDays(), true);
     }
 
     /**
@@ -408,7 +482,7 @@ final class Calendar
         $start = self::weekStartIsoDay();
 
         // How many days back to the most recent $start-weekday, 0..6.
-        $back = ((int) $day->isoWeekday() - $start + 7) % 7;
+        $back = (self::isoWeekday($day) - $start + 7) % 7;
 
         $from = $day->subDays($back);
         $to = $from->addDays(6);

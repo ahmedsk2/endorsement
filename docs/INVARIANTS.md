@@ -1032,3 +1032,73 @@ place a scheduling rule is allowed to exist.*
   the engine's corpus at any time. The corpus exercises specific violation shapes — a gap of exactly
   the boundary value, a duty on a period's last day, a run spanning the 31st into the 1st, a person
   whose level changes mid-window — not a plausible department.
+
+- **`App\Support\Engine\ContextBuilder::forHorizon()` is the ONE loader, and it is SHIPPED**
+  (P2 Task 22). It reuses rather than restates: `Person::levelSpansBetween()` for level history,
+  `Vacation::scopeIntersecting()` for the leave read, `Calendar::weeksIn()` for the clipped week
+  windows owner decision O keeps server-side, and `Calendar::dayFacts()` for the day vector. It
+  narrows by the HORIZON and by nothing else. **THIRTEEN queries** for a populated academic block
+  (13 periods, 70 people, 1170 spans, 60 leave rows, 30 mid-year promotions, four clinics, a
+  multi-year holiday set), bound 17, and the count does not move with any of them — measured cold
+  both times, since `Calendar`'s settings and holiday reads are memoized per process and a warm
+  second call is two queries cheaper for a reason that has nothing to do with the roster. **Watched
+  breaching:** a per-span level lookup ran **223**, `$assignment->unit` per span ran **113**.
+
+- **The third N+1 trap is CHEAPER than the correct code, so no budget can find it.** A narrowed
+  `select()` on the person query was planted and the join date silently vanished for everybody —
+  which on the far side of the contract is `onboarding_grace` reporting every person as unknown and
+  firing on nobody. `full_name`/`position`'s read-through-accessor symptom (P0c) is ABSENT here
+  because this context reads neither, so the classic tell does not appear and the damage is one
+  column along. What caught it was a behavioural assertion on the join date, not the query count.
+
+- **Four halves of the context cannot be loaded and arrive from the CALLER**, each because the
+  shipped schema records nothing to load: `slots` (SL-01's kind vocabulary is stored nowhere),
+  `priorDuties`/`followingDuties` with `historyAvailableFrom` (no table records a duty anybody has
+  ever held), and each person's unwanted days (owner decision R — P2 stores nothing). `priorCredits`
+  is not carried at all: owner decision W starts everybody at zero, and a zero map written by the
+  loader would be indistinguishable from a measured one.
+
+- **The availability denominator implements two of owner decision J's three clauses, and refusing
+  the third is the point.** Leave and the dates before a join date come out. The third removes days
+  somebody is away from the department on a rotation elsewhere — there is no per-person column for
+  that anywhere (MR-04), the only thing resembling one is the presence or absence of a rotation
+  span, and inferring it from there would make the rota decide who may take call. Decision I already
+  refuses exactly that for `max_gap`'s clock. A person with no rotation counts as available.
+
+- **`Span.to` is not nullable and `spanKeyAt` reads a date outside every span as "holds nothing".**
+  An open-ended level span is therefore carried OPEN, at `ContextBuilder::NO_KNOWN_END`, never
+  clipped to the horizon — clipping would tell the engine a person holds no level on the day after
+  the last horizon date, which is where `clinic_conflict`'s post-duty window legitimately looks.
+
+- **The two Task 22 guards cover DIFFERENT populations and that was found by a green plant.**
+  `where('external', false)` on the roster query: the source half named it, the behavioural half
+  stayed GREEN, because the stranded-span union re-adds anybody still holding a rotation. A
+  `filter()` over the loaded collection keeping only people with a rotation reversed it exactly —
+  source half green, behavioural half red, naming the one person no union can rescue. Neither is
+  redundant; neither is sufficient.
+
+- **`Calendar`'s whole public surface is MANIFESTED, in both directions** (P2 Task 22,
+  `tests/Feature/Build/CalendarSurfaceIsManifestedTest.php`). The mirror's stated residual was that
+  it and `App\Support\Calendar` can drift on a NEW `Calendar` method, because `golden.json` only
+  grows when somebody remembers to grow it — and Task 22 is what proved the residual real by adding
+  three. Every public static is now classified MIRRORED (with the name the package exports for it,
+  checked against the package's own source, so the claim is answerable) or SERVER_SIDE_ONLY with the
+  reason. **Nine mirrored against two dozen server-side is the measurement of how small Decisions B
+  and C succeeded in making the second implementation.** Planted twice: a new unclassified method →
+  red; a mirror counterpart renamed to one the package does not export → red.
+
+- **`Calendar::dayFacts()` is the ONE definition of "holiday beats weekend", and it replaced TWO.**
+  `label()` carried its own copy three methods away from `dayType()`'s — found while implementing
+  Task 22, not by review. `dayType()` and `label()` both project `dayFacts()` now.
+  `holidayOccurrencesOn()` returns the anchor's OWN-CALENDAR year from inside the walk that already
+  computed the anchor: a four-day Gregorian rule anchored 30 December covers 2 January, and that day
+  is the **2026** occurrence — keying it to 2027 would split one holiday's credits across two years
+  for whoever worked its tail. No document states which year a span's later days carry; owner
+  decision W fixes only the calendar.
+
+- **STATED RESIDUAL — `holidays.equity_tracked` has no field in the CG-10 `Day.holidays` shape.**
+  The contract carries `{ key, year }` and nothing else, so the engine cannot tell a tracked holiday
+  from an untracked one and `holiday_equity` will count every holiday the day vector names. The
+  loader carries every resolved holiday rather than pre-filtering on the flag, because filtering
+  would be the loader deciding what that type may see; closing it properly needs a contract field,
+  which is a P3 decision, not a P2 workaround.

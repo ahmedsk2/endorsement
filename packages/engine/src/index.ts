@@ -46,3 +46,20 @@ export * from './calendar';
 export * from './duty/interval';
 export * from './duty/order';
 export * from './duty/windows';
+
+/**
+ * The CG-10 contract (P2 Task 7): the shapes, the hand-written JSON Schema and the validator that
+ * runs it, `evaluate()`, and the sibling `coverage()` that reports the windows a floor could not
+ * honestly measure. `registry.ts` carries one entry per CG-07 type key.
+ *
+ * `evaluate()` is the whole public purpose of this package and is surfaced here rather than left
+ * importable only by deep path: `@engine` resolves to THIS file, and a module the package entry
+ * does not expose is not part of the browser runtime D4 requires, whatever the test runner can
+ * reach.
+ */
+export * from './contract/types';
+export * from './contract/schema';
+export * from './contract/validate';
+export * from './registry';
+export * from './evaluate';
+export * from './coverage';

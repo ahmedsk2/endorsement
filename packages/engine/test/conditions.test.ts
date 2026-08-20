@@ -82,6 +82,17 @@ describe('the condition corpus', () => {
             'consecutive-max-hours-joins-a-chain-across-a-short-transition',
             'consecutive-max-the-run-spans-the-thirty-first-into-the-first',
             'consecutive-max-what-the-nights-unit-and-the-kinds-list-leave-out',
+            'count-max-a-clipped-week-at-a-period-edge-is-the-departments-own',
+            'count-max-is-per-person-not-a-cohort-total',
+            'count-max-the-kinds-list-names-which-duties-are-counted',
+            'count-max-the-level-filter-is-read-at-the-window-start',
+            'count-max-the-levels-list-narrows-who-the-cap-applies-to',
+            'count-max-the-scope-and-the-levels-list-intersect',
+            'count-max-the-week-that-begins-in-the-published-month',
+            'count-max-the-window-parameter-picks-the-period-or-the-week',
+            'count-min-a-floor-leaves-a-window-it-can-only-see-part-of-unjudged',
+            'count-min-a-person-who-joined-part-way-through-the-window',
+            'count-min-the-floor-counts-the-week-that-begins-in-the-published-month',
             'dow-restriction-a-ban-on-one-iso-weekday',
             'dow-restriction-a-rotation-scoped-ban-follows-the-unit-on-the-date',
             'eligibility-a-mid-window-rotation-change',
@@ -628,7 +639,14 @@ describe('the horizon-edge corpus — what the carry-in tail is actually asserte
             seamCases.flatMap((fixture) => fixture.conditions.map((condition) => condition.typeKey)),
         );
 
-        expect(claiming).toEqual(['consecutive_max', 'min_gap', 'overlap_block', 'post_duty_exclusion']);
+        expect(claiming).toEqual([
+            'consecutive_max',
+            'count_max',
+            'count_min',
+            'min_gap',
+            'overlap_block',
+            'post_duty_exclusion',
+        ]);
         expect(claiming.filter((typeKey) => !covered.has(typeKey))).toEqual([]);
     });
 
@@ -694,9 +712,11 @@ describe('the horizon-edge corpus — what the carry-in tail is actually asserte
         }
     });
 
-    it('runs over the four carry-in cases, named', () => {
+    it('runs over the carry-in cases, named', () => {
         expect(seamCases.map((fixture) => fixture.name)).toEqual([
             'consecutive-max-the-run-spans-the-thirty-first-into-the-first',
+            'count-max-the-week-that-begins-in-the-published-month',
+            'count-min-the-floor-counts-the-week-that-begins-in-the-published-month',
             'min-gap-hours-across-the-carry-in-from-the-published-month',
             'overlap-block-carry-in-at-the-left-edge',
             'post-duty-exclusion-the-window-opens-on-the-thirty-first-and-closes-on-the-first',

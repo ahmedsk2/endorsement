@@ -65,6 +65,30 @@
  * corpus, which is what stops a relocation from quietly becoming a rewording.
  */
 
+/**
+ * One `count_max`/`count_min` row's parameters, already normalised — absent lists arrive empty.
+ *
+ * Shared by the two sentences because owner decision B gives the pair one params schema: two
+ * argument types would be two things to keep in step, and the one thing they must never disagree
+ * about is which parameters a reader is shown.
+ */
+export interface CountRuleText {
+    count: number;
+    window: 'period' | 'week';
+    kinds: readonly string[];
+    levels: readonly string[];
+}
+
+/** One breached count window: what the rule asked for, what the person holds, and over what dates. */
+export interface CountWindowText {
+    actual: number;
+    count: number;
+    window: 'period' | 'week';
+    from: string;
+    to: string;
+    kinds: readonly string[];
+}
+
 /** One base target, already paired with the level it belongs to. */
 export interface LevelTarget {
     levelKey: string;
@@ -147,6 +171,25 @@ export interface PreviewMessages extends Vocabulary {
 
     /** Owner decision M: an exception REPLACES the target, and every branch prints its own number. */
     targetPerPeriod(args: { targets: readonly LevelTarget[]; modifiers: readonly TargetModifier[] }): string;
+
+    /**
+     * Owner decision K's cap: PER PERSON, `levels` a scope filter, and the window absolute.
+     *
+     * The sentence says *per person* out loud because the reading a gate screen invites is a
+     * department-wide total, and the two differ by however many people the scope selects. It also
+     * says the number is not scaled by the window's length (decision L), since a department running
+     * twelve four-week blocks and a five-week block 13 will otherwise read one number as two.
+     */
+    countMax(args: CountRuleText): string;
+
+    /**
+     * Owner decision K's floor, plus the half owner decision L adds to it.
+     *
+     * A floor cannot be judged on a window the engine can only see part of — the missing duties are
+     * exactly the ones that would have met it — so the preview says which windows it will decline to
+     * judge, on the gate screen, before anybody wonders why a coverage row appeared.
+     */
+    countMin(args: CountRuleText): string;
 
     /** A modifier's `vacationWeeksAtLeast` predicate, as a clause. */
     vacationWeeksAtLeast(weeks: number): string;
@@ -245,6 +288,18 @@ export interface ViolationMessages extends Vocabulary {
     /** The other half of the overlapping pair. Both placements get one, each naming the other. */
     overlapBlockViolation(args: { partner: DutyRef }): string;
 
+    /**
+     * The cap, breached — the first violation sentence in this table located at a WINDOW.
+     *
+     * The window's own dates are printed rather than its name. `block-13` and *"week 4"* mean
+     * nothing on a badged cell, and the clipped week at a period edge is exactly the window whose
+     * extent a reader would otherwise assume and get wrong.
+     */
+    countMaxViolation(args: CountWindowText): string;
+
+    /** The floor, breached. Same shape; the comparison is the only thing that differs. */
+    countMinViolation(args: CountWindowText): string;
+
     /** The anchor-date reading, said as a date rather than as a range. */
     vacationBlockViolation(args: { date: string }): string;
 
@@ -319,6 +374,24 @@ export interface ViolationMessages extends Vocabulary {
 
     /** Owner decision T's other half: the person whose join date nothing recorded, named out loud. */
     unknownJoinDateSkip(args: { personKey: string; placements: number }): string;
+
+    /**
+     * Owner decision L: a window a floor or a target could only see part of, named individually.
+     *
+     * It prints the evaluable range beside the window, because the two together are what a reader
+     * needs to decide whether to widen the context or to accept the gap — the window alone reads as
+     * an unexplained refusal, and a refusal a reader cannot act on is one they learn to ignore.
+     */
+    partialWindowSkip(args: { from: string; to: string; evaluableFrom: string; evaluableTo: string }): string;
+
+    /**
+     * Owner decision L, one axis along: a person who joined part way through the window.
+     *
+     * Named per person rather than per window, because that is what makes it actionable and what
+     * distinguishes it from the window being clipped for everybody. Leave is deliberately NOT
+     * reported here and deliberately does not suppress a floor — see `onRosterThroughout`.
+     */
+    midWindowJoinSkip(args: { personKey: string; joinedAt: string; from: string; to: string }): string;
 }
 
 /** The whole table. What `EN` implements and what a second language would. */
@@ -427,6 +500,23 @@ export const EN: Messages = {
         const replaces = modifiers.length === 1 ? 'One exception replaces' : 'Exceptions replace';
 
         return `${base} ${replaces} that number outright rather than adjusting it, first match wins: ${exceptions}.`;
+    },
+
+    countMax({ count, window, kinds, levels }) {
+        return (
+            `At most ${EN.plural(count, 'duty', 'duties')} per ${window} for each person${countedText(kinds)}` +
+            `${appliesToText(levels)}. The cap is per person rather than a department total, and the ` +
+            'number is the same in a short block as in a long one.'
+        );
+    },
+
+    countMin({ count, window, kinds, levels }) {
+        return (
+            `At least ${EN.plural(count, 'duty', 'duties')} per ${window} for each person${countedText(kinds)}` +
+            `${appliesToText(levels)}. The floor is per person rather than a department total. A ` +
+            `${window} the evaluation can only see part of, or one a person joined part way through, is ` +
+            'left unjudged and reported rather than counted short.'
+        );
     },
 
     vacationWeeksAtLeast(weeks) {
@@ -612,6 +702,20 @@ export const EN: Messages = {
         return `Overlaps "${partner.slotKey}" on ${partner.date}.`;
     },
 
+    countMaxViolation({ actual, count, window, from, to, kinds }) {
+        return (
+            `${EN.plural(actual, 'duty', 'duties')} in the ${window} ${from} to ${to}` +
+            `${countedText(kinds)}; at most ${count} ${count === 1 ? 'is' : 'are'} allowed.`
+        );
+    },
+
+    countMinViolation({ actual, count, window, from, to, kinds }) {
+        return (
+            `${EN.plural(actual, 'duty', 'duties')} in the ${window} ${from} to ${to}` +
+            `${countedText(kinds)}; at least ${count} ${count === 1 ? 'is' : 'are'} required.`
+        );
+    },
+
     vacationBlockViolation({ date }) {
         return `On leave on ${date}.`;
     },
@@ -711,4 +815,33 @@ export const EN: Messages = {
             'a rule that ran and found nothing.'
         );
     },
+
+    partialWindowSkip({ from, to, evaluableFrom, evaluableTo }) {
+        return (
+            `The window ${from} to ${to} is not wholly inside the evaluable range ${evaluableFrom} to ` +
+            `${evaluableTo}, so part of it could not be counted. A count that is short cannot exceed a ` +
+            'cap, but it can fall below a floor every time, so this window was left unjudged.'
+        );
+    },
+
+    midWindowJoinSkip({ personKey, joinedAt, from, to }) {
+        return (
+            `"${personKey}" joined on ${joinedAt}, part way through the window ${from} to ${to}, so ` +
+            'they did not have the whole of it. The number is absolute rather than scaled, so judging ' +
+            'them against it here would report a shortfall they could not have made up.'
+        );
+    },
 };
+
+/**
+ * The two clauses `count_max` and `count_min` share, so the pair reads identically where it means
+ * the same thing. An empty list renders NOTHING rather than *"of every kind"*: a preview that
+ * describes an absent filter in words invites a reader to look for the control that set it.
+ */
+function countedText(kinds: readonly string[]): string {
+    return kinds.length === 0 ? '' : `, counting duties of kind ${EN.conjoin(kinds)}`;
+}
+
+function appliesToText(levels: readonly string[]): string {
+    return levels.length === 0 ? '' : `, for people at ${EN.conjoin(levels)}`;
+}

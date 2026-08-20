@@ -84,6 +84,24 @@ export function withinHorizon(horizon: Horizon, date: Ymd): boolean {
 }
 
 /**
+ * The emission rule's OTHER half: does this range touch what is being evaluated?
+ *
+ * A placement must fall INSIDE `[from, to]`; a window need only TOUCH it, because a window that
+ * begins in the carry-in tail and reaches the 1st constrains a duty on the 1st. Task 7 measured
+ * that the containment reading is silently correct for eleven types and silently deletes the left
+ * edge for eight, so the asymmetry is deliberate and is documented at `locationIsReportable`.
+ *
+ * It lives here, beside `withinHorizon`, because P2-2's window-located types need the same
+ * predicate to decide which windows are worth enumerating at all: a window that cannot touch the
+ * horizon can hold no reportable violation. Two copies of it — one deciding what to measure and
+ * one deciding what to emit — would disagree at exactly the left edge, which is the one place
+ * either matters. `AuditChain::canonical()`'s defect, in the two functions that would grow it.
+ */
+export function windowTouchesHorizon(from: Ymd, to: Ymd, horizon: Horizon): boolean {
+    return compareYmd(to, horizon.from) >= 0 && compareYmd(from, horizon.to) <= 0;
+}
+
+/**
  * Wrap a range the context supplied — a week with its clipped bounds, a period, a lookback — and
  * answer the one question this module owns about it: is it fully covered by the tail?
  */

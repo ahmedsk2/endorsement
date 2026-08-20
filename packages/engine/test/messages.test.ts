@@ -131,6 +131,8 @@ describe('the violation half of the message table', () => {
         expect(sentencesByTypeKey(SHOUTING)).toEqual({
             clinic_conflict: ['«clinicConflictViolation»'],
             consecutive_max: ['«consecutiveMaxDatesViolation»', '«consecutiveMaxHoursViolation»'],
+            count_max: ['«countMaxViolation»'],
+            count_min: ['«countMinViolation»'],
             dow_restriction: ['«dowRestrictionViolation»'],
             eligibility: ['«eligibilityViolation»'],
             min_gap: ['«minGapViolation»'],
@@ -154,7 +156,12 @@ describe('the violation half of the message table', () => {
      * is.
      */
     it('renders every coverage reason the corpus produces through the same table', () => {
-        expect(coverageReasons(SHOUTING)).toEqual(['«carryInSkip»', '«unknownJoinDateSkip»']);
+        expect(coverageReasons(SHOUTING)).toEqual([
+            '«carryInSkip»',
+            '«midWindowJoinSkip»',
+            '«partialWindowSkip»',
+            '«unknownJoinDateSkip»',
+        ]);
     });
 
     /**
@@ -191,10 +198,10 @@ describe('the violation half of the message table', () => {
      * two tables genuinely differ and the checks above are not comparing a thing with itself.
      */
     it('found violations and reasons to render, and English under EN rather than tags', () => {
-        expect(FIXTURES.length).toBeGreaterThanOrEqual(34);
+        expect(FIXTURES.length).toBeGreaterThanOrEqual(45);
         expect(violationCount(SHOUTING)).toBeGreaterThanOrEqual(30);
         expect(violationCount(EN)).toBe(violationCount(SHOUTING));
-        expect(Object.keys(sentencesByTypeKey(EN))).toHaveLength(11);
+        expect(Object.keys(sentencesByTypeKey(EN))).toHaveLength(13);
 
         const underEn = [...Object.values(sentencesByTypeKey(EN)).flat(), ...coverageReasons(EN)];
 

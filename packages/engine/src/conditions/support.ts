@@ -43,13 +43,16 @@ import type {
     CoverageDetail,
     Day,
     EvaluationContext,
+    Period,
     Person,
     Schedule,
     SkippedWindow,
     ViolationMessages,
+    Week,
 } from '../contract/types';
 import type { Duty } from '../duty/interval';
-import type { Horizon } from '../duty/windows';
+import type { DutyStreams } from '../duty/order';
+import { windowFor, windowTouchesHorizon, type Horizon, type Window } from '../duty/windows';
 import type { Span } from '../contract/types';
 
 /**
@@ -319,4 +322,167 @@ export function dutyStreams(
 /** A placement type measured this many placements. See {@link CoverageDetail}'s own docblock. */
 export function placementsCovered(evaluatedWindows: number, skipped: SkippedWindow[]): CoverageDetail {
     return { evaluatedWindows, skipped };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The window-located half (P2-2, Tasks 15–17). Everything below is consumed by a type whose
+// violation is a `{kind: 'window'}` location, and by nothing that produces a placement.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * One measurable range, with the period — and, for a week window, the week — it came from.
+ *
+ * The department's own weeks arrive in the context as `periods[].weeks` with CLIPPED bounds,
+ * computed server-side by `Calendar::weeksIn()` (owner decision O). They are never recomputed here
+ * and never derived from `weekStartIsoDay`: `golden.json` has zero coverage of the clipped bounds,
+ * so a mirror implementation would be an unasserted second definition of a per-department fact.
+ * The period is carried because `target_per_period`'s modifiers read `weeks.length`.
+ */
+export interface PeriodWindow {
+    window: Window;
+    period: Period;
+    week: Week | null;
+}
+
+/**
+ * The period or week windows that can hold a reportable violation, earliest first.
+ *
+ * ## The CLIPPED bounds are the window, and that is the whole point of carrying them
+ *
+ * A week at a period edge is shorter than seven days, and its real extent is the department's
+ * answer rather than this package's. Measuring the raw `startsOn..endsOn` instead counts duties
+ * belonging to the neighbouring block — silently, and only at a block boundary, which is where a
+ * scheduler is least able to check the arithmetic by eye.
+ *
+ * ## Only windows that TOUCH the horizon are enumerated
+ *
+ * A window entirely inside the carry-in tail can hold no violation anybody may see: `evaluate()`'s
+ * emission rule drops it (CG-03, never retroactive on published schedules). Enumerating it anyway
+ * would inflate `evaluatedWindows` with measurements whose results are discarded, which reads on a
+ * coverage row as work that was done and was not. {@link windowTouchesHorizon} is the SAME
+ * predicate the emission rule applies, imported rather than restated, so what is measured and what
+ * may be reported cannot disagree at the left edge.
+ */
+export function periodWindows(
+    context: EvaluationContext,
+    horizon: Horizon,
+    kind: 'period' | 'week',
+): PeriodWindow[] {
+    const found: PeriodWindow[] = [];
+
+    for (const period of context.periods) {
+        if (kind === 'period') {
+            if (windowTouchesHorizon(period.startsOn, period.endsOn, horizon)) {
+                found.push({ window: windowFor(period.startsOn, period.endsOn, horizon), period, week: null });
+            }
+
+            continue;
+        }
+
+        for (const week of period.weeks) {
+            if (!windowTouchesHorizon(week.clippedStartsOn, week.clippedEndsOn, horizon)) {
+                continue;
+            }
+
+            found.push({
+                window: windowFor(week.clippedStartsOn, week.clippedEndsOn, horizon),
+                period,
+                week,
+            });
+        }
+    }
+
+    return found.sort(
+        (a, b) => compareYmd(a.window.from, b.window.from) || compareYmd(a.window.to, b.window.to),
+    );
+}
+
+/**
+ * Does the supplied duty history reach back far enough to know what happened at `from`?
+ *
+ * A window that begins inside the horizon needs no history at all — the schedule under evaluation
+ * IS the answer. A window reaching back before `horizon.from` is asking about a month somebody else
+ * published, and `historyAvailableFrom` is the caller's statement of how far back that reaches.
+ *
+ * The distinction this exists to keep is between a window that is SHORTER and a window whose left
+ * part is UNKNOWN. A clipped week at a period edge is a genuinely smaller window and counting over
+ * it is a correct answer to a smaller question; a window whose first four days were never supplied
+ * is a wrong answer to the right one. Owner decision L lets a CAP evaluate the first (an
+ * under-count produces no false positive); nothing may treat the second as an answer, which is why
+ * {@link carryInLeftEdge} reports it rather than any type quietly counting zero.
+ */
+export function historyReaches(context: EvaluationContext, horizon: Horizon, from: Ymd): boolean {
+    if (compareYmd(from, horizon.from) >= 0) {
+        return true;
+    }
+
+    const available = context.historyAvailableFrom;
+
+    return available !== null && compareYmd(available, from) <= 0;
+}
+
+/**
+ * `levels` inside a type's own parameters, as owner decision K defines it: a SCOPE FILTER.
+ *
+ * It names which people the rule applies to, and it INTERSECTS CG-01's `scope` rather than
+ * replacing it — decision K's own words, *"a bare `levels` list documented as intersecting
+ * `scope`"*. An empty or absent list names everybody the scope already selected.
+ *
+ * The level is read AT THE DATE, through `spanKeyAt`, exactly as `personInScope` reads it. A person
+ * holding no level on that date matches no named level and is excluded: an absent level is not a
+ * wildcard, and treating it as one would apply a per-level cap to somebody the department has not
+ * placed on the ladder at all.
+ */
+export function levelFilterMatches(person: Person, date: Ymd, levels: readonly string[]): boolean {
+    if (levels.length === 0) {
+        return true;
+    }
+
+    const level = levelKeyAt(person, date);
+
+    return level !== null && levels.includes(level);
+}
+
+/**
+ * Was this person on the roster for the WHOLE of this window?
+ *
+ * Owner decision L applied one axis along: *"floors and targets evaluate only on whole windows"*.
+ * A person who joined half way through a period did not have the window the floor is measuring, and
+ * judging them against the absolute number produces a false positive on their very first block —
+ * which is the shape decision L exists to refuse, differing only in whether the window was clipped
+ * by the DATA or by the PERSON.
+ *
+ * **It is not the same statement as leave, and leave deliberately does NOT suppress a floor.** A
+ * person on leave for three weeks of a block has the whole window; they were simply unavailable in
+ * it, and pro-rating the number for that is exactly the scaling decision L refuses (*"period-windowed
+ * numbers are ABSOLUTE, not scaled by period length"*). A person who has not joined has no window
+ * yet, which is a different fact. The two are one line apart in an implementation and a month of
+ * different behaviour on a rota, so both halves are stated here and both are fixtured.
+ *
+ * A person with no `joinedAt` at all is treated as having always been on the roster — the same
+ * reading owner decision T gives `onboarding_grace`, and for the same measured reason: the column
+ * is written by no seeder, factory or demo path in this repository, so the opposite reading would
+ * suppress every window for everybody on the live instance.
+ */
+export function onRosterThroughout(person: Person, from: Ymd): boolean {
+    return person.joinedAt === undefined || compareYmd(person.joinedAt, from) <= 0;
+}
+
+/**
+ * The roster, having refused any duty naming somebody the context does not describe.
+ *
+ * A window-located type iterates PEOPLE rather than duties — a floor's whole purpose is the person
+ * who holds none — so `personIndex().get()` is never reached by the ordinary path and the stranger
+ * check every placement type gets for free would simply not happen. Resolving every duty's person
+ * up front restores it: a duty for somebody whose leave, level and rotation are all unknown cannot
+ * be judged, and answering "no violation" for want of data is strictly worse than a crash.
+ */
+export function rosterFor(context: EvaluationContext, streams: DutyStreams): readonly Person[] {
+    const people = personIndex(context);
+
+    for (const duty of [...streams.priorDuties, ...streams.duties, ...streams.followingDuties]) {
+        people.get(duty.personKey);
+    }
+
+    return context.people;
 }

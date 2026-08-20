@@ -26,6 +26,7 @@ import type {
 import type { JsonSchema } from './contract/schema';
 import * as clinicConflict from './conditions/clinic_conflict';
 import * as consecutiveMax from './conditions/consecutive_max';
+import * as count from './conditions/count';
 import * as dowRestriction from './conditions/dow_restriction';
 import * as eligibility from './conditions/eligibility';
 import * as fairnessDistribution from './conditions/fairness_distribution';
@@ -148,6 +149,9 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'count_max',
         implemented: true,
+        evaluate: count.evaluateMax,
+        preview: count.previewMax,
+        paramsSchema: count.PARAMS_SCHEMA,
         direction: 'cap',
         locationKind: 'window',
         needsCarryIn: true,
@@ -160,6 +164,9 @@ export const CATALOG: readonly RegistryEntry[] = [
         // schema; they are not one entry.
         typeKey: 'count_min',
         implemented: true,
+        evaluate: count.evaluateMin,
+        preview: count.previewMin,
+        paramsSchema: count.PARAMS_SCHEMA,
         direction: 'floor',
         locationKind: 'window',
         needsCarryIn: true,

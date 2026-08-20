@@ -55,7 +55,7 @@
  */
 
 import { compareYmd, type Ymd } from './calendar/ymd';
-import { withinHorizon, type Horizon } from './duty/windows';
+import { windowTouchesHorizon, withinHorizon, type Horizon } from './duty/windows';
 import type {
     Condition,
     ConditionOutcome,
@@ -231,7 +231,7 @@ export function locationIsReportable(location: Location, horizon: Horizon): bool
         case 'placement':
             return withinHorizon(horizon, location.date);
         case 'window':
-            return compareYmd(location.to, horizon.from) >= 0 && compareYmd(location.from, horizon.to) <= 0;
+            return windowTouchesHorizon(location.from, location.to, horizon);
         case 'cohort':
             return true;
         default: {

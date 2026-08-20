@@ -240,6 +240,10 @@ describe('the matrix — every parameter a type reads is named by its preview', 
             'clinic_conflict',
             // Task 14 — owner decision V's third unit, and the transition allowance CG-08 drops.
             'consecutive_max',
+            // Task 15 — owner decisions K and L: two keys sharing one schema, the count per PERSON,
+            // `levels` a scope filter, and the floor saying out loud which windows it will decline.
+            'count_max',
+            'count_min',
             // Task 12 — the three placement types owner decisions R, T and the ISO-integer half of
             // the day-of-week ban settle. Their sentences live in the message table (AR-07).
             'dow_restriction',
@@ -738,8 +742,13 @@ describe('what the dispatcher refuses, and how loudly', () => {
      * nothing, one layer along from rulings 41 and 49.
      */
     it('throws a distinguishable error for an implemented row with no preview yet', () => {
-        expect(registryEntry('count_max')?.implemented).toBe(true);
-        expect(() => preview(condition('count_max', {}), CONTEXT)).toThrow(NoPreviewForConditionTypeError);
+        // The exemplar moves as tasks land, and it has to: it was `count_max` until Task 15 gave
+        // that row a preview, and a probe pointed at a row that has since been written checks
+        // nothing while still passing — it would throw the SCHEMA's refusal instead, which is a
+        // different error class reaching the same `toThrow`. `holiday_equity` is Task 19's.
+        expect(registryEntry('holiday_equity')?.implemented).toBe(true);
+        expect(registryEntry('holiday_equity')?.preview).toBeUndefined();
+        expect(() => preview(condition('holiday_equity', {}), CONTEXT)).toThrow(NoPreviewForConditionTypeError);
     });
 
     it('takes the catalog as an argument, so P3 can preview against a restricted one', () => {

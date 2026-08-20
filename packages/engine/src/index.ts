@@ -30,11 +30,12 @@
 export const version = '0.0.0';
 
 /**
- * The `Ymd` core (P2 Task 3). Re-exported here rather than left importable only by deep path,
- * because `@engine` resolves to THIS file (`vite.config.js`) and a module the package entry does
- * not expose is not part of the browser runtime D4 requires, whatever the test runner can reach.
+ * The `Ymd` core (P2 Task 3) and the calendar mirror built on it (P2 Task 5), which re-exports it.
+ * Both are surfaced here rather than left importable only by deep path, because `@engine` resolves
+ * to THIS file (`vite.config.js`) and a module the package entry does not expose is not part of
+ * the browser runtime D4 requires, whatever the test runner can reach.
  */
-export * from './calendar/ymd';
+export * from './calendar';
 
 /**
  * The duty-time core (P2 Task 4): the absolute-minute line, half-open intervals, one person's

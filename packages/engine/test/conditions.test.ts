@@ -68,6 +68,8 @@ describe('the condition corpus', () => {
     it('found the cases it claims to, and each states why it exists', () => {
         expect(FIXTURES.map((fixture) => fixture.name)).toEqual([
             'call-frequency-max-a-window-it-can-only-see-part-of-is-left-unjudged',
+            'call-frequency-max-availability-for-the-horizon-alone-fires-on-a-clean-month',
+            'call-frequency-max-availability-for-the-whole-evaluable-range-is-clean',
             'call-frequency-max-is-density-where-min-gap-is-spacing',
             'call-frequency-max-the-denominator-is-eligible-days-not-calendar-days',
             'call-frequency-max-the-scope-excludes-somebody-their-own-calls-would-flag',

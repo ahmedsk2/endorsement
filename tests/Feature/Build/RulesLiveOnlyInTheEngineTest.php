@@ -116,6 +116,17 @@ class RulesLiveOnlyInTheEngineTest extends TestCase
         // needle is bought case-insensitively for the `class Violation` shapes it reaches; this is
         // the one collision that costs, and a CSV importer is not where a scheduling rule is born.
         'app/Support/Roster/RosterImport.php' => ['violation'],
+        // P2 Task 24's demo command, and the one entry this guard's own failure message
+        // anticipates. It reads `$answer['violations']` — CG-10's array is literally named that,
+        // the entrypoint returns it under that key, and there is no honest spelling of the read
+        // that avoids the needle. `severity` is deliberately NOT exempt: the report groups by
+        // `Condition.class` off the rows it supplied, which is the same answer by construction
+        // (Decision E — `evaluate()` stamps severity FROM the row) and additionally lets the
+        // report print the type key and rank a violation does not carry. So the file is still
+        // scanned for `severity`, for all 23 catalog type keys and for the other three engine
+        // needles — which matters, because a *"quick PHP pre-check so we do not have to spawn
+        // node"* would be born in exactly this file.
+        'app/Console/Commands/EngineEvaluate.php' => ['violation'],
     ];
 
     /** @return list<string> */

@@ -71,7 +71,22 @@ use Tests\TestCase;
  */
 class EngineIsAReaderTest extends TestCase
 {
-    private const ENGINE_GLOB = 'app/Support/Engine/*.php';
+    /**
+     * The scanned set.
+     *
+     * A GLOB over the namespace, so a class added to it joins unasked, PLUS P2 Task 24's demo
+     * command by name. That command is the engine's first real caller and it is a reader in exactly
+     * the same sense — it loads, it pipes, it prints — but it does not live in the namespace, so
+     * the glob would never have reached it. Adding the path rather than a second needle list keeps
+     * ONE definition of what a writer looks like; a copy of the list beside the command would be
+     * two lists agreeing until the day one of them is taught a new writer shape.
+     *
+     * @var list<string>
+     */
+    private const ENGINE_GLOBS = [
+        'app/Support/Engine/*.php',
+        'app/Console/Commands/EngineEvaluate.php',
+    ];
 
     /**
      * A file allowed to write, and the needles it is allowed to write with. NEVER a whole-file
@@ -121,7 +136,13 @@ class EngineIsAReaderTest extends TestCase
     /** @return list<string> absolute paths */
     private function engineFiles(): array
     {
-        return glob(base_path(self::ENGINE_GLOB)) ?: [];
+        $files = [];
+
+        foreach (self::ENGINE_GLOBS as $pattern) {
+            $files = array_merge($files, glob(base_path($pattern)) ?: []);
+        }
+
+        return array_values($files);
     }
 
     private function relative(string $path): string
@@ -180,6 +201,15 @@ class EngineIsAReaderTest extends TestCase
             $relatives,
             'The glob did not find the context builder. Either it moved or this guard is scanning '
             .'nothing at all, and those two look identical from a green suite.'
+        );
+
+        // Named separately from the glob above, because a pattern that stopped matching and a file
+        // that was renamed are the same green.
+        $this->assertContains(
+            'app/Console/Commands/EngineEvaluate.php',
+            $relatives,
+            'The scan did not find the demo command. It is the engine\'s first real caller and it '
+            .'writes nothing; a scan that lost it is a scan that stopped saying so.'
         );
     }
 

@@ -31,7 +31,7 @@
 #  - config/route/view caches are built at boot, when the real env is present.
 
 # ---------- stage 1: front-end assets ----------
-FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS assets
+FROM node:26-alpine@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019 AS assets
 WORKDIR /build
 # .npmrc carries `ignore-scripts=true`. It was not copied, so the policy applied on a
 # developer's laptop and NOT in the build — which is the one place it matters, because this

@@ -38,6 +38,14 @@ WORKDIR /build
 # build runs as root on the same docker daemon as the patient database. A dependency's
 # postinstall script had a free hand exactly where it could do the most damage.
 COPY package*.json .npmrc vite.config.js ./
+# packages/ is copied BEFORE `npm ci`, not after, because package.json declares npm workspaces
+# ("packages/*") and the lockfile carries their entries. `npm ci` does not fail when a declared
+# workspace directory is absent — measured, it exits 0 and silently installs nothing for it — so
+# omitting this line produces an image whose node_modules differs from the one CI resolved, and
+# the difference only surfaces later, as a resolution error in a build that used to work. Same
+# install here as in CI, for the same reason composer's platform check is satisfied for real in
+# stage 2 rather than waived.
+COPY packages ./packages
 RUN npm ci
 COPY resources ./resources
 COPY public ./public

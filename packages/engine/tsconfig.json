@@ -1,0 +1,10 @@
+{
+    "extends": "../../tsconfig.base.json",
+    "//": [
+        "`npx tsc --noEmit -p packages/engine` is a CI step, not a suggestion: a type error must fail",
+        "the build rather than merely annoy the author. Vitest transpiles TypeScript without type",
+        "checking it, so `npm test` alone is green on code tsc rejects — the two commands answer",
+        "different questions and CI runs both."
+    ],
+    "include": ["src/**/*.ts", "test/**/*.ts"]
+}

@@ -1,0 +1,11 @@
+{
+    "name": "@endorsement/engine",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "description": "Pure conditions engine (CG-10). No I/O, no globals, no clock, no Date.",
+    "main": "src/index.ts",
+    "exports": {
+        ".": "./src/index.ts"
+    }
+}

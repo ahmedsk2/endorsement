@@ -41,6 +41,14 @@ jobs:
       - name: Install JS dependencies
         run: npm ci
 
+      # Vitest TRANSPILES TypeScript without type-checking it, so `npm test` is green on code
+      # tsc rejects — measured, not assumed: a planted `const x: number = "s"` in
+      # packages/engine/src/index.ts left `npm test` at 238 passed while `tsc --noEmit` exited 2.
+      # The two commands answer different questions and CI runs both. Placed before the build so
+      # a type error fails in seconds rather than after the asset build and the PHP suite.
+      - name: Type-check the engine package
+        run: npx tsc --noEmit -p packages/engine
+
       - name: Prepare environment
         run: |
           cp .env.example .env

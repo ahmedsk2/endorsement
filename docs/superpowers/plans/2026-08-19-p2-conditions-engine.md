@@ -2070,3 +2070,31 @@ gate screen with drag ranking, the workbench with live hints, and `services/engi
 caller. P3 also owes the render-site half of Task 9's CG-04 preview pair (rulings 41/49), and the
 gate's cap-versus-floor warning (Decision E). `forbidden_transition` waits for **P7 / Stage 5**, with
 the shift slots it constrains.
+
+---
+
+## Recommended additions found during execution
+
+*(Appended as tasks land. Not part of the original plan; each is a proposal with its reason.)*
+
+### From Task 5/6 (2026-08-20) — narrowing the drift residual the mirror cannot close
+
+The mirror's stated residual is that it and `App\Support\Calendar` can drift on a **new** `Calendar`
+method added in P3, because `golden.json` only grows when somebody remembers to grow it. The coverage
+manifest closes this for fixture *blocks* and cannot close it for the PHP surface.
+
+**The cheap narrowing, using the same device the manifest already proved:** a PHP-side
+`CalendarSurfaceIsManifestedTest` that reflects `App\Support\Calendar`'s public static methods and
+compares them, **in both directions**, against a classified list of *mirrored* vs *server-side only,
+with the reason*. One reflection call and a roughly thirty-name list. A new public method then fails
+the build until somebody classifies it.
+
+It does not write the assertion for you — it converts **silent drift into a forced decision**, which
+is exactly the property the golden manifest buys on the fixture side. **Recommended for Task 22 or
+early P3**, whichever touches `Calendar` first.
+
+*Two smaller findings from the same tasks, recorded so they are not rediscovered:* the manifest is
+keyed on top-level fixture blocks, so a new **field inside an existing block** is invisible to it
+(the `clipped_starts_on` probe is bought explicitly because that field is the one already identified
+as likely); and a TSDoc line containing `lang/*/calendar.php` closes the block comment and is a parse
+error.

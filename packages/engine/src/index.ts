@@ -81,3 +81,13 @@ export * from './coverage';
 export * from './severity';
 export * from './messages';
 export * from './preview';
+
+/**
+ * CG-08's three preset bundles (P2-2 Task 21), as data in the package.
+ *
+ * Surfaced here for the same reason `evaluate()` is: `@engine` resolves to THIS file, and a module
+ * the package entry does not expose is not part of the browser runtime D4 requires, whatever the
+ * test runner can reach. ST-01's setup wizard imports these into `conditions` in P3; until then a
+ * preset is simply a list of condition rows `evaluate()` can be called with.
+ */
+export * from './presets';

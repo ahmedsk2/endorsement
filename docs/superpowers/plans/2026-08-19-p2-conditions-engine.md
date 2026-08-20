@@ -2927,3 +2927,115 @@ application, this one scans one namespace whose entire job is to read, so the wi
 nothing and reaches a writer of a table nobody has invented yet. Both known blind spots — ruling 66's
 `query()->create(` and ruling 50's `->update([` — are needled explicitly anyway, and both were named
 by the plant.
+
+### From Task 21 (2026-08-20) — the three presets, and one claim this file made that the plants refuted
+
+**Shipped as Decision H and owner decision AB specify.** `preset:acgme` is five soft, active rows at
+one rank; `preset:residency` is structure only, seven types with every parameter awaited and no
+number anywhere; `preset:scfhs` is present, empty and pending. `packages/engine/src/presets/` is data
+plus one lookup, and `evaluate()`, `Violation`, `Location` and `coverage()` are untouched — **a
+preset added configuration and no shape**, which is CG-10's *"new types are additive"* holding for a
+bundle as well as for a type.
+
+#### 1. The manifest fails in FOUR directions, and the two-direction claim in this file was too weak
+
+The task asks for two: a preset naming a type the catalog does not have, and a type silently dropped
+from a preset claiming it. Two more were free once the first two existed and each was planted: a row
+a bundle GREW without declaring, and a declared `state` that is not the state the contents produce.
+The last is what makes *"present and empty"* checkable — a bundle whose rows were all deleted
+declares `ready` and derives `empty`.
+
+**The direction-two case shipped with a wrong claim in its own docblock, and the plant is what
+caught it.** It said deleting a row leaves every other check green. It does not: deleting `min_gap`
+from the ACGME bundle reddens THREE cases (the manifest claim, the count, and the row's own figure
+case), and retyping the row so the count is unchanged reddens FIVE. **Corrected in place rather than
+quietly rewritten**, and what the case actually buys is now stated exactly: it is the only check
+anchored on a DECLARATION rather than on the bundle's own contents, so it is the only one that
+survives an author who deletes a row and then tidies the tests that named it. A manifest derived
+from the presets would fire in neither shape.
+
+#### 2. The five ACGME figures are PARSED out of CG-08's sentence, which cost nothing and buys a lot
+
+`catalog-parity.test.ts`'s device, applied to numbers instead of keys. Planted by editing SPEC.md's
+own CG-08 line — 80 → 90, 1-in-3 → 1-in-4, and a transition figure added — and three cases went red
+naming their own clause. **`transitionMinutes` is the one number in the bundle that no document in
+this repository states**: CG-08 drops the clause entirely, Appendix A names it in words only, so the
+preset carries ACGME's published four hours and the ABSENCE at the source is asserted too, because a
+figure appearing in CG-08 later would make the bundle's own limitation false and nothing else would
+notice.
+
+**A third limitation was found by parameterising rather than by reading**, and it is a property of
+how `consecutive_max` measures rather than of the platform: owner decision V's allowance is what
+JOINS two duties into one measured stretch, so the gap counts INSIDE the 24 h, where the standard
+permits four hours ON TOP of them. The preset over-reports rather than under-reports, which is the
+right direction for a soft warning and is one number to change for a department that disagrees. It
+sits in `limitations` beside Decision H's two, because a limitation recorded only in a plan is one
+the person reading the gate screen never sees.
+
+#### 3. `residency`'s awaited lists are DERIVED from each type's schema, and that decided its contents
+
+`awaiting` is compared against `PARAMS_SCHEMA.required` rather than restated, so a schema gaining a
+parameter fails the build instead of leaving the structure reading as complete. Planted by dropping
+`unit` from `min_gap`'s list; red, naming the type.
+
+**Which seven types are in it was the real question, since no document enumerates the bundle.** D14
+and D15 make the prototype's values unobtainable, and its type LIST is equally unobtainable —
+`grep -rn -i '\bnine\b' docs/` still returns twenty hits and none of them is a list. The seven come
+from **SPEC Appendix A's requirements line** (*"spacing, monthly caps, weekday/weekend distribution,
+vacations, unwanted days, clinic–post-call"* — six phrases, six catalog rows) plus `onboarding_grace`
+from Decision H's own sentence about it. Every draft carries the phrase it came from, so the mapping
+is checkable rather than trusted. Two of the seven publish EMPTY schemas and await nothing; they stay
+drafts because **a preset a department installs half of is a preset that looks finished on a gate
+screen** — and `clinic_conflict`'s `variant` is awaited even though this department answered it,
+because a preset ships to every customer and one department's answer is not a default for the others.
+
+#### 4. A preset is configuration, not code — asserted twice, and a plant split the two halves
+
+The runtime half is `JSON.parse(JSON.stringify(PRESETS))` deep-equalling `PRESETS`: no function, no
+`undefined`, no class instance survives that trip, so Decision H's *"a preset can physically be a
+JSON data file"* is a property of the VALUE rather than a claim about a file. The source half
+requires `import type` only and no `function`/`=>`, comments stripped.
+
+**Neither is redundant and reading the two lists would never have shown it.** A function PROPERTY
+reddens both; an arrow IIFE computing `describes` reddens only the SOURCE half, because the value it
+leaves behind is a plain string the round trip is happy with. That is Task 22's finding 2 one package
+along. **STATED RESIDUAL, measured:** a value assembled by a METHOD call (`['2026', '08',
+'20'].join('-')`) carries neither needle and passes both halves. Left unbought, and the import check
+is why it is harmless — no VALUE may be imported into a preset file, so such a computation can only
+assemble literals out of literals in the same file.
+
+The ONE deviation from Decision H is the file extension, on `contract/schema.ts`'s own precedent: a
+JSON import *"would resolve differently under the bundler, under plain Node and under `tsc`"*, and a
+preset has exactly those three consumers.
+
+#### 5. THE BUNDLE IS RUN, because parameters that merely validate are inert
+
+`windowDays: 7` with no averaging validates against `rolling_hours_max`'s schema and asks for a
+quarter of what CG-08 says. So the five rows go through `evaluate()` on two generated worlds — one
+person on call every day of a 35-day horizon, where all five fire, and a light month where none does.
+Planting `active: false` on all five (Decision H's own named hazard) reddens the evaluated case as
+well as the declaration; the quiet world was probed at a call every OTHER day and goes red, so it is
+near a boundary rather than trivially clean.
+
+#### 6. `eligibleDays` IS A FACT ABOUT THE EVALUABLE RANGE, AND THE QUIET WORLD IS WHAT FOUND IT
+
+Handed availability for the HORIZON alone, `call_frequency_max` reads every window reaching back past
+`horizon.from` as *"this person was available on one day of the 28"*, permits `floor(1/3) = 0` calls,
+and fires on a schedule that breaches nothing. `ContextBuilder::forHorizon()` builds `days` and
+`eligibleDays` over the single range it is given, so **its caller must pass the EVALUABLE range** and
+set `horizon.evaluableFrom`/`evaluableTo` to match. Absence of data and unavailability are
+indistinguishable in a list of dates and only the caller can tell them apart. **Task 24 is the first
+caller and owes this**; it is recorded in `docs/INVARIANTS.md` §Engine rather than only here.
+
+#### 7. Two smaller things
+
+`withoutComments` moved to `test/support/source.ts` rather than being copied into a second suite — a
+stripper written twice is two definitions of what counts as a comment, agreeing until the day one is
+taught something the other is not. It is not a `.test.ts`, so no runner collects it and importing it
+does not re-register another file's cases.
+
+And **rank**: all five ACGME rows sit at rank 1 rather than at 1..5. CG-02's drag rank is the
+department's own gesture over its own list, and five distinct ranks would be five importance
+judgements no document makes, arriving pre-made on the screen whose whole purpose is to make them.
+`comparePrecedence` returns 0 between them, which is the honest answer to *"which of these five
+matters more"*.

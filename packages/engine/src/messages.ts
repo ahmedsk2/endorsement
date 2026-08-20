@@ -136,6 +136,18 @@ export interface ToleranceExample {
     allowance: number;
 }
 
+/**
+ * One worked point on `call_frequency_max`'s curve — owner decision J's denominator, in numbers.
+ *
+ * The decision's own consequence is that the rule TIGHTENS around leave, and it says so because a
+ * reader assuming calendar days will predict the opposite. Two points either side of a full window
+ * are what make that visible without asking anybody to divide.
+ */
+export interface AvailabilityExample {
+    availableDays: number;
+    permitted: number;
+}
+
 /** One slot's allowance, already normalised — absent lists arrive as empty ones. */
 export interface SlotAllowanceText {
     slotKey: string;
@@ -218,6 +230,22 @@ export interface PreviewMessages extends Vocabulary {
         averagingWeeks: number | null;
         averagedHours: number | null;
         averagedDays: number | null;
+    }): string;
+
+    /**
+     * Owner decision J: the denominator is AVAILABLE days, and the sentence has to say which.
+     *
+     * The decision names this explicitly — *"the plain-language preview must say which denominator
+     * it used"* — because the consequence is the opposite of what a reader predicts. A calendar
+     * denominator loosens as somebody takes leave (fewer duties, same divisor); the availability one
+     * TIGHTENS, so *"one in 4"* over a 28-day window in which somebody was available on 14 days
+     * permits three calls and not seven. The worked points are what make that arithmetic visible on
+     * a gate screen, since nobody divides while reading one.
+     */
+    callFrequencyMax(args: {
+        n: number;
+        windowDays: number;
+        examples: readonly AvailabilityExample[];
     }): string;
 
     /** Owner decision Q: the allowance is stated as a NUMBER at both regimes, never as a percentage. */
@@ -510,6 +538,46 @@ export interface ViolationMessages extends Vocabulary {
     }): string;
 
     /**
+     * The duty-hours cap, breached — and the two readings a reader would otherwise get wrong.
+     *
+     * `minutes` is what the predicate summed under the SPLIT-AT-MIDNIGHT reading, which is this
+     * type's alone: a night call is twelve hours on one date and twelve on the next here, and one
+     * Friday call to every other type in the catalog. A reader counting duties by eye will get a
+     * different number from the badge unless the sentence says so.
+     *
+     * `hours` and `windowDays` are the EFFECTIVE cap, after averaging. Printing the rule's own
+     * figure instead would be the defect `rollingHoursMax`'s preview exists to prevent, one screen
+     * along: *"at most 80 h"* beside a window of 28 days is a rule nobody can check.
+     */
+    rollingHoursMaxViolation(args: {
+        minutes: number;
+        hours: number;
+        windowDays: number;
+        averagingWeeks: number | null;
+        from: string;
+        to: string;
+    }): string;
+
+    /**
+     * Owner decision J's denominator, in the one place the applied number is actually knowable.
+     *
+     * `availableDays` is what the predicate counted for THIS person over THIS window, and
+     * `permitted` is what that allowed. Both are printed because the decision's intended reading is
+     * counter-intuitive: a person on leave is measured against a smaller denominator, so the
+     * allowance falls. A badge stating only *"at most 0 are permitted"* on a window with two duties
+     * in it reads as a defect in the tool rather than as the rule doing what it was chosen to do.
+     */
+    callFrequencyMaxViolation(args: {
+        calls: number;
+        permitted: number;
+        n: number;
+        availableDays: number;
+        windowDays: number;
+        from: string;
+        to: string;
+    }): string;
+
+    /**
      * Owner decision I: a gap with only one end, reported rather than evaluated. `coverage()` only.
      *
      * Both edges take this shape — the gap after somebody's last duty and the gap before their
@@ -529,6 +597,16 @@ export interface ViolationMessages extends Vocabulary {
      * It prints the evaluable range beside the window, because the two together are what a reader
      * needs to decide whether to widen the context or to accept the gap — the window alone reads as
      * an unexplained refusal, and a refusal a reader cannot act on is one they learn to ignore.
+     *
+     * ## The justification was WIDENED at Task 18, because a fourth family arrived
+     *
+     * It shipped saying *"a count that is short cannot exceed a cap, but it can fall below a floor
+     * every time"*, which is true of the three families that existed and FALSE of
+     * `call_frequency_max`. That type is a cap whose limit is not authored: owner decision J makes
+     * the allowance `floor(availableDays / n)`, computed from the window's OWN contents, so a
+     * partial window shrinks the limit alongside the count and false-positives exactly as a floor
+     * does. A coverage row whose stated reason a reader can catch out is one they stop reading —
+     * `carryInSkip`'s recorded lesson, in the sentence beside it.
      */
     partialWindowSkip(args: { from: string; to: string; evaluableFrom: string; evaluableTo: string }): string;
 
@@ -606,6 +684,24 @@ export const EN: Messages = {
         return (
             `${base}, averaged over ${averagingWeeks} such windows — at most ${averagedHours} h in any ` +
             `${averagedDays} consecutive days.`
+        );
+    },
+
+    callFrequencyMax({ n, windowDays, examples }) {
+        const worked = EN.conjoin(
+            examples.map(
+                ({ availableDays, permitted }) =>
+                    `${EN.plural(availableDays, 'available day', 'available days')} allow ` +
+                    `${EN.plural(permitted, 'call', 'calls')}`,
+            ),
+        );
+
+        return (
+            `At most one call in every ${EN.plural(n, 'day', 'days')} a person is actually AVAILABLE, ` +
+            `measured over any ${windowDays} consecutive days. The denominator is available days and ` +
+            'not calendar days: days on leave, days before the person joined and days off the roster ' +
+            `are removed, so the allowance FALLS around somebody's leave rather than rising — in one ` +
+            `such window ${worked}.`
         );
     },
 
@@ -1047,6 +1143,33 @@ export const EN: Messages = {
         );
     },
 
+    rollingHoursMaxViolation({ minutes, hours, windowDays, averagingWeeks, from, to }) {
+        const averaged =
+            averagingWeeks === null
+                ? ''
+                : ` The ${hours} h figure is ${averagingWeeks} of the rule's own windows taken ` +
+                  'together rather than the number written on the rule itself.';
+
+        return (
+            `${EN.hours(minutes)} h of duty in the ${EN.plural(windowDays, 'day', 'days')} from ` +
+            `${from} to ${to}; at most ` +
+            `${hours} h are allowed. Hours are split at midnight, so a duty running overnight counts ` +
+            'on both of the dates it occupies, and slots that do not count toward duty hours are ' +
+            `left out.${averaged}`
+        );
+    },
+
+    callFrequencyMaxViolation({ calls, permitted, n, availableDays, windowDays, from, to }) {
+        return (
+            `${EN.plural(calls, 'call', 'calls')} in the ${EN.plural(windowDays, 'day', 'days')} from ` +
+            `${from} to ${to}; at ` +
+            `most ${permitted} ${permitted === 1 ? 'is' : 'are'} permitted. The person was available ` +
+            `on ${EN.plural(availableDays, 'day', 'days')} of that window and the rule allows one ` +
+            `call in every ${n}: leave, days before the join date and days off the roster are not ` +
+            'counted, so the allowance falls around them rather than rising.'
+        );
+    },
+
     openGapSkip({ personKey, from, to }) {
         return (
             `The gap for "${personKey}" between ${from} and ${to} has only one end, so it was not ` +
@@ -1067,8 +1190,9 @@ export const EN: Messages = {
     partialWindowSkip({ from, to, evaluableFrom, evaluableTo }) {
         return (
             `The window ${from} to ${to} is not wholly inside the evaluable range ${evaluableFrom} to ` +
-            `${evaluableTo}, so part of it could not be counted. A count that is short cannot exceed a ` +
-            'cap, but it can fall below a floor every time, so this window was left unjudged.'
+            `${evaluableTo}, so part of it could not be counted. A count that is short cannot exceed an ` +
+            "authored cap, but it can fall below a floor, miss a target, or shrink a limit the window's own " +
+            'contents decide — so this window was left unjudged.'
         );
     },
 

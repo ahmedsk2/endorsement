@@ -24,6 +24,7 @@ import type {
     LocationKind,
 } from './contract/types';
 import type { JsonSchema } from './contract/schema';
+import * as callFrequencyMax from './conditions/call_frequency_max';
 import * as clinicConflict from './conditions/clinic_conflict';
 import * as composition from './conditions/composition';
 import * as consecutiveMax from './conditions/consecutive_max';
@@ -330,6 +331,7 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'rolling_hours_max',
         implemented: true,
+        evaluate: rollingHoursMax.evaluate,
         paramsSchema: rollingHoursMax.PARAMS_SCHEMA,
         preview: rollingHoursMax.preview,
         direction: 'cap',
@@ -349,6 +351,13 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'call_frequency_max',
         implemented: true,
+        evaluate: callFrequencyMax.evaluate,
+        preview: callFrequencyMax.preview,
+        paramsSchema: callFrequencyMax.PARAMS_SCHEMA,
+        // A CAP whose limit is DERIVED rather than authored — `floor(availableDays / n)`, owner
+        // decision J — which is why it declines a partial window where `rolling_hours_max`, the
+        // other cap in its own task, evaluates one. `direction` records what CG-07 calls the row;
+        // the gate the type applies is in its own docblock, because the two are not the same fact.
         direction: 'cap',
         locationKind: 'window',
         needsCarryIn: true,

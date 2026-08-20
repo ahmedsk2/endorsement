@@ -300,12 +300,12 @@
                 {
                     "from": "2026-07-26",
                     "to": "2026-08-01",
-                    "reason": "The window 2026-07-26 to 2026-08-01 is not wholly inside the evaluable range 2026-08-01 to 2026-08-14, so part of it could not be counted. A count that is short cannot exceed a cap, but it can fall below a floor every time, so this window was left unjudged."
+                    "reason": "The window 2026-07-26 to 2026-08-01 is not wholly inside the evaluable range 2026-08-01 to 2026-08-14, so part of it could not be counted. A count that is short cannot exceed an authored cap, but it can fall below a floor, miss a target, or shrink a limit the window's own contents decide — so this window was left unjudged."
                 },
                 {
                     "from": "2026-08-09",
                     "to": "2026-08-15",
-                    "reason": "The window 2026-08-09 to 2026-08-15 is not wholly inside the evaluable range 2026-08-01 to 2026-08-14, so part of it could not be counted. A count that is short cannot exceed a cap, but it can fall below a floor every time, so this window was left unjudged."
+                    "reason": "The window 2026-08-09 to 2026-08-15 is not wholly inside the evaluable range 2026-08-01 to 2026-08-14, so part of it could not be counted. A count that is short cannot exceed an authored cap, but it can fall below a floor, miss a target, or shrink a limit the window's own contents decide — so this window was left unjudged."
                 }
             ]
         }

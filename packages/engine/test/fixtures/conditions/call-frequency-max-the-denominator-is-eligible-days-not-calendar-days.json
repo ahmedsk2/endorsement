@@ -1,0 +1,192 @@
+{
+    "name": "call-frequency-max-the-denominator-is-eligible-days-not-calendar-days",
+    "why": "OWNER DECISION J, ANSWERED AGAINST ITS OWN DEFAULT, AND THE CASE THAT SEPARATES THE TWO DENOMINATORS. p-ali and p-noor each hold exactly one call, on the same date, under the same one-in-two rule. p-ali is available on every day of the window and is clean; p-noor is on leave either side and is available on one day, so the allowance is zero and the single call is over. Under the calendar-day denominator the decision overrode, both windows would hold two days, both would permit one call, and neither person would be flagged — the rule TIGHTENS around leave, which is the intended and counter-intuitive half, and the explanation prints the number of available days it actually used.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-07-31",
+                    "2026-08-01",
+                    "2026-08-02",
+                    "2026-08-03",
+                    "2026-08-04"
+                ],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [
+                    "2026-07-31",
+                    "2026-08-01",
+                    "2026-08-03",
+                    "2026-08-04"
+                ],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-08-02"
+                ],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1200,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-03",
+            "evaluableFrom": "2026-07-31",
+            "evaluableTo": "2026-08-04"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-frequency",
+            "typeKey": "call_frequency_max",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "n": 2,
+                "windowDays": 2
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-frequency",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-noor",
+                "from": "2026-08-01",
+                "to": "2026-08-02",
+                "contributing": [
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-02",
+                        "slotKey": "night"
+                    }
+                ]
+            },
+            "explanation": "1 call in the 2 days from 2026-08-01 to 2026-08-02; at most 0 are permitted. The person was available on 1 day of that window and the rule allows one call in every 2: leave, days before the join date and days off the roster are not counted, so the allowance falls around them rather than rising.",
+            "rank": 3
+        },
+        {
+            "conditionId": "c-frequency",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-noor",
+                "from": "2026-08-02",
+                "to": "2026-08-03",
+                "contributing": [
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-02",
+                        "slotKey": "night"
+                    }
+                ]
+            },
+            "explanation": "1 call in the 2 days from 2026-08-02 to 2026-08-03; at most 0 are permitted. The person was available on 1 day of that window and the rule allows one call in every 2: leave, days before the join date and days off the roster are not counted, so the allowance falls around them rather than rising.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-frequency",
+            "evaluatedWindows": 4,
+            "skipped": []
+        }
+    ]
+}

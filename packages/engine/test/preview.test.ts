@@ -4,6 +4,7 @@ import { datesBetween, isoWeekday, parseYmd, type Ymd } from '../src/calendar/ym
 import type { Condition, Day, EvaluationContext } from '../src/contract/types';
 import { CONTRACT_SCHEMA, type JsonSchema } from '../src/contract/schema';
 import { ASSERTION_KEYWORDS, keywordsUsedBy } from '../src/contract/validate';
+import { permittedFor } from '../src/conditions/call_frequency_max';
 import { toleranceFor } from '../src/conditions/fairness_distribution';
 import { clauseFor } from '../src/conditions/target_per_period';
 import { UnimplementedConditionTypeError, UnknownConditionTypeError } from '../src/evaluate';
@@ -235,6 +236,9 @@ describe('the matrix — every parameter a type reads is named by its preview', 
      */
     it('runs over every type that has a preview today, named one by one', () => {
         expect(previewed.map((entry) => entry.typeKey).sort()).toEqual([
+            // Task 18 — owner decision J's AVAILABLE-day denominator, which the sentence has to name
+            // because the rule tightens around leave rather than loosening.
+            'call_frequency_max',
             // Task 13 — the two the tree could not resolve without the owner: decision S's three
             // attendee modes, and decision U's confirmed reading (a).
             'clinic_conflict',
@@ -427,6 +431,56 @@ describe('rolling_hours_max — the averaging multiplication, in words', () => {
         expect(sentence).toContain('7 consecutive days');
         expect(sentence).not.toContain('320');
         expect(sentence).not.toMatch(/averaged/i);
+    });
+});
+
+describe('call_frequency_max — owner decision J, the denominator said out loud', () => {
+    const render = (params: Record<string, unknown>): string =>
+        preview(condition('call_frequency_max', params), CONTEXT);
+
+    /**
+     * THE FIFTH SENTENCE WHOSE WORDING IS AN OWNER DECISION RATHER THAN TASTE, and the decision
+     * says so itself: *"the plain-language preview must say which denominator it used."*
+     *
+     * It has to, because the answer runs the opposite way to the reading a gate screen invites. A
+     * calendar denominator loosens as somebody takes leave; this one tightens, so *"one in 4"* over
+     * a 28-day window in which somebody was available on 14 days permits three calls and not seven.
+     * A reader who assumes calendar days will predict double the real allowance for exactly the
+     * person the rule exists to protect.
+     */
+    it('names AVAILABLE days as the denominator, and says the allowance falls rather than rises', () => {
+        const sentence = render({ n: 4, windowDays: 28 });
+
+        expect(sentence).toMatch(/available/i);
+        expect(sentence).toMatch(/not calendar days/i);
+        expect(sentence).toMatch(/leave/i);
+        expect(sentence).toMatch(/FALLS/);
+    });
+
+    /**
+     * The worked points, for `fairness_distribution`'s reason one type along: an allowance stated
+     * as a rule rather than as a number leaves the reader to divide, and the number they arrive at
+     * is the wrong one under half the inputs. Both points are printed, and the halved one is the
+     * one a calendar-denominator reader gets wrong.
+     */
+    it('works the allowance out at a full window and at one halved by leave', () => {
+        const sentence = render({ n: 4, windowDays: 28 });
+
+        expect(sentence).toContain('28 available days allow 7 calls');
+        expect(sentence).toContain('14 available days allow 3 calls');
+    });
+
+    it('rounds the allowance DOWN, which is what makes a short window permit nothing', () => {
+        expect(permittedFor(3, 4)).toBe(0);
+        expect(permittedFor(4, 4)).toBe(1);
+        expect(permittedFor(27, 4)).toBe(6);
+    });
+
+    it('measures the window in days, and never names a week', () => {
+        const sentence = render({ n: 4, windowDays: 28 });
+
+        expect(sentence).toContain('28 consecutive days');
+        expect(sentence).not.toMatch(/\bweek/i);
     });
 });
 

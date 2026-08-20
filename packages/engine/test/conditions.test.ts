@@ -73,6 +73,11 @@ describe('the condition corpus', () => {
      */
     it('found the cases it claims to, and each states why it exists', () => {
         expect(FIXTURES.map((fixture) => fixture.name)).toEqual([
+            'call-frequency-max-a-window-it-can-only-see-part-of-is-left-unjudged',
+            'call-frequency-max-is-density-where-min-gap-is-spacing',
+            'call-frequency-max-the-denominator-is-eligible-days-not-calendar-days',
+            'call-frequency-max-the-scope-excludes-somebody-their-own-calls-would-flag',
+            'call-frequency-max-the-window-that-begins-in-the-published-month',
             'clinic-conflict-a-named-attendee-who-rotates-nowhere',
             'clinic-conflict-levels-mode-reads-the-level-on-the-clinic-date',
             'clinic-conflict-post-call-reaches-the-day-after-the-last-horizon-date',
@@ -125,6 +130,11 @@ describe('the condition corpus', () => {
             'post-duty-exclusion-a-weekly-cadence-from-duty-ends-by-spandays',
             'post-duty-exclusion-the-from-and-to-kinds-each-narrow',
             'post-duty-exclusion-the-window-opens-on-the-thirty-first-and-closes-on-the-first',
+            'rolling-hours-max-a-night-call-counts-its-hours-on-both-dates-it-runs-on',
+            'rolling-hours-max-a-slot-that-does-not-count-toward-hours-is-left-out',
+            'rolling-hours-max-the-averaging-multiplies-both-the-window-and-the-cap',
+            'rolling-hours-max-the-scope-excludes-somebody-their-own-hours-would-flag',
+            'rolling-hours-max-the-window-that-begins-in-the-published-month',
             'same-unit-conflict-a-day-exception-lifts-the-ban-on-that-date-alone',
             'same-unit-conflict-two-rotators-on-one-unit-and-a-colleague-elsewhere',
             'target-per-period-a-level-with-no-entry-in-the-map-has-no-target',
@@ -657,6 +667,7 @@ describe('the horizon-edge corpus — what the carry-in tail is actually asserte
         );
 
         expect(claiming).toEqual([
+            'call_frequency_max',
             'composition',
             'consecutive_max',
             'count_max',
@@ -666,6 +677,7 @@ describe('the horizon-edge corpus — what the carry-in tail is actually asserte
             'min_gap',
             'overlap_block',
             'post_duty_exclusion',
+            'rolling_hours_max',
             'target_per_period',
         ]);
         expect(claiming.filter((typeKey) => !covered.has(typeKey))).toEqual([]);
@@ -735,6 +747,7 @@ describe('the horizon-edge corpus — what the carry-in tail is actually asserte
 
     it('runs over the carry-in cases, named', () => {
         expect(seamCases.map((fixture) => fixture.name)).toEqual([
+            'call-frequency-max-the-window-that-begins-in-the-published-month',
             'composition-the-period-that-begins-in-the-published-month',
             'consecutive-max-the-run-spans-the-thirty-first-into-the-first',
             'count-max-the-week-that-begins-in-the-published-month',
@@ -744,8 +757,93 @@ describe('the horizon-edge corpus — what the carry-in tail is actually asserte
             'min-gap-hours-across-the-carry-in-from-the-published-month',
             'overlap-block-carry-in-at-the-left-edge',
             'post-duty-exclusion-the-window-opens-on-the-thirty-first-and-closes-on-the-first',
+            'rolling-hours-max-the-window-that-begins-in-the-published-month',
             'target-per-period-the-period-that-begins-in-the-published-month',
         ]);
+    });
+});
+
+describe('the two duty-hours caps of Task 18, and the line between them', () => {
+    const world = FIXTURES.find(
+        (f) => f.name === 'call-frequency-max-a-window-it-can-only-see-part-of-is-left-unjudged',
+    ) as Fixture;
+
+    const row = (typeKey: string, params: Record<string, unknown>): Condition => ({
+        id: 'c-probe',
+        typeKey,
+        class: 'soft',
+        rank: 3,
+        active: true,
+        params,
+    });
+
+    /**
+     * OWNER DECISION L'S DIVIDING LINE IS NOT CAP-VERSUS-FLOOR, AND THIS IS WHERE THAT SHOWS.
+     *
+     * The decision lets a cap evaluate a window the engine can only see part of, on the stated
+     * ground that *"a count that is too low never exceeds a limit"* — which is true only when the
+     * limit was AUTHORED. `rolling_hours_max`'s is: a department wrote 12 h down. `call_frequency_max`'s
+     * is `floor(availableDays / n)`, computed from the window's own contents, so a partial window
+     * loses eligible days as fast as it loses calls and the allowance falls with the count.
+     *
+     * Both are `direction: 'cap'` in the registry and both are asserted HERE, on ONE world, because
+     * a fixture apiece would let the two behaviours drift into looking like two unrelated choices.
+     * Five windows; the hours cap measures all five, the frequency cap measures the one whole window
+     * and reports the other four.
+     */
+    it('the hours cap measures a partial window and the frequency cap declines it', () => {
+        const hours = coverage(world.schedule, world.context, [
+            row('rolling_hours_max', { hours: 12, windowDays: 3 }),
+        ]);
+        const frequency = coverage(world.schedule, world.context, [
+            row('call_frequency_max', { n: 2, windowDays: 3 }),
+        ]);
+
+        expect(hours[0]?.evaluatedWindows).toBe(5);
+        expect(hours[0]?.skipped).toEqual([]);
+        expect(frequency[0]?.evaluatedWindows).toBe(1);
+        expect(frequency[0]?.skipped).toHaveLength(4);
+    });
+
+    /**
+     * THE FALSE POSITIVE THE GATE PREVENTS, MEASURED RATHER THAN ASSERTED IN PROSE. The window
+     * 30 Jul – 1 Aug reaches two days outside the evaluable range: one call is visible in it and one
+     * eligible day, so the allowance computes to zero and the call is "over" — on a person who took
+     * two calls in three days they were available for, which is exactly at the rule. Reaching that
+     * verdict needs the gate removed, so it is reached by evaluating the window directly.
+     */
+    it('would have reported the partial window as a breach, which is why it is declined', () => {
+        const widened: Schedule = {
+            ...world.schedule,
+            horizon: { ...world.schedule.horizon, from: d('2026-07-30'), evaluableFrom: d('2026-07-30') },
+        };
+
+        const wide = evaluate(widened, world.context, [row('call_frequency_max', { n: 2, windowDays: 3 })]);
+
+        expect(wide.map((violation) => (violation.location as { from: Ymd }).from)).toContain(d('2026-07-30'));
+        expect(evaluate(world.schedule, world.context, world.conditions)).toHaveLength(1);
+    });
+
+    /**
+     * Owner decision L's per-PERSON half is deliberately NOT applied by `call_frequency_max`, and
+     * the two readings are one line apart. A floor suppresses somebody who joined mid-window because
+     * an absolute number they could not have reached is a false positive. This rule's number is not
+     * absolute: the days before they joined are already out of the denominator, so the allowance has
+     * moved with them. Suppressing anyway would delete the rule for every new starter's first window
+     * — which is when a department is likeliest to over-call them — and would show up as a coverage
+     * row instead of a violation.
+     */
+    it('judges a person who joined part way through the window rather than naming them in coverage', () => {
+        const joined = withPeople(world.context, (copy) => {
+            for (const person of copy.people) {
+                person.joinedAt = d('2026-08-01');
+            }
+        });
+
+        const conditions = [row('call_frequency_max', { n: 2, windowDays: 3 })];
+
+        expect(evaluate(world.schedule, joined, conditions)).toHaveLength(1);
+        expect(coverage(world.schedule, joined, conditions)[0]?.skipped).toHaveLength(4);
     });
 });
 

@@ -61,6 +61,31 @@ use Tests\TestCase;
  * Neither half is redundant and neither is sufficient. Both were watched failing on the shape the
  * other is blind to, which is the only way this was going to be known.
  *
+ * ## THE GAP BETWEEN THEM, MEASURED (P2-2 review, 2026-08-21)
+ *
+ * Recording that the two halves split does not say WHERE, and the where turned out to be a hole
+ * rather than a seam. The source half reached only `where`-family calls and six named narrowing
+ * shapes; the behavioural half can only see somebody the stranded-span union cannot rescue — and of
+ * the eight people below, SEVEN held a rotation. So `$active->reject(fn ($p) => $p->external)`,
+ * a narrowing on the axis this fixture's own comment calls *"the person a loader is likeliest to
+ * drop"*, was invisible to both halves at once and the suite stayed GREEN under it.
+ *
+ * Closed on both sides, because each closes a shape the other cannot:
+ *
+ *  - `->filter(` and `->reject(` join the source needles. MEASURED at zero in the namespace today.
+ *    The bare `filter(` is deliberately NOT bought: `ContextBuilder::availableDays()` legitimately
+ *    calls `array_filter()`, so the bare needle would buy the first entry in an allow-list whose
+ *    emptiness is the point — and the consequence is a STATED RESIDUAL, that a narrowing spelled
+ *    `array_filter($people, …)` still walks past the source half.
+ *  - A ninth person is added below who is external AND holds no rotation, so the union has nothing
+ *    to rescue them with. That is what makes the residual survivable: the shape the source half
+ *    cannot see now lands on the behavioural half, which is the arrangement the two halves were
+ *    always claimed to have.
+ *
+ * Both were watched: `->reject(` planted → both halves red; the same narrowing rewritten as
+ * `array_filter()` over the loaded collection → source half green, behavioural half red naming the
+ * ninth person. Reverted.
+ *
  * ## WHAT THE SOURCE HALF DELIBERATELY DOES NOT NEEDLE, AND THE ONE NARROWING THAT IS ALLOWED
  *
  * `Person::query()->active()` is the one population narrowing this loader performs, and it is a
@@ -121,6 +146,13 @@ class EngineHoldsNoRuleTest extends TestCase
      * clause turned into a filter — the exact inference MR-04 refuses and that `ContextBuilder`
      * states out loud that it does not make.
      *
+     * `->filter(` and `->reject(` are the shape the where-family regex structurally cannot reach: a
+     * narrowing applied to the collection AFTER it was loaded, which is what a "send only what
+     * matters" optimisation looks like once somebody has already fetched whole models. Measured at
+     * zero. The bare `filter(` is NOT bought — `availableDays()` calls `array_filter()` for the
+     * availability denominator, which is a legitimate fold and not a population narrowing — and the
+     * residual that leaves is stated in the class docblock rather than implied.
+     *
      * @var list<string>
      */
     private const NARROWING_NEEDLES = [
@@ -130,6 +162,8 @@ class EngineHoldsNoRuleTest extends TestCase
         '->having(',
         '->limit(',
         '->take(',
+        '->filter(',
+        '->reject(',
     ];
 
     /** @var array<string, list<string>> */
@@ -219,10 +253,14 @@ class EngineHoldsNoRuleTest extends TestCase
     /**
      * THE BEHAVIOURAL HALF, and the load-bearing one.
      *
-     * Eight people, every one of whom some condition type has a reason to drop, and a clinic
-     * nobody runs any more. Every one must arrive DESCRIBED. A narrowing performed in PHP after the
-     * query, or written with a needle nobody thought of, is invisible to the scan above and lands
-     * here.
+     * Nine people, every one of whom some condition type has a reason to drop, and a clinic nobody
+     * runs any more. Every one must arrive DESCRIBED. A narrowing performed in PHP after the query,
+     * or written with a needle nobody thought of, is invisible to the scan above and lands here.
+     *
+     * TWO of the nine hold no rotation, and that is the load-bearing shape rather than a
+     * duplication: `ContextBuilder`'s stranded-span union re-adds anybody who still holds one, so
+     * this half is structurally blind to a narrowing that drops a person the union then rescues.
+     * Case 9 is the second, on the axis case 7 could only assert while holding a span.
      *
      * `assertSame` over the whole SET rather than eight `assertContains` calls: the property is
      * that nothing was dropped, and a per-person loop stops guarding the moment somebody's
@@ -306,6 +344,16 @@ class EngineHoldsNoRuleTest extends TestCase
         RotaAssignment::set($departed, $period, $unit);
         $departed->forceFill(['active' => false])->save();
         $expected[] = ContextBuilder::personKey($departed);
+
+        // 9. External AND holding no rotation — the ONE person on this list the stranded-span
+        //    union cannot rescue on an axis a condition judges. Every case above except 3 holds a
+        //    span, so a narrowing performed in PHP on `external`, `joined_at` or a level was
+        //    re-added by the union and this half stayed green under it; case 3 is unrotated but
+        //    otherwise ordinary, so "has no rotation" was the only axis it could speak for. The
+        //    combination is what makes the source half's stated residual survivable.
+        $externalUnrotated = Person::factory()->create(['external' => true]);
+        LevelAssignment::assign($externalUnrotated, $level, '2026-01-01');
+        $expected[] = ContextBuilder::personKey($externalUnrotated);
 
         $retired = ClinicWriter::create($unit, ['name' => 'Retired', 'weekday' => 2, 'session' => 'AM']);
         ClinicWriter::setActive($retired, false);

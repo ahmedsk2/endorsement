@@ -186,6 +186,66 @@ class EvaluationRequestTest extends TestCase
     }
 
     /**
+     * THE THIRD STREAM, WHICH NO CASE EVER SUPPLIED (P2-2 review finding 7, 2026-08-21).
+     *
+     * The widening loop reads three streams — `duties`, `priorDuties`, `followingDuties` — and
+     * every case in this file left the third empty, so dropping it from the loop altogether left
+     * the whole suite GREEN. Only the PRIOR tail was exercised, and the right edge was exercised
+     * through `duties` alone.
+     *
+     * `followingDuties` is not hypothetical: CG-03 makes the period after the drafted one a
+     * different, already-published schedule, and it sits in the context read-only for exactly the
+     * same reason the prior tail does. A `min_gap` or `post_duty_exclusion` reaching forward off
+     * the last date of the block is what it is there for — and if the range stops at the period,
+     * those dates are simply absent from the day vector and from availability, which is P2 Task
+     * 21 finding 6's silent false positive pointing the other way.
+     *
+     * The anchor is deliberately a SEVEN-day slot, so this one case pins both halves at once: the
+     * stream being read at all, and `date + spanDays - 1` being applied to it rather than the
+     * anchor being taken bare.
+     *
+     * WATCHED RED against `foreach ([$duties, $priorDuties] as $stream)` — the third stream
+     * dropped — which returns `evaluableTo` to the period's own last date.
+     */
+    public function test_a_following_duty_widens_the_right_edge_across_the_dates_it_occupies(): void
+    {
+        $period = $this->seedPeriod();
+        Person::factory()->create(['joined_at' => null]);
+
+        $document = $this->document();
+        $document['slots'][] = [
+            'key' => 'ward-week',
+            'kind' => 'ward',
+            'cadence' => 'weekly',
+            'spanDays' => 7,
+            'startMinute' => 480,
+            'endMinute' => 1020,
+            'crossesMidnight' => false,
+            'countsHours' => true,
+        ];
+        // Already published, in the block AFTER the one being drafted. Anchored on the 18th, it
+        // occupies through the 24th.
+        $document['followingDuties'][] = ['personKey' => 'p1', 'date' => '2026-08-18', 'slotKey' => 'ward-week'];
+
+        $request = EvaluationRequest::forPeriod($period, $document);
+        $days = $request['context']['days'];
+        $horizon = $request['schedule']['horizon'];
+
+        $this->assertSame('2026-08-24', $horizon['evaluableTo']);
+        $this->assertSame(self::TO, $horizon['to'], 'the period itself must not move');
+
+        // The binding, not just the arithmetic: the day vector has to REACH the date the horizon
+        // claims, and the availability list with it. Absence of data and unavailability are
+        // indistinguishable in a list of dates.
+        $this->assertSame('2026-08-24', $days[array_key_last($days)]['date']);
+        $this->assertContains('2026-08-24', $request['context']['people'][0]['eligibleDays']);
+
+        // And the left edge still comes from the PRIOR tail, so this case cannot pass by the two
+        // streams having been collapsed into one.
+        $this->assertSame(self::TAIL_DUTY_DATE, $horizon['evaluableFrom']);
+    }
+
+    /**
      * The engine throws on a duty naming a slot it was not given, and the entrypoint reports that
      * as a BUG (exit 1) because it is not a contract failure. Refusing here turns a stack trace
      * into a sentence naming the slot, before anything is spawned.

@@ -3434,3 +3434,76 @@ meaning *"the engine is broken"* into a sentence naming the slot.
 And an unknown period key lists the ones the instance actually has. No screen in this platform shows
 a period KEY, so the alternative is an operator guessing at the spelling of something they have
 never seen.
+
+---
+
+### From the P2-2 adversarial review, PHP half (2026-08-21) — one species, ten instances, and a required contract field with no reader
+
+Every finding fixed here is one defect wearing ten faces: **a claim asserted only where it MATCHES
+and never where it must not.** None was visible in review and none would have been found by reading
+the code — each was found, or confirmed, by planting the mutation the assertion claims to catch and
+watching what happened. **Eight of eight batched plants stayed GREEN on the tree as shipped**, which
+is the measurement the batch technique exists for.
+
+**The confirmed three.**
+
+1. **`days[].periodKey` was unasserted in every direction that could fail.** Replacing the whole
+   bounds comparison in `ContextBuilder::dayVector()` with `true` — every date carrying the FIRST
+   period's key regardless of bounds — left all 1738 PHP tests green. The only assertion on the value
+   anywhere was `assertNotNull` on a date that is the period's own first date, which is green under
+   that mutation and under both off-by-one readings besides. Closed by a case over a horizon spanning
+   two blocks **with an eight-day gap between them**, asserting the key on each block's first AND
+   last date and `null` in the gap; watched red against all three mutations. Both branches are live —
+   `EvaluationRequest::forPeriod()` widens the range over carry-in duties, so a horizon whose tail
+   lies outside the drafted period is routine, and a department whose blocks do not abut is ordinary.
+2. **A closed level span's end date was asserted nowhere.** Carrying every span open reads every
+   promoted person at their old level, on every level-scoped condition, for the rest of time —
+   `person_levels` is effective-dated precisely because promotion is normal. Closed by a promotion
+   case asserting the whole span set, the two spans meeting exactly at `from - 1`.
+3. **The range widening never saw a non-empty `followingDuties`.** Only the prior tail was ever
+   exercised and the right edge was only ever pushed through `duties`, so dropping the third stream
+   from the loop left the suite green. Closed with a following duty on a SEVEN-day slot, which pins
+   the stream being read and `date + spanDays - 1` being applied to it in one case.
+
+**The six triaged, five real.** `EngineIsAReaderTest`'s needles could not see a cache write — the
+one scenario its own docblock names as the change it exists to trip over; `Cache::put()` planted
+inside `ContextBuilder::forHorizon()` left the suite green, because a cache store is none of the
+nineteen row-writing verbs. `EngineHoldsNoRuleTest`'s two halves had a hole rather than a seam
+between them: seven of its eight fixture people held a rotation, so the stranded-span union rescued
+them and a PHP-side `->reject(fn ($p) => $p->external)` was invisible to both halves at once.
+`clinic_conflict`'s named-attendee list was fixtured only in `levels` mode, so deleting the branch
+that builds it changed nothing. `external` was asserted only where it is false. And nothing made
+`EvaluationRequest` the ONE assembler, so the `eligibleDays` widening defect could be reintroduced
+verbatim by a second caller with `EvaluationRequestTest` entirely green — a fix to one file is not a
+property of an application.
+
+**PARTLY REJECTED, recorded so it is not re-raised in the wrong form.** The payload disclosure
+test's value-scan omitting `email` is a real omission, but it is NOT reachable by the obvious shape:
+`->email` in the builder is caught at source by `ContactFieldsAreProjectedOnceTest`, and a leak under
+a RENAMED key is caught by the CG-10 schema's `additionalProperties: false`. The finding survives
+only through that source guard's own stated residual — a concatenated or variable spelling — and the
+plant that proves it is `$key = (string) $person->{'e'.'mail'}`, which evades every needle, ships no
+`email` key, and satisfies the schema because `key` is a string. The address and the short-name
+handle are now pinned in the fixture and scanned by VALUE.
+
+#### `days[].periodKey` — a required contract member with ZERO readers
+
+`tests/Feature/Build/CalendarSurfaceIsManifestedTest.php` traded away a whole `Calendar::periodFor`
+manifest entry on the stated ground *"The engine reads `days[].periodKey`"*. **That is false against
+this tree.** No module under `packages/engine/src/` reads the field — only `contract/schema.ts`,
+which marks it `required`, and `contract/types.ts`, which declares it. Every window-located type
+resolves period and week windows from `context.periods` through `support.ts::periodWindows()`.
+
+The exemption's reasoning is corrected in place: `periodFor` is server-side-only because it issues a
+QUERY, which is true on its own and needs no claim about a reader at all. **The field itself is a
+`packages/` decision and is left to whoever owns that half**, with the recommendation recorded here:
+**bind it rather than drop it.** It is not the same case as `days[].dayType`, which the engine cannot
+derive at all (holidays, Hijri) — `periodKey` IS derivable from `periods[]` sitting beside it, and an
+unread second expression of one fact is exactly where two answers drift silently, the way
+`AuditChain::canonical()` and `overlap_block`'s pruning already have in this codebase. Either
+`contract.test.ts` gains the invariant that ties the two together — `days[d].periodKey` is non-null
+exactly when `d` falls inside some `periods[i]`, and names that period — or the field comes out of
+the contract and `ContextBuilder` stops computing it. Binding is the better half of that choice
+because P3's workbench badges a CELL (WB-03) and will want a per-date period label, and re-deriving
+one in the browser is the second definition this phase keeps paying for. What is no longer acceptable
+is the third state the field was in: mandatory, unread, and justified by something untrue.

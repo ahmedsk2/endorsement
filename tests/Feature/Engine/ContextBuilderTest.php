@@ -85,6 +85,67 @@ class ContextBuilderTest extends TestCase
         $this->assertNotNull($first['periodKey']);
     }
 
+    /**
+     * THE PERIOD-BOUNDS SCAN, ASSERTED WHERE IT MATCHES **AND WHERE IT MUST NOT** (P2-2 review
+     * finding 1, 2026-08-21).
+     *
+     * `days[].periodKey` was unasserted in every direction that could fail. Replacing the whole
+     * comparison in `ContextBuilder::dayVector()` with `true` — so every date carries the FIRST
+     * period's key regardless of bounds — left all 1738 PHP tests GREEN. The only assertion on the
+     * value anywhere was `assertNotNull` on a date that is the period's own first date, which is
+     * green under that mutation and under both off-by-one readings besides.
+     *
+     * BOTH BRANCHES ARE LIVE. `EvaluationRequest::forPeriod()` widens the context range over every
+     * date a carry-in duty occupies, so a real evaluation routinely builds a horizon whose tail
+     * lies outside the drafted period; and a department whose blocks do not abut — a gap for an
+     * exam week, a shortened summer — is ordinary, not exotic.
+     *
+     * WATCHED RED against three mutations, each reverted: the comparison replaced by `true`
+     * (2026-08-24 came back as block 1), `>=` narrowed to `>` (the left edge went null) and `<=`
+     * narrowed to `<` (the right edge went null). The two boundary dates are the load-bearing
+     * half — a mid-block date is correct under every one of the three.
+     */
+    public function test_the_period_key_is_the_right_periods_on_both_edges_and_null_between_them(): void
+    {
+        $this->seedPeriod();
+
+        Period::query()->create([
+            'academic_year' => '2026-2027',
+            'kind' => Period::WEEK_BLOCK,
+            'position' => 2,
+            'label' => 'Block 2',
+            // Deliberately NOT abutting block 1: the eight dates between the two belong to no
+            // period, and a date inside none of them is a real state the contract carries as null.
+            'starts_on' => '2026-08-24',
+            'ends_on' => '2026-09-06',
+        ]);
+
+        $context = ContextBuilder::forHorizon(self::FROM, '2026-09-06');
+
+        $byDate = [];
+
+        foreach ($context['days'] as $day) {
+            $byDate[$day['date']] = $day['periodKey'];
+        }
+
+        $this->assertCount(2, $context['periods'], 'a horizon spanning two blocks touches both');
+
+        $this->assertSame('2026-2027-01', $byDate['2026-08-02'], 'block 1\'s FIRST date');
+        $this->assertSame('2026-2027-01', $byDate['2026-08-15'], 'block 1\'s LAST date');
+        $this->assertSame('2026-2027-02', $byDate['2026-08-24'], 'block 2\'s FIRST date');
+        $this->assertSame('2026-2027-02', $byDate['2026-09-06'], 'block 2\'s LAST date');
+
+        $this->assertArrayHasKey('2026-08-16', $byDate, 'a date in no period is carried, never dropped');
+        $this->assertNull($byDate['2026-08-16']);
+        $this->assertNull($byDate['2026-08-23']);
+
+        $this->assertCount(
+            8,
+            array_filter($byDate, static fn (?string $key): bool => $key === null),
+            'exactly the eight dates between the two blocks belong to neither'
+        );
+    }
+
     public function test_the_day_type_is_the_calendars_answer_and_holiday_beats_weekend(): void
     {
         $this->seedPeriod();
@@ -224,6 +285,69 @@ class ContextBuilderTest extends TestCase
     }
 
     /**
+     * A CLOSED LEVEL SPAN ENDS WHERE IT WAS CLOSED (P2-2 review finding 5, 2026-08-21).
+     *
+     * The sibling case above pins the OPEN end and nothing pinned the closed one: carrying every
+     * span open — `'to' => self::NO_KNOWN_END` unconditionally — left the whole suite GREEN, and
+     * on the far side of the contract that reads every promoted person at their old level for the
+     * rest of time. `spanKeyAt()` takes the first span covering the date, so a stale open span
+     * shadows its successor on every level-scoped condition: `eligibility`, `composition`,
+     * `count_max`'s level filter, `target_per_period`'s targets map.
+     *
+     * `person_levels` is effective-dated precisely because promotion is normal, and
+     * `LevelAssignment::assign()` closes the prior span to the day BEFORE the new one — inclusive
+     * at both ends, no gap and no overlap. That day is what the payload must carry.
+     *
+     * WATCHED RED against `'to' => self::NO_KNOWN_END` with the `effective_to` read dropped.
+     */
+    public function test_a_closed_level_span_ends_the_day_before_the_promotion(): void
+    {
+        $this->seedPeriod();
+        $before = Level::factory()->create(['code' => 'XE6', 'display_order' => 60]);
+        $after = Level::factory()->create(['code' => 'XE7', 'display_order' => 70]);
+
+        $person = Person::factory()->create();
+        LevelAssignment::assign($person, $before, '2026-01-01');
+        LevelAssignment::assign($person, $after, '2026-08-10');
+
+        $entry = $this->personEntry(ContextBuilder::forHorizon(self::FROM, self::TO), $person);
+
+        // Asserted as the whole SET rather than one field of one span: the property is that a
+        // promotion produces two spans meeting exactly, and a per-field check stops saying so the
+        // moment somebody edits an expectation to match what the code now returns.
+        $this->assertSame(
+            [
+                ['key' => 'XE6', 'from' => '2026-01-01', 'to' => '2026-08-09'],
+                ['key' => 'XE7', 'from' => '2026-08-10', 'to' => ContextBuilder::NO_KNOWN_END],
+            ],
+            $entry['levelSpans'],
+            'a closed span must end the day before its successor starts; only the open one has no end'
+        );
+    }
+
+    /**
+     * `external` is a parameter of ONE type (`fairness_distribution`'s `excludeExternal`) and a
+     * fact about the roster row — so the payload must carry BOTH answers. It was asserted only
+     * where it is false, which is green under `'external' => false` hardcoded: every external
+     * consultant then arrives looking like a rotator, and the one type that reads the flag
+     * silently starts counting them into the department's fairness denominator.
+     *
+     * WATCHED RED in both directions — the field pinned to `false`, and pinned to `true`.
+     */
+    public function test_the_external_flag_is_carried_for_both_answers(): void
+    {
+        $this->seedPeriod();
+
+        $ordinary = Person::factory()->create(['external' => false]);
+        $external = Person::factory()->create(['external' => true]);
+
+        $context = ContextBuilder::forHorizon(self::FROM, self::TO);
+
+        $this->assertFalse($this->personEntry($context, $ordinary)['external']);
+        $this->assertTrue($this->personEntry($context, $external)['external']);
+    }
+
+    /**
      * Owner decision J, answered: the denominator is ELIGIBLE DAYS. Leave and the dates before a
      * join date come out; nothing else is inferred, because nothing else is recorded.
      */
@@ -282,6 +406,48 @@ class ContextBuilderTest extends TestCase
         $this->assertSame(Clinic::MODE_LEVELS, $context['clinics'][0]['attendeeMode']);
         $this->assertSame(['XE3'], $context['clinics'][0]['attendeeLevelKeys']);
         $this->assertSame([], $context['clinics'][0]['attendeePersonKeys']);
+    }
+
+    /**
+     * THE `named` MODE, WHICH WAS THE HALF NOTHING FIXTURED (P2-2 review, 2026-08-21).
+     *
+     * `ContextBuilder::clinicRules()` carries the mode and its TWO lists because
+     * `clinic_conflict`'s crossing is wrong in both directions without them — and only the
+     * `levels` list was ever exercised. Deleting the `person_id` branch entirely left the suite
+     * GREEN: the sole assertion on `attendeePersonKeys` was `[]`, on a clinic in `levels` mode,
+     * where the branch cannot fire. The consequence is the one P2 Task 1 finding 17 names — a
+     * clinic whose attendees are NAMED includes an external consultant who rotates nowhere, so a
+     * dropped list makes `clinic_conflict` match nobody and report nothing.
+     *
+     * The expectation goes through `ContextBuilder::personKey()` rather than a literal, because
+     * the load-bearing property is that a clinic's person key is the SAME key the roster carries.
+     * A clinic naming a key no person entry uses is a rule that resolves to nobody, which is the
+     * same silence one spelling along.
+     */
+    public function test_a_named_attendee_clinic_carries_the_person_keys_the_roster_uses(): void
+    {
+        $this->seedPeriod();
+        $unit = Unit::query()->create(['code' => 'XEG', 'name' => 'Engine Unit G', 'active' => true, 'clinic_owner' => true]);
+
+        // External on purpose: the person a unit comparison could never reach, and therefore the
+        // one the named list exists for.
+        $named = Person::factory()->create(['external' => true]);
+
+        $clinic = ClinicWriter::create($unit, ['name' => 'Named Clinic', 'weekday' => 4, 'session' => 'AM']);
+        ClinicWriter::setAttendees($clinic, Clinic::MODE_NAMED, [['person_id' => $named->getKey()]]);
+
+        $context = ContextBuilder::forHorizon(self::FROM, self::TO);
+
+        $this->assertCount(1, $context['clinics']);
+        $this->assertSame(Clinic::MODE_NAMED, $context['clinics'][0]['attendeeMode']);
+        $this->assertSame([ContextBuilder::personKey($named)], $context['clinics'][0]['attendeePersonKeys']);
+        $this->assertSame([], $context['clinics'][0]['attendeeLevelKeys']);
+
+        $this->assertContains(
+            ContextBuilder::personKey($named),
+            array_column($context['people'], 'key'),
+            'the clinic names a person key the roster does not carry, so the rule resolves to nobody'
+        );
     }
 
     /**
@@ -355,6 +521,25 @@ class ContextBuilderTest extends TestCase
      * with nothing rendering them, on a DEFAULT department. This context is built for a payload
      * another person's browser holds (WB-03), it takes no viewer at all, and it is asserted on the
      * most permissive institution setting the system can produce.
+     *
+     * ## THE VALUE SCAN OMITTED `email`, AND THAT WAS THE ONE THAT MATTERED (P2-2 review, 2026-08-21)
+     *
+     * The two scans below answer different questions and neither subsumes the other. The KEY scan
+     * catches a field shipped under its own name; the VALUE scan catches the same field shipped
+     * under a name nobody thought to needle. `email` was on the key list and missing from the value
+     * list, so a leak under a renamed key passed — and P1d-2's real disclosure was an address.
+     *
+     * The remaining defence at source level, `ContactFieldsAreProjectedOnceTest`, needles `->email`
+     * and `'email'`/`"email"`, and states its own residual out loud: *"`$person->{$col}` where the
+     * column name is a variable, and any concatenated spelling. No substring scan reaches a name
+     * that is not written down."* That residual is exactly what a payload-level value scan is for,
+     * and it is the shape this case was WATCHED RED against — `$key = (string) $person->{'e'.'mail'}`
+     * planted in the roster loop, which evades every source needle, carries no `email` KEY, and
+     * satisfies the CG-10 schema because `key` is a string. Green before the address was added to
+     * the list below; red after; reverted.
+     *
+     * Both values are pinned rather than left to the factory, because a scan for a value the
+     * fixture generated at random is a scan for a value that could collide with nothing.
      */
     public function test_no_contact_field_can_reach_the_payload(): void
     {
@@ -365,6 +550,8 @@ class ContextBuilderTest extends TestCase
         Institution::current()->update(['contact_visibility' => Institution::CONTACT_MEMBERS]);
 
         $person = Person::factory()->create([
+            'email' => 'engine-context-probe@example.test',
+            'short_name' => 'ECPROBE',
             'phone' => '+966500000000',
             'notes' => 'a supervisor wrote this',
             'constraints' => ['no nights'],
@@ -384,7 +571,19 @@ class ContextBuilderTest extends TestCase
 
         $encoded = (string) json_encode($context);
 
-        foreach (['+966500000000', 'a supervisor wrote this', 'no nights', (string) $person->full_name] as $secret) {
+        $secrets = [
+            // The address, which the key scan above already names and the value scan did not.
+            'engine-context-probe@example.test',
+            '+966500000000',
+            'a supervisor wrote this',
+            'no nights',
+            (string) $person->full_name,
+            // The handle is a NAME of record too — the rota export identifies a person by it
+            // precisely because it is human-readable, which is what makes it a disclosure here.
+            'ECPROBE',
+        ];
+
+        foreach ($secrets as $secret) {
             $this->assertStringNotContainsString($secret, $encoded, 'a person\'s own text reached the engine payload');
         }
     }

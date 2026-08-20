@@ -72,6 +72,18 @@ class CalendarIsTheOnlyConverterTest extends TestCase
     ];
 
     /**
+     * Runtime dependencies a package under `packages/` may declare.
+     *
+     * DELIBERATELY EMPTY, and cheap to keep that way: the engine is pure integer arithmetic over
+     * data the server hands it (P2 Decision B), so it has no runtime dependency to declare and a
+     * first entry here is a decision somebody should have to write down. The same policy as the two
+     * client-side scans below, one layer out — those forbid the code, this forbids buying it.
+     *
+     * @var list<string>
+     */
+    private const PACKAGE_RUNTIME_DEPENDENCY_ALLOW_LIST = [];
+
+    /**
      * Every file allowed to construct a date/time value directly (`Carbon::parse()`,
      * `CarbonImmutable::parse()`, `new DateTime`, `DateTime::createFromFormat`) instead of going
      * through `App\Support\Calendar` — the exact three sites Calendar's own docblock names
@@ -153,6 +165,94 @@ class CalendarIsTheOnlyConverterTest extends TestCase
         $dir = resource_path('js');
 
         return File::exists($dir) ? File::allFiles($dir) : [];
+    }
+
+    /**
+     * The same two client-side scans, over `packages/` — the repository's TypeScript (P2 Task 6).
+     *
+     * WHY THIS EXISTS, MEASURED RATHER THAN ARGUED. Both scans below take their scope from
+     * `resource_path('js')`, so `packages/` escaped them by construction — a loophole, not a
+     * permission. It was proved a loophole rather than assumed: `packages/engine/src/scratch.ts`
+     * was planted containing a `new Date()` call and a two-entry array of quoted day names, and
+     * this class ran GREEN, 7 tests and 7 assertions. That green is the finding, and it is why the
+     * collector below is fed into both scans rather than into a third one nobody would think to
+     * extend next time.
+     *
+     * THE ALLOW-LIST STAYS EMPTY IN BOTH DIRECTIONS, and that is affordable rather than aspirational:
+     * P2 Decision B leaves the engine with no `Date`, no instant and no timezone at all — its date
+     * type is a branded `Y-m-d` string over integer civil-date arithmetic and its time type is
+     * minutes from local midnight — so there is nothing here to exempt. All ten needles and the
+     * weekday pattern measured ZERO hits across `packages/` at Tasks 2, 4 and 5, including against
+     * the calendar mirror itself, which is the one file in this repository that would have had an
+     * excuse. The absence is real rather than allow-listed, which is `ClinicHooksTest`'s property
+     * and the only kind worth having.
+     *
+     * The extension filter is deliberate and narrower than the `resources/js` scan's (which has
+     * none): a package directory holds `package.json`, lock files and, once anybody runs `npm
+     * install` inside one, `node_modules` — and a needle found in a third party's shipped source is
+     * noise that would force the first allow-list entry within a week. `node_modules` and `dist` are
+     * skipped for the same reason: they are somebody else's code and our own build output.
+     *
+     * STATED RESIDUAL: a source scan of our own files cannot see a date library arriving as an npm
+     * DEPENDENCY. `test_no_package_under_packages_declares_a_runtime_dependency` closes the direct
+     * half of that; a date library arriving transitively, under a devDependency, is not covered and
+     * is not cheaply coverable.
+     *
+     * @return list<\SplFileInfo>
+     */
+    private function scannedFilesUnderPackages(): array
+    {
+        $dir = base_path('packages');
+
+        if (! File::exists($dir)) {
+            return [];
+        }
+
+        $files = [];
+
+        foreach (File::allFiles($dir) as $file) {
+            $relative = $this->relativePath($file);
+
+            if (str_contains($relative, '/node_modules/') || str_contains($relative, '/dist/')) {
+                continue;
+            }
+
+            if (! in_array(strtolower($file->getExtension()), ['ts', 'mts', 'js', 'mjs'], true)) {
+                continue;
+            }
+
+            $files[] = $file;
+        }
+
+        return $files;
+    }
+
+    /**
+     * A guard iterating an empty set is green for the wrong reason, and a moved or renamed
+     * directory is exactly how one gets there — the same non-vacuity floor `ClinicHooksTest` puts
+     * under its two globs. Named files rather than a bare count alone, because a count survives the
+     * engine's sources being replaced by something else entirely.
+     *
+     * @param list<string> $relatives
+     */
+    private function assertThePackagesScanFoundTheEngine(array $relatives): void
+    {
+        foreach (['packages/engine/src/index.ts', 'packages/engine/src/calendar/index.ts'] as $expected) {
+            $this->assertContains(
+                $expected,
+                $relatives,
+                "The packages/ scan did not find {$expected}. Either the engine moved (point this "
+                .'collector at it) or this scan is guarding nothing at all — which looks identical '
+                .'to a clean tree.'
+            );
+        }
+
+        $this->assertGreaterThanOrEqual(
+            8,
+            count($relatives),
+            'The packages/ scan found fewer files than the engine has. A collector that quietly '
+            .'stopped matching most of the tree is a guard that quietly stopped guarding.'
+        );
     }
 
     private function relativePath(\SplFileInfo $file): string
@@ -332,13 +432,19 @@ class CalendarIsTheOnlyConverterTest extends TestCase
      *
      * Assert over the whole SET (not a foreach that stops guarding once the last offender is
      * fixed) — same discipline as the two PHP-side checks above.
+     *
+     * SCOPE WIDENED 2026-08-20 (P2 Task 6) to `packages/` — see `scannedFilesUnderPackages()` for
+     * the plant that proved the old scope was a loophole, and for why the allow-list is still
+     * empty. `resources/js` gets a prop from the controller; the engine holds no instant at all.
+     * Two roots, one offender set, one assertion.
      */
-    public function test_no_client_side_date_construction_appears_under_resources_js(): void
+    public function test_no_client_side_date_construction_appears_under_resources_js_and_packages(): void
     {
         $offenders = [];
+        $packageFiles = $this->scannedFilesUnderPackages();
 
-        foreach ($this->jsFilesUnderResources() as $file) {
-            $relative = str_replace('\\', '/', str_replace(base_path().DIRECTORY_SEPARATOR, '', $file->getPathname()));
+        foreach (array_merge($this->jsFilesUnderResources(), $packageFiles) as $file) {
+            $relative = $this->relativePath($file);
             $contents = (string) file_get_contents($file->getPathname());
 
             foreach (self::JS_DATE_NEEDLES as $needle) {
@@ -348,11 +454,17 @@ class CalendarIsTheOnlyConverterTest extends TestCase
             }
         }
 
+        $this->assertThePackagesScanFoundTheEngine(array_map(
+            fn (\SplFileInfo $file): string => $this->relativePath($file),
+            $packageFiles
+        ));
+
         $this->assertSame(
             [],
             $offenders,
             "Decision A: resources/js performs no date arithmetic — the server sends formatted ".
-            "labels and enumerated ranges instead. Found:\n".implode("\n", $offenders)
+            "labels and enumerated ranges instead. Decision B: packages/ holds no Date object, no ".
+            "instant and no timezone, so it needs no exemption either. Found:\n".implode("\n", $offenders)
         );
     }
 
@@ -380,14 +492,22 @@ class CalendarIsTheOnlyConverterTest extends TestCase
      * how such a list is actually spelled. Prose in a comment is matched too, deliberately: a
      * docblock is scanned source everywhere else in this suite, and a file explaining the array it
      * is about to build is not a file this guard should let past.
+     *
+     * SCOPE WIDENED 2026-08-20 (P2 Task 6) to `packages/`, and this half is the one that actually
+     * binds there. The engine's calendar mirror implements `weekdayColumns()` — the department's
+     * week in the order it runs — and the obvious way to write it is with the seven names in an
+     * array, which is what `golden.json`'s `weekday_columns` block carries. It does not: the mirror
+     * returns ISO numbers and weekend flags, the names stay in `lang/en/calendar.php` (AR-07), and
+     * this scan is what keeps that true after the next author who has not read owner decision X.
      */
-    public function test_no_hardcoded_weekday_vocabulary_appears_under_resources_js(): void
+    public function test_no_hardcoded_weekday_vocabulary_appears_under_resources_js_and_packages(): void
     {
         $pattern = '/([\'"`])(Mon(day)?|Tue(sday)?|Wed(nesday)?|Thu(rsday)?|Fri(day)?|Sat(urday)?|Sun(day)?)\1/';
 
         $offenders = [];
+        $packageFiles = $this->scannedFilesUnderPackages();
 
-        foreach ($this->jsFilesUnderResources() as $file) {
+        foreach (array_merge($this->jsFilesUnderResources(), $packageFiles) as $file) {
             $relative = $this->relativePath($file);
             $contents = (string) file_get_contents($file->getPathname());
 
@@ -396,11 +516,121 @@ class CalendarIsTheOnlyConverterTest extends TestCase
             }
         }
 
+        $this->assertThePackagesScanFoundTheEngine(array_map(
+            fn (\SplFileInfo $file): string => $this->relativePath($file),
+            $packageFiles
+        ));
+
         $this->assertSame(
             [],
             $offenders,
             "Decision A: the day names and the order the week runs in are Calendar::weekdayColumns()'s, ".
-            "and reach the client as a prop. Found:\n".implode("\n", $offenders)
+            "and reach the client as a prop — in packages/ they arrive in the evaluation context ".
+            "(owner decision X) rather than being written down. Found:\n".implode("\n", $offenders)
         );
+    }
+
+    /**
+     * The half a source scan of our own files CANNOT see: a date library arriving as a dependency.
+     *
+     * Bought here rather than left as a residual because it is one comparison over a short list —
+     * measured, per ruling 42, not assumed. `packages/engine/package.json` declares no
+     * `dependencies` at all today, so the allow-list below is EMPTY and costs nothing; the check is
+     * the difference between "the engine does its own integer arithmetic" being a property of this
+     * tree and being a property of the day somebody last read it.
+     *
+     * The needle is the DECLARATION, not a name list. An allow-list of forbidden library names
+     * (`dayjs`, `date-fns`, `luxon`, `moment`, …) would be a list of the ones somebody thought of,
+     * and the next one is by definition not on it. `peerDependencies` and `optionalDependencies`
+     * are read for the same reason: all three ship to a consumer, and only `devDependencies` does
+     * not.
+     *
+     * STATED RESIDUAL, uncovered and not cheaply coverable: a date library arriving TRANSITIVELY,
+     * as a dependency of a devDependency, is invisible to this check. It would not reach the
+     * browser bundle through this package's own imports, which is what makes it a residual rather
+     * than a hole — but it is not zero, and reading a lock file to close it would be a second
+     * definition of what the package manager already resolves.
+     */
+    public function test_no_package_under_packages_declares_a_runtime_dependency(): void
+    {
+        $offenders = [];
+
+        foreach ($this->packageManifests() as $relative => $manifest) {
+            foreach (['dependencies', 'peerDependencies', 'optionalDependencies'] as $section) {
+                foreach (array_keys((array) ($manifest[$section] ?? [])) as $name) {
+                    if (in_array($name, self::PACKAGE_RUNTIME_DEPENDENCY_ALLOW_LIST, true)) {
+                        continue;
+                    }
+
+                    $offenders[] = "{$relative} declares {$section}: {$name}";
+                }
+            }
+        }
+
+        $this->assertSame(
+            [],
+            $offenders,
+            'Decision B: the engine computes dates with integer civil-date arithmetic and needs no '
+            .'library to do it, so a runtime dependency here is either a date library the source '
+            ."scans cannot see or a browser-bundle cost nobody priced. Found:\n".implode("\n", $offenders)
+        );
+    }
+
+    /**
+     * The twin, and it is deliberately NOT the staleness twin the other allow-lists here carry.
+     *
+     * Measured: with an allow-list that is empty by design, a staleness check iterates zero entries
+     * and passes — on a healthy tree, on a deleted `packages/` directory, and on a manifest that
+     * has been renamed out of the scan's reach alike. It would be a test that cannot fail, which is
+     * the shape this suite exists to refuse. The failure the dependency check can actually have is
+     * finding nothing to check, so that is what this asserts.
+     */
+    public function test_the_package_dependency_scan_reads_the_manifests_it_claims_to(): void
+    {
+        $manifests = $this->packageManifests();
+
+        $this->assertArrayHasKey(
+            'packages/engine/package.json',
+            $manifests,
+            'The dependency scan found no manifest for the engine. Either the package moved or the '
+            .'scan is asserting over an empty set, and those two look identical from a green suite.'
+        );
+
+        $this->assertSame('@endorsement/engine', $manifests['packages/engine/package.json']['name'] ?? null);
+    }
+
+    /**
+     * Every `package.json` under `packages/`, decoded, keyed by repository-relative path.
+     *
+     * `node_modules` is skipped: a workspace install puts thousands of third-party manifests under
+     * it, and every one of them declares dependencies.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function packageManifests(): array
+    {
+        $dir = base_path('packages');
+
+        if (! File::exists($dir)) {
+            return [];
+        }
+
+        $manifests = [];
+
+        foreach (File::allFiles($dir) as $file) {
+            $relative = $this->relativePath($file);
+
+            if ($file->getFilename() !== 'package.json' || str_contains($relative, '/node_modules/')) {
+                continue;
+            }
+
+            $decoded = json_decode((string) file_get_contents($file->getPathname()), true);
+
+            $this->assertIsArray($decoded, "{$relative} is not valid JSON — the dependency scan cannot read it.");
+
+            $manifests[$relative] = $decoded;
+        }
+
+        return $manifests;
     }
 }

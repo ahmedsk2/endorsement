@@ -1273,6 +1273,91 @@ describe('no condition module assembles a sentence of its own', () => {
     });
 });
 
+describe('periodWindows enumerates only the windows that TOUCH the horizon', () => {
+    /**
+     * The filter that says so is one line per branch and neither was asserted: replacing the period
+     * branch's test with `true`, and deleting the week branch's `continue`, each left 571/571 green
+     * and the corpus green. No case in the corpus carried a period or a week that misses the
+     * horizon entirely, which is exactly the shape the filter exists for — a department's blocks
+     * run all year and an evaluation asks about one month of them.
+     *
+     * What it costs when it goes is not a wrong violation: `evaluate()`'s emission rule drops a
+     * window location that does not touch `[from, to]`, so the findings are identical either way.
+     * It is `coverage()` that moves, and in the direction that reads as MORE work having been done
+     * — a count of windows measured, whose results were then thrown away. A coverage number a
+     * reader cannot act on is `carryInSkip`'s lesson one file along, and it is the half a
+     * violations-only assertion is structurally unable to see.
+     */
+    const world = FIXTURES.find(
+        (fixture) => fixture.name === 'count-max-the-window-parameter-picks-the-period-or-the-week',
+    ) as Fixture;
+
+    /**
+     * The same world with a whole block on each side of the horizon, neither of them touching it —
+     * and each one's edge week deliberately RAW-overlapping it while its CLIPPED bounds do not.
+     *
+     * That second half is bought for one line of fixture data and closes a residual the first half
+     * cannot: measuring `windowTouchesHorizon` against `startsOn`/`endsOn` instead of the clipped
+     * pair admits exactly these two weeks, and the raw bounds are a superset of the clipped ones,
+     * so no world without a genuinely clipped edge week can tell the two spellings apart.
+     */
+    const withNeighbouringBlocks = (): EvaluationContext =>
+        withPeople(world.context, (copy) => {
+            copy.periods = [
+                {
+                    key: 'block-00',
+                    startsOn: d('2026-07-27'),
+                    endsOn: d('2026-08-01'),
+                    weeks: [
+                        {
+                            startsOn: d('2026-07-27'),
+                            endsOn: d('2026-08-02'),
+                            clippedStartsOn: d('2026-07-27'),
+                            clippedEndsOn: d('2026-08-01'),
+                        },
+                    ],
+                },
+                ...copy.periods,
+                {
+                    key: 'block-02',
+                    startsOn: d('2026-08-16'),
+                    endsOn: d('2026-08-21'),
+                    weeks: [
+                        {
+                            startsOn: d('2026-08-15'),
+                            endsOn: d('2026-08-21'),
+                            clippedStartsOn: d('2026-08-16'),
+                            clippedEndsOn: d('2026-08-21'),
+                        },
+                    ],
+                },
+            ];
+        });
+
+    it('counts neither the block before the horizon nor the block after it', () => {
+        const context = withNeighbouringBlocks();
+
+        expect(coverage(world.schedule, context, world.conditions)).toEqual(world.expectedCoverage);
+        expect(evaluate(world.schedule, context, world.conditions)).toEqual(
+            evaluate(world.schedule, world.context, world.conditions),
+        );
+    });
+
+    /**
+     * And the two branches are asserted APART. One check over a world carrying both a stray period
+     * and a stray week passes while either branch alone is healthy, which is the pooled-check
+     * mistake `contract.test.ts` had to unpick for `contributing` at Task 15. The period-windowed
+     * row and the week-windowed row are two conditions in this world, so the two answers are
+     * already separate — this names which is which so a failure says which branch went.
+     */
+    it('reports one period window and two week windows, whatever the neighbours look like', () => {
+        const rows = coverage(world.schedule, withNeighbouringBlocks(), world.conditions);
+
+        expect(rows.find((row) => row.conditionId === 'c-period')?.evaluatedWindows).toBe(1);
+        expect(rows.find((row) => row.conditionId === 'c-week')?.evaluatedWindows).toBe(2);
+    });
+});
+
 describe('the DATE a window- or cohort-located type resolves CG-01 scope at', () => {
     /**
      * WHEN the scope is read, which is one axis along from WHETHER it is read.

@@ -22,7 +22,7 @@ import { withoutComments } from './support/source';
  * reverse — it is satisfied by any preset that contains a SUPERSET, including one whose conditions
  * have all been deleted while the claim stayed behind. That is this phase's most expensive
  * recurring shape: **a claim asserted where it matches and nowhere where it must not**, seven
- * instances across P2-2 alone. So the two directions are separate cases with separate names:
+ * recorded instances before this task. So the directions are separate cases with separate names:
  *
  *  - **preset → catalog**: a type key a preset names that the registry does not implement.
  *  - **manifest → preset**: a type key the manifest claims that the preset does not carry.
@@ -127,9 +127,18 @@ describe('the manifest against the presets, in both directions', () => {
     /**
      * DIRECTION TWO: a catalog type silently dropped from a preset that claims to cover it.
      *
-     * This is the direction a manifest is usually written without. Deleting a condition from
-     * `acgme.ts` leaves every other check in this file green — the remaining four still validate,
-     * still match the spec's figures, still round-trip as data — and only this one names the loss.
+     * This is the direction a manifest is usually written without, and it was planted twice.
+     *
+     * **The claim this docblock shipped with was WRONG and is corrected here rather than quietly
+     * rewritten**: it said deleting a row leaves every other check green. It does not — deleting
+     * `min_gap` from `acgme.ts` also reddens *"is five soft rows"* (a count) and *"takes its ten
+     * hours between duties"* (a row that is no longer there), three reds in all. Retyping the row
+     * instead, so the COUNT is unchanged, reddens five.
+     *
+     * What this case actually buys is different and is worth stating exactly: it is the only check
+     * anchored on a DECLARATION rather than on the bundle's own contents, so it is the only one that
+     * survives an author who deletes a row and tidies the tests that named it. A manifest derived
+     * from the presets would fire in neither shape.
      */
     it('claims no type a preset does not actually carry', () => {
         for (const entry of PRESET_MANIFEST) {
@@ -235,6 +244,19 @@ describe('a preset is configuration, not code', () => {
      * left a number behind. A preset names type keys and supplies parameters; a preset that
      * imported the thing it configures would be the first step toward a bundle that decides
      * something, and the decision belongs to the department and its gate screen.
+     *
+     * **NEITHER HALF IS REDUNDANT AND A PLANT SPLIT THEM.** A function PROPERTY on a preset reddens
+     * both. An arrow IIFE computing `describes` reddens only this one — the value it leaves behind
+     * is a plain string and the round trip is perfectly happy with it. That is Task 22's shape, one
+     * package along: two guards that look like belt and braces until a plant lands between them.
+     *
+     * **STATED RESIDUAL, measured:** a value assembled by a METHOD call — `['2026', '08',
+     * '20'].join('-')` was the plant — carries no `=>` and no `function`, and passes BOTH halves.
+     * It is left unbought, and the import check is why it is harmless: no VALUE may be imported
+     * here, so such a computation can only assemble literals out of literals in the same file. What
+     * escapes is the fact that a literal was built rather than written, which changes no behaviour.
+     * Needling `.join(`/`.concat(` would be a needle set over ordinary string building, in files
+     * whose every field is a string.
      */
     it('imports nothing but a type, and defines no function', () => {
         for (const name of ['acgme.ts', 'residency.ts', 'scfhs.ts', 'manifest.ts']) {

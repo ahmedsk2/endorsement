@@ -1124,8 +1124,11 @@ place a scheduling rule is allowed to exist.*
   configured and cannot run); a key the manifest claims that the bundle does not carry; a row a
   bundle grew without declaring; and a declared `state` that is not the state the contents produce
   (all rows deleted declares `ready` and derives `empty`). **The second is the direction a manifest
-  is usually written without, and it is the one that catches a deleted row** — measured by planting
-  that deletion, on which every other check in the suite stays green. `UnitMergeCoversEveryUnit
+  is usually written without**, and what it buys was measured rather than assumed: deleting
+  `min_gap` from the bundle reddens three cases, retyping it so the COUNT is unchanged reddens five,
+  and this one is the only check anchored on a DECLARATION rather than on the bundle's own contents
+  — so it is the only one that survives an author who deletes a row and tidies the tests that named
+  it. A manifest derived from the presets would fire in neither shape. `UnitMergeCoversEveryUnit
   ReferenceTest`'s device, and `catalog-parity.test.ts`'s one layer along. A preset that is not
   `ready` must carry `pending` — what is awaited, who supplies it, when somebody last asked —
   because an empty array is indistinguishable from a failed load and from nobody having written it
@@ -1156,7 +1159,12 @@ place a scheduling rule is allowed to exist.*
   hand-written copy agrees until a schema gains a parameter, and then the structure reads as complete
   while a department fills in a form missing a field. Two of its seven types publish an EMPTY schema
   and await nothing; they are still drafts, because **a preset a department installs half of is a
-  preset that looks finished on a gate screen**.
+  preset that looks finished on a gate screen**. **A plant split the two halves**: a function
+  PROPERTY reddens both, an arrow IIFE computing a string reddens only the source half (the value it
+  leaves behind is a plain string the round trip is happy with) — Task 22's shape, one package along.
+  **STATED RESIDUAL, measured:** a value assembled by a METHOD call passes both halves and is left
+  unbought — the import check is what makes it harmless, since no VALUE may be imported into a preset
+  file, so such a computation can only assemble literals out of literals in the same file.
 
 - **A bundle is proved to FIRE and to stay QUIET, because parameters that merely validate are
   inert.** `windowDays: 7` with no averaging validates against `rolling_hours_max`'s schema and asks

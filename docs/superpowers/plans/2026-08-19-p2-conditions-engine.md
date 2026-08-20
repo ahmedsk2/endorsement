@@ -1872,6 +1872,15 @@ the absolute reading is the one a department can state on a gate screen. Owner d
 modifier predicate that can express the difference where it matters.
 
 **M. `target_per_period` — the modifier grammar.**
+> **ANSWERED 2026-08-20 — default CONFIRMED. A matching modifier REPLACES the target**, never
+> adjusts it. Ordered list, first match wins.
+>
+> The reason to keep replace over adjust once implementers start finding `-2` more natural to write:
+> a delta grammar lets two modifiers compound to a target below zero silently, and a reader cannot
+> see the resulting number without doing the arithmetic themselves. Replace makes the effective
+> target readable at both branches, which is also what CG-04's preview has to print.
+
+*Confirmed default follows:*
 *Default: an ordered list of `{ when, target }`; **first match wins**; **replace, not adjust**; the
 predicate vocabulary is **closed to two**: `vacationWeeksAtLeast: N` and `periodWeeksAtMost: N`; the
 person's level is read at the **PERIOD START**.* The spec gives one example and no syntax, and an open
@@ -1903,6 +1912,20 @@ so one type would be carrying two contracts. Ordering is WB-04 fitness, P3. *(No
 committed draft's decision F, renumbered, and it is unchanged.)*
 
 **Q. `fairness_distribution` — base, tolerance and mode.**
+> **ANSWERED 2026-08-20 — default OVERRIDDEN. Tolerance is PROPORTIONAL at 10%, WITH A FLOOR OF 1:**
+> `tolerance = max(1, ceil(0.1 * proRatedTarget))`. The pro-rated base is unchanged.
+>
+> **The floor is not decoration and must not be dropped as a simplification.** Bare 10% is STRICTER
+> than the absolute-1 default it replaced, for every target under ten: 10% of a 4-weekend target is
+> 0.4, which floors to a tolerance of ZERO, so the condition would reject any unevenness at all on a
+> small roster — the opposite of the slack the answer was chosen for. With the floor it behaves as
+> intended in both regimes: `within one` where 10% is meaningless, and real proportional slack above
+> ten (40 nights across a year allows 4).
+>
+> CG-04's plain-language preview must state the tolerance it actually applied as a NUMBER, not as
+> `10%` — a reader told `10%` on a 4-duty target will predict 0 and be wrong.
+
+*Superseded default follows:*
 *Default: **pro-rated expected share** from `eligibleDays` (not raw counts); tolerance **absolute,
 default 1**; `mode: 'deviation'` by default with `'spread'` available; `excludeExternal` defaults
 **true**.* Raw counts flag the person on leave as under-loaded and a solver's fix is to overload their
@@ -1971,6 +1994,15 @@ limited transition time"*, which CG-08 drops entirely — and without it the pre
 legitimate handover overlap or silently permits an unbounded one.
 
 **W. `holiday_equity` — unknown versus zero, and which year.**
+> **ANSWERED 2026-08-20 — default CONFIRMED. `priorCredits` starts at ZERO for everyone**, not
+> `null`/unknown. Year one distributes on that year's own assignments alone.
+>
+> **The limitation is accepted knowingly and belongs in the preview, not just here:** duty covered on
+> paper rotas before this system existed is invisible, so year one spreads evenly on top of a past
+> that may not have been. If that becomes a complaint, the fix is an operator-entered prior-credit
+> field, which is additive and needs no schema change to the condition.
+
+*Confirmed default follows:*
 *Default: `priorCredits[person][holiday]` is **`number | null`** with `null` meaning **UNKNOWN**;
 `historyAvailableFrom` states how far back history reaches; when it does not cover the requested
 lookback the type evaluates the **in-schedule spread only** and reports the years it could not see

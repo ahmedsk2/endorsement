@@ -1915,12 +1915,23 @@ committed draft's decision F, renumbered, and it is unchanged.)*
 > **ANSWERED 2026-08-20 — default OVERRIDDEN. Tolerance is PROPORTIONAL at 10%, WITH A FLOOR OF 1:**
 > `tolerance = max(1, ceil(0.1 * proRatedTarget))`. The pro-rated base is unchanged.
 >
-> **The floor is not decoration and must not be dropped as a simplification.** Bare 10% is STRICTER
-> than the absolute-1 default it replaced, for every target under ten: 10% of a 4-weekend target is
-> 0.4, which floors to a tolerance of ZERO, so the condition would reject any unevenness at all on a
-> small roster — the opposite of the slack the answer was chosen for. With the floor it behaves as
-> intended in both regimes: `within one` where 10% is meaningless, and real proportional slack above
-> ten (40 nights across a year allows 4).
+> **CORRECTED 2026-08-20 — the formula stands, the reason first given for it was wrong.** The
+> original note argued bare 10% is stricter than absolute-1 for targets under ten because "0.4
+> floors to zero". That describes rounding DOWN; the formula rounds UP. `ceil(0.1 * 4) = 1`, so
+> bare 10%-with-ceil already equals the absolute-1 default across the whole small regime and is
+> never stricter than it. **The claim was false and is withdrawn.**
+>
+> **Keep the floor anyway, for the one input where it changes the answer: a pro-rated target of
+> ZERO** — somebody on leave for an entire period. `ceil(0.1 * 0) = 0`, so without the floor the
+> condition admits no deviation at all for a person who could not have worked. Deleting the floor
+> was planted and the suite stayed GREEN, which is why `toleranceFor(0) === 1` is asserted directly
+> rather than left to the catalog matrix.
+>
+> The second reason to keep it is the next reach: `Math.round(0.1 * 4)` is 0, so an implementer who
+> swaps `ceil` for `round` as a tidy-up reintroduces the whole small-regime problem the original
+> note only imagined. The floor makes that swap harmless.
+>
+> Behaviour, unchanged either way: an expected share of 4 allows 1; an expected share of 40 allows 4.
 >
 > CG-04's plain-language preview must state the tolerance it actually applied as a NUMBER, not as
 > `10%` — a reader told `10%` on a 4-duty target will predict 0 and be wrong.

@@ -28,3 +28,10 @@
  * under plain Node and under `tsc`, which is three answers to a question worth none.
  */
 export const version = '0.0.0';
+
+/**
+ * The `Ymd` core (P2 Task 3). Re-exported here rather than left importable only by deep path,
+ * because `@engine` resolves to THIS file (`vite.config.js`) and a module the package entry does
+ * not expose is not part of the browser runtime D4 requires, whatever the test runner can reach.
+ */
+export * from './calendar/ymd';

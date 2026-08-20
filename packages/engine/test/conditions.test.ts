@@ -1273,6 +1273,123 @@ describe('no condition module assembles a sentence of its own', () => {
     });
 });
 
+describe('three window-located readings that were asserted only where they MATCH', () => {
+    /**
+     * `composition` reads the LEVEL at the period start (owner decision M's unchanged half) and
+     * nothing asserted the date. The sibling rule in `target_per_period` IS fixtured
+     * (`target-per-period-the-level-is-read-at-the-period-start`), which is why this one looks
+     * covered: two types, one decision, one case between them. Moving `composition`'s read to
+     * `window.to` left the whole suite green.
+     *
+     * Both directions, because a promotion is only half the input. A person promoted INSIDE the
+     * block is still judged against the level they started it at; a person promoted BEFORE it holds
+     * a level with no entry in the map and is not judged at all. The second is what a date read at
+     * either end would agree about, and it is here so the first is not carrying the case alone.
+     */
+    const mixWorld = FIXTURES.find(
+        (fixture) => fixture.name === 'composition-a-holiday-that-falls-on-a-weekend-is-its-own-bucket',
+    ) as Fixture;
+
+    const promotedOn = (from: string): EvaluationContext =>
+        withPeople(mixWorld.context, (copy) => {
+            for (const person of copy.people) {
+                if (person.key !== 'p-noor') {
+                    continue;
+                }
+
+                person.levelSpans = [
+                    { key: 'R1', from: d('2026-01-01'), to: addDays(d(from), -1) },
+                    { key: 'R2', from: d(from), to: d('2026-12-31') },
+                ];
+            }
+        });
+
+    it('composition judges a mid-block promotion against the level the block STARTED at', () => {
+        expect(evaluate(mixWorld.schedule, promotedOn('2026-08-09'), mixWorld.conditions)).toEqual(
+            sortViolations(mixWorld.expected),
+        );
+
+        expect(evaluate(mixWorld.schedule, promotedOn('2026-08-02'), mixWorld.conditions)).toEqual([]);
+    });
+
+    /**
+     * `onRosterThroughout`'s boundary is INCLUSIVE — somebody whose first day is the window's first
+     * day had the whole window — and `<=` relaxed to `<` left the suite green, because no case in
+     * the corpus put a join date exactly on a window bound. The reviewer's own copy of that
+     * mutation was left in the tree and reverted; this is what would have caught it.
+     *
+     * It matters in one direction only, and that is the expensive one: a `<` reading suppresses a
+     * floor for a person who genuinely had the window, so the rule goes quiet on somebody it should
+     * judge and says so in a coverage row that reads like a considered decision.
+     */
+    const joinWorld = FIXTURES.find(
+        (fixture) => fixture.name === 'count-min-a-person-who-joined-part-way-through-the-window',
+    ) as Fixture;
+
+    it('a join date ON the window’s first day is a whole window, not a partial one', () => {
+        const context = withPeople(joinWorld.context, (copy) => {
+            for (const person of copy.people) {
+                if (person.key === 'p-noor') {
+                    person.joinedAt = d('2026-08-02');
+                }
+            }
+        });
+
+        const found = evaluate(joinWorld.schedule, context, joinWorld.conditions);
+        const rows = coverage(joinWorld.schedule, context, joinWorld.conditions);
+
+        // p-noor holds one duty in the week beginning on the 2nd against a floor of two, so being
+        // judged and being skipped are two visibly different answers rather than the same silence.
+        expect(
+            found.map((violation) => [
+                (violation.location as { personKey: string }).personKey,
+                (violation.location as { from: Ymd }).from,
+            ]),
+        ).toEqual([
+            ['p-ali', d('2026-08-09')],
+            ['p-noor', d('2026-08-02')],
+        ]);
+
+        expect(rows[0]?.skipped).toEqual([]);
+    });
+
+    /**
+     * Owner decision N's vacation week is measured on a week's CLIPPED bounds, and swapping them
+     * for the raw pair left the suite green — every week in every corpus case is unclipped, because
+     * every block in the corpus starts on the department's own week start. That is a fixture
+     * convenience, not a property of a real calendar: `institutions.block_weeks` gives block 13
+     * five weeks and a year does not divide evenly, so a block edge lands mid-week eventually.
+     *
+     * Leave in the days a block does not own belongs to the NEIGHBOURING block's count. Here it
+     * moves p-noor from one vacation week to two, which under the raw reading fires
+     * `vacationWeeksAtLeast: 2` and replaces their target of four with two — exactly the number
+     * they hold. The rule would go quiet on them, on leave the block never contained.
+     */
+    const targetWorld = FIXTURES.find(
+        (fixture) =>
+            fixture.name === 'target-per-period-a-modifier-replaces-the-target-and-a-vacation-week-is-any-overlap',
+    ) as Fixture;
+
+    it('counts a vacation week over the clipped bounds, not the department’s whole week', () => {
+        const context = withPeople(targetWorld.context, (copy) => {
+            const block = copy.periods[0] as (typeof copy.periods)[number];
+
+            block.startsOn = d('2026-08-04');
+            (block.weeks[0] as (typeof block.weeks)[number]).clippedStartsOn = d('2026-08-04');
+
+            for (const person of copy.people) {
+                if (person.key === 'p-noor') {
+                    person.leaveDays = [d('2026-08-02'), d('2026-08-03'), ...person.leaveDays];
+                }
+            }
+        });
+
+        const found = evaluate(targetWorld.schedule, context, targetWorld.conditions);
+
+        expect(found.map((violation) => (violation.location as { personKey: string }).personKey)).toEqual(['p-noor']);
+    });
+});
+
 describe('periodWindows enumerates only the windows that TOUCH the horizon', () => {
     /**
      * The filter that says so is one line per branch and neither was asserted: replacing the period

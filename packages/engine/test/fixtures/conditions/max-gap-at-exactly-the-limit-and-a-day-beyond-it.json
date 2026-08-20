@@ -1,6 +1,6 @@
 {
     "name": "max-gap-at-exactly-the-limit-and-a-day-beyond-it",
-    "why": "`max_gap` measures what `min_gap` measures, in the other direction: the difference between the dates two duties START on, with N meaning AT MOST N apart (owner decision H, applied to the row whose cell is the same word reversed). The boundary is one comparison operator and a month of different behaviour, and it is invisible in review — so it is fixtured on both sides of itself. p-ali's duties are five days apart against a limit of five and are clean; p-noor's are six and are not. Swapping the comparison for >= flags p-ali, and nothing else in the corpus would notice. The third person is here because a PLANT STAYED GREEN: deleting CG-01's scope from this type changed nothing anywhere in the corpus, since no case of it set one — the same defect P2-1's review found thirteen times, reappearing on all four remaining window types at once. p-zaid rotates on NICU and would be flagged on their own figures; the scope naming PICU is the only thing between them and a violation.",
+    "why": "`max_gap` measures what `min_gap` measures, in the other direction: the difference between the dates two duties START on, with N meaning AT MOST N apart (owner decision H, applied to the row whose cell is the same word reversed). The boundary is one comparison operator and a month of different behaviour, and it is invisible in review — so it is fixtured on both sides of itself. p-ali's duties are five days apart against a limit of five and are clean; p-noor's are six and are not. Swapping the comparison for >= flags p-ali, and nothing else in the corpus would notice. The third person is here because a PLANT STAYED GREEN: deleting CG-01's scope from this type changed nothing anywhere in the corpus, since no case of it set one — the same defect P2-1's review found thirteen times, reappearing on all four remaining window types at once. p-zaid rotates on NICU and would be flagged on their own figures; the scope naming PICU is the only thing between them and a violation. AND THE THIRD PERSON EARNS A SECOND KEEP, found by the P2-2 review: this case used to expect an open-gap row for p-zaid reading \"the gap for p-zaid ... has only one end, so it was not measured\". Both halves were false. p-zaid's two duties are ten days apart, so the gap has two ends; and the reason it was not measured is that the scope never selected them. `exposure()` applies the scope per duty date, so an excluded person reaches the loop with the same empty list as somebody who genuinely holds nothing, and the row was written for the second. The row is gone and `everInScope` is the line that removes it — the absence is what this case now asserts, so a reader is never told this rule looked at a colleague it was never about. A FOURTH PERSON CLOSES THE TWO PLANTS THAT FIX ITSELF OPENED. `everInScope` gates the loop and `exposure` still filters per duty date, and with only p-zaid to distinguish them either could be deleted with nothing noticing: p-zaid is out of scope on every date, so one date is as good as thirty-one, and the per-duty filter has nothing left to do once the gate has removed them. p-rotates-off is on PICU until the 7th and on NICU from the 8th, holding a duty on each side. The gate must keep them - they ARE this rule's subject for the first week - and the per-duty filter must drop the duty on the 12th, so their two duties never become a pair ten days apart against a limit of five. Reading the scope at one date instead of over the horizon loses them entirely; dropping the per-duty filter flags them.",
     "context": {
         "timezone": "Asia/Riyadh",
         "weekStartIsoDay": 7,
@@ -180,6 +180,32 @@
                 "unwantedDays": [],
                 "eligibleDays": [],
                 "external": false
+            },
+            {
+                "key": "p-rotates-off",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-08-07"
+                    },
+                    {
+                        "key": "NICU",
+                        "from": "2026-08-08",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
             }
         ],
         "slots": [
@@ -236,6 +262,16 @@
             },
             {
                 "personKey": "p-zaid",
+                "date": "2026-08-12",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-rotates-off",
+                "date": "2026-08-02",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-rotates-off",
                 "date": "2026-08-12",
                 "slotKey": "day"
             }
@@ -310,9 +346,14 @@
                     "reason": "The gap for \"p-noor\" between 2026-08-08 and 2026-08-15 has only one end, so it was not measured. Evaluating an unfinished gap against the edge of the schedule would flag nearly everybody nearly every month (owner decision I)."
                 },
                 {
-                    "from": "2026-08-01",
+                    "from": "2026-07-25",
+                    "to": "2026-08-02",
+                    "reason": "The gap for \"p-rotates-off\" between 2026-07-25 and 2026-08-02 has only one end, so it was not measured. Evaluating an unfinished gap against the edge of the schedule would flag nearly everybody nearly every month (owner decision I)."
+                },
+                {
+                    "from": "2026-08-02",
                     "to": "2026-08-15",
-                    "reason": "The gap for \"p-zaid\" between 2026-08-01 and 2026-08-15 has only one end, so it was not measured. Evaluating an unfinished gap against the edge of the schedule would flag nearly everybody nearly every month (owner decision I)."
+                    "reason": "The gap for \"p-rotates-off\" between 2026-08-02 and 2026-08-15 has only one end, so it was not measured. Evaluating an unfinished gap against the edge of the schedule would flag nearly everybody nearly every month (owner decision I)."
                 }
             ]
         }

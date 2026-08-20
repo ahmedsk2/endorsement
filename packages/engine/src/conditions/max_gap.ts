@@ -57,6 +57,27 @@
  * `free_day_min`, `composition` and `target_per_period` together, one task after `count_max` was
  * caught by exactly the same probe. Each is now closed by a third person in its own defining
  * fixture who would be flagged on their own figures and is excluded by the scope alone.
+ *
+ * ## The scope decides whether there is a GAP TO REPORT, not only whether one is measured
+ *
+ * Found by the P2-2 review. `exposure()` applies the scope per duty date, so a person the scope
+ * never selects arrives at the loop with an empty list — the SAME state as a person who genuinely
+ * holds no counted duty — and the open-gap row was written for the second. The fixture's own third
+ * person was proof: `p-zaid` rotates on NICU, holds two duties ten days apart, and was reported as
+ * *"the gap for p-zaid ... has only one end, so it was not measured"*. Both halves of that sentence
+ * are false. Their gap has two ends, and the reason it was not measured is that this condition was
+ * never about them.
+ *
+ * A coverage row a reader can catch out is one they stop reading — `carryInSkip`'s recorded lesson,
+ * and rulings 41/49 pointing the other way: not a control that appears to do nothing, but one that
+ * appears to have looked at somebody it never considered. {@link everInScope} is the line, and it
+ * is asked over the horizon rather than at one date because this type reads the scope per duty date
+ * and a person rotating onto PICU mid-month is genuinely this rule's subject for part of it.
+ *
+ * **STATED RESIDUAL:** such a person's open-gap rows still carry the WHOLE horizon's bounds rather
+ * than the part of it the scope selected them for. Narrowing them would need a second notion of
+ * "this person's own window" that no other type has, and the row would still be true — it just
+ * names a wider range than it had to.
  */
 
 import { compareYmd, datesBetween, diffDays, addDays, type Ymd } from '../calendar/ymd';
@@ -65,6 +86,7 @@ import type {
     Condition,
     ConditionEvaluator,
     ConditionPreview,
+    ConditionScope,
     Finding,
     Person,
     SkippedWindow,
@@ -156,6 +178,22 @@ function exposure(
     );
 }
 
+/**
+ * Is this person a SUBJECT of this condition anywhere in the horizon?
+ *
+ * Asked over every horizon date rather than at one, because this type reads CG-01's scope at each
+ * duty's own date (`DUTY_DATE_READING.max_gap` is the anchor date, and a rotation moves inside a
+ * month). Somebody who joins PICU on the 12th is genuinely this rule's subject from the 12th, and a
+ * single-date reading at either end would answer for the wrong half of their month.
+ *
+ * It exists because *"the scope excluded them"* and *"they hold no counted duty"* arrive at the
+ * loop below as the identical empty list, and only the second is an open gap. See the module
+ * docblock for the sentence the fixture's own third person was being told.
+ */
+function everInScope(person: Person, from: Ymd, to: Ymd, scope: ConditionScope | undefined): boolean {
+    return datesBetween(from, to).some((date) => personInScope(person, date, scope));
+}
+
 /** The predicate. See the module docblock for every decision in it. */
 export const evaluate: ConditionEvaluator = (condition, schedule, context, messages) => {
     const params = readParams(condition);
@@ -173,6 +211,12 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context, messa
     let evaluated = 0;
 
     for (const person of roster) {
+        // Before anything is measured OR reported: a person CG-01's scope never selects is not
+        // this rule's subject, and every row below would otherwise describe a gap of theirs.
+        if (!everInScope(person, horizon.from, horizon.to, condition.scope)) {
+            continue;
+        }
+
         const counted = exposure(person.key, condition, params, person, streams, slots);
 
         if (counted.length === 0) {

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { addDays, compareYmd, isoWeekday, parseYmd, type Ymd } from '../src/calendar/ymd';
 import { carriedCredits } from '../src/conditions/holiday_equity';
+import { measuredGap } from '../src/conditions/max_gap';
 import { candidateStarts } from '../src/conditions/we_pairing';
 import type { Condition, EvaluationContext, Fixture, Person, Schedule } from '../src/contract/types';
 import { validate } from '../src/contract/validate';
@@ -1270,6 +1271,73 @@ describe('no condition module assembles a sentence of its own', () => {
                 ].join('\n'),
             ),
         ).toEqual(['`On leave on ${duty.date}.` });', 'sameDay ? `A.` : `B.` });']);
+    });
+});
+
+describe('max_gap — the two edges of owner decision I, and who the rows are about', () => {
+    const world = FIXTURES.find(
+        (fixture) => fixture.name === 'max-gap-at-exactly-the-limit-and-a-day-beyond-it',
+    ) as Fixture;
+
+    /**
+     * The trailing open gap is reported when the last counted duty falls at or BEFORE the last
+     * horizon date, and `<=` relaxed to `<` left the suite green: no case put a duty on the very
+     * last day of its own horizon, so the boundary was asserted everywhere except at itself.
+     *
+     * It is the one date where the answer is least obvious and most consequential. A duty on the
+     * 31st has a gap after it that is exactly as unfinished as a duty on the 30th — nothing here
+     * knows when the next one is — and dropping the row for it makes the rule silently complete on
+     * the schedule's own edge, which is the edge a scheduler is drafting.
+     */
+    it('reports the open gap after a duty on the LAST horizon date', () => {
+        const schedule: Schedule = {
+            ...world.schedule,
+            duties: [...world.schedule.duties, { personKey: 'p-ali', date: d('2026-08-15'), slotKey: 'day' }],
+        };
+
+        const trailing = (coverage(schedule, world.context, world.conditions)[0]?.skipped ?? []).filter(
+            (row) => row.from === d('2026-08-15'),
+        );
+
+        expect(trailing).toHaveLength(1);
+        expect(trailing[0]?.to).toBe(d('2026-08-15'));
+        expect(trailing[0]?.reason).toContain('p-ali');
+    });
+
+    /**
+     * The measured gap counts the days STRICTLY BETWEEN two duties, and the filter that says so was
+     * unasserted: removing it left the suite green, because it changes the answer only when the
+     * LATER duty's own date is a day the clock is stopped on — leave, or a date before the join
+     * date. A duty on a leave day is `vacation_block`'s violation and is not this type's business,
+     * but the two are independent conditions and a department may run one without the other.
+     *
+     * Called directly, because the quantity is the rule: a gap of thirteen days with nine stopped
+     * days strictly inside it is four apart. Counting the closing date as a tenth makes it three,
+     * and the difference is a whole day at exactly the limit.
+     */
+    it('measures the days strictly between two duties, never the closing one', () => {
+        const person: Person = {
+            key: 'p-probe',
+            levelSpans: [],
+            unitSpans: [],
+            leaveDays: [
+                d('2026-08-05'),
+                d('2026-08-06'),
+                d('2026-08-07'),
+                d('2026-08-08'),
+                d('2026-08-09'),
+                d('2026-08-10'),
+                d('2026-08-11'),
+                d('2026-08-12'),
+                d('2026-08-13'),
+                d('2026-08-14'),
+            ],
+            unwantedDays: [],
+            eligibleDays: [],
+            external: false,
+        };
+
+        expect(measuredGap(person, d('2026-08-01'), d('2026-08-14'))).toEqual({ apart: 4, stopped: 9 });
     });
 });
 

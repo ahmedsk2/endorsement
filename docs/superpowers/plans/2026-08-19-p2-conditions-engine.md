@@ -522,7 +522,16 @@ department on every single day. Fixtured on the abutting pair.
 
 **2. A duty's occupied interval is absolute minutes on one integer line.**
 `absMinute(date, minute) = daysFromCivil(date) * 1440 + minute`; a crossing-midnight duty ends at
-`end + 1440`; a weekly-cadence duty ends at `daysFromCivil(date) + spanDays` days plus `endMinute`.
+`end + 1440`; a weekly-cadence duty ends at `daysFromCivil(date) + spanDays - 1` days plus
+`endMinute`.
+
+> **CORRECTED 2026-08-20, off by one, found by implementing it.** This sentence read
+> `+ spanDays` and contradicted this task's own acceptance case, which requires `spanDays: 7`
+> to occupy **seven** dates, not eight. The error is not confined to weekly slots: applied to a
+> daily slot (`spanDays: 1`) the old formula ends every duty on the FOLLOWING date, so every
+> abutting split day/night pair overlaps and `overlap_block` fires on a correct rota.
+> `date + spanDays - 1` is one formula for both cadences. Measured, not reasoned: the old
+> formula was planted and produced **16 failures**, the abutting pair among them.
 No `Date`, no instant, no timezone (Decision B).
 
 **3. Duty→date attribution has THREE readings, and each type declares which it uses.** This is the

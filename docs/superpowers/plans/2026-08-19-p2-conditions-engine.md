@@ -2512,3 +2512,139 @@ measurement that says the new check earns its place rather than duplicating one.
 *And the mechanical lesson, paid for once more.* The plant script's `git checkout --` restored
 `target_per_period.ts` from HEAD and took an UNCOMMITTED fix with it. The plan's own warning names
 this; it costs a re-application every time it is ignored.
+
+### From Tasks 15–17 (2026-08-20) — the first six window-located types, and seven plants that stayed green
+
+**The seam held.** `count_max`/`count_min`, `target_per_period`/`composition` and
+`max_gap`/`free_day_min` are six predicates behind an unchanged contract: `Violation` is still five
+fields, `evaluate()` still returns `Violation[]`, `Location` is still a three-member union, and
+skipped windows still leave through `coverage()`. CG-10's *"new types are additive"* is now
+measured rather than asserted. **One thing inside the contract did have to be corrected, and it was
+the first floor that found it — see below.**
+
+#### 1. `contributing` carried `minItems: 1`, and a floor's most important violation has none
+
+`Location`'s window member shipped at Task 7 with `contributing: { minItems: 1 }`, on the stated
+argument that a duty-hours violation naming no duty is unactionable in the workbench. **That is
+right for a CAP and exactly inverted for a FLOOR:** `count_min` fires hardest on the person who
+holds NOTHING in the window, and an empty list is that person's whole answer rather than a missing
+field. The constraint would have forced the type to suppress precisely the person a floor exists to
+find.
+
+The KEY stays mandatory, which is the half Task 7 was protecting — `contributing` **absent** means a
+type forgot to say, `contributing: []` means a type said *none* — and `contract.test.ts` now asserts
+the two apart rather than together, because one check covering both is what made the difference
+invisible until a floor existed to expose it. The union, `Violation`'s five fields and
+`evaluate()`'s return type are untouched.
+
+#### 2. Owner decision M's clauses were in the wrong interface, and decision M's own argument says so
+
+Decision M keeps *replace* over *adjust* because *"replace makes the effective target readable at
+both branches"*. That was only half true in the tree: the modifier clauses lived in
+`PreviewMessages` and `ConditionEvaluator` is handed `ViolationMessages`, so a violation could print
+the effective target and had no way to say which branch produced it — a figure with the reason for
+it withheld, one screen along from the defect decision M rejects *adjust* to avoid. They are now in
+`Vocabulary`, in the strict sense that interface means: a FRAGMENT both halves compose into their
+own sentence, like `conjoin` and `hours`. Duplicating them would have been two renderings of one
+predicate, disagreeing the moment somebody reworded one.
+
+#### 3. Owner decision L has a per-PERSON half the decision does not state, and it is a decision
+
+The plan requires `count_min`'s corpus to include *"a person who joined mid-period"* and does not
+say what happens to them. **Answered as decision L applied one axis along: a floor and a target
+evaluate only a WHOLE window, and a window can be partial because of the person as well as because
+of the data.** Somebody who joined on the 5th did not have the block that began on the 2nd, and
+judging their single duty against an absolute number reports a shortfall they could not have made
+up, on their first block. The window is left unjudged and the row NAMES them.
+
+**Leave deliberately does NOT work this way, and the two are one line apart.** A person on leave for
+three weeks of a block HAD the whole window and was simply unavailable in it; suppressing or
+pro-rating for that is exactly the scaling decision L refuses (*"period-windowed numbers are
+ABSOLUTE"*). Both halves are stated in `onRosterThroughout`'s docblock and both are fixtured.
+
+#### 4. Two skip shapes, deliberately different, and the reason is readability rather than tidiness
+
+A window clipped by the evaluable range is named INDIVIDUALLY, because which window it was is the
+actionable half and the answer differs per window. A window whose left part no supplied history
+reaches is covered by `carryInLeftEdge`'s SINGLE row, because the answer is identical for every one
+of them and one row apiece would print one fact until a reader stopped reading them —
+`carryInLeftEdge`'s own recorded reason for refusing noise, applied to the shape it already owns.
+`evaluatedWindows` falling is the other half of that statement, which is why the pair is read
+together.
+
+The distinction underneath is between a window that is SHORTER and a window whose left part is
+UNKNOWN. A clipped week at a period edge is a genuinely smaller window and counting over it is a
+correct answer to a smaller question; a window whose first four days were never supplied is a wrong
+answer to the right one. `historyReaches()` is that line, and it is why a CAP — which owner decision
+L lets evaluate a clipped window — still declines the second shape.
+
+#### 5. `max_gap`'s `days` is derived from owner decision H by symmetry, and no document states it
+
+CG-07 gives `min_gap` *"days or hours; value"* and `max_gap` *"days"*, and decision H settles the
+first as *"the difference between START DATES, and N means at least N apart"*. The second is the
+same word reversed, so `days` measures the same quantity and N means **at most N apart**. Recorded
+here because it is an inference rather than a citation — a small one, and the alternative is two
+types measuring one quantity two ways with nothing saying which. The preview renders the boundary on
+dates, which is decision H's own device for the same hazard.
+
+#### 6. Owner decision I names the trailing gap; its MIRROR IMAGE goes the same way
+
+Decision I makes an unfinished TRAILING gap reported rather than evaluated. The gap BEFORE somebody's
+first duty is unfinished for identical reasons and the decision does not mention it — because the
+trailing one is the one a scheduler notices. Both are now reported, in one shape, and a person with
+no counted duty at all is one open gap over the horizon. The single exception is the shape
+`carryInLeftEdge` already reports, where one row speaks for everybody (finding 4).
+
+#### 7. `target_per_period` and `composition` have NO `kinds` parameter, and that is CG-07's doing
+
+Their cells are *"level→target; modifiers"* and *"level→{WD,WE}"* and name none, so every duty in
+the period counts. Adding one would invent a parameter no document states; a department wanting a
+per-kind target has `count_max`/`count_min`, whose cell does name `kinds`. Stated because the
+absence otherwise reads as an oversight beside three neighbours that have it.
+
+#### 8. SEVEN PLANTS STAYED GREEN out of forty-seven, and five of them were one defect
+
+**The count.** Forty-seven mutations were planted across the three tasks; forty went red naming
+their own cases. The seven that did not:
+
+1. **`personInScope` deleted from `count_max`/`count_min`** — no count case set CG-01's scope.
+2. **Both filters moved from the window's START to its END** — no case held a person whose level
+   moved inside a window. A window-located type must CHOOSE that date where a placement-located one
+   uses the duty's, and owner decision M fixes the choice at the period start.
+3. **`periodWeeksAtMost` answering `true` unconditionally** — the only case exercising it had a
+   five-week block against a limit of five, so the predicate was asserted where it MATCHES and
+   nowhere where it must not.
+4–7. **`personInScope` deleted from `max_gap`, `free_day_min`, `composition` and
+   `target_per_period`** — all four at once, one task after the identical probe caught `count_max`.
+
+**Five of the seven are one defect: a scope carried and never asserted.** That is P2-1 review's
+thirteen-instance finding, and it reappeared on every window-located type written before the probe
+became a habit. **So it is now a standing item rather than something to rediscover: a new type's
+first plant is `personInScope` → `true`, before the type's own narrowings.** Each of the five is
+closed by a person in the type's own defining fixture who would be flagged on their own figures and
+is excluded by the scope alone; two of them need a THIRD person, because owner decision K's sentence
+is that a bare `levels` list INTERSECTS the scope rather than replacing it, and an intersection
+cannot be pinned with two.
+
+Findings 2 and 3 are Task 9's species — *a property asserted at the one input where the defect
+cannot appear* — bringing that count to five instances in the phase.
+
+#### 9. Three smaller things
+
+**The message-table source guard bit on a ternary of two TABLE calls**, at `count_max`/`count_min`'s
+shared `explanation:`. It is a true positive by the guard's letter: it cannot tell that shape from
+the ternary of two LITERALS it is planted against, and relaxing it to admit the one would admit the
+other. The two directions now push at their own sites, which is also where their own comparison
+lives. Recorded because the next type with two directions will meet it.
+
+**`preview.test.ts`'s *"an implemented row with no preview yet"* exemplar had to move**, from
+`count_max` to `holiday_equity`. A probe pointed at a row that has since been implemented does not
+fail — it throws the SCHEMA's refusal instead, a different error class reaching the same `toThrow`.
+The exemplar moves as tasks land and the assertion now pins `preview` as undefined first, so the
+next move is forced rather than optional.
+
+**`followingDuties` had no corpus case at all until Task 17.** The contract says it is *"usually
+empty and never ASSUMED empty"* and nothing asserted the second half;
+`max-gap-the-gap-that-begins-in-the-published-month` supplies one, and needs to — it is what closes
+the trailing gap so the seam guard's single expected coverage row is not competing with an open-edge
+row.

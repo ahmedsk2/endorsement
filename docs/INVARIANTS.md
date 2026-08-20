@@ -639,6 +639,77 @@ place a scheduling rule is allowed to exist.*
   each naming the other, with `evaluate()`'s emission rule dropping whichever sits in the carry-in
   tail.
 
+- **The six WINDOW-LOCATED types, and the one asymmetry they all turn on** (P2-2 Tasks 15–17:
+  `count_max`, `count_min`, `target_per_period`, `composition`, `max_gap`, `free_day_min`). A window
+  the engine can only see part of makes every direction UNDER-count. For a **cap** that is harmless
+  — a short count never exceeds a limit — so a cap evaluates every window touching the horizon,
+  clipped ones included. For a **floor or a target** it is a false positive EVERY time, because the
+  duties it cannot see are exactly the ones that would have met the number, so those evaluate only a
+  WHOLE window (owner decision L) and the rest are reported through `coverage()`. **The two skip
+  shapes are deliberately different**: a window clipped by `[evaluableFrom, evaluableTo]` is named
+  individually, because which window it was is the actionable half; a window whose left part no
+  supplied history reaches is covered by `carryInLeftEdge`'s SINGLE row, because the answer is the
+  same for all of them. The line underneath is *shorter* versus *unknown* (`historyReaches()`): a
+  clipped week is a correct answer to a smaller question and a window whose first days were never
+  supplied is a wrong answer to the right one — which is why a cap declines the second shape though
+  decision L lets it evaluate the first. **Decision L also has a per-PERSON half the decision does
+  not state and this does**: somebody who joined part way through the window did not have that
+  window, so a floor or target leaves it unjudged and NAMES them — while **leave deliberately does
+  NOT work that way**, because pro-rating for leave is the scaling decision L refuses. The two are
+  one line apart in `onRosterThroughout` and both are fixtured. Windows are the DEPARTMENT's, from
+  `periods[].weeks` with CLIPPED bounds (owner decision O), never recomputed; `day` is not a window
+  (SPEC Appendix B routes nightly counts to SL-03, which is P3). `count_max`/`count_min` count PER
+  PERSON with `levels` as a scope filter INTERSECTING CG-01's scope, never a cohort total.
+
+- **`contributing` is mandatory on a window violation and MAY BE EMPTY** — corrected at Task 15 by
+  the first floor that fired. The window member shipped with `minItems: 1` on the argument that a
+  violation naming no duty is unactionable; that is right for a cap and inverted for a floor, since
+  `count_min` fires hardest on the person who holds NOTHING and an empty list is that person's whole
+  answer. The KEY stays mandatory — absent means a type forgot to say, `[]` means a type said *none*
+  — and `contract.test.ts` asserts the two APART, because one check covering both is what hid the
+  difference until a floor existed to expose it. `Location`'s union, `Violation`'s five fields and
+  `evaluate()`'s return type were not touched by any of Tasks 15–17: **P2-2 adds predicates and no
+  shared shape**, which is what makes CG-10's *"new types are additive"* measured rather than
+  asserted.
+
+- **A new condition type's FIRST plant is `personInScope` → `true`, before any of its own
+  narrowings.** Seven of forty-seven plants across Tasks 15–17 stayed green and FIVE were this one
+  defect: a CG-01 scope carried by the type and asserted by no fixture, on `count_max`/`count_min`
+  and then on all four of `max_gap`, `free_day_min`, `composition` and `target_per_period` at once.
+  It is P2-1 review's thirteen-instance finding, and it reappears on every type written before the
+  probe becomes a habit. Two of the five need a THIRD person in the fixture, because owner decision
+  K's sentence is that a bare `levels` list INTERSECTS the scope rather than replacing it and an
+  intersection cannot be pinned with two. The other two green plants were Task 9's species — a
+  property asserted at the one input where the defect cannot appear: **both filters read at the
+  window's END rather than its START** (no case held a person whose level moved inside a window; a
+  window-located type must CHOOSE that date where a placement-located one uses the duty's, and owner
+  decision M fixes it at the period start), and **`periodWeeksAtMost` answering true
+  unconditionally** (the only case exercising it had a five-week block against a limit of five, so
+  the predicate was asserted where it matches and nowhere where it must not).
+
+- **Owner decisions M, N and I, as implemented.** M: an ordered modifier list, FIRST MATCH WINS, and
+  a match REPLACES the level's own number — and the clauses moved from `PreviewMessages` into
+  `Vocabulary`, because decision M's own argument is that replace *"makes the effective target
+  readable at both branches"* and a violation could not say which branch it took. A level absent
+  from a `targets` map has NO target rather than a target of zero, and a modifier cannot rescue it —
+  a modifier replaces a level's target and a level with no target has nothing to replace. N: the
+  vacation-week rule is `AvailabilitySummary`'s VERBATIM (any overlap with a week's clipped bounds
+  is a whole week, so a Thu–Mon leave is two and a longer Sun–Thu leave is one), and `composition`'s
+  buckets are `{WD, WE, HOL}` with `HOL` OPTIONAL and FOLDED into `WE` when absent — `dayType()` is
+  never flattened, since holiday beats weekend deliberately and a two-bucket parameter would drop
+  every holiday duty, green on exactly the days it most matters. The violation says the fold
+  happened, because a reader counting weekend duties by eye would otherwise get a different number
+  from the badge. I: an unfinished gap is REPORTED, never evaluated — **and its mirror image goes
+  the same way**: the gap before somebody's first duty is unfinished for identical reasons and
+  decision I names only the trailing one because that is the one a scheduler notices. Leave and a
+  missing `joinedAt` stop `max_gap`'s clock; an **off-roster rotation does not**, because MR-04's
+  per-person override has no column anywhere and inferring one from a gap in `unitSpans` is what
+  `RotaAccessTest` exists to refuse. `max_gap`'s `days` is decision H's reading reversed — the
+  difference between START dates, N meaning at most N apart — which is an inference and is recorded
+  as one. `free_day_min`'s *"fully free"* is the OCCUPIED-INTERVAL reading, materially stronger than
+  every neighbour's anchor date: a 24 h call starting on the 5th makes the 6th unfree though no duty
+  row is dated it. Its averaging multiplies BOTH numbers, `rolling_hours_max`-style.
+
 - **A duty naming a person the context does not describe THROWS, exactly as one naming an unsupplied
   slot does.** Their leave, level and rotation are all unknown, so every placement type would answer
   "no violation" for want of data — a Hard rule passing on incomplete input, which is strictly worse

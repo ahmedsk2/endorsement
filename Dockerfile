@@ -83,7 +83,7 @@ RUN npm run build
 # stage 3's (which would be the larger, not-requested change: swapping composer's own image
 # for one built on php:8.4-fpm-alpine, carrying its own dependency-availability questions
 # for zip/unzip extraction that were not evaluated here).
-FROM composer:2@sha256:5946476338742b200bb9ff88f8be56275ddae4b3949c72305cb0dbf10cfcb760 AS vendor
+FROM composer:2@sha256:4d71c3c2109c61d5415544264b59ad4087e4c5b7244481723664138fd36d5040 AS vendor
 WORKDIR /build
 # icu-libs stays (the compiled intl.so dlopen()s it at runtime); icu-dev and the compiler
 # toolchain are virtual and removed once the extension is built, same split stage 3 uses

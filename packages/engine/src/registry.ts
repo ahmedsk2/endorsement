@@ -24,12 +24,15 @@ import type {
     LocationKind,
 } from './contract/types';
 import type { JsonSchema } from './contract/schema';
+import * as dowRestriction from './conditions/dow_restriction';
 import * as eligibility from './conditions/eligibility';
 import * as fairnessDistribution from './conditions/fairness_distribution';
 import * as minGap from './conditions/min_gap';
+import * as onboardingGrace from './conditions/onboarding_grace';
 import * as overlapBlock from './conditions/overlap_block';
 import * as rollingHoursMax from './conditions/rolling_hours_max';
 import * as targetPerPeriod from './conditions/target_per_period';
+import * as unwantedDayBlock from './conditions/unwanted_day_block';
 import * as vacationBlock from './conditions/vacation_block';
 
 /**
@@ -206,6 +209,9 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'unwanted_day_block',
         implemented: true,
+        evaluate: unwantedDayBlock.evaluate,
+        preview: unwantedDayBlock.preview,
+        paramsSchema: unwantedDayBlock.PARAMS_SCHEMA,
         catalogDefault: 'soft-top',
         direction: 'block',
         locationKind: 'placement',
@@ -241,6 +247,9 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'dow_restriction',
         implemented: true,
+        evaluate: dowRestriction.evaluate,
+        preview: dowRestriction.preview,
+        paramsSchema: dowRestriction.PARAMS_SCHEMA,
         direction: 'block',
         locationKind: 'placement',
         needsCarryIn: false,
@@ -303,6 +312,9 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'onboarding_grace',
         implemented: true,
+        evaluate: onboardingGrace.evaluate,
+        preview: onboardingGrace.preview,
+        paramsSchema: onboardingGrace.PARAMS_SCHEMA,
         direction: 'block',
         locationKind: 'placement',
         // Measured from `joinedAt`, a date on the person. No neighbouring duty enters into it.

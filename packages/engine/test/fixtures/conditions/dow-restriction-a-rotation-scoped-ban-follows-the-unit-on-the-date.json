@@ -1,0 +1,105 @@
+{
+    "name": "dow-restriction-a-rotation-scoped-ban-follows-the-unit-on-the-date",
+    "why": "CG-07's 'rotation or person' half is CG-01's scope rather than a parameter of this type (owner decision K's separation), and the rotation is the one held ON THE DATE. p-ali moves off PICU overnight — PICU through 7 August, NICU from the 8th — and the ban covers ISO weekdays 5 and 6, so the 7th is in scope and the 8th is not, on one person under one condition. An implementation resolving the unit once per evaluation is green on every month in which nobody changes rotation, which is most of them. p-noor, on NICU throughout, is the second half: it proves the scope excludes rather than that the weekday list is short.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-07", "isoWeekday": 5, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-08", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [
+                    { "key": "PICU", "from": "2026-01-01", "to": "2026-08-07" },
+                    { "key": "NICU", "from": "2026-08-08", "to": "2026-12-31" }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-07", "2026-08-08"],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "NICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-07", "2026-08-08"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "early",
+                "kind": "call",
+                "unitKey": "NICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 360,
+                "endMinute": 840,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-07",
+            "to": "2026-08-08",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-14"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-07", "slotKey": "night" },
+            { "personKey": "p-ali", "date": "2026-08-08", "slotKey": "night" },
+            { "personKey": "p-noor", "date": "2026-08-07", "slotKey": "early" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-dow",
+            "typeKey": "dow_restriction",
+            "class": "hard",
+            "active": true,
+            "scope": { "unitKeys": ["PICU"] },
+            "params": { "days": [5, 6] }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-dow",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-07",
+                "slotKey": "night"
+            },
+            "explanation": "2026-08-07 is ISO weekday 5, and this rule bans ISO weekdays 5 and 6."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-dow", "evaluatedWindows": 1, "skipped": [] }]
+}

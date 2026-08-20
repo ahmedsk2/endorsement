@@ -200,15 +200,20 @@ describe('the matrix — every parameter a type reads is named by its preview', 
      */
     it('runs over every type that has a preview today, named one by one', () => {
         expect(previewed.map((entry) => entry.typeKey).sort()).toEqual([
+            // Task 12 — the three placement types owner decisions R, T and the ISO-integer half of
+            // the day-of-week ban settle. Their sentences live in the message table (AR-07).
+            'dow_restriction',
             // Task 10 — the three Hard placement types, preview and predicate together.
             'eligibility',
             // Task 9 — the four whose WORDING an answered owner decision settles. Their predicates
             // land at Tasks 14, 16, 18 and 19 against the schema that is already here.
             'fairness_distribution',
             'min_gap',
+            'onboarding_grace',
             'overlap_block',
             'rolling_hours_max',
             'target_per_period',
+            'unwanted_day_block',
             'vacation_block',
         ]);
 
@@ -485,6 +490,65 @@ describe('target_per_period — owner decision M, a modifier replaces and both b
 
     it('says nothing about exceptions when there are none', () => {
         expect(render({ targets: { R1: 4 }, modifiers: [] })).not.toMatch(/instead|first/i);
+    });
+});
+
+describe('onboarding_grace — owner decision T, said out loud rather than left to be discovered', () => {
+    const render = (params: Record<string, unknown>): string => preview(condition('onboarding_grace', params), CONTEXT);
+
+    /**
+     * Day 1 is the JOIN DATE, which is the half a reader gets wrong — "first 3 days" reads as three
+     * days AFTER joining to about half the people who read it. So the sentence carries the first
+     * date the person may be scheduled on, the same device owner decision H bought for `min_gap`,
+     * and it moves with the parameter rather than being written into the prose once.
+     */
+    it('renders the boundary as a date rather than as a number to be reasoned about', () => {
+        expect(render({ days: 3 })).toContain('4 Aug');
+        expect(render({ days: 7 })).toContain('8 Aug');
+        expect(render({ days: 1 })).toContain("first 1 day");
+    });
+
+    /**
+     * The unknown-join-date answer is in the SENTENCE, not only in the coverage row. A department
+     * reading this rule on the gate screen is looking at the one place they could learn that a
+     * person with no recorded join date is not protected by it — and `joined_at` is written by no
+     * seeder, factory or demo path in this repository (finding 18), so that is the majority case on
+     * a fresh instance rather than an edge one.
+     */
+    it('says what happens to a person whose join date is not recorded', () => {
+        expect(render({ days: 3 })).toMatch(/join date is not recorded/i);
+        expect(render({ days: 3 })).toMatch(/not blocked/i);
+    });
+});
+
+describe('dow_restriction — ISO numbers, because the names are the server’s', () => {
+    const render = (params: Record<string, unknown>): string => preview(condition('dow_restriction', params), CONTEXT);
+
+    /**
+     * AR-07 keeps the day names in `lang/en/calendar.php` and owner decision X keeps the week's
+     * shape in the context, so this sentence names ISO NUMBERS and says why — a reader shown "5"
+     * with no explanation would reasonably assume a bug. The quoted-weekday scan over `packages/`
+     * enforces the other half: the names cannot appear here even if somebody wanted them to.
+     */
+    it('lists the banned weekdays as numbers and says whose the names are', () => {
+        const sentence = render({ days: [5, 6] });
+
+        expect(sentence).toContain('ISO weekdays 5 and 6');
+        expect(sentence).toMatch(/rendered by the server/i);
+        expect(render({ days: [5] })).toContain('ISO weekday 5');
+    });
+
+    it("names the scope as where the rule's rotation-or-person half lives", () => {
+        expect(render({ days: [5] })).toMatch(/scope/i);
+    });
+});
+
+describe('unwanted_day_block — owner decision R, a rule that stores nothing', () => {
+    it('states the anchor-date reading and that the days come from the request', () => {
+        const sentence = preview(condition('unwanted_day_block', {}), CONTEXT);
+
+        expect(sentence).toMatch(/day the duty starts on/i);
+        expect(sentence).toMatch(/stores none of them/i);
     });
 });
 

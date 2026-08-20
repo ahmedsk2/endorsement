@@ -33,6 +33,7 @@ import { addDays, compareYmd, type Ymd } from '../calendar/ymd';
 import type {
     ConditionScope,
     CoverageDetail,
+    Day,
     EvaluationContext,
     Person,
     Schedule,
@@ -154,6 +155,56 @@ export function personIndex(context: EvaluationContext): { get(key: string): Per
             }
 
             return person;
+        },
+    };
+}
+
+/** The precomputed day vector, by date. `get` throws on a date the context does not describe. */
+export interface DayIndex {
+    get(date: Ymd): Day;
+    find(date: Ymd): Day | null;
+}
+
+/**
+ * The day vector by date — the ONE answer to "what kind of day is this", never recomputed here.
+ *
+ * `days` is precomputed server-side by the one converter (AR-08, finding 21): `dayType` makes
+ * holiday win over weekend deliberately, `isoWeekday` is the department's own calendar's, and a
+ * type re-deriving either from `weekendDays` would be a second definition of a per-department
+ * fact — which is what `golden.json` and Decision C exist to prevent.
+ *
+ * `get` THROWS on a date the vector does not cover, exactly as `slotIndex()` and `personIndex()`
+ * throw: a duty inside the horizon whose date the caller omitted is dropped context, and answering
+ * "not a banned day" for want of the row is a Hard rule passing on incomplete input. `find` is the
+ * lenient half, for the one question that legitimately reaches PAST the horizon — a post-duty
+ * window opened on the last date of the month closes on a date the vector does not describe, and
+ * the type asking it says so through `coverage()` rather than crashing on a correct schedule.
+ */
+export function dayIndex(context: EvaluationContext): DayIndex {
+    const byDate = new Map<string, Day>();
+
+    for (const day of context.days) {
+        if (byDate.has(day.date)) {
+            throw new RangeError(`Two day rows share the date ${day.date}; a date describes one day.`);
+        }
+
+        byDate.set(day.date, day);
+    }
+
+    return {
+        find: (date: Ymd): Day | null => byDate.get(date) ?? null,
+        get: (date: Ymd): Day => {
+            const day = byDate.get(date);
+
+            if (day === undefined) {
+                throw new RangeError(
+                    `The evaluation context describes no day ${date}, so nothing here knows what kind ` +
+                        'of day it is. The day vector is precomputed server-side by the one converter ' +
+                        '(AR-08) and this package deliberately cannot fill the gap in.',
+                );
+            }
+
+            return day;
         },
     };
 }

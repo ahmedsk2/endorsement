@@ -86,6 +86,15 @@ export interface PreviewMessages {
 
     /** A modifier's `periodWeeksAtMost` predicate, as a clause. */
     periodWeeksAtMost(weeks: number): string;
+
+    /** Owner decision R: the days arrive from the caller; P2 stores none of them. No parameters. */
+    unwantedDayBlock(): string;
+
+    /** Owner decision T: day 1 is the join date, and an unknown join date is said OUT LOUD. */
+    onboardingGrace(args: { days: number }): string;
+
+    /** ISO integers only. The day NAMES are the server's (AR-07) and never appear in this package. */
+    dowRestriction(args: { days: readonly number[] }): string;
 }
 
 /**
@@ -185,5 +194,34 @@ export const EN: PreviewMessages = {
 
     periodWeeksAtMost(weeks) {
         return `the period is at most ${EN.plural(weeks, 'week', 'weeks')} long`;
+    },
+
+    unwantedDayBlock() {
+        return (
+            'No duty on a day the person has registered as unwanted, counting the day the duty starts ' +
+            'on — a night duty starting the evening before an unwanted day does not count against it. ' +
+            'The days come from the request the person filed; this rule stores none of them itself.'
+        );
+    },
+
+    onboardingGrace({ days }) {
+        return (
+            `No duty in a person's first ${EN.plural(days, 'day', 'days')} on the roster, counting ` +
+            `their join date as day 1 — somebody joining on 1 Aug may first be scheduled on ` +
+            `${days + 1} Aug. A person whose join date is not recorded is NOT blocked by this rule, ` +
+            'and the evaluation reports whom it could not judge rather than passing them silently.'
+        );
+    },
+
+    dowRestriction({ days }) {
+        const which = EN.conjoin(days.map((day) => String(day)));
+
+        return (
+            `No duty on ISO ${days.length === 1 ? 'weekday' : 'weekdays'} ${which}, counting the day ` +
+            'the duty starts on. The days are ISO numbers because the day names belong to the ' +
+            "department's own calendar and are rendered by the server, never by this rule. Whom the " +
+            "ban covers — a rotation, a level, named people — is the condition's scope, read on the " +
+            'day of the duty.'
+        );
     },
 };

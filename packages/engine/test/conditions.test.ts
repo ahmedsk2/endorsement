@@ -73,12 +73,18 @@ describe('the condition corpus', () => {
      */
     it('found the cases it claims to, and each states why it exists', () => {
         expect(FIXTURES.map((fixture) => fixture.name)).toEqual([
+            'dow-restriction-a-ban-on-one-iso-weekday',
+            'dow-restriction-a-rotation-scoped-ban-follows-the-unit-on-the-date',
             'eligibility-mid-window-promotion',
             'eligibility-wrong-rotation-and-an-unnamed-slot',
+            'onboarding-grace-a-duty-before-the-join-date',
+            'onboarding-grace-an-unknown-join-date-is-reported-not-silent',
+            'onboarding-grace-day-n-and-day-n-plus-one',
             'overlap-block-abutting-split-day-night',
             'overlap-block-carry-in-at-the-left-edge',
             'overlap-block-is-per-person-not-per-slot',
             'overlap-block-night-crosses-into-the-next-date',
+            'unwanted-day-block-a-registered-day-and-a-colleague-with-none',
             'vacation-block-both-bounds-inclusive',
         ]);
 
@@ -290,8 +296,105 @@ describe("eligibility's auto-fill order half does not ship, and the absence is a
     });
 });
 
-describe('the three types are registered as implemented, with a preview and a schema', () => {
-    it.each(['overlap_block', 'vacation_block', 'eligibility'])('%s', (typeKey) => {
+describe('dow_restriction — ISO integers, and a weekday NAME is refused rather than ignored', () => {
+    const world = FIXTURES.find((f) => f.name === 'dow-restriction-a-ban-on-one-iso-weekday') as Fixture;
+
+    const banning = (days: unknown): Condition => ({
+        id: 'c-dow',
+        typeKey: 'dow_restriction',
+        class: 'hard',
+        active: true,
+        params: { days },
+    });
+
+    /**
+     * The days are ISO INTEGERS and the schema is what says so. A department writing a day NAME is
+     * expressing an intention this engine cannot honour — there is no name-to-number table in the
+     * package and there is deliberately never going to be one (AR-07 keeps the names in
+     * `lang/en/calendar.php`, owner decision X keeps the week's shape in the context) — so it is
+     * refused with the schema's own error rather than quietly matching nothing, which on a gate
+     * screen is a ban that appears to do nothing.
+     *
+     * THE NAME IS ASSEMBLED RATHER THAN WRITTEN, and that is not squeamishness: this file is
+     * scanned by `CalendarIsTheOnlyConverterTest`'s quoted-weekday pattern, so spelling the literal
+     * here would fail the very guard that keeps day names out of `packages/`. A test proving a
+     * weekday name is refused cannot itself contain one. (An eighth occurrence of "scanned source
+     * reaches further than you think" in this phase, and the first where the scanned file is a test
+     * asserting the rule the scan enforces.)
+     */
+    it('refuses a weekday name, and refuses a number outside 1..7', () => {
+        const name = ['M', 'on'].join('');
+
+        expect(() => evaluate(world.schedule, world.context, [banning([name])])).toThrow(/expected integer/);
+        expect(() => evaluate(world.schedule, world.context, [banning([0])])).toThrow(/below the minimum 1/);
+        expect(() => evaluate(world.schedule, world.context, [banning([8])])).toThrow(/above the maximum 7/);
+        expect(() => evaluate(world.schedule, world.context, [banning([])])).toThrow(/fewer than the 1 required/);
+    });
+
+    /**
+     * The weekday is the DAY VECTOR's, and a date the vector does not describe is refused rather
+     * than computed — AR-08's one converter, one layer inside the engine. A duty inside the horizon
+     * whose date the context omitted is dropped context, exactly like a duty naming an unsupplied
+     * slot or an undescribed person, and answering "not a banned day" for want of the day row would
+     * be a Hard rule passing on incomplete input.
+     */
+    it('throws on a duty whose date the day vector does not describe', () => {
+        const schedule: Schedule = {
+            ...world.schedule,
+            horizon: { ...world.schedule.horizon, to: d('2026-08-09') },
+            duties: [{ personKey: 'p-ali', date: d('2026-08-09'), slotKey: 'night' }],
+        };
+
+        expect(() => evaluate(schedule, world.context, [banning([5])])).toThrow(/2026-08-09/);
+    });
+});
+
+describe('onboarding_grace — an unknown join date is VISIBLE, not silent', () => {
+    const world = FIXTURES.find(
+        (f) => f.name === 'onboarding-grace-an-unknown-join-date-is-reported-not-silent',
+    ) as Fixture;
+
+    /**
+     * Owner decision T makes a missing `joined_at` no violation, and P2 Task 1's finding 18 makes
+     * that the state the LIVE instance is in: no seeder, factory or demo path writes the column, so
+     * the honest answer and the answer of a rule that never fires are the same answer. The coverage
+     * row is what separates them, and it is asserted here as well as in the fixture because the
+     * fixture compares the whole structure — this states the property in words the next reader can
+     * find by grepping for the decision.
+     */
+    it('names the person and the placements it could not judge', () => {
+        const [row] = coverage(world.schedule, world.context, world.conditions);
+
+        expect(row?.evaluatedWindows).toBe(1);
+        expect(row?.skipped).toHaveLength(1);
+        expect(row?.skipped[0]?.reason).toContain('p-ali');
+        expect(row?.skipped[0]?.reason).toMatch(/no join date/i);
+    });
+
+    /**
+     * A person with no join date and no duty is nobody's problem: reporting a skip for every
+     * unjoined person in the roster would put a row on almost every evaluation and train a reader
+     * to ignore the field, which is `carryInLeftEdge`'s recorded reason for refusing the same noise.
+     */
+    it('says nothing about a person with no join date who holds no duty', () => {
+        const schedule: Schedule = {
+            ...world.schedule,
+            duties: world.schedule.duties.filter((duty) => duty.personKey !== 'p-ali'),
+        };
+
+        expect(coverage(schedule, world.context, world.conditions)[0]?.skipped).toEqual([]);
+    });
+});
+
+describe('the six types are registered as implemented, with a preview and a schema', () => {
+    it.each([
+        'overlap_block',
+        'vacation_block',
+        'eligibility',
+        'unwanted_day_block',
+        'onboarding_grace',
+        'dow_restriction',
+    ])('%s', (typeKey) => {
         const entry = registryEntry(typeKey);
 
         expect(entry?.implemented).toBe(true);

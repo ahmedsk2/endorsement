@@ -1,0 +1,103 @@
+{
+    "name": "unwanted-day-block-a-registered-day-and-a-colleague-with-none",
+    "why": "Two people hold a duty on the SAME date and only one of them registered it as unwanted, so an implementation reading the first person in the context — or the union of everybody's lists — reports two violations instead of one. The colleague with an EMPTY list is the half that catches it: a type that never looks at whose list it is reading stays green on a one-person world. The third placement, on a date nobody objected to, keeps the count of evaluated placements honest against a predicate that only counts the ones it flags.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-03", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-04", "isoWeekday": 2, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": ["2026-08-03"],
+                "eligibleDays": ["2026-08-03", "2026-08-04"],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-03", "2026-08-04"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "early",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 360,
+                "endMinute": 840,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-03",
+            "to": "2026-08-04",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-06"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-03", "slotKey": "night" },
+            { "personKey": "p-noor", "date": "2026-08-03", "slotKey": "early" },
+            { "personKey": "p-ali", "date": "2026-08-04", "slotKey": "early" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-unwanted",
+            "typeKey": "unwanted_day_block",
+            "class": "soft",
+            "rank": 1,
+            "active": true,
+            "params": {}
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-unwanted",
+            "severity": "soft",
+            "rank": 1,
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            },
+            "explanation": "2026-08-03 is registered as an unwanted day."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-unwanted", "evaluatedWindows": 3, "skipped": [] }]
+}

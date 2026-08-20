@@ -1,0 +1,79 @@
+{
+    "name": "dow-restriction-a-ban-on-one-iso-weekday",
+    "why": "The weekday comes off the PRECOMPUTED day vector and is never recomputed in the package (AR-08, P2 finding 21): 7 August 2026 is ISO weekday 5 and 8 August is 6, and a ban on 5 must fire on the first and not the second. Two placements one day apart is the smallest world in which a type that bans every date, or none, differs from one that reads the weekday at all — a single-duty case is green under both.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-07", "isoWeekday": 5, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-08", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-07", "2026-08-08"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-07",
+            "to": "2026-08-08",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-14"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-07", "slotKey": "night" },
+            { "personKey": "p-ali", "date": "2026-08-08", "slotKey": "night" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-dow",
+            "typeKey": "dow_restriction",
+            "class": "hard",
+            "active": true,
+            "params": { "days": [5] }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-dow",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-07",
+                "slotKey": "night"
+            },
+            "explanation": "2026-08-07 is ISO weekday 5, and this rule bans ISO weekday 5."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-dow", "evaluatedWindows": 2, "skipped": [] }]
+}

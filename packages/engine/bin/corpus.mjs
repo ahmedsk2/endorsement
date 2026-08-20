@@ -354,17 +354,37 @@ const SLOTS = [
     },
 ];
 
+/**
+ * Twenty people, each with a REAL availability denominator.
+ *
+ * `eligibleDays` shipped as `[]` for everybody and it silenced the benchmark in two directions at
+ * once (found by the P2-2 review). `fairness_distribution` divides by the cohort's total available
+ * days, so an empty list is a zero denominator: the type returned at its guard clause having
+ * measured nothing, `evaluatedWindows` was 0, and the timing counted one of the twenty-two as free.
+ * `call_frequency_max`'s allowance is `floor(availableDays / n)` (owner decision J), so zero
+ * available days permits zero calls and EVERY call breached — 706 of the 998 headline violations
+ * were that artefact, and the number a reader takes away as *"a violation-dense month"* was mostly
+ * one degenerate input.
+ *
+ * It is built the way `ContextBuilder` builds it: every date of the supplied range, less the days
+ * this person is on leave. `joinedAt` is before the range for everybody here, and no synthetic
+ * person has a rotation gap, so those two clauses of decision J remove nothing.
+ */
 function syntheticPeople() {
+    const range = datesBetween(TAIL_FROM, AHEAD_TO);
+
     return Array.from({ length: 20 }, (unused, index) => {
         const key = `p-${String(index + 1).padStart(2, '0')}`;
+        const leaveDays =
+            index % 5 === 0 ? [addDays(MONTH_FROM, index % 20), addDays(MONTH_FROM, (index % 20) + 1)] : [];
 
         return {
             key,
             levelSpans: [{ key: LEVELS[index % LEVELS.length], from: '2025-07-01', to: '2027-06-30' }],
             unitSpans: [{ key: UNITS[index % UNITS.length], from: '2025-07-01', to: '2027-06-30' }],
-            leaveDays: index % 5 === 0 ? [addDays(MONTH_FROM, index % 20), addDays(MONTH_FROM, (index % 20) + 1)] : [],
+            leaveDays,
             unwantedDays: index % 4 === 0 ? [addDays(MONTH_FROM, (index * 3) % 28)] : [],
-            eligibleDays: [],
+            eligibleDays: range.filter((date) => !leaveDays.includes(date)),
             external: index === 19,
             joinedAt: '2025-07-01',
             priorCredits: {},
@@ -534,6 +554,28 @@ function measure() {
             'the NF-01 case is vacuous',
             `${violations.length} violations from ${firing.size} conditions — a benchmark of an engine ` +
                 'that did nothing measures process startup, not NF-01.',
+        );
+
+        return null;
+    }
+
+    // The SECOND vacuity gate, and it is not the same statement (P2-2 review). The one above asks
+    // whether the world produced findings; this asks whether every type WORKED. A rule can be
+    // active, reach its own guard clause, measure nothing and return — `fairness_distribution` did
+    // exactly that for the whole of P2, because every synthetic person carried an empty
+    // `eligibleDays` and a zero denominator is its early exit. It fired on nothing, so the first
+    // gate was satisfied by its twenty-one neighbours, and the headline timing counted one of the
+    // twenty-two as free.
+    const idle = engine
+        .coverage(schedule, context, conditions)
+        .filter((row) => row.evaluatedWindows === 0)
+        .map((row) => row.conditionId);
+
+    if (idle.length > 0) {
+        fail(
+            'a type in the NF-01 case evaluated nothing at all',
+            `${idle.join(', ')} reported evaluatedWindows: 0. An active rule that measures nothing is ` +
+                'timed as free, and a benchmark that skips work reports headroom it does not have.',
         );
 
         return null;

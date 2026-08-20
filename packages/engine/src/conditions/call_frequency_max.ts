@@ -108,8 +108,9 @@ import { enumerateWindows, type Window } from '../duty/windows';
 import {
     carryInLeftEdge,
     dutyStreams,
+    orderedByPerson,
     personInScope,
-    positionedIn,
+    positionedWithin,
     rosterFor,
     wholeWindowVerdict,
 } from './support';
@@ -203,6 +204,12 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context, messa
     const skipped: SkippedWindow[] = [...carryInLeftEdge(context, schedule.horizon, messages)];
     const windows = enumerateWindows('rolling', params.windowDays, schedule.horizon);
 
+    // Resolved once per person for the WHOLE evaluation rather than once per window, which is
+    // `rolling_hours_max`'s measurement one type along: a rolling window per day is a window
+    // per horizon date, and `orderedDutiesFor` scans all three streams and SORTS. Lazy, so the
+    // set of resolutions is unchanged and a person the scope excludes is still never resolved.
+    const ordered = orderedByPerson(streams, slots);
+
     let evaluated = 0;
 
     for (const window of windows) {
@@ -228,7 +235,7 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context, messa
 
             const availableDays = availableDaysIn(person, window);
             const permitted = permittedFor(availableDays, params.n);
-            const contributing = positionedIn(person.key, window, streams, slots).map(
+            const contributing = positionedWithin(ordered(person.key), window).map(
                 (positioned) => positioned.duty,
             );
 

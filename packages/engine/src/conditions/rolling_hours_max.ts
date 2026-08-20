@@ -21,7 +21,8 @@
  *
  * This is the one type in the catalog reading Decision A's SPLIT-AT-MIDNIGHT attribution — a
  * Friday-night call is one Friday call to every other type and twelve Friday hours plus twelve
- * Saturday hours here (`DUTY_DATE_READING.rolling_hours_max`), through `onDutyMinutesOn`.
+ * Saturday hours here (`DUTY_DATE_READING.rolling_hours_max`), through `minutesOfIntervalOn` — the
+ * same reading `onDutyMinutesOn` delegates to, over the interval `orderedDutiesFor` already resolved.
  *
  * ## It is a CAP with an AUTHORED limit, so owner decision L applies in its simple form
  *
@@ -64,10 +65,10 @@ import type {
     SkippedWindow,
 } from '../contract/types';
 import { assertValidAgainst } from '../contract/validate';
-import { onDutyMinutesOn, type Duty } from '../duty/interval';
-import { orderedDutiesFor, slotIndex } from '../duty/order';
+import { minutesOfIntervalOn, type Duty } from '../duty/interval';
+import { slotIndex } from '../duty/order';
 import { enumerateWindows } from '../duty/windows';
-import { carryInLeftEdge, dutyStreams, personInScope, rosterFor } from './support';
+import { carryInLeftEdge, dutyStreams, orderedByPerson, personInScope, rosterFor } from './support';
 
 /** `rolling_hours_max`'s parameters. `averagingWeeks` absent means the cap is not averaged. */
 export interface RollingHoursMaxParams {
@@ -148,6 +149,13 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context, messa
     const skipped: SkippedWindow[] = [...carryInLeftEdge(context, schedule.horizon, messages)];
     const windows = enumerateWindows('rolling', cap.windowDays, schedule.horizon);
 
+    // Resolved once per person for the WHOLE evaluation rather than once per window. A rolling
+    // window per day over a month is thirty-seven of them, and `orderedDutiesFor` scans all three
+    // streams and sorts, so asking inside the loop was thirty-seven identical sorts per person —
+    // 34.6 ms of NF-01's 58 ms budget on a schedule of ninety-three duties (P2-2 review). Lazy, so
+    // the set of resolutions is unchanged and a person the scope excludes is still never resolved.
+    const ordered = orderedByPerson(streams, slots);
+
     let evaluated = 0;
 
     for (const window of windows) {
@@ -167,7 +175,7 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context, messa
             // `contributing` naming some of the duties that got there rather than all of them, and
             // a scheduler told a window is over budget and shown two of its four placements has
             // been handed a shape of the problem instead of the problem (Task 10's finding).
-            for (const positioned of orderedDutiesFor(person.key, streams, slots)) {
+            for (const positioned of ordered(person.key)) {
                 if (!positioned.slot.countsHours) {
                     continue;
                 }
@@ -175,7 +183,7 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context, messa
                 let inWindow = 0;
 
                 for (const date of dates) {
-                    inWindow += onDutyMinutesOn(positioned.duty, positioned.slot, date);
+                    inWindow += minutesOfIntervalOn(positioned.interval, date);
                 }
 
                 if (inWindow === 0) {

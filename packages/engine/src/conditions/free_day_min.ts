@@ -69,11 +69,12 @@ import type {
 } from '../contract/types';
 import { assertValidAgainst } from '../contract/validate';
 import { occupiedDates } from '../duty/interval';
-import { orderedDutiesFor, slotIndex } from '../duty/order';
+import { slotIndex } from '../duty/order';
 import { enumerateWindows, windowLengthDays } from '../duty/windows';
 import {
     carryInLeftEdge,
     dutyStreams,
+    orderedByPerson,
     personInScope,
     rosterFor,
     wholeWindowVerdict,
@@ -165,6 +166,12 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context, messa
     const skipped: SkippedWindow[] = [...carryInLeftEdge(context, schedule.horizon, messages)];
     const windows = enumerateWindows('rolling', rule.windowDays, schedule.horizon);
 
+    // Resolved once per person for the WHOLE evaluation rather than once per window, which is
+    // `rolling_hours_max`'s measurement one type along: a rolling window per day is a window
+    // per horizon date, and `orderedDutiesFor` scans all three streams and SORTS. Lazy, so the
+    // set of resolutions is unchanged and a person the scope excludes is still never resolved.
+    const ordered = orderedByPerson(streams, slots);
+
     let evaluated = 0;
 
     for (const window of windows) {
@@ -193,7 +200,7 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context, messa
             // whole difference between this type and its neighbours. No early exit: a window with
             // one free day and a window with none are the same answer to `some()` and different
             // answers to this rule the moment `freeDays` is above one.
-            for (const positioned of orderedDutiesFor(person.key, streams, slots)) {
+            for (const positioned of ordered(person.key)) {
                 const touched = occupiedDates(positioned.duty, positioned.slot).filter(
                     (date) => compareYmd(date, window.from) >= 0 && compareYmd(date, window.to) <= 0,
                 );

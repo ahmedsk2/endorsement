@@ -1,0 +1,2040 @@
+# P2 — The conditions engine
+
+**Written 2026-08-19 against `main` at `0733665`. Revised 2026-08-20 for the full CG-07 catalog.**
+Production is live and current; P0a–P1e are shipped. Baseline this plan starts from and must not
+regress:
+
+| Suite | Count |
+|---|---|
+| PHPUnit (`php artisan test`) | **1683** |
+| Vitest (`npm test`) | **237** |
+| Playwright (`npm run test:e2e`) | **24** |
+| `npm run build` | green |
+| CI (`test`, `audit`, `docker-build`) | green |
+
+---
+
+## What this plan is, and is not
+
+**It is** the first TypeScript in this repository: `packages/engine`, a pure conditions engine
+implementing the CG-10 contract `(schedule, config, conditions) → violations[]`, with **every
+condition type in CG-07's shipped catalog except the one the catalog itself marks Stage 5** — the
+enumeration is below and is stated as a list, never as a bare number — plus a calendar mirror
+validated against the corpus P1a and P1e built for it, the severity/rank model, CG-04's
+plain-language previews, the CG-08 preset bundles, and a PHP-side context builder that serialises the
+shipped master rota, vacations, clinics, levels and calendar into the engine's input shape.
+
+**It is not:**
+
+- **Not the conditions gate screen.** CG-01/CG-02's drag-ranked gate, the `conditions` table, and
+  everything that stores a condition are **P3** — the phase table places them there and this plan
+  does not move them. P2 ships **no migration and no screen.**
+- **Not slots, coverage templates, schedules or assignments.** All four are unbuilt (design §6.3)
+  and all four are P3. P2 defines the *shape* the engine reads them in — Decision A, the most
+  consequential decision in the phase — and creates none of them.
+- **Not the workbench.** WB-01..WB-08 is P3. P2 produces `violations[]`; nothing renders them yet.
+- **Not the solver.** `services/solver`, §4.2's evaluation mode and §4.3's real cross-validation job
+  are **P4**. See Decision G — the phase table's "the CI cross-validation job" cannot mean §4.3's
+  job in P2, because the thing it would validate against does not exist until P4.
+- **Not a production container.** `services/engine` waits for its first caller (Decision F).
+- **Not the duty-hours or equity *numbers*.** Every predicate ships; the numeric policy §37 still
+  owes does not, and no plausible-looking default is invented in its place (Decision H).
+- **Not a second implementation of anything except the calendar** — and that one is deliberate,
+  already anticipated, and already has its contract sitting in the tree (Decision C).
+
+---
+
+## The catalog: the exact enumeration, and how it was counted
+
+D13 stands as decided: **`| D13 | Condition catalog scope? | **All 21 types in P2.** Objection
+logged in §1.3. |`** (`docs/superpowers/specs/2026-08-08-munawib-endorsement-integration-design.md:36`,
+verified verbatim). The nine-type paragraph at lines 77–82 sits **inside** §1.3 *"Objections
+logged"*, whose preamble reads *"Both were raised, both were reaffirmed by the owner, and both are
+being implemented as decided. Recorded so the reasoning survives, not to re-litigate."* There is no
+reversal in the tree and this plan describes none.
+
+### How the count was taken
+
+CG-07's table is `docs/munawib/SPEC.md` lines 87–110: header at 87, separator at 88, **22 data rows
+at 89–110**. Twenty-one rows carry one type key; one row — `count_max / count_min`, line 91 —
+carries two. So:
+
+- **22 catalog rows.**
+- **23 distinct type keys.**
+- Exactly one row, `forbidden_transition` at line 110, carries `(Stage 5)` **inside its own
+  parameters cell**.
+- **22 rows − 1 Stage-5 row = 21 rows**, which is exactly D13's number. **23 keys − 1 = 22 type
+  keys.**
+
+**D13's "21" is therefore self-consistent and means the whole shipped catalog except the Stage-5
+row.** This corrects the committed draft of this plan, which asserted that *"'21' matches nothing in
+the catalog"* and that *22 minus `forbidden_transition`* was *"a reading no document states"*. Three
+tree facts state it between them:
+
+1. CG-07's own marking, `docs/munawib/SPEC.md:110` — `| forbidden_transition | Shift A never followed
+   by shift B | from/to kinds (Stage 5) |`.
+2. §35, `SPEC.md:252` — *"**Stage 5 — Shift mode** (shift slots, hour accounting, coverage-first
+   solver profile, **forbidden transitions**, progressive patterns…). Starts only on explicit
+   go-ahead."*
+3. §36 *"Not doing (and why)"*, `SPEC.md:257` — *"**Shift features before Stage 5.**"* This one is
+   decisive: building `forbidden_transition` in P2 contradicts a **named non-goal**, not merely a
+   stage ordering.
+
+The derived claim in the committed draft that *"the other twelve is also wrong — thirteen, not
+twelve"* falls with the same arithmetic. What survives from that passage, and is kept below, is the
+underlying observation: **the catalog is 22 rows / 23 keys and no document says so.** That is a
+clarification worth writing down, not a defect list.
+
+### What P2 builds — the list
+
+**21 catalog rows = 22 implemented type keys.** Stated as the list, every time; the plan never
+states a count without it.
+
+| # | Type key | Violation is located at | Lands in |
+|---|---|---|---|
+| 1 | `overlap_block` | placement | P2-1 |
+| 2 | `vacation_block` | placement | P2-1 |
+| 3 | `eligibility` | placement | P2-1 |
+| 4 | `unwanted_day_block` | placement | P2-1 |
+| 5 | `onboarding_grace` | placement | P2-1 |
+| 6 | `dow_restriction` | placement | P2-1 |
+| 7 | `clinic_conflict` | placement | P2-1 |
+| 8 | `same_unit_conflict` | placement | P2-1 |
+| 9 | `min_gap` | placement | P2-1 |
+| 10 | `post_duty_exclusion` | placement | P2-1 |
+| 11 | `consecutive_max` | placement | P2-1 |
+| 12 | `count_max` | window | P2-2 |
+| 13 | `count_min` | window | P2-2 |
+| 14 | `target_per_period` | window | P2-2 |
+| 15 | `composition` | window | P2-2 |
+| 16 | `max_gap` | window | P2-2 |
+| 17 | `free_day_min` | window | P2-2 |
+| 18 | `rolling_hours_max` | window | P2-2 |
+| 19 | `call_frequency_max` | window | P2-2 |
+| 20 | `fairness_distribution` | cohort | P2-2 |
+| 21 | `holiday_equity` | cohort | P2-2 |
+| 22 | `we_pairing` | cohort | P2-2 |
+
+**Plus one, registered and deliberately unimplemented:**
+
+| 23 | `forbidden_transition` | — | **not built.** Registered with `implemented: false` and the three citations above. |
+
+`forbidden_transition` is **named in the registry** rather than silently absent, so the gap reads as
+a decision and not an oversight — the same device Decision C uses for Hijri, Task 5's coverage
+manifest uses for `golden.json`'s unasserted blocks, and `UnitMerge::REFERENCES` uses for a table a
+merge deliberately leaves alone. **An entry is a decision, not documentation.**
+
+Task 8's catalog-parity guard derives the 23 keys **from `docs/munawib/SPEC.md`'s table itself** and
+compares in both directions against the registry, so the count cannot drift again and a 24th row
+appearing in the spec fails the build until somebody classifies it.
+
+### A competing arithmetic, rejected on the record
+
+23 keys − `forbidden_transition` − `overlap_block` also equals 21, reading *"Hard, built-in"* as
+meaning `overlap_block` is not a department-configurable catalog entry. **Rejected:** it is a row in
+a table the spec calls *"Shipped catalog"*, it carries a type key and a stated class, and the engine
+must implement it either way. The useful framing is that **both readings produce the same build
+set** — `overlap_block` is implemented under either, `forbidden_transition` under neither — so the
+disputed number is a label and the enumeration is the contract.
+
+### One design-doc inconsistency not to inherit
+
+`…integration-design.md:36` records D13 with no enumeration; `:1052` repeats *"all 21 CG-07 types"*;
+`:1468` says *"even though all 21 ship before P3"*. But §1.3's **objection** paragraph at `:77–79`
+writes *"the rest (duty-hours, fairness, holiday equity, **shift transitions**) belong to modules
+that ship in P5 and Stage 5"*, which places shift transitions **inside** the 21 and would require
+some other row to be outside it. That paragraph is the overruled objection, not the decision, and it
+is loose prose. **Task 1 states the enumeration once, cites `SPEC.md:110` and `:257`, and does not
+treat `:77–79` as a scoping statement.** This document has been cited for the opposite of what it
+says nine times; that is the tenth avoided.
+
+### The ordering instruction survives D13 intact
+
+`…integration-design.md:1468`, verbatim: *"Mitigate by **ordering the 21 types** so the prototype's
+proven nine land first and are demoable, **even though all 21 ship before P3**."* The owner has
+already sanctioned an ordering inside a 21-type P2. This plan's seam **is** that ordering, chosen on
+a tree-verifiable criterion rather than on a "nine" that enumerates to nothing (`grep -rn -i
+'\bnine\b' docs/` returns twenty hits and none of them is a list).
+
+---
+
+## Binding requirement IDs
+
+From `docs/munawib/SPEC.md` unless noted.
+
+**Built in P2:**
+
+| ID | What P2 owes it |
+|---|---|
+| **CG-04** | Plain-language preview text auto-generated from parameters — for all 22 implemented keys, in the engine, with no renderer yet (P3 renders it). |
+| **CG-05** | The **Hard** class: highest hint severity; the engine marks it. P2 does **not** build the publish block (P3). |
+| **CG-06** | The **soft** class: rank-graded violations. P2 builds the rank model; the ignored-warnings ledger is P3. |
+| **CG-07** | **All 22 implemented keys** (21 rows), plus `forbidden_transition` registered unimplemented with its citations. |
+| **CG-08** | The preset bundles as **data in the package**: ACGME, residency (structure, numbers pending), SCFHS (present, empty, with a `pending` block). Decision H. |
+| **CG-10** | The stable contract: pure function `(schedule, config, conditions) → violations[{conditionId, severity, rank?, location, explanation}]`; new types additive. |
+| **AR-03** | One pure TS conditions engine, cross-validated by a shared golden fixture suite in CI. P2 delivers the engine and the *calendar* half of the cross-validation (Decision G). |
+| **AR-08** | `App\Support\Calendar` is the one converter — and the mirror is the one deliberate exception, contracted by `golden.json` (Decision C). |
+| **UX-05** | Hints never block on network: the engine must run client-side on data the page already holds. |
+| **NF-01** | < 100 ms p95 laptop, < 250 ms mid-phone — a **budget on the engine**, measured in P2 against a synthetic full month with all 22 types active. |
+| **D4** | One TypeScript engine, two runtimes. P2 ships the package and the browser bundle path; the server runtime waits (Decision F). |
+| **D13** | All 21 catalog rows in P2, as enumerated above. |
+
+**Named so P2 does not preclude them, and built by nobody here:**
+
+| ID | Why it constrains P2 |
+|---|---|
+| **CG-01 / CG-02 / CG-03** | The gate stores `type_key`, `params`, `scope`, `class`, `rank`, `active`, `source` — and §30's model is `conditions/{condId} { typeKey, params, scope, class:'hard'\|'soft', rank?, active, source, note? }`, **one `typeKey` per row**. P2's condition object must be exactly that row, minus the row. CG-03's *"never retroactive on published schedules"* means the engine is always called with a **condition set as an argument** and never reads an ambient one — and it is why Decision D's carry-in tail is read-only context, never re-evaluated. |
+| **SL-01 / SL-02 / SL-03 / SL-04** | Slot kind, time window (may cross midnight), `counts_hours`, `tally_key`; *"post-duty semantics follow slot windows automatically"*; coverage templates carry per-slot min/target; weekly-cadence slots share the model. P2's duty shape must carry enough of SL-01 and SL-04 for the eleven window-measured types to be real, and must **not** absorb SL-03 (owner decision K). |
+| **WB-03 / WB-04 / WB-05** | Live hints on a *prospective* placement; pickers exclude hard-ineligible; trackers show current vs target. The engine must evaluate a **hypothetical** duty cheaply, not only a committed month — which is the seam's third argument. |
+| **AU-02** | The solver's JSON contract: `request {periodSkeleton, roster, slots, templates, conditions, constraints, fixedAssignments, seed, timeLimitSec}`. P2's context must be **serialisable into** that request without a translation layer nobody planned. |
+| **AU-05** | Client-side greedy fallback — needs `evaluate()` cheap enough to call in a loop. The NF-01 budget again. |
+| **AU-07** | Infeasibility must return a conflict set, never a silent under-fill. It is why a Hard **floor** is a product hazard (Decision E) and why the registry records cap-vs-floor. |
+| **PU-03** | Publish dialog summarises outstanding warnings; consumes `violations[]` unchanged — which is why `evaluate()`'s return type does **not** widen (Decision D). |
+| **RQ-01 / §30** | Approved requests become engine constraints; §30 sketches `requests/{reqId} { type:'unwanted'\|'leave'\|'sick'\|'swap', … }`. That is where unwanted days live, and §35 puts requests in Stage 3 (P4). Owner decision R. |
+| **TL-01 / TL-02 / TL-03** | The tallies, the equity dashboard and the duty-hour report are the **consumers** of `fairness_distribution`, `holiday_equity` and `rolling_hours_max`. They are P5. **A type and its dashboard are different deliverables** — see the note under the seam. |
+| **§4.2 / §4.3** | The solver's reified evaluation mode and the real cross-validation job. **P4.** |
+
+---
+
+## Inherited invariants — stated as things a task must not break
+
+Each was verified against the tree while revising this plan. A guard tells you *that* you are wrong,
+never *why*, and the why is what stops it being reintroduced sideways.
+
+1. **`App\Support\Calendar` is the only date converter, and the client allow-list is EMPTY.**
+   `tests/Feature/Build/CalendarIsTheOnlyConverterTest.php` runs five whole-set scans. Two cover
+   `resources/js` and both carry **no allow-list at all, deliberately**: ten date-construction
+   needles (`new Date(`, `toISOString(`, `toLocaleString(`, `toLocaleDateString(`,
+   `toLocaleTimeString(`, `Date.now(`, `Date.parse(`, `Date.UTC(`, `Intl.DateTimeFormat`,
+   `getTimezoneOffset(`) and a quoted-whole-word weekday-vocabulary pattern. The docblock states the
+   policy: *"a future PR reaching for `new Date()` needs a prop from the controller instead, not an
+   entry added here."* **P2 must not add the first entry.**
+2. **That scan's SCOPE is `resource_path('js')`, and `packages/` escapes it by construction.** A
+   loophole, not a permission. Task 6 extends the scan to `packages/` with the allow-list still empty
+   in both directions, and proves it by planting.
+3. **A docblock is scanned source.** `CalendarIsTheOnlyConverterTest` matches comments on purpose
+   (*"a file explaining the array it is about to build is not a file this guard should let past"*).
+   `RotaAccessTest`'s *namespace* scan and `ClinicHooksTest` strip comments first, via the single
+   definition `Tests\Support\SourceScanner::withoutComments()`, and each pins the stripper in **both**
+   directions against a real file — a stripper that over-reached would return code-free source, every
+   needle would miss, and the guard would be silently vacuous while looking identical to a clean
+   tree. Any guard this plan adds picks one discipline and says which.
+4. **An identifier that travels between files is scanned source, and THREE live scans will see P2's
+   type keys.** The committed draft named two and understated the first; verified line by line:
+   - `RotaAccessTest::test_nothing_in_the_rota_infers_on_call_eligibility` (`:212`) walks
+     **`File::allFiles(app_path())` — every `.php` file under `app/`** — reading each with **raw
+     `file_get_contents`, comments NOT stripped**, for `off_roster`, `offRoster`, `callEligib`,
+     `call_eligib`. **No allow-list.** So `App\Support\Engine` may not contain those four strings
+     anywhere in `app/`, *docblocks included* — and a context builder documenting MR-04 is exactly
+     the file that would want to write "off-roster" in prose. Say it another way in the docblock.
+     (Note the temptation is real: AR-05's own Munawib data model carries `units/{unitId} { …
+     offRoster:boolean … }`.)
+   - `RotaAccessTest::test_nothing_in_the_rota_namespace_infers_on_call_eligibility` (`:262`)
+     needles those four plus bare **`eligib`**, `on_call`, `onCall`, `callRoster`,
+     case-insensitively, comment-stripped, over `glob(app_path('Support/Rota/*.php'))` — **a glob, so
+     a class added there joins the scan unasked** — plus the rota controllers, form requests and
+     screens.
+   - `ClinicHooksTest` needles `post_call`, `postcall`, **`condition`**, `severity`, `violation`,
+     `hard_block`, `soft_block`, `rank_order`, comment-stripped, over
+     `glob(app_path('Support/Clinics/*.php'))` (with `assertGreaterThanOrEqual(3, …)` non-vacuity)
+     plus eight named clinic controllers, requests, models and both Vue screens
+     (`assertGreaterThanOrEqual(11, …)`).
+
+   **Consequence, binding on Task 22:** the PHP context builder is `App\Support\Engine\*`. It may not
+   live in `App\Support\Rota` (the `eligibility` type key fires `eligib`) and it may not live in
+   `App\Support\Clinics` (`clinic_conflict`'s reader would fire `condition`). **P2 adds ZERO
+   allow-list entries to any of the three**, and that is an acceptance criterion, not a hope.
+5. **One writer per table, guarded at source level: whole match set, `assertSame([], $offenders)`,
+   allow-list plus staleness twin, proved on a plant.** P2 writes no table at all, so every existing
+   single-writer guard must stay green **with no new allow-list entry**. `Model::query()->create(`
+   is the sixth writer shape (ruling 66, found by planting exactly that file and watching the guard
+   stay green) and `$model->update([...])` is this codebase's house idiom (ruling 50, measured green
+   against a plant rewriting six columns across two guarded tables) — **both are known blind spots
+   and both must be needled** in any guard this plan adds. They are also precisely the shapes a
+   PHP-side "just cache the context" convenience would take. Task 22's guard asserts the context
+   builder is a **reader**.
+6. **`institution_id` is provenance and in-instance grouping, NEVER a query filter (D11).**
+   `InstitutionProvenanceTest::test_no_query_filters_on_institution_id` is live. The context builder
+   must not filter on it and must not "scope the engine to the institution" — the database is the
+   boundary. **An index led by `institution_id` is a recurring mistake**, not a one-off (P1a Task 4's
+   `periods` unique index, P1a Task 7's `holidays` index, both caught only empirically). P2 adds
+   **no index at all**, which is the cheapest way to not make it a third time.
+7. **No PHI and no names in `audit_log.detail`.** The column is `detail`, **singular**, `text`
+   nullable, created at `database/migrations/2026_07_24_120002_create_core_tables.php:33` under the
+   comment *"NEVER stores PHI in `detail` (ids/counts only)"*. P2's only command surface (Task 24)
+   audits nothing at all, and Task 24 says why. A violation's `explanation` is generated *from* names
+   and must never reach that column.
+8. **Additive, nullable migrations, in a fresh date slot.** The newest migration in the tree is
+   `2026_08_16_120002_create_demo_rows_table.php`, so **P2's slot is `2026_08_17_*`** if it needs
+   one. It should not: Decision A and owner decision R both land on zero migrations, and *"P2 adds no
+   migration"* is asserted the way P1d-2 asserted it — `git diff --stat <base>..HEAD --
+   database/migrations` empty.
+9. **A query budget is watched failing, not merely written.** `RotaGridTest` bounds the whole grid at
+   `assertLessThan(20, …)` on a **populated** year (780 cells, splits, vacations, mid-year
+   promotions and a stale row) *because a budget measured on an empty grid only ever proves the empty
+   case*. `ClinicRosterTest` bounds three paths separately on a populated unit. Task 22's budget is
+   measured the same way and **is observed breaching** — grow the fixture until it fails, record the
+   number it failed at, then fix it — before it is trusted.
+10. **A passing test must be shown capable of failing.** Every guard here is planted against before
+    it is believed. Rulings 66–71: a guard is audited by planting, never by reading its needle list,
+    and the ranking planting produces is the opposite of the one the lists suggest.
+11. **Fixtures stay synthetic, permanently.** `tests/fixtures/roster/`'s rule generalises without
+    amendment: **no real month's duty roster and no real staff list enters `packages/engine`'s
+    corpus at any time.** The corpus exercises specific violation shapes — a gap of exactly the
+    boundary value, a duty on a period's last day, a run spanning the 31st into the 1st, a person
+    whose level changes mid-window — not a plausible department. AU-06's *"regenerate a past pilot
+    month"* is P4, is the owner's to run against production, and D15 already moved it to synthesized
+    fixtures.
+12. **The two shipped read folds are not to be duplicated or routed around.**
+    `App\Support\Rota\AvailabilitySummary` is *"pure, and query-free by construction"* and *"handles
+    no dates (ST-06). Not one."* `App\Support\Clinics\ClinicRoster` *"subtracts no leave and must
+    never become an eligibility computation"* and does not query the leave table at all. Task 22
+    reads their **inputs**, never reaches into them, and adds no file to either directory. Its
+    vacation-week rule is `AvailabilitySummary`'s **verbatim** (owner decision N).
+13. **`RotaGrid::forYear()` and `ClinicRoster::forDate()` take NO viewer at all** — the parameter was
+    removed rather than ignored, after passing the real user shipped every colleague's email and
+    phone in the Inertia props with nothing rendering them (P1d-2 Decision C, a live disclosure).
+    The engine context is built the same way: **no contact field and no free text, for any viewer**,
+    asserted on the most permissive institution setting the system can produce, exactly as
+    `RotaReadViewTest::test_the_editor_grid_is_contact_free_too` does. This binds harder now than it
+    did at nine types: `unwanted_day_block` and `onboarding_grace` put a person's registered
+    preferences and join date into a payload another person's browser holds (owner decision R).
+14. **LIGHT THEME ONLY, semantic classes only.** P2 ships no markup; this is a constraint on what P2
+    must not quietly introduce. No styling, no colour, no `dark:` utility near the package.
+15. **Secrets are owner-managed and `.env.example` is CI's whole environment.** P2 introduces no
+    environment variable. If an amendment adds one it needs the compose `environment:` block with an
+    explicit `${VAR:-default}` (P0d Task 9) **and** an `.env.example` line that neuters no default
+    (`EnvExampleNeverNeutersADefaultTest`, rulings 46–47).
+
+---
+
+## Findings — what is actually in the tree
+
+Each verified while revising this plan; each changes what a task can assume.
+
+1. **No condition type is evaluable end to end against the current schema — 22 for 22, none.**
+   `slots`, `coverage_templates`, `conditions`, `schedules`, `assignments`, `ignored_warnings`,
+   `archives` — zero `Schema::create` for any of them. The 44 shipped migrations create **37 tables**
+   and none of them records a duty. Every CG-07 type constrains **duty assignments**, and the duty
+   stream does not exist. This is not a blocker; it is the phase's defining fact. The engine is a
+   pure function over JSON (CG-10 says so), and what the shipped schema supplies is the **context**
+   half.
+2. **The slot-kind vocabulary is stored nowhere.** `grep -rn "night_call\|day_call\|full_24h_call\|
+   weekly_duty\|tally_key\|counts_hours" app/ database/ resources/js/` returns **zero hits**. SL-01
+   names those kinds in prose only. So `Slot.kind` — and therefore `min_gap`'s `kinds`,
+   `post_duty_exclusion`'s `from`/`to`, `count_max`'s `kinds`, `consecutive_max`'s `kinds` — validates
+   against **nothing** in P2 and must be an opaque string (Decision A).
+3. **What the shipped schema does supply, verified column by column.** *Fully:* `vacations`
+   (`starts_on`/`ends_on`, `granularity`, `source`, no `period_id`, **no leave-type and no approval
+   column — every row is a blocking absence**, and `Vacation::booted()` refuses per-person overlaps
+   so a person's leave is a set of disjoint spans); `clinics` (`weekday` as a plain ISO 1–7
+   `unsignedTinyInteger`, `session` as `string(2)` holding `'AM'|'PM'` **with no time window**,
+   `unit_id`, `attendee_mode` of `'rotators'|'levels'|'named'`, `active`) and `clinic_attendees`;
+   `master_rota_assignments` (one span row, both bounds inclusive, overlaps refused per (person,
+   period) by `booted()`, gaps legal and counted); `people.joined_at` (nullable date, exists);
+   `person_levels` via `Person::levelAt()`/`levelsAt()`/`levelSpansBetween()`/`levelFromSpans()`;
+   `periods`; `holidays` (`calendar`, `month`, `day`, `year`, `duration_days`, **`equity_tracked`
+   boolean default true, with no consumer anywhere — `holiday_equity` is its first**);
+   `units.training_rotation` / `call_target` / `clinic_owner` (all `boolean default(false)`;
+   `call_target`'s only consumers are `UnitController`, `UnitRequest`, `Unit`, `Units.vue` and two
+   tests — so *"which units take call"* is configuration P2 reads, never something it infers);
+   `institutions.block_weeks` (default `'[4,4,4,4,4,4,4,4,4,4,4,4,5]'` — **block 13 is five weeks, so
+   a period-windowed number has a moving denominator**). *Nowhere:* unwanted days (`grep -rl unwanted
+   app/ database/ resources/js/` returns **nothing**), slot time windows, `counts_hours`, any duty a
+   person has ever held in any year.
+4. **There is no public API for "which unit is person P on, on date D".** `MasterRotaAssignment`
+   carries **no query scope at all**; the one date-shaped resolver is
+   `ClinicRoster::rotatingOn(int $unitId, string $on)`, **`private`** (verified, `ClinicRoster.php:152`),
+   and it answers the inverse (unit → person ids). `RotaGrid::forYear()` is year-and-period shaped.
+   Every rota read in this codebase is period-shaped; every condition question is date-shaped.
+   **Flattening spans into a per-date unit vector is the bridge, it must be built exactly once, and it
+   belongs in the context builder — never in a condition.** The model's own guards make this a
+   single-row answer by construction: `MasterRotaAssignment::booted()` refuses a span reaching outside
+   its period and refuses an overlap for one person in one period, and `Period::booted()` keeps
+   periods non-overlapping. **State that as the reason**, so a later implementer does not add a
+   defensive "pick the first" that hides a real corruption.
+5. **There is no per-person/per-date leave predicate either, and `Vacation::scopeIntersecting()` is
+   the one SQL definition, not the one definition.** It has exactly two callers
+   (`RotaGrid.php:140`, `RotaExport.php:170`) and uses `whereDate` on both bounds. Two further
+   in-PHP copies over already-loaded rows exist today: `RotaGrid::cellFor()` (`RotaGrid.php:292-297`,
+   vacation vs a PERIOD, `Y-m-d` string compare) and `AvailabilitySummary` (`:190-191`, vacation vs a
+   WEEK against **clipped** bounds), whose own comment calls it *"the same idiom `RotaGrid::cellFor()`
+   uses"*. **P2 adds a fourth shape nobody has — vacation vs a SINGLE DATE — and a fifth if the
+   flattening happens server-side.** Say the number honestly rather than claiming one definition that
+   has not existed since P1d-2; and do the flattening in PHP through `whereDate`/`Calendar::ymd`,
+   because a bare `<=` against a `date`-cast column drops the boundary day.
+6. **`Calendar::dayType()` is query-free but CPU-expensive, and the query-count discipline is the
+   wrong axis for it.** `holidaysOn()` walks backwards `duration_days` per holiday and a Hijri rule's
+   `anchoredOn()` constructs an `IntlCalendar` per probe (`Calendar.php:169-186`), while
+   `activeHolidays()`/`settings()` are process-lifetime statics so the *query* cost is one, not N.
+   Study measurement, reproduced here as the reason for Decision A's day vector: 30 consecutive days
+   cost ~24 ms and **zero** queries with four holidays configured; the same 30 days re-asked nine
+   times cost ~203 ms. With 22 types active the re-ask factor is worse, not better. **The day vector
+   is computed once, server-side, and handed to the engine.**
+7. **`RotaGrid`'s own docblock refuses per-day labelling as a cost decision**: *"`Calendar::label()`
+   per DAY of a period → real CPU for no gain. The grid labels BOUNDARIES only."* So the day vector
+   is a new computation, not a reuse — and finding 6 is why it is still the cheap answer.
+8. **`tests/fixtures/calendar/golden.json` is already a binding P2 contract, version 2, and it names
+   P2 explicitly.** `_purpose`: *"The shared contract between `App\Support\Calendar` (PHP, this repo,
+   P1a) and the `packages/engine` calendar mirror P2 will build… Every value below was produced by
+   RUNNING the code, not derived by hand."* Twelve top-level keys: `_purpose`, `version`, `timezone`
+   (`Asia/Riyadh`), `cases`, `weeks`, `weekday_columns`, `hijri_month_boundary`, `day_boundary_cases`,
+   `holiday_cases`, `period_runs`, `parse_rejects`, `hijri_labels`. `GoldenFixtureTest` asserts it
+   from the PHP side in eleven methods. `weekday_columns` was added at version 2 *specifically* for
+   CL-03. **This file is an INPUT to P2, not something P2 authors.**
+9. **`golden.json` has NO coverage of `Calendar::weeksIn()`'s clipped bounds** — `grep -c clipped
+   tests/fixtures/calendar/golden.json` returns **0**. The `weeks` block's entries carry
+   `_description`, `weekend_days`, `week_start_iso_day`, `of`, `starts_on`, `ends_on`: that is
+   `weekOf()`, three cases. `period_runs` covers block generation, not week clipping. But
+   `weeksIn()`'s `clipped_starts_on`/`clipped_ends_on` are exactly what a `week`-windowed
+   `count_max`/`count_min` and `target_per_period`'s vacation-week modifier consume. **Owner decision
+   O resolves this without touching the fixture:** the mirror does not implement `weeksIn()`; week
+   windows arrive **in the context**, computed server-side by the one converter.
+10. **§7 Decision A is the live precedent for overruling this design doc's own architectural nouns.**
+    The doc originally specified *"PHP plus a mirrored `packages/engine`"* for the calendar; P1a
+    superseded it with *"ONE implementation, not two"*, built the golden fixture as the contract, and
+    deferred the mirror to P2 — because shipping a second implementation early is *"two definitions
+    of one fact — the same failure class `AuditChain::canonical()` and `Person::levelAt()` already
+    carry docblocks against."* **P2 knowingly creates that second implementation. Decisions B and C
+    exist to make it the smallest one possible**, and owner decision O makes it smaller still.
+11. **The dual implementation is NOT PHP + TypeScript.** §4.1: one pure TS package, two *runtimes*
+    (browser, Node sidecar), and `services/solver`'s CP-SAT mapping is *"the one permitted second
+    implementation"*. Then, verbatim: **"No PHP implementation of the rules exists anywhere. That is
+    the point."** Currently prose with nothing enforcing it — Task 11 enforces it.
+12. **All five types §4.3 flags as hardest to reconcile between the TS engine and the CP-SAT mapping
+    are on the far side of this plan's seam** — `fairness_distribution` (*"violation count vs. min-max
+    objective"*), `rolling_hours_max` and `free_day_min` (*"sliding windows, including partial windows
+    at period boundaries"*), `holiday_equity` (*"multi-year lookback reduced to a per-schedule
+    violation"*), `we_pairing` (*"a shared definition of what 'preference broken' means"*). That is
+    independent support for the seam and the concrete reason the ordering matters. **`call_frequency_max`
+    has exactly the sliding-window shape and is NOT on §4.3's list — that is an omission in §4.3, not
+    evidence the type is easy**, and Task 1 records it.
+13. **CG-08's residency preset cannot be seeded from anything in this tree.** It says *"residency
+    defaults seeded from the prototype's proven values"*; D14 makes the prototype *"idea curation
+    only — not a code ancestor, not a data source"* and D15 records that the pseudonymised export it
+    depended on *"is no longer available"*. The numeric defaults are an **owner input**, not a lookup
+    (Decision H).
+14. **Only three CG-07 rows carry a stated default class** — `vacation_block` (*Hard default*),
+    `unwanted_day_block` (*top soft default*), `overlap_block` (*Hard, built-in*). The other twenty
+    keys have **no default class anywhere in spec or design doc**, and §30 makes `class` a field on
+    the condition **row**. **The engine must not hardcode a class for any type except
+    `overlap_block`**, whose *"built-in"* additionally means it is not department-authored. This
+    changes the registry's shape from the committed draft's `defaultClass` — see Decision E.
+15. **`packages/`, `services/` and TypeScript do not exist.** No `packages`, no `services`, no
+    `tsconfig*.json`, no `typescript` dependency, no `.ts` file under `resources/`. `vitest.config.js`
+    includes `tests/js/**/*.test.js` only; `vite.config.js` has no alias and two inputs.
+    `docker-compose.production.yml` has exactly two services (`app`, `db`) with fifteen invariants
+    pinned by `DeploymentInvariantsTest`. CI has three jobs and `docker-build` builds the root
+    Dockerfile alone. **P2 creates the toolchain from zero.**
+16. **The two tree statements about how CL-03 asks its question do NOT flatly disagree, and the
+    committed draft overstated it.** Design §14 item 22: *"the P2 condition reads `clinics.weekday`
+    and `clinics.unit_id` against a date and a person's current unit. It needs no schema change here
+    and it is not a clinic-module concern when it lands."* The P1e handoff (line 3440):
+    *"`ClinicRoster` resolves and never stores, so a condition asking 'who is at this clinic on this
+    date' asks it rather than reading a cached list; and the clinic module is guarded against becoming
+    a conditions engine, so P2's first condition lives in the conditions module and reads clinics,
+    never the other way round."* The handoff's **operative** claims are *never a cached list* and *the
+    condition lives in the conditions module and reads clinics* — **item 22 satisfies both exactly**.
+    They differ only on WHICH RESOLVER, and item 22 wins on four verified grounds: (i)
+    `ClinicRoster::forDate(Clinic $clinic, string $date)` is **clinic-first** — one clinic in, people
+    out — so "does person P have a clinic on date D" means iterating every active clinic per person
+    per date; (ii) `rotatingOn()` is `private`; (iii) `forDate()` returns
+    `PersonPresenter::contactFree()` **projections**, not ids, and takes **no viewer** by deliberate
+    design (P1d-2 Decision C) — presenter output is the wrong shape for an engine context and
+    re-opens the payload question; (iv) `golden.json`'s `weekday_columns._description` already decided
+    it in writing — CL-03 *"must map a date to an ISO weekday and compare it to `clinics.weekday`
+    client-side with no round trip (UX-05)"*, and `ClinicRoster` is a server call.
+17. **Item 22's formulation is nonetheless INCOMPLETE, and the committed draft adopted it as
+    written.** *"`clinics.weekday` + `clinics.unit_id` against the person's unit on the date"*
+    resolves `attendee_mode = 'rotators'` correctly and is **wrong in both directions for the other
+    two modes**: a `named` attendee (CL-02's external consultant, who rotates nowhere) has a clinic
+    that day with no rota span on that unit and would never trigger; a `levels` clinic includes only
+    rotators whose level **on that date** is in the attached set, so a plain unit match over-triggers.
+    The context must carry `attendee_mode` and the attendee rows. Owner decision S.
+18. **`people.joined_at` exists and is empty everywhere.** `database/migrations/2026_08_10_120001_
+    create_people_and_link_users.php:65` declares it nullable; `PersonPresenter::one()` projects it
+    **ungated** (line 43, unlike `phone`/`email` under `viewContact()`); `PersonRequest` validates it
+    `['nullable','date_format:Y-m-d']`; `RosterImport::OPTIONAL_FIELDS` includes it. But **no seeder,
+    no factory and no demo path sets it** — verified. On any existing instance, including the deployed
+    QCH one, it is NULL for every person unless an administrator typed it. `onboarding_grace` therefore
+    needs an explicit, stated answer to "no join date", and the only safe one is **no violation**, said
+    out loud in the preview text (owner decision T).
+19. **`same_unit_conflict` has one occurrence in the entire repository** — `docs/munawib/SPEC.md:100`.
+    No Appendix B sentence, no §14/§16/§17 elaboration, no design-doc mention, no prototype note.
+    There is nothing to disambiguate it against, which is why more reading cannot resolve it. Owner
+    decision U, and it is the weakest default in this plan.
+20. **`Calendar::datesBetween()` is UNCAPPED** (`Calendar.php:132`); only `weeksIn()` throws, at 550
+    days (`:445`, a deliberate P1a guard against a mistyped year exhausting memory). The committed
+    draft's Task 3 gives the TS `datesBetween` *"an explicit maximum span mirroring
+    `Calendar::weeksIn()`'s 550-day throw"* — correct as written, but the mirror then **diverges from
+    PHP's `datesBetween`, which has no cap**, and `golden.json` would not catch it. Task 3 states the
+    divergence and the reason (a browser tab is the memory that matters), rather than calling it
+    parity.
+21. **`Calendar` exposes no public `isoWeekday()`.** The value is reachable only inside `isWeekend()`
+    (`:282`) and `weekOf()` (`:411`). `golden.json` contracts `iso_weekday` **per date** in
+    `cases[].dates[]`, so the mirror gets a function the PHP side does not expose as one. If the
+    context builder emits an ISO weekday per day — it does, in the day vector — that is a **new PHP
+    surface**, and `CalendarIsTheOnlyConverterTest`'s Carbon/DateTime needles forbid constructing one
+    outside `App\Support\Calendar`. **It belongs on `Calendar`, never on `App\Support\Engine`.**
+
+---
+
+## Decision A: what P2 evaluates against — the duty shape
+
+**This is the most consequential decision in the phase.** Every one of the 22 types constrains
+duties; SL-01..SL-07 is P3; and P3 and P4 both inherit whatever P2 decides here. So P2 decides it
+**deliberately and first**, rather than letting it accrete inside eleven predicates.
+
+**P2 authors the duty shape as a TYPE in its own contract, and that type is the only definition of a
+duty in this repository until P3 serialises into it.**
+
+### The shapes
+
+```
+Slot {
+  key: string            // OPAQUE. Not a foreign key. P3 maps its own primary keys onto it.
+  kind: string           // OPAQUE. SL-01's vocabulary is stored NOWHERE in the tree (finding 2),
+                         // so it is not validated against an enum in P2.
+  unitKey?: string
+  cadence: 'daily' | 'weekly'
+  spanDays: number       // 1 for a daily slot; SL-04's weekly-cadence slots carry their real extent
+  startMinute: number    // minutes from local midnight, 0..1439
+  endMinute: number
+  crossesMidnight: boolean
+  countsHours: boolean   // SL-01's counts-toward-hours flag
+  tallyKey?: string      // SL-01's tally key; fairness_distribution's `quantity` keys on it
+}
+Duty { personKey: string, date: Ymd, slotKey: string }
+Schedule {
+  horizon: { from: Ymd, to: Ymd, evaluableFrom: Ymd, evaluableTo: Ymd }
+  duties: Duty[]
+}
+```
+
+### The four conventions the spec does not state, and P2 must
+
+Each is a real fork on real QCH configurations, each is invisible in review, and each is fixtured on
+the case where the readings disagree.
+
+**1. Intervals are HALF-OPEN, `[start, end)`.** Under SL-02's configurable split day/night the night
+window begins exactly when the day window ends. Closed intervals would flag every legal split-call
+department on every single day. Fixtured on the abutting pair.
+
+**2. A duty's occupied interval is absolute minutes on one integer line.**
+`absMinute(date, minute) = daysFromCivil(date) * 1440 + minute`; a crossing-midnight duty ends at
+`end + 1440`; a weekly-cadence duty ends at `daysFromCivil(date) + spanDays` days plus `endMinute`.
+No `Date`, no instant, no timezone (Decision B).
+
+**3. Duty→date attribution has THREE readings, and each type declares which it uses.** This is the
+single largest source of silent divergence between two implementations of one catalog, and §4.3's
+cross-validation will surface it as a mismatch rather than as a bug:
+
+| Reading | What it means | Types that use it |
+|---|---|---|
+| **Anchor date** | the whole duty belongs to the calendar date its slot **starts** on | `vacation_block`, `unwanted_day_block`, `onboarding_grace`, `dow_restriction`, `clinic_conflict`, `same_unit_conflict`, `consecutive_max`, `count_max`, `count_min`, `target_per_period`, `composition`, `max_gap`, `call_frequency_max`, `fairness_distribution`, `holiday_equity`, `we_pairing`, `eligibility` |
+| **Occupied interval** | the half-open absolute-minute interval above | `overlap_block`, `min_gap` (`hours`), `post_duty_exclusion`, `free_day_min` |
+| **Split at midnight** | minutes apportioned to each civil date they fall on | `rolling_hours_max` **only** |
+
+A Friday-night call is **one Friday call**, not two half-calls — and it is also twelve Friday hours
+plus twelve Saturday hours in the one type that sums minutes into a day-bounded window. Both are
+right for their family; what is fatal is each type picking one silently. Asserted as a **matrix**
+fixture across every type touching a slot window, the `PickerParityTest` shape (every fixture ×
+every type) rather than case by case.
+
+**4. The horizon edge is this catalog's defining defect, and the contract carries the fix.** Every
+window-measured and pairwise type measures a relationship that crosses the boundary of what is being
+evaluated: the 10 h gap between the last night of month M and the first duty of M+1; a post-duty
+exclusion carrying into the 1st; a consecutive run spanning the 31st→1st; a `max_gap` open at both
+ends; a four-week average with a partial window on roughly the first 27 days. A draft is built one
+period at a time (WB-01) and the preceding period is a **different, already-published schedule**.
+
+```
+EvaluationContext {
+  …
+  priorDuties: Duty[]      // already-published duties BEFORE horizon.from — read as CONTEXT
+  followingDuties: Duty[]  // and after horizon.to; usually empty, never assumed empty
+}
+```
+
+**Emission rule, asserted:** a violation is reported **only when its location falls inside
+`[horizon.from, horizon.to]`**. Reading last month's duties as context is not re-evaluating last
+month, so CG-03's *"never retroactive on published schedules"* stays intact. In P2 `priorDuties`
+comes from fixtures; in P3 from the previously published schedule.
+
+**Every one of the eleven affected types is fixtured AT THE SEAM.** A corpus that only contains
+mid-month cases proves nothing about the case a scheduler hits first, on the 1st.
+
+### One primitive set, built once
+
+`absMinute`, `dutyInterval`, `occupiedDates`, `onDutyMinutesOn(date)`, `orderedDutiesFor(person)`,
+`enumerateWindows(kind, length, horizon)`. All twenty-two types consume these; none re-derives them.
+The codebase's own precedent is `AuditChain::canonical()` — two copies drifted the day `APP_TIMEZONE`
+was set and the live system announced its whole audit trail as tampered, and nothing had been — and
+`SignoffPickers`, one predicate per field applied to both the offer and the write rule. **Task 4
+builds them beside the `Ymd` core, before any type exists.**
+
+### Why a type and not a table
+
+1. **No migration in P2, so nothing pre-commits P3's schema.** `slotKey` and `personKey` are opaque
+   strings, not foreign keys.
+2. **P3 adds a projector, not a second semantics.** `slots`/`assignments` serialise into `Slot`/`Duty`
+   with no rule logic in the projection.
+3. **The golden fixtures and the eventual §4.3 job have something to run against before any table
+   exists**, which is what makes P2 testable at all.
+4. **It is demoable.** A hand-authored synthetic month of JSON in, `violations[]` with plain-language
+   explanations out (Task 24).
+5. **It serialises into AU-02's request without a translation layer.** `days`+`periods` is
+   `periodSkeleton`; `people` is `roster`; `slots` is `slots`; `Schedule.duties` is
+   `fixedAssignments`; `conditions` is `conditions`. `templates` (SL-03) and `constraints` (RQ-01)
+   have no P2 counterpart and are **absent rather than empty** — Task 7 states that, so P4 finds a
+   hole rather than a wrong default.
+
+### The rest of the context
+
+```
+EvaluationContext {
+  timezone: string          // provenance and fixture identity ONLY; never used in arithmetic
+  weekStartIsoDay: 1..7
+  weekendDays: (1..7)[]
+  today: Ymd
+  days: Day[]               // one entry per date in the horizon, PRECOMPUTED server-side (finding 6)
+  periods: Period[]         // { key, startsOn, endsOn, weeks: Week[] }   ← owner decision O
+  people: Person[]          // { key, levelSpans, unitSpans, leaveDays: Ymd[], unwantedDays: Ymd[],
+                            //   joinedAt?: Ymd, external: boolean,
+                            //   eligibleDays: Ymd[],           ← the availability denominator
+                            //   priorCredits?: Record<holidayKey, number|null> }  ← null = UNKNOWN
+  slots: Slot[]
+  clinics: Clinic[]         // { key, unitKey, isoWeekday, session, active,
+                            //   attendeeMode: 'rotators'|'levels'|'named',
+                            //   attendeeLevelKeys: string[], attendeePersonKeys: string[] }
+  historyAvailableFrom: Ymd | null
+  priorDuties: Duty[]
+  followingDuties: Duty[]
+}
+Day  { date: Ymd, isoWeekday: 1..7, dayType: 'WD'|'WE'|'HOL',
+       periodKey: string|null, holidays: { key: string, year: number }[] }
+Week { startsOn: Ymd, endsOn: Ymd, clippedStartsOn: Ymd, clippedEndsOn: Ymd }
+```
+
+Four fields above exist because a specific type would otherwise be wrong, and each is named at its
+type: `eligibleDays` (`fairness_distribution`'s pro-rated denominator, `max_gap`'s suppression,
+`target_per_period`'s modifier — and it is buildable from **shipped** data today, which makes it the
+only half of the far side of the seam that can be checked against reality in P2);
+`periods[].weeks` with clipped bounds (owner decision O); `holidays[].year` carrying the holiday's
+**own-calendar** year (owner decision W); `priorCredits` with `null` meaning UNKNOWN, distinct from a
+known zero (owner decision W).
+
+---
+
+## Decision B: the engine holds no `Date`, no instant, and no timezone
+
+**The problem, stated plainly.** Decision A of P1a says `resources/js` performs **no date arithmetic
+at all, ever — not even to compute "today"** and its guard's allow-list is *deliberately empty*.
+P2's whole premise is a conditions engine that runs in the browser (AR-03, UX-05, NF-01) and
+computes dates for a living. The guard's scope is `resource_path('js')`, so `packages/engine`
+escapes it — which is a loophole and would be a shameful way to satisfy an invariant.
+
+**The resolution: the engine has no `Date` object anywhere, so there is nothing to allow-list.**
+
+- Its date type is a branded `Ymd` string (`'2026-08-19'`), and all date arithmetic is **integer
+  civil-date arithmetic** — days-from-civil / civil-from-days, the standard branchless algorithm,
+  which needs no `Date`, no epoch and no ICU.
+- Its time type is **minutes from local midnight**, an integer, and its duty arithmetic is a single
+  integer line of absolute minutes (Decision A). `min_gap` in hours, `post_duty_exclusion`,
+  `overlap_block`, `free_day_min` and `rolling_hours_max` are therefore integer arithmetic.
+- **There is no instant, so there is no timezone, so there is no timezone trap.** This is the direct
+  analogue of `AvailabilitySummary`'s *"IT HANDLES NO DATES (ST-06). Not one … four comparisons
+  between `Y-m-d` STRINGS — a format that sorts correctly as text."*
+- **"Today" is never computed.** It arrives in the context, from `Calendar::today()`, exactly as
+  `resources/js` gets it today.
+
+**Why this matters more than tidiness.** `golden.json` carries `"timezone": "Asia/Riyadh"` and a
+`day_boundary_cases` block because the 00:00–03:00 UTC/Riyadh disagreement window is a real defect
+class this codebase has already paid for. A Node/Vitest process with `TZ` unset runs at UTC; a
+browser at +03:00 does not. That is the exact shape of the trap CLAUDE.md records for PHP —
+*"`config(['app.timezone' => …])` alone does not move PHP's default timezone"*, which made a false
+green indistinguishable from a real one. **An engine with no instants cannot have that bug**, and
+that is a stronger guarantee than a test that remembers to set `TZ`.
+
+The consequence for the guard is that it can be the *same* guard, with the *same* empty allow-list:
+Task 6 runs the ten existing JS date needles over `packages/**/*.ts` with **no allow-list in either
+direction**, and the mirror passes on its own merits rather than by exemption — the same property
+`ClinicHooksTest` has (*"the absence is real rather than allow-listed"*).
+
+---
+
+## Decision C: the mirror implements no Hijri and no `weeksIn()`, and declares both
+
+`Calendar` resolves Hijri through ICU `islamic-umalqura` plus a per-department
+`institutions.hijri_offset_days`, and `golden.json` carries `hijri_month_boundary` and `hijri_labels`
+blocks precisely because that is the fragile part. A browser's `Intl` build is not guaranteed to
+agree with PHP's ICU, and `Intl.DateTimeFormat` is one of the ten forbidden needles besides.
+
+**No Hijri in the mirror.** Holidays reach the engine as **already-resolved Gregorian dates** in the
+day vector, computed server-side by `Calendar::holidaysOn()`, which already handles the Hijri rule,
+the `duration_days` walk-back and the per-department offset. A Hijri **label** is display text,
+arrives as a string prop if a screen wants one, and is never arithmetic.
+
+**This survives `holiday_equity` entering scope, and it is the interesting case.** *"The same holiday
+in successive years"* is a **Hijri** fact for Eid al-Fitr and Eid al-Adha — Shawwal 1 of successive
+Hijri years, drifting ~11 days a Gregorian year and occasionally putting two occurrences of one
+holiday inside one Gregorian year. A lookback keyed on Gregorian years is wrong at that seam. **The
+fix is not Hijri in the mirror; it is the context carrying `{ key, year }` per holiday** rather than
+a bare key, with `year` in the holiday rule's **own** calendar — which the holidays migration's own
+comment already fixes as the convention (*"a Hijri rule's year is a Hijri year, a Gregorian rule's a
+Gregorian one"*). The engine compares integers it was handed. Owner decision W.
+
+**No `weeksIn()` in the mirror either** (owner decision O, and finding 9 is the evidence).
+`golden.json` has **no** coverage of `clipped_starts_on`/`clipped_ends_on`, and those bounds are what
+every `week`-windowed count and `target_per_period`'s vacation-week modifier consume. Rather than
+add an unasserted second implementation of a per-department fact — or modify a fixture this plan
+declares an input — **`periods[].weeks` arrives in the context**, computed by `Calendar::weeksIn()`.
+Same device as the day vector, same device as the holiday resolution: the one converter resolves it
+once, server-side.
+
+So the mirror implements: `Ymd` parse/format, civil-date arithmetic, `isoWeekday`, `datesBetween`,
+`weekdayColumns` (rotated to a **supplied** `weekStartIsoDay`), `weekOf`, `isWeekend` (from
+**supplied** `weekendDays`) and `dayType` (from supplied `weekendDays` and a supplied resolved-holiday
+set) — eight functions, every department-varying fact a parameter (owner decision X).
+
+**And it declares what it does not implement.** Task 5 ships a coverage manifest naming every
+`golden.json` top-level key as either *asserted by the mirror* or *deliberately out of scope, with
+the reason*, plus a test that the union is the file's actual key set. Without it, `hijri_labels`
+sitting unasserted looks identical to somebody forgetting — and *"we have not built it"* and *"we
+have decided not to build it"* are different states, only the second of which is safe to build on
+(design §14 item 18's treatment, applied here).
+
+---
+
+## Decision D: the CG-10 contract widens in ONE place — `location` — and the return type does not
+
+CG-10 fixes the violation as `{conditionId, severity, rank?, location, explanation}` and leaves
+`location` **unshaped**. The committed draft typed it `{ personKey, date, slotKey }`, which is correct
+for the eleven placement types and **cannot express the other eleven**: `rolling_hours_max`,
+`free_day_min`, `count_max`/`count_min`, `target_per_period`, `composition`, `max_gap` and
+`call_frequency_max` violate per (person, **window**); `fairness_distribution`, `holiday_equity` and
+`we_pairing` violate per **cohort**, with no date and no slot at all. `max_gap` forces it alone: its
+violation is an interval between two duties, or an interval left **open** at the horizon edge.
+
+**Widening `location` is contract-compatible** (CG-10 never shaped it) **but it must happen in Task
+7, where the contract is authored** — not be retrofitted after eleven types are registered and the
+JSON Schema and fixtures are written against the narrow shape.
+
+```
+type Location =
+  | { kind: 'placement', personKey: string, date: Ymd, slotKey: string }
+  | { kind: 'window',    personKey: string, from: Ymd, to: Ymd, contributing: Duty[] }
+  | { kind: 'cohort',    personKeys: string[], scopeLabel: string, contributing?: Duty[] }
+```
+
+**`contributing` is MANDATORY on a window violation.** Without it a duty-hours violation is
+unactionable in the workbench: it tells a scheduler a window is over budget and nothing about which
+placement to move. WB-03 badges cells and WB-04 orders pickers by a fitness signal; both need duties,
+not a range.
+
+**The return type does NOT widen.** `evaluate(schedule, context, conditions): Violation[]` stays
+exactly CG-10's sentence, because PU-03's publish dialog *"consumes `violations[]` unchanged"* and a
+third severity beside CG-05's Hard and CG-06's soft would collide with `class` being authored data.
+
+**Skipped windows are reported through a sibling function, not smuggled into the violation list.**
+
+```
+coverage(schedule, context, conditions): CoverageReport[]
+// [{ conditionId, evaluatedWindows, skipped: [{ from, to, reason }] }]
+```
+
+A cap under-counts on a partial window and produces no false positive; a **floor or target
+false-positives on every partial window**. So floors and targets evaluate only on windows fully
+inside `[evaluableFrom, evaluableTo]` — and **a silently dropped window is a guard that looks
+green**, which is why the drop is reported rather than implied. `coverage()` has real consumers in
+P2-1 already: `min_gap`, `post_duty_exclusion` and `consecutive_max` all have an unevaluable left
+edge when `priorDuties` is empty. It is a pure function beside `evaluate()` in the same shape
+`AvailabilitySummary` sits beside `RotaGrid` — not a field on it.
+
+`evaluate()` is otherwise unchanged from the committed draft: no I/O, no globals, no clock,
+deterministic ordering of `violations[]` (by `conditionId`, then `location`) so a fixture comparison
+is stable; an unknown `typeKey` **throws** rather than being skipped, because a silently ignored
+condition is a control that appears to do nothing — rulings 41/49's failure shape, one layer inside
+the engine.
+
+---
+
+## Decision E: the registry records what the engine may assert, and nothing more
+
+Finding 14: three of twenty-three rows carry a class; §30 makes `class` a field on the condition row;
+CG-01 lists it per condition and CG-02 rank-orders the soft ones. **So class is authored data and the
+engine reads `Condition.class`.** The committed draft's `defaultClass` per registry entry would have
+hardcoded a class for nineteen types that have none.
+
+```
+RegistryEntry {
+  typeKey: string
+  implemented: boolean            // false ONLY for forbidden_transition, with its citations
+  evaluate?: (…) => Violation[]
+  preview?: (…) => string
+  paramsSchema?: JSONSchema
+  assertedClass?: 'hard'          // present on `overlap_block` ALONE — CG-07 "Hard, built-in"
+  catalogDefault?: 'hard' | 'soft-top'   // DOCUMENTATION of CG-07's markings. Never applied.
+  direction: 'cap' | 'floor' | 'target' | 'block' | 'spacing' | 'equity'
+  locationKind: 'placement' | 'window' | 'cohort'
+  needsCarryIn: boolean
+}
+```
+
+`direction` exists for one reason and it is a product hazard, not tidiness: **CG-05 makes Hard block
+publishing and AU-02 makes the solver never violate it, so a Hard FLOOR or TARGET turns a staffing
+shortage into AU-07 infeasibility plus a publish block instead of a ranked warning** — a materially
+different behaviour reachable from one drag on a gate screen. A Hard CAP is safe; a violation is
+always attributable to a placement. P3's gate warns before a floor is set Hard. **The engine still
+never overrides the row.**
+
+`locationKind` and `needsCarryIn` are what make the seam and the fixture corpus checkable rather than
+asserted: Task 8's parity guard asserts every entry's `locationKind` matches the shape its fixtures
+actually produce.
+
+---
+
+## Decision F: `services/engine` waits for its first caller; P2 ships a Node entrypoint instead
+
+The phase table gives P2 `services/engine`. **P2 has no server-side consumer for it:** the publish
+gate CG-05 and the workbench are P3, compliance reports TL-03 are P5, the solver is P4.
+
+A container deployed with nothing calling it can be verified as *running* and cannot be verified as
+*working* — the exact failure shape CLAUDE.md names: *"A Cloudflare trust fix once passed every test,
+deployed healthy, and changed nothing at all — the compose default it edited was dead code."* The
+cost is not zero either: `docker-compose.production.yml` has two services and fifteen pinned
+invariants in `DeploymentInvariantsTest` (digest pinning, env passthrough, healthchecks); CI's
+`docker-build` job builds the root Dockerfile alone; `docker/instance-env.sh` selects a stack's
+containers.
+
+**Recommended (owner decision Y): defer `services/engine` to P3, where CG-05's publish gate is its
+first real caller.** P2 ships `packages/engine/bin/evaluate.mjs` — reads the CG-10 JSON on stdin,
+writes `violations[]` on stdout — exercised in CI (Task 23). That proves the compiled package runs
+outside a bundler, under plain Node, with the same code the browser gets, and deploys nothing.
+
+---
+
+## Decision G: what P2's "cross-validation job" actually is
+
+The phase table gives P2 *"the CI cross-validation job"*. **§4.3's job compares the TS engine against
+the Python solver's §4.2 evaluation mode, and both `services/solver` and that evaluation mode are P4
+deliverables** (phase table line 1054). So the P2 row names a job whose second implementation does
+not exist for two more phases. This is a real internal inconsistency in the phase table, and Task 1
+corrects it rather than letting a later reader take it as a commitment already missed.
+
+**What P2 can honestly deliver, and does:**
+
+| Job | What it is | Genuinely two implementations? |
+|---|---|---|
+| **`golden.json` two-sided** (Tasks 5, 23) | The same framework-free corpus asserted by `App\Support\Calendar` (PHP, `GoldenFixtureTest`, shipped) **and** by the TS mirror (new). A divergence fails the build. | **Yes.** This is the repository's first and, until P4, only real cross-implementation check. |
+| **The catalog-parity guard** (Task 8) | The registry's key set derived from and compared against CG-07's table in `SPEC.md`, in **both** directions. | Not a second implementation — a second *source*, which is the `UnitMergeCoversEveryUnitReferenceTest` device. |
+| **The conditions golden-fixture gate** (Tasks 10–20, 23) | A corpus of `(schedule, context, conditions) → expected violations[]` cases asserted by the TS engine. | **No** — one implementation. This is NF-08/QA-01 regression coverage and Task 23 labels it as such rather than as cross-validation. |
+| **§4.3's real job** | TS engine vs CP-SAT mapping, identical verdicts. | Yes — **and it arrives in P4** with the solver. Recorded, not built. |
+
+The discipline `golden.json` inherits is `SignoffPickers`': *"a predicate written once as Eloquent and
+once as raw SQL is two predicates that drift"*, and `PickerParityTest` asserts it **as a matrix**
+(every fixture × all four fields) rather than case by case. Task 5's mirror assertion and Decision
+A's attribution matrix are the same shape, and Task 23 makes a divergence fail the build.
+
+---
+
+## Decision H: presets are DATA in the package, and an empty one says so
+
+CG-08 names three: residency defaults *"seeded from the prototype's proven values"*, the ACGME
+duty-hours bundle, and *"an empty SCFHS/local preset slot"*.
+
+**What a preset can physically be in P2 is a JSON data file inside `packages/engine`, nothing more.**
+P2 ships no migration and there is no `conditions` table (P3 builds it). So a preset is data the
+engine can be *called* with, and that ST-01's setup wizard later *imports* into `conditions`. It is
+**not seed data**, and calling it a seeder would require the table that does not exist. The file says
+so, because *"seeded"* is CG-08's own word and a later reader will take it literally.
+
+- **`preset:acgme`** — five conditions, mapping onto `rolling_hours_max` {80 h / 7 d, averaging 4},
+  `call_frequency_max` {1-in-3, averaged}, `free_day_min` {1-in-7, averaged 4}, `min_gap` {10 h,
+  end-to-start} and `consecutive_max` {`unit: 'hours'`, 24, `transitionMinutes`} (owner decision V).
+  All **soft at a high rank, `active: true`** — a preset that installs inert is another control that
+  appears to do something. CG-05 already contemplates promotion (*"a department may relax to
+  warn-only"*, read in the other direction), and setting an untested duty-hours rule Hard on day one
+  blocks the department's first real publish.
+  **It states the two clauses it cannot implement**: SPEC Appendix A's *"in-house time during home
+  call counts"* has no timekeeping surface anywhere in the platform and §36 puts time/payroll out of
+  scope, so the figure **excludes** it; and there is no baseline daytime-hours model in Munawib at
+  all (`master_rota_assignments` records which unit, never how long), so 80 h summed over call slots
+  alone is a **floor, not an audited total**. Both collide with Stage 4's acceptance criterion that
+  the compliance report *"reproduces hand-computed results"* (TL-03), and saying so now is cheaper
+  than discovering it at the Stage-4 gate.
+- **`preset:residency`** — a **structure with named, un-filled numbers** plus a manifest entry saying
+  the values are pending owner input. D14 and D15 make the prototype's numbers unobtainable (finding
+  13). A wrong residency default is worse than an empty one, because it looks authoritative on the
+  gate screen; and *"a stub returning a plausible value"* is what CLAUDE.md forbids outright.
+- **`preset:scfhs`** — a **present, well-formed record with zero conditions** and a mandatory
+  `pending` block naming what is awaited (§37's *"the SCFHS/local duty-hour policy in numeric form"*),
+  who supplies it, and the date last checked. An empty array is indistinguishable from a failed load
+  and from nobody having written it yet.
+
+**A build-failing test asserts the preset registry's key set equals the declared manifest set**, so a
+fourth preset appearing without an entry fails — the same shape as Task 5's coverage manifest.
+
+**This is the mechanism that makes all-21 honest.** §37 still owes the numeric policy and §38's
+second unvalidated assumption is that it maps onto the catalog. That blocks the **numbers**, not the
+**predicates**. Every type ships; no numeric default is invented for any type whose numbers §37 still
+owes; and the residency preset ships with those entries **absent rather than guessed**. An absent
+preset entry and a guessed one look identical on a gate screen and only the first is safe.
+
+---
+
+## Decision I: the PHP context builder is `App\Support\Engine`, and it is a reader
+
+**Where it lives is forced, not chosen** (invariant 4). `App\Support\Rota\*` is globbed by
+`RotaAccessTest` with `eligib` among its needles, so the `eligibility` type key alone would fail the
+build there. `App\Support\Clinics\*` is globbed by `ClinicHooksTest` with `condition` among its
+needles, so `clinic_conflict`'s reader would fail the build there. And the **app-wide raw scan**
+forbids `off_roster`/`offRoster`/`callEligib`/`call_eligib` anywhere under `app/`, docblocks
+included. **`App\Support\Engine\` is clear of all three, and P2 adds no allow-list entry to any of
+them.** That is not a workaround: MR-04's rule is that *the rota* must not infer eligibility, and
+CL-03's is that *the clinic module* must not evaluate conditions. Both are satisfied by the crossing
+living in the engine's own namespace and reading those modules' data, which is exactly what design
+§14 item 22 already specifies.
+
+**"No PHP implementation of the rules exists anywhere" (§4.1) is scoped to rule SEMANTICS, not to
+data access, and the plan says so out loud** — because a loader is exactly the artifact that reads as
+a violation of that sentence in review. Loading `master_rota_assignments` and flattening spans to a
+per-date unit vector implements no rule. **The real leak risk is not PHP rules code; it is the
+serialiser**, where a rule will try to sneak in as an optimisation: sending only "eligible" people is
+`eligibility` re-implemented as a `where`. Task 22's guard needles for exactly that.
+
+Without one builder, every P3 consumer builds its own context and the bounded-query property is lost
+the first time — the same argument that made `AvailabilitySummary` one fold feeding two screens.
+
+---
+
+## The seam: P2-1 and P2-2
+
+Too large for one branch, as P1c, P1d and P1e all were — and larger now than the committed draft
+assumed. **The old seam was the parameterisation line: types needing no owner decision versus types
+needing one. With all 21 rows in scope that line no longer separates a built set from a deferred
+one, and it is gone.**
+
+### The new seam is the shape of the violation
+
+- **P2-1 — the substrate, the contract in full, and every type whose violation is a PLACEMENT**
+  (`{personKey, date, slotKey}`): `overlap_block`, `vacation_block`, `eligibility`,
+  `unwanted_day_block`, `onboarding_grace`, `dow_restriction`, `clinic_conflict`,
+  `same_unit_conflict`, `min_gap`, `post_duty_exclusion`, `consecutive_max` — **eleven keys.**
+- **P2-2 — every type whose violation is a WINDOW or a COHORT**, plus the PHP context builder, the
+  preset registry, the Node entrypoint, the CI wiring and the demo command: `count_max`, `count_min`,
+  `target_per_period`, `composition`, `max_gap`, `free_day_min`, `rolling_hours_max`,
+  `call_frequency_max`, `fairness_distribution`, `holiday_equity`, `we_pairing` — **eleven keys.**
+
+### Why this line and not another
+
+1. **It is the line the contract itself draws.** Decision D's `Location` is a discriminated union of
+   three members. P2-1 implements every type that uses one member; P2-2 the two that need the others.
+   A seam cut along the contract's own discriminator means **P2-2 adds predicates and touches no
+   shared shape** — which is what makes CG-10's *"new types are additive"* true rather than
+   aspirational.
+2. **It is the line the evaluation context draws.** P2-1's types read facts resolvable per date: the
+   day vector, `leaveDays`, `unwantedDays`, unit and level spans, clinic rows, slot windows,
+   `joinedAt`. P2-2's types additionally need **window enumeration, an eligible-day denominator,
+   partial-window semantics and cohort scope** — four context features that are genuinely new work
+   and that cluster entirely on one side.
+3. **It is the line WB-03 draws.** A live hint on a *prospective* placement is exactly a
+   placement-located violation, evaluated before every add or move. So P2-1 ends with the set the
+   Stage-2 workbench needs first — which honours `…design.md:1468`'s *"order the 21 types so the
+   prototype's proven nine land first and are demoable"* on a **tree-verifiable criterion** instead
+   of on a nine that enumerates to nothing.
+4. **It is the line §4.3 draws.** All five types §4.3 names as hardest to reconcile with the CP-SAT
+   mapping — `fairness_distribution`, `rolling_hours_max`, `free_day_min`, `holiday_equity`,
+   `we_pairing` — are in P2-2 (finding 12). The reconciliation risk concentrates on one side.
+5. **It is deployable at the seam and demoable at it.** P2 ships no screen and no migration, so
+   *deployable* is trivially satisfied in both halves; the stronger property is that at P2-1's end
+   `evaluate()` answers eleven real questions about a real month, with plain-language explanations,
+   through the Node entrypoint — an artifact, not a package with no predicates in it.
+
+### The two alternatives, and why each was rejected
+
+- **Hard-versus-soft.** Rejected on a correctness ground, not a taste one: **only three of
+  twenty-three rows carry a stated class and §30 makes `class` a field on the condition row**
+  (finding 14). A seam drawn on class would encode into the branch structure a per-type class
+  assertion the engine is **forbidden** to make. The one class the engine may assert is
+  `overlap_block`'s, which is a single type, not a seam.
+- **Substrate-versus-types.** Rejected on risk distribution: it leaves twenty-two predicates in one
+  branch and none in the other, so P2-1 merges an engine that implements nothing and P2-2 carries the
+  whole of the phase's uncertainty. It also fails the demoability test above.
+
+### One thing the seam authors early, deliberately
+
+P2-1 authors the **window** and **cohort** `Location` members, `coverage()`, `priorDuties`/
+`followingDuties`, and the registry's `direction`/`locationKind` fields — before P2-2's types consume
+them. That is the same move Task 2 makes with the `@engine` Vite alias (*"added and asserted even
+though nothing imports it yet, because a package the bundler cannot resolve is not the browser
+runtime AR-03 requires, and discovering that in P3 is discovering it at the worst moment"*), and it
+is stated here rather than left implicit because an unused contract field is otherwise exactly the
+§1.3 objection's own argument. Two mitigations, both real: `coverage()` and `priorDuties` have three
+consumers **inside P2-1** (`min_gap`, `post_duty_exclusion`, `consecutive_max` at the left edge), and
+Task 7's corpus carries a `contract-shapes` case that constructs each `Location` member and
+round-trips it through `validate()` and the deterministic ordering — asserting the serialiser and the
+ordering, which is genuine, rather than asserting a rule that does not exist yet, which would not be.
+
+### A note the phase table will otherwise be read against
+
+The design phase table gives **P5** *"equity and holiday equity, duty-hour compliance (ACGME
+preset)"* and §35 puts them at Stage 4. **That is not a contradiction of D13.** Those rows are
+TL-02's dashboard and TL-03's report — the **consumers**. D13 gives P2 the condition **types**. An
+unconsumed condition type is what all of P2 is: nothing renders a violation until P3's workbench.
+Task 1 states the distinction in the design doc, because a later reader comparing the P2 row against
+the P5 row will otherwise read a conflict where there is a division of labour — and this document has
+been read against itself wrongly nine times already.
+
+---
+
+## Standing rules for every task
+
+- **Failing test first, watched red, then implement.** Capture exit codes:
+  `php artisan test > /tmp/t.log 2>&1; echo "rc=$?"` — `| tail -3` returns *tail's* status.
+- **Run tests via Bash, not PowerShell** (PowerShell's PATH here lacks `openssl`; the backup tests
+  self-skip there — a false green identical to a real one).
+- **Every guard is planted against**: write a file of exactly the shape the guard exists to catch,
+  watch it go red, revert. Record what the plant was in the guard's own docblock. State every
+  residual the needle set cannot reach — a residual stated is a residual somebody can close later; a
+  residual implied is a blind spot.
+- **Measure a needle before adding it** (ruling 42). A needle that forces you to allow-list the file
+  where the next real offender would be born is worse than no needle.
+- **Every fixture carries a `why`, and every type is observed failing on a planted defect.** With
+  twenty-two types the corpus is the plan's largest artifact and its largest vacuity risk: a type
+  green because its inputs are empty is indistinguishable, on a green suite, from a type that works.
+- **`npm run build` and `npm test` green before every commit**, alongside `php artisan test`. Once
+  the package exists, `npm run build` must actually bundle it — a package that only the test runner
+  can resolve is not the browser runtime AR-03 requires.
+- **Filter output.** `| tail -5`, `--filter <Name> | head -30`. Never dump a failing suite.
+- **Tree deployable after every commit.**
+
+---
+
+# P2-1 — tasks
+
+### Task 1: record the enumeration, correct the count, open the §14 items
+
+**Files touched:** `docs/superpowers/specs/2026-08-08-munawib-endorsement-integration-design.md`,
+`docs/munawib/SPEC.md`, `docs/INVARIANTS.md`, `CLAUDE.md`.
+
+**Failing test first:** none — this task is documentation, and inventing a test for prose is the
+vacuity this codebase guards against. Its verification is `grep`, below. It runs **first** because
+every later task's legitimacy rests on it. **D13 is not touched; it stands as decided.**
+
+**Implementation:**
+
+1. A footnote under CG-07's table in `docs/munawib/SPEC.md`: the table is **22 data rows carrying 23
+   distinct type keys** (`count_max / count_min` shares a row); `forbidden_transition` is marked
+   `(Stage 5)` in its own cell, is named in §35's Stage 5 list and is covered by §36's *"Shift
+   features before Stage 5"* non-goal; **22 − 1 = 21 rows = D13's number, and 23 − 1 = 22 implemented
+   type keys.**
+2. The design doc's phase-table P2 row rewritten to what P2 actually ships: the package, the 22 keys
+   (as a list, not a number), `forbidden_transition` registered unimplemented, the calendar mirror
+   against `golden.json`, the severity/rank model, CG-04 previews, the CG-08 preset bundles, the
+   `App\Support\Engine` context builder and the Node entrypoint. It states that `services/engine`
+   moves to P3 (Decision F) and §4.3's cross-validation job to P4 (Decision G), so a later reader does
+   not find a P2 commitment apparently missed.
+3. A sentence beside §1.3's D13 bullet: it is the **objection**, overruled, and its parenthetical
+   *"shift transitions"* is loose prose that does not scope the 21 — see the footnote. **The paragraph
+   itself is not edited**; it is a record of what was argued.
+4. The risk table's *"D13 makes P2 long and undemoable"* row keeps its mitigation and gains: *"The
+   ordering is the P2 plan's seam — placement-located types first (eleven keys, demoable through
+   `php artisan engine:evaluate`), window- and cohort-located types second."*
+5. A line recording that **§4.3's five hard-to-reconcile types omit `call_frequency_max`**, which has
+   the same sliding-window shape — an omission in §4.3, not evidence the type is easy.
+6. New §14 open items, continuing after item 27:
+   - **28.** `services/engine` moved to P3 with its first caller; §4.3's job moved to P4 with the
+     solver. What P2's CI job actually is (Decision G).
+   - **29.** `forbidden_transition` is registered unimplemented with three citations; P7/Stage 5 owns
+     it, and what it needs is a `shift` slot kind, not engine code.
+   - **30.** `unwanted_day_block` has no store anywhere; `people.constraints` is free-form JSON
+     validated only as `['nullable','array']`. **The spec's own answer is an approved RQ-01 request
+     (§22, §30's `requests/{reqId}`), which §35 places at Stage 3 = P4** — recorded now so P3 does not
+     re-open it as an unanswered gap.
+   - **31.** `same_unit_conflict` is three-way ambiguous and `SPEC.md:100` is its only occurrence in
+     the repository. The chosen reading and its date (owner decision U).
+   - **32.** `clinics.session` is `string(2)` with no time window, so CL-03's stricter same-day
+     variant cannot be a *time* overlap without a session→minutes configuration that does not exist.
+   - **33.** Design §14 item 22's clinic formulation is incomplete for `attendee_mode` `named` and
+     `levels` (finding 17), and the P1e handoff sentence is clarified rather than contradicted
+     (finding 16).
+   - **34.** `people.joined_at` is populated by no seeder, factory or demo path, so `onboarding_grace`
+     must treat NULL as *no violation* and say so in its preview text (finding 18).
+7. `docs/INVARIANTS.md` gains an **§Engine** section: the mirror is the one deliberate second
+   implementation and `golden.json` is its contract in both directions; the engine holds no `Date`,
+   no instant and no timezone; **the three attribution readings and which types use each**; the
+   half-open interval convention; the horizon-edge emission rule; `App\Support\Engine` is a reader;
+   and the **three** glob- or app-scanned namespaces it may not live in, and why.
+8. `CLAUDE.md`'s area table gains the row: `packages/engine`, `App\Support\Engine`, conditions →
+   §Engine.
+
+**How to verify:**
+`grep -n "22 data rows" docs/munawib/SPEC.md` returns the footnote;
+`grep -c "all 21 CG-07 types" docs/superpowers/specs/*.md` returns 0 (replaced by the list);
+`grep -n "forbidden_transition" docs/superpowers/specs/*.md docs/INVARIANTS.md` returns the new items;
+`grep -rln "D13-R" docs/ CLAUDE.md` returns **only this plan file** — where the string survives in these
+verification lines alone. The committed draft's Task 1 was never executed, so the reversal framing
+never reached the design doc, `docs/INVARIANTS.md` or `CLAUDE.md`; this task must not put it there.
+`grep -rn "D13-R" docs/superpowers/specs/ docs/munawib/ docs/INVARIANTS.md CLAUDE.md` returns **0**;
+`php artisan test --filter=Build 2>&1 | tail -3` still green (documentation must not trip a
+source-scanning guard — `CLAUDE.md` and `docs/` are outside every scan's scope, and this confirms it).
+
+---
+
+### Task 2: the toolchain — `packages/engine`, from zero
+
+**Files touched:** `package.json`, `tsconfig.base.json`, `packages/engine/package.json`,
+`packages/engine/tsconfig.json`, `vitest.config.js`, `vite.config.js`, `.github/workflows/ci.yml`.
+
+**Failing test first:** `packages/engine/test/smoke.test.ts` — imports `version` from
+`packages/engine/src/index.ts` and asserts it. Run `npm test`: it fails because `vitest.config.js`
+includes `tests/js/**/*.test.js` only and there is no TypeScript loader. **Watch that exact failure**
+before touching config; a suite that silently does not run the new file is the vacuity mode here, and
+it looks identical to green.
+
+**Implementation:**
+
+- npm workspaces (`"workspaces": ["packages/*"]`) — the smallest thing that makes one repo hold two
+  packages, and it needs no new tool. `typescript` and `@types/node` as root devDependencies.
+- `tsconfig.base.json`: `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
+  `target: ES2022`, `moduleResolution: bundler`, `lib: ["ES2022"]` — **not `DOM`**, so the package
+  cannot reach a browser global by accident. No `declaration` emit yet; nothing consumes types across
+  a package boundary until P3.
+- `vitest.config.js`: add `packages/*/test/**/*.test.ts` to `include`. Both suites run under one
+  `npm test` — a second command is a second thing to forget in CI.
+- `vite.config.js`: a `resolve.alias` for `@engine` so the browser bundle can import it. **The alias
+  is added and asserted in this task even though nothing imports it yet**, because a package the
+  bundler cannot resolve is not the browser runtime AR-03 requires, and discovering that in P3 is
+  discovering it at the worst moment.
+- `.github/workflows/ci.yml`: `npx tsc --noEmit -p packages/engine` in the existing `test` job. A
+  type error must fail CI, not merely annoy the author.
+- `packages/engine/src/index.ts`: exports `version` and nothing else, yet.
+
+**How to verify:**
+`npm test 2>&1 | tail -5` — 237 + 1 = **238** Vitest tests, and the new file is *named* in the output
+(not merely counted). `npx tsc --noEmit -p packages/engine; echo "rc=$?"` → `rc=0`. Then plant
+`const x: number = "s";` in `src/index.ts`, re-run, confirm `rc=1`, revert — otherwise the CI step is
+decoration. `npm run build 2>&1 | tail -3` green. `php artisan test 2>&1 | tail -3` still **1683**.
+
+---
+
+### Task 3: the `Ymd` core — civil-date arithmetic with no `Date` object
+
+**Files touched:** `packages/engine/src/calendar/ymd.ts`, `packages/engine/test/ymd.test.ts`.
+
+**Failing test first:** `ymd.test.ts` asserts `isoWeekday('2026-08-19') === 3` and
+`addDays('2026-02-28', 1) === '2026-03-01'` (2026 is not a leap year) and
+`addDays('2028-02-28', 1) === '2028-02-29'` (2028 is). Fails: the module does not exist.
+
+**Implementation:** `parseYmd` (strict `^\d{4}-\d{2}-\d{2}$` **and** a real-date check, so
+`2026-02-30` is rejected — `golden.json`'s `parse_rejects` block exists for this), `formatYmd`,
+`daysFromCivil`/`civilFromDays` (the standard branchless algorithm), `addDays`, `diffDays`,
+`isoWeekday`, `datesBetween`. Every function is total and pure; **no `Date`, no `Intl`, no epoch, no
+timezone** (Decision B).
+
+**One divergence from PHP, stated rather than papered over** (finding 20): `datesBetween` takes an
+explicit maximum span and throws beyond it, mirroring `Calendar::weeksIn()`'s 550-day guard. **PHP's
+own `Calendar::datesBetween()` is uncapped**, so this is a deliberate difference, not parity, and
+`golden.json` would not catch it either way. The reason is that the memory being protected is a
+browser tab's. The docblock says both halves.
+
+**How to verify:** `npx vitest run packages/engine 2>&1 | tail -5`. Cases include both leap
+boundaries, a century non-leap (`1900-02-28` → `1900-03-01`), a century leap (`2000-02-28` →
+`2000-02-29`), the year boundary, and every `parse_rejects` input from `golden.json`. Then **prove
+the tests can fail**: replace `isoWeekday`'s modulus with `+ 1`, watch red, revert.
+
+---
+
+### Task 4: the duty-time core — absolute minutes, intervals, ordering, windows
+
+**Files touched:** `packages/engine/src/duty/{interval.ts,order.ts,windows.ts}`,
+`packages/engine/test/duty-core.test.ts`.
+
+**Failing test first:** assert `absMinute('2026-08-19', 480) === daysFromCivil('2026-08-19') * 1440 +
+480`; that a night call `{date:'2026-08-19', startMinute:1200, endMinute:480, crossesMidnight:true}`
+has an interval ending at `absMinute('2026-08-20', 480)`; that **two abutting windows do not
+intersect** (half-open, the SL-02 split-day/night case); and that a weekly-cadence duty with
+`spanDays: 7` occupies seven dates. All fail: the module does not exist.
+
+**Implementation:** Decision A's one primitive set — `absMinute`, `dutyInterval`, `intersects`,
+`occupiedDates`, `onDutyMinutesOn(date)`, `orderedDutiesFor(person, duties)` (stable ordering over
+`priorDuties ++ duties ++ followingDuties`), and `enumerateWindows(kind, lengthDays, horizon)`.
+**Built before any type exists, so all twenty-two consume one definition** — the
+`AuditChain::canonical()` precedent, stated in the docblock with the incident it names.
+
+`onDutyMinutesOn` implements the **split-at-midnight** reading and is documented as used by
+`rolling_hours_max` alone; `occupiedDates` implements the **occupied-interval** reading;
+`Duty.date` is the **anchor-date** reading and needs no function. All three appear in the docblock
+with Decision A's type table, because the failure mode is a future author picking one silently.
+
+**How to verify:** `npx vitest run packages/engine 2>&1 | tail -5`. Plant a closed-interval
+comparison (`<=` for `>`), confirm the abutting-windows case goes red, revert — that is the one
+change that would flag every split-call department on every day and is invisible in review.
+
+---
+
+### Task 5: the calendar mirror against `golden.json`, and its coverage manifest
+
+**Files touched:** `packages/engine/src/calendar/index.ts`,
+`packages/engine/test/golden.test.ts`, `packages/engine/test/golden-coverage.test.ts`.
+**`tests/fixtures/calendar/golden.json` is READ and NOT MODIFIED** — it is an input to this phase.
+
+**Failing test first:** `golden.test.ts` loads the fixture by relative path and asserts the `cases`
+block through the mirror. It fails on the first case. **Then plant the drift this whole file exists
+to catch**: change one expected value in a *copy* of the fixture, confirm red, discard the copy. The
+fixture itself is never edited to make a test pass — that is the one move that would make the
+contract worthless.
+
+**Implementation:** the mirror implements `isoWeekday`, `datesBetween`, `weekdayColumns(weekStartIsoDay)`,
+`weekOf`, `isWeekend(weekendDays)`, `dayType(weekendDays, holidayDates)` — and, per owner decision O,
+**not `weeksIn()`**: `golden.json` has zero coverage of its clipped bounds (finding 9) and week
+windows arrive in the context instead. Every department-varying fact — `weekendDays`,
+`weekStartIsoDay`, the resolved holiday set — is a **parameter**, never a module default (owner
+decision X): a default in the package is a second definition of a per-department fact, which is what
+`golden.json` exists to prevent.
+
+`golden-coverage.test.ts` is the honesty half. It declares two lists — `ASSERTED` and `OUT_OF_SCOPE`
+(each with a one-line reason: `hijri_month_boundary` and `hijri_labels` per Decision C; `period_runs`
+because period boundaries arrive in the context rather than being generated client-side;
+`day_boundary_cases` because Decision B removes instants and the PHP-side assertion remains the one
+that matters; `timezone`/`version`/`_purpose` as metadata) — and asserts their union **equals** the
+fixture's actual top-level key set. It additionally records that **`weeks` covers `weekOf()` only and
+that no block covers `weeksIn()`'s clipped bounds**, with owner decision O as the reason. When
+`golden.json` reaches version 3 with a new block, this test fails until somebody decides which list
+it joins. Absence becomes a decision instead of an oversight.
+
+**How to verify:** `npx vitest run packages/engine 2>&1 | tail -5`. Then add a throwaway key to a
+*copy* of the fixture, point the coverage test at the copy, confirm it fails with the key named,
+revert. Confirm `php artisan test --filter=GoldenFixtureTest 2>&1 | tail -3` still green — both sides
+now assert one file and neither has moved it.
+
+---
+
+### Task 6: extend the date guard to `packages/`, allow-list empty in both directions
+
+**Files touched:** `tests/Feature/Build/CalendarIsTheOnlyConverterTest.php`.
+
+**Failing test first — the plant comes before the guard.** Write `packages/engine/src/scratch.ts`
+containing `const t = new Date();` and `const days = ['Mon','Tue'];`. Run
+`php artisan test --filter=CalendarIsTheOnlyConverterTest 2>&1 | tail -3` — **green**, because the
+scan's scope is `resource_path('js')`. That green is the finding, and it is recorded in the guard's
+docblock as the measurement that justified it.
+
+**Implementation:** a `tsFilesUnderPackages()` collector (`.ts`/`.mts`/`.js`/`.mjs` under
+`base_path('packages')`, excluding `node_modules` and `dist`) fed into **both** client-side scans:
+the ten date-construction needles and the quoted-whole-word weekday pattern. **No allow-list, in
+either direction** — the mirror passes on its own merits because Decision B leaves nothing to
+exempt, which is `ClinicHooksTest`'s *"the absence is real rather than allow-listed"* property. A
+non-vacuity floor asserts the collector found at least the files Tasks 3–5 created, because a guard
+iterating an empty set is green for the wrong reason and a moved directory is exactly how one gets
+there.
+
+The docblock records, in the house style: what was planted, that the guard was green before, the
+measurement that the needle set costs zero allow-list entries against the tree as it stands, and one
+stated residual — **a date library added as an npm dependency is invisible to a source scan of our
+own files.** Closing that would mean scanning `packages/engine/package.json`'s dependency list; it is
+**measured and bought** here, because the list is short, the check is one `assertSame([], …)` over
+declared dependencies against an allow-list of the zero runtime dependencies the package has, and the
+staleness twin is free. `dayjs`/`date-fns`/`luxon`/`moment` arriving as a transitive dependency of a
+devDependency is **not** covered and is stated as the residual.
+
+**How to verify:** with `scratch.ts` still present,
+`php artisan test --filter=CalendarIsTheOnlyConverterTest 2>&1 | tail -5` → **red**, naming
+`scratch.ts` for both `new Date(` and `'Mon'`. Delete `scratch.ts`, re-run → green. Then plant a
+runtime `"dayjs": "^1"` in `packages/engine/package.json`, confirm red, revert. Full suite: **1683 +
+2** (the dependency check and its staleness twin) = **1685**.
+
+---
+
+### Task 7: the CG-10 contract — types, JSON Schema, the three location shapes, `coverage()`
+
+**Files touched:** `packages/engine/src/contract/{types.ts,schema.json,validate.ts}`,
+`packages/engine/src/{evaluate.ts,coverage.ts}`, `packages/engine/test/contract.test.ts`,
+`packages/engine/test/fixtures/README.md`, `packages/engine/test/fixtures/contract-shapes.json`.
+
+**Failing test first:** `contract.test.ts` calls `evaluate(schedule, context, [])` on a minimal
+synthetic month and asserts `[]`; calls it with a condition whose `typeKey` is unknown and asserts it
+**throws a named error**; and asserts each of the three `Location` members validates and orders
+deterministically. Fails: nothing exists.
+
+**Implementation:** Decision A's `EvaluationContext`/`Day`/`Week`/`Slot`/`Duty`/`Schedule` and
+Decision D's `Location` union and `Violation`, verbatim. A hand-written JSON Schema plus a
+`validate()` that runs it — **no schema library**, because a runtime dependency in the browser bundle
+is a cost, the shape is small, and Task 6's dependency check would have to allow-list it.
+
+`evaluate()` is pure: no I/O, no globals, no clock, deterministic ordering of `violations[]` (by
+`conditionId`, then `location`) so a fixture comparison is stable. An unknown `typeKey` **throws**
+rather than being skipped, because a silently ignored condition is a control that appears to do
+nothing — rulings 41/49's failure shape, one layer inside the engine.
+
+`coverage()` ships beside it (Decision D), returning per condition what it evaluated and what it
+skipped with a reason. **The emission rule is asserted here**: a violation whose location falls
+outside `[horizon.from, horizon.to]` is not emitted, even when `priorDuties` made it computable —
+CG-03's *"never retroactive on published schedules"*.
+
+`fixtures/README.md` fixes the corpus format — one JSON file per case: `{ name, why, context,
+schedule, conditions, expected: Violation[], expectedCoverage? }` — and states, in the file, that
+**the corpus is synthetic permanently** (invariant 11) and that `why` is mandatory because a fixture
+whose purpose nobody wrote down is a fixture nobody dares change.
+
+`contract-shapes.json` is the case that keeps P2-1's early authoring honest: it constructs one
+violation of each `Location` member by hand and round-trips it through `validate()` and the ordering,
+asserting the **serialiser and the ordering**, not a rule.
+
+`templates` and `constraints` from AU-02 are **documented as deliberately absent**, with the reason,
+so P4 finds a hole rather than a wrong default (Decision A).
+
+**How to verify:** `npx vitest run packages/engine 2>&1 | tail -5`; `npx tsc --noEmit -p
+packages/engine` → `rc=0`. Prove `evaluate()` is deterministic: run one fixture 100× and assert
+identical JSON output. Prove the unknown-key throw by planting `typeKey: 'min_gap'` **before** Task 14
+implements it and confirming the named error. Prove the emission rule by moving a fixture's horizon
+one day later and watching the boundary violation disappear.
+
+---
+
+### Task 8: the registry, and the catalog-parity guard derived from `SPEC.md`
+
+**Files touched:** `packages/engine/src/registry.ts`,
+`packages/engine/test/{registry,catalog-parity}.test.ts`.
+
+**Failing test first:** `catalog-parity.test.ts` parses CG-07's table out of
+`docs/munawib/SPEC.md`, splits `count_max / count_min` on the slash, and asserts the resulting key
+set **equals** the registry's key set **in both directions**. It fails on the first run because the
+registry is empty. It is written before any type exists **on purpose**: it is the artifact that keeps
+the count from drifting a second time.
+
+**Implementation:** Decision E's `RegistryEntry`, one entry per key. Twenty-two carry
+`implemented: true` (with `evaluate`/`preview`/`paramsSchema` filled in by Tasks 10–20);
+`forbidden_transition` carries `implemented: false` and its three citations as a string, so `grep`ing
+the registry answers "why is this missing" without opening the spec.
+
+**`assertedClass` is present on `overlap_block` alone** (finding 14). `catalogDefault` records
+CG-07's markings for `vacation_block` and `unwanted_day_block` as **documentation the engine never
+applies** — a comment would rot, a field with a test cannot. A test asserts that
+`evaluate()` reads `Condition.class` and **ignores** `catalogDefault`: build one condition with
+`class: 'soft'` on `vacation_block` and assert `severity: 'soft'`.
+
+**Measured, not assumed — `count_max` and `count_min` are TWO registry keys**, sharing one evaluator
+module and one params schema. CG-01 and §30 store one `typeKey` per condition row, CG-04's preview
+text differs by direction, and a department will enable a cap without a floor. A single key with a
+direction parameter would also fail the parity guard, because CG-07 names two.
+
+**How to verify:** `npx vitest run packages/engine 2>&1 | tail -5`. Plant a 23rd row in a **copy** of
+`SPEC.md`, point the parity test at the copy, confirm it fails naming the unregistered key, revert.
+Then delete a registry entry, confirm it fails in the other direction. Both directions, per the
+`UnitMergeCoversEveryUnitReferenceTest` discipline.
+
+---
+
+### Task 9: the severity/rank model and CG-04's plain-language previews
+
+**Files touched:** `packages/engine/src/severity.ts`, `packages/engine/src/preview.ts`,
+`packages/engine/test/{severity,preview}.test.ts`.
+
+**Failing test first:** assert that a `hard` condition yields `severity: 'hard'` regardless of rank;
+that two `soft` conditions at ranks 1 and 5 grade differently; and that `preview()` for a
+fully-parameterised condition returns a sentence containing every parameter value. All fail.
+
+**Implementation:** CG-05/CG-06's model — hard sits above all soft; soft grades monotonically by
+rank, so **rank ordering is the only input** and no numeric weight is invented here (AU-02 says the
+solver's penalties are *"weighted monotonically by rank"*; a weight curve chosen in P2 would be a
+second definition of the same fact, in the wrong repository).
+
+`preview()` generates CG-04 text **from parameters**, per type, in English only (AR-07 — translations
+are future work and the generator takes a message table so that stays possible). One property is
+asserted across **every implemented type**, matrix-style like `PickerParityTest`: the preview names
+every parameter the type reads, so a parameter added without its preview fails the build.
+
+**Two previews carry a worked example, because the parameter is otherwise unreadable on a gate
+screen** (owner decisions H and V): `min_gap` in `days` renders *"at least 3 days apart — 1 Aug then
+4 Aug is allowed, 1 Aug then 3 Aug is not"*, and `rolling_hours_max` with averaging renders the
+multiplication in words (*"80 h a week averaged over 4 weeks — at most 320 h in any 28 consecutive
+days"*). An off-by-one and a mis-read averaging rule are both invisible in review and both change a
+month of behaviour.
+
+**The rulings 41/49 hazard, stated because it applies here in an unusual form.** Preview text is
+generated in P2 and rendered by nothing until P3's gate screen — a string produced under a key no
+screen consumes, which is precisely the shape that shipped three times as a control that appeared to
+do nothing. The two halves cannot be asserted together yet because the render site does not exist.
+What P2 does instead: the preview is asserted **against the parameter set** (above), and Task 1's
+open item 28 records that **P3's gate screen owes the render-site half** — a Vitest assertion that
+the gate renders `condition.preview` — so the pair is completed rather than forgotten. Stating a
+half-finished pair is not the same as finishing it, and this plan does not claim otherwise.
+
+**How to verify:** `npx vitest run packages/engine 2>&1 | tail -5`. Plant a new parameter on a type
+without extending its preview; confirm the matrix test goes red naming the parameter; revert.
+
+---
+
+### Task 10: `overlap_block`, `vacation_block`, `eligibility`
+
+**Files touched:** `packages/engine/src/conditions/{overlap_block,vacation_block,eligibility}.ts`,
+their tests and fixtures.
+
+**Failing test first, per type**, each from a fixture case whose `why` names the shape:
+
+- `overlap_block` — two duties for one person whose occupied intervals intersect, **including a night
+  call crossing midnight into the next date's duty**, plus the abutting split-day/night pair that must
+  **not** violate (Decision A convention 1). Also asserted: `overlap_block` is **per person**, not per
+  slot — a slot filled twice is SL-03 coverage-template territory and lands in P3; a fixture with two
+  people on one slot expects **no** violation, and the `why` says why.
+- `vacation_block` — a duty on a date inside `leaveDays`, and the boundary cases on the first and last
+  day (both bounds inclusive, matching `vacations`).
+- `eligibility` — a person whose level on the duty's date is not in the slot's allowed set, **and** the
+  mid-window promotion case where the same person is eligible on one date and not the next.
+  `eligibility`'s *"auto-fill order"* parameter is **not implemented** and its absence is asserted
+  (owner decision Q: one type, one contract; ordering is WB-04 fitness, P3).
+
+**Implementation:** three pure functions over the context, registered. `overlap_block` is the only
+entry carrying `assertedClass: 'hard'`; the other two read `Condition.class` like everything else.
+Params for `eligibility` name **stable keys** — `units.code`, level code, a person key that is not
+`people.id` — per owner decision P.
+
+**How to verify:** `npx vitest run packages/engine 2>&1 | tail -5`. Plant, per type, the defect its
+fixture exists to catch (closed intervals; an exclusive leave bound; a level read at the horizon start
+rather than at the duty's date), watch red, revert.
+
+---
+
+### Task 11: `RulesLiveOnlyInTheEngineTest` — no PHP implements a rule
+
+**Files touched:** `tests/Feature/Build/RulesLiveOnlyInTheEngineTest.php`.
+
+**Failing test first:** plant `app/Support/FakeRules.php` containing `function minGap(...)` with a
+`'min_gap'` literal, and confirm the tree is **green** before the guard exists. That green is the
+measurement.
+
+**Implementation:** enforces §4.1's *"No PHP implementation of the rules exists anywhere"*, which is
+currently prose with nothing behind it. Modelled on `CalendarIsTheOnlyConverterTest`: whole match set,
+`assertSame([], $offenders)`, allow-list plus staleness twin. Needles are the **23 catalog type keys**
+plus `violation`, `hard_block`, `soft_block`, `rank_order`, scanned over `app/` **with comments
+stripped** (`Tests\Support\SourceScanner`), because `App\Support\Engine`'s docblocks will legitimately
+say what they are for — and a guard that fails the build on the documentation of its own rule trains
+people to delete the documentation (`RotaAccessTest`'s recorded departure, adopted here for the same
+reason). The stripper is pinned in **both** directions against a real file, per invariant 3.
+
+**Measure before adding, per ruling 42, and the measurement is larger now that all 23 keys are
+needles.** `condition` as a bare needle is **not** bought: it matches `config`-adjacent prose and
+Laravel's own vocabulary too widely, and buying it would mean allow-listing files where a real
+offender would be born. `composition` as a bare needle is **not** bought either — it collides with
+ordinary English in docblocks about object composition. `eligibility` **is** bought: it would collide
+with `AvailabilitySummary`'s docblock, which the comment stripper removes, and the measurement is
+recorded. The allow-list starts **empty**; if `App\Support\Engine` must name a type key in code (it
+will, to key the context it builds), that is one entry with a stated reason and a staleness twin, and
+Task 22 records the measurement.
+
+**How to verify:** with `FakeRules.php` still present,
+`php artisan test --filter=RulesLiveOnlyInTheEngine 2>&1 | tail -5` → red, naming the file; delete it.
+Then plant it **inside a docblock only** and confirm the guard stays **green** — that is the stripper
+proving it strips. Full suite: **1685 + 2** = **1687**.
+
+---
+
+### Task 12: `unwanted_day_block`, `onboarding_grace`, `dow_restriction`
+
+**Files touched:** `packages/engine/src/conditions/{unwanted_day_block,onboarding_grace,dow_restriction}.ts`,
+their tests and fixtures.
+
+**Failing test first, per type:**
+
+- `unwanted_day_block` — a duty on a date in `person.unwantedDays`; and a fixture where the person has
+  an empty list, asserting no violation. Reads the context and **adds no table** (owner decision R).
+- `onboarding_grace` — a duty inside `joinedAt + N` days; the boundary at day `N` and day `N+1`; and
+  **the case the tree makes most likely: `joinedAt` absent, expecting NO violation** (finding 18,
+  owner decision T). The `why` names the reason: no seeder, factory or demo path populates the column,
+  so treating null as "joined today" would block an entire department silently.
+- `dow_restriction` — a person banned on ISO weekday 5; a rotation-scoped ban resolved through the
+  person's unit on the date; and a `days` parameter given as **ISO integers**, with a fixture asserting
+  a string weekday name is **rejected** by the params schema (`['Mon']` must never ship, and
+  `CalendarIsTheOnlyConverterTest`'s quoted-weekday needle would catch it in the package anyway).
+
+**Implementation:** three pure functions, all anchor-date readings (Decision A). `dow_restriction`
+reads `Day.isoWeekday` off the precomputed day vector and never recomputes it (finding 21, AR-08).
+
+**How to verify:** `npx vitest run packages/engine 2>&1 | tail -5`. Plant `joinedAt ?? today` in
+`onboarding_grace`, watch the null-join-date fixture go red, revert — that is the department-wide
+lockout this type's default exists to prevent.
+
+---
+
+### Task 13: `clinic_conflict` and `same_unit_conflict`
+
+**Files touched:** `packages/engine/src/conditions/{clinic_conflict,same_unit_conflict}.ts`, their
+tests and fixtures.
+
+**Failing test first:**
+
+- `clinic_conflict`, **all three attendee modes** (finding 17, owner decision S): a `rotators` clinic
+  matched through the person's unit on the date; a `named` clinic whose attendee **rotates nowhere**
+  and which the unit-only formulation would miss entirely; and a `levels` clinic that must **not**
+  match a rotator whose level on that date is outside the attached set. Plus the post-call variant
+  ON and the same-day variant OFF (SPEC §4's frozen default), and a fixture asserting the same-day
+  variant is a **calendar-day** overlap, not a time overlap — `clinics.session` is `string(2)` with no
+  minutes and no session→minutes configuration exists (finding 3, open item 32).
+- `same_unit_conflict` — one fixture per reading is **not** written. The chosen reading (owner
+  decision U) gets fixtures; the two rejected readings are named in the type's docblock with the
+  reason, because `SPEC.md:100` is the type's only occurrence anywhere and a later reader will ask.
+
+**Implementation:** `clinic_conflict` derives **one** post-duty window — `postDutyWindow(duty, slot)
+→ [fromAbs, toAbs)`, per SL-02's *"post-duty semantics follow slot windows automatically"* — and
+**shares it with `post_duty_exclusion`** (Task 14). This is the plan's answer to a real double
+definition: `post_duty_exclusion` tests duties against that window and `clinic_conflict` tests clinic
+sessions against **the set of dates the window touches**, so CL-03's day-granular rule reads off the
+hour-granular window instead of re-deriving *"the day after a call"*. On a real configuration the two
+otherwise disagree — a 24 h call ending Tue 08:00 with a Tue PM clinic is a violation under CL-03's
+day reading and clean under an `H=4` hour reading — and a scheduler seeing one warning and not the
+other cannot tell which is right.
+
+**The trap, named explicitly:** do **not** model clinics as slots or duties to reuse
+`post_duty_exclusion`. It would make clinics assignable, collide with CL-04's coverage subtraction and
+CL-05's map (which deliberately ships no person-shaped value at all), and give `attendee_mode` two
+meanings.
+
+**How to verify:** `npx vitest run packages/engine 2>&1 | tail -5`. Plant item 22's incomplete
+formulation (unit match only) and confirm the `named` and `levels` fixtures both go red — that is the
+defect the committed draft would have shipped. Revert.
+
+---
+
+### Task 14: `min_gap`, `post_duty_exclusion`, `consecutive_max` — and the horizon-edge corpus
+
+**Files touched:** `packages/engine/src/conditions/{min_gap,post_duty_exclusion,consecutive_max}.ts`,
+`packages/engine/src/duty/post-duty-window.ts`, their tests and fixtures.
+
+**Failing test first, and every one of these is a seam case:**
+
+- `min_gap` — `hours` measured **end-to-start**; `days` measured between **start dates**; the
+  off-by-one boundary in both directions (`N=3`: 1 Aug → 4 Aug legal, 1 Aug → 3 Aug not); and **the
+  case the two readings disagree on** — a 24 h call ending 08:00 and a night call starting 20:00 the
+  following day — because a fixture both readings pass proves nothing about the decision. Plus the
+  carry-in case: the last night of the prior month against the first duty of this one, expecting a
+  violation located **inside** the horizon.
+- `post_duty_exclusion` — anchored on the **end** of duty `a`; testing duty `b` by **start-in-window**
+  (owner decision H); a weekly-cadence `from` duty, whose end is defined by `spanDays` (owner decision
+  K); a `from`/`to` intersection case, where the type degenerates into `min_gap`-in-hours and the
+  preview must make that visible; and the carry-in case, an exclusion window opened on the 31st and
+  closing on the 1st.
+- `consecutive_max` — a run of exactly `count` (no violation) and `count + 1` (violation, located at
+  **the date that broke the cap**, the only location that gives a scheduler an actionable cell); a
+  crossing-midnight duty contributing its **anchor date only** (Decision A); two matching duties on one
+  date counting as **one** date; and a run spanning the 31st into the 1st, which horizon-local
+  evaluation would report as a run of 1.
+
+**Implementation:** three pure functions over Task 4's primitives. `postDutyWindow()` is extracted
+here and consumed by both `post_duty_exclusion` and Task 13's `clinic_conflict`. `consecutive_max`
+carries the `unit: 'days' | 'nights' | 'hours'` parameter of owner decision V, with `'hours'`
+measuring a **contiguous duty chain** — duties joined when the gap between them is `<=
+transitionMinutes` — which is where CG-08's *"24 h continuous cap"* lands without adding a
+twenty-third type key.
+
+**All three consume `priorDuties` and all three report through `coverage()`** when the carry-in is
+absent. That is what makes Decision D's early authoring real rather than speculative, and the
+`expectedCoverage` half of each fixture asserts it.
+
+**How to verify:** `npx vitest run packages/engine 2>&1 | tail -5`. Plant, per type: start-to-start
+for `min_gap`'s `hours`; anchoring `post_duty_exclusion` on `a`'s **start**; resetting
+`consecutive_max`'s run at the period boundary. Each must go red on its seam fixture and green
+everywhere else — a plant that only fails mid-month means the seam fixture is not doing its job.
+
+---
+
+## Definition of done — P2-1
+
+- [ ] `php artisan test > /tmp/t.log 2>&1; echo "rc=$?"` → `rc=0`, **1687** tests (1683 + Task 6's 2
+      + Task 11's 2).
+- [ ] `npm test 2>&1 | tail -5` → `rc=0`, 237 Vitest plus the engine suite, **and the engine files
+      named in the output** — a suite that silently skipped them looks identical to green.
+- [ ] `npx tsc --noEmit -p packages/engine; echo "rc=$?"` → `rc=0`, and observed `rc=1` on a planted
+      type error.
+- [ ] `npm run build 2>&1 | tail -3` green, and the `@engine` alias resolves.
+- [ ] **All 23 catalog keys registered**; twenty-two `implemented: true` with `evaluate`, `preview`
+      and `paramsSchema`, of which the **eleven placement-located** ones are implemented in this half;
+      `forbidden_transition` `implemented: false` with its citations. Task 8's parity guard green in
+      **both** directions and observed red in each.
+- [ ] Every implemented type has a fixture whose `why` names the shape, and **has been observed
+      failing on a planted defect**.
+- [ ] Every carry-in type (`min_gap`, `post_duty_exclusion`, `consecutive_max`) has a **seam fixture**
+      at a period boundary, and `coverage()` reports its unevaluable edge.
+- [ ] **No migration:** `git diff --stat main..HEAD -- database/migrations` empty.
+- [ ] **No new allow-list entry** on `RotaAccessTest`, `ClinicHooksTest`, or any single-writer guard:
+      `git diff main..HEAD -- tests/Feature/Rota/RotaAccessTest.php tests/Feature/Clinics/ClinicHooksTest.php`
+      empty.
+- [ ] `resources/js`'s date allow-list still empty; the guard now covers `packages/` with an empty
+      allow-list too; both observed red on a plant.
+- [ ] `golden.json` **unmodified**: `git diff main..HEAD -- tests/fixtures/calendar/golden.json` empty.
+- [ ] Design doc, `docs/INVARIANTS.md` and `CLAUDE.md` carry the enumeration;
+      `grep -rn "D13-R" docs/superpowers/specs/ docs/munawib/ docs/INVARIANTS.md CLAUDE.md` returns
+      **0**; no bare "21" survives without its list.
+
+---
+
+# P2-2 — tasks
+
+**Written when P2-1 merges**, per the P0a–P1e convention. Scoped and sized here; not specified to
+Tasks 1–14's depth, deliberately — P2-1 will teach things about the contract that would make a fully
+specified P2-2 written today wrong in the way this programme has repeatedly caught.
+
+### Task 15: `count_max` and `count_min` — the window machinery
+
+Two registry keys, one evaluator, one params schema (`kinds; levels; count; window`). Windows are
+`period` and `week` only; **`day` is not added** — Appendix B routes the owner's own words *"Per-level,
+per-unit nightly counts"* to *"§14 SL-03"*, and a per-day cap here would build coverage templates
+twice (owner decision K). The week is the **department's**, from `periods[].weeks` in the context
+(owner decision O), never recomputed and never a literal. Floors evaluate only on windows fully inside
+the evaluable range and report the rest through `coverage()` — the clipped-week asymmetry means a
+partial window can only under-count, which is harmless for a cap and a **false positive every time**
+for a floor (owner decision L). Fixtures must include a clipped week at a period edge and a person who
+joined mid-period.
+
+### Task 16: `target_per_period` and `composition`
+
+Level-keyed targets with the closed modifier grammar of owner decision M, and the WD/WE/HOL mix of
+owner decision N. Two facts do most of the work here and both are already decided elsewhere in the
+tree: the **vacation-week rule is `AvailabilitySummary`'s verbatim** — any overlap with the week's
+**clipped** bounds counts as a whole week, so a Thu–Mon leave is two weeks and a Sun–Thu leave is one
+— carried in the context rather than recomputed, or the engine and the rota screen will report
+different counts for the same person in the same period; and **`Calendar::dayType()` is three-valued
+with holiday deliberately winning over weekend**, so `composition`'s two-bucket `{WD, WE}` parameter
+would silently drop every holiday duty. Owner decision N adds an optional `HOL` bucket folded into
+`WE` when absent, and **never flattens `dayType()`**.
+
+### Task 17: `max_gap` and `free_day_min`
+
+The two absence-shaped types — violated by something **not** happening, which is why both are
+window-located and why both are the hardest to make actionable. `max_gap`'s trailing gap at the
+horizon edge is **not** evaluated and is reported through `coverage()` (owner decision I); its clock
+stops during leave and before `joinedAt` and does **not** stop for an off-roster rotation, because
+MR-04's per-person include/exclude override has no column anywhere and `units.call_target` is
+department-level configuration, not a per-person fact (owner decision I). `free_day_min`'s *"fully
+free day"* is **no on-duty minute intersecting the date** — materially stronger than *"no duty row
+dated D"*, and the fixture that separates them is a 24 h call on the 5th with nothing on the 6th.
+Leave counts as free, as a parameter defaulting true.
+
+### Task 18: `rolling_hours_max` and `call_frequency_max`
+
+The two duty-hours density types, and the only two consuming **split-at-midnight** attribution.
+`rolling_hours_max`'s averaging is a **proportionally longer window with a proportionally larger
+cap** — *"80 h/week averaged over 4 weeks"* is *"≤ 320 h in any 28 consecutive days"*, not *"the mean
+of four weekly totals ≤ 80"* and not *"each week ≤ 80"*; totals of 100/100/60/60 pass one reading and
+fail another, and that case is in the corpus. `countsHours: false` slots are excluded entirely.
+`call_frequency_max` is **density, not spacing** — 1-in-3 averaged over four weeks permits two calls
+on consecutive days while a `min_gap` of three days forbids them; both ship and the corpus contains a
+case where they disagree. Its window is **rolling and expressed in days** with an explicit unit, never
+"4 weeks", so a department changing `weekend_days` cannot silently move a duty-hours rule
+(`weekStartIsoDay()` is derived from that list). Its denominator is **calendar days**, following
+`App\Support\MissedDays`' own precedent, and owner decision J flags that ACGME's intent is arguably
+the availability reading.
+
+### Task 19: `fairness_distribution` and `holiday_equity`
+
+The two cohort-located types. `fairness_distribution` compares each person against a **pro-rated
+expected share** computed from `eligibleDays`, not against a raw count — comparing raw counts flags
+the person on two weeks' leave as *under*-loaded, and the fix a solver would find is to pile duties
+onto the few days they are available, which is the precise opposite of fair. Tolerance is **absolute,
+default 1**, because the counts are small integers and a proportional band on a base of 3 rounds to
+either "no tolerance" or "one whole duty" (owner decision Q2). Its soft **penalty** is defined as
+`Σ max(0, |actual − expected| − tolerance)` — linear, expressible in CP-SAT with abs-value
+auxiliaries, computable identically in TypeScript — so P4's *"violation count vs min-max objective"*
+reconciliation has one quantity to match rather than two that correlate. `holiday_equity` splits into
+in-schedule spread (always evaluable) and the multi-year lookback (evaluable only when
+`historyAvailableFrom` covers it); **`priorCredits` is `number | null` and `null` means UNKNOWN, never
+zero** (owner decision W) — encoding year-one absence as zero makes everyone maximally deserving, the
+lookback half silently does nothing, and in year two it actively mis-schedules. The lookback fetches
+holiday resolutions **one year at a time** and builds no day vector for the lookback horizon:
+`Calendar::weeksIn()` throws over 550 days and `datesBetween()` is uncapped, so one multi-year range
+would throw on the first and loop unboundedly on the second.
+
+### Task 20: `we_pairing` — the predicate half only
+
+Ship the predicate under the reading owner decision Z picks; **`fallbacks` does not ship in P2.** An
+ordered list of acceptable alternatives produces no violation when a fallback is used — it produces a
+worse-but-acceptable placement, which is WB-04 fitness ordering and AU-02's rank-weighted penalty
+terms. That is exactly the split owner decision Q already makes for `eligibility`'s *"auto-fill
+order"*, applied consistently. §4.3's open *"shared definition of what 'preference broken' means"* is
+resolved as: a violation is raised when the honoured pairing is neither the preferred pairing nor any
+listed fallback.
+
+### Task 21: the CG-08 preset registry and its manifest
+
+Decision H, built: `preset:acgme` (five conditions across five type keys, soft at high rank, active,
+with its two unimplementable clauses stated in the file), `preset:residency` (structure, numbers
+pending), `preset:scfhs` (present, empty, `pending` block). A build-failing test asserts the registry
+key set equals the declared manifest set. Presets are **data the engine can be called with**, not seed
+data — there is no `conditions` table until P3, and the file says so.
+
+### Task 22: `App\Support\Engine` — the context builder, and its two guards
+
+The single bounded-query loader producing an immutable array, then a pure fold — `RotaGrid` →
+`AvailabilitySummary`'s shape, one layer along. It flattens rota spans and vacations into per-date
+vectors (findings 4 and 5), builds the day vector once (finding 6), computes `periods[].weeks` through
+`Calendar::weeksIn()` (owner decision O), computes `eligibleDays` per person, and carries **no contact
+field and no free text for any viewer** (invariant 13). Any new per-date date function it needs —
+notably a public ISO weekday — lands on `App\Support\Calendar`, not here (finding 21). Two guards,
+both planted:
+
+- **A reader, not a writer** (invariant 5): needles for `create(`, `insert(`, `update(`, `save(`,
+  `delete(`, `upsert(`, `firstOrCreate(`, `updateOrCreate(`, `truncate(`, `destroy(`, **plus the two
+  known blind spots — `Model::query()->create(` and `$model->update([`** — over
+  `app/Support/Engine/*.php` as a glob, so a class added there joins unasked.
+- **No rule in the serialiser** (Decision I): the builder must not pre-filter people, dates or slots
+  by anything a condition evaluates. Needles for `->where(` combined with an eligibility-shaped
+  column, plus a positive assertion that the built context contains **every** active person in the
+  horizon including those a condition would exclude — the check that catches "send only eligible
+  people", which is `eligibility` re-implemented as a query.
+
+**And it must not contain the four app-wide raw needles** — `off_roster`, `offRoster`, `callEligib`,
+`call_eligib` — **anywhere, docblocks included** (invariant 4).
+
+**The query budget is watched breaching first** (invariant 9): grow the fixture — a populated
+academic year, splits, mid-year promotions, vacations, a stale row, four clinics, a multi-year holiday
+set — until the bound fails, record the number it failed at in the docblock, then bring it under. A
+budget that never failed is a budget nobody has measured.
+
+### Task 23: the Node entrypoint and the CI job, named honestly
+
+`packages/engine/bin/evaluate.mjs`: CG-10 JSON on stdin, `violations[]` on stdout, non-zero exit on a
+schema failure. Added to CI's `test` job: build the package, run the whole fixture corpus through the
+**compiled** entrypoint (not the test runner's transform — a package that only Vitest can load is not
+the browser runtime), and assert every case. The `golden.json` mirror assertion and Task 8's catalog
+parity are wired as build-failing checks.
+
+**Named honestly, per Decision G:** the calendar half is genuine cross-implementation validation; the
+catalog-parity guard is a second *source*, not a second implementation; the conditions half is
+single-implementation regression coverage. §4.3's real job arrives in P4. The CI step's own name and
+comment say which is which, because the phase table's wording is exactly what a later reader would
+take as a commitment already met.
+
+**NF-01 is measured here**, not asserted: the full corpus plus a synthetic 31-day, 20-person, 3-slot
+month with **all 22 implemented types active** through `evaluate()`, timed, with the number recorded.
+Twenty-two types is the number the budget must survive, not eleven. If it exceeds 100 ms the number is
+recorded anyway and the gap is stated — a budget quietly missed is worse than a budget missed out
+loud.
+
+### Task 24: the demoable artifact — `php artisan engine:evaluate`
+
+A **local, owner-facing** command: takes a period and a duty-JSON file, builds the real context from
+this department's shipped master rota, vacations, clinics, levels and calendar via Task 22, pipes it
+through the Node entrypoint, and prints the violations grouped by severity with their CG-04
+plain-language explanations — plus `coverage()`'s skipped windows, so the demo shows what could not be
+checked as well as what failed.
+
+Three things it is not, each stated in the command's own docblock and asserted:
+
+- **Not a production path.** The production server runtime is P3's `services/engine` (Decision F). The
+  command refuses to run when `app()->environment('production')`, so a convenience does not become an
+  undocumented dependency on `node` being present in the app container.
+- **Not a writer.** It writes nothing and **audits nothing** — there is no clinical or access event
+  here to record, and a violation's `explanation` is generated from people's names, so it must never
+  approach `audit_log.detail` (invariant 7).
+- **Not fed by real data in tests.** Its test fixture is synthetic (invariant 11). The owner may of
+  course point it at this department's real rota — that is the demo — but nothing real enters the
+  repository.
+
+---
+
+## Definition of done — P2-2
+
+- [ ] `php artisan test > /tmp/t.log 2>&1; echo "rc=$?"` → `rc=0`; count stated and matched.
+- [ ] `npm test`, `npx tsc --noEmit -p packages/engine`, `npm run build` all `rc=0`.
+- [ ] **All 22 implemented type keys** have an evaluator, a preview, a params schema and fixtures whose
+      `why` names the shape; each has been observed failing on a planted defect. `forbidden_transition`
+      remains registered and unimplemented.
+- [ ] Every window- and cohort-located type has a **partial-window** fixture and asserts its
+      `coverage()` output; no window is silently dropped.
+- [ ] The three preset bundles ship, the manifest test is green, and **no numeric default is invented
+      for any figure §37 still owes**.
+- [ ] Task 22's query budget **observed breaching** before it was fixed, with the number recorded.
+- [ ] NF-01 measured with **all 22 types active** and the number recorded, met or not.
+- [ ] **No migration in P2 at all:** `git diff --stat main..<P2-2 head> -- database/migrations` empty.
+- [ ] `RotaAccessTest`, `ClinicHooksTest` and every single-writer guard unchanged.
+- [ ] `docker-compose.production.yml` unchanged; `DeploymentInvariantsTest` untouched and green.
+- [ ] `php artisan engine:evaluate` demonstrated on this department's real period, output pasted into
+      the plan's amendments.
+
+---
+
+## Owner decisions needed
+
+Every one carries a recommended default, so nothing blocks on an answer. Silence takes the default.
+
+### The catalog
+
+**A. Does "all 21" include `forbidden_transition`?**
+*Default: **NO.** P2 builds 21 catalog rows = **22 type keys**; `forbidden_transition` is registered
+`implemented: false` with three citations.* CG-07's own cell marks it `(Stage 5)`, §35 names it in the
+Stage 5 deliverable list, and §36 makes *"Shift features before Stage 5"* an explicit non-goal.
+Building it is cheap in code — Decision A makes `slot.kind` opaque, so the predicate needs no shift
+substrate — but there would be no shift kind to parameterise it with, no preset to seed it, no gate
+screen to offer it and no real input to prove it against. **A type whose only fixture is one its
+author invented, with no consumer and no policy, is a stub with tests.** Registering it unimplemented
+makes the absence a decision.
+
+**B. `count_max` / `count_min` — one registry key or two?**
+*Default: **TWO keys**, sharing one evaluator module and one params schema.* CG-01 and §30 store one
+`typeKey` per condition row; CG-04's preview differs by direction; a department will enable a cap
+without a floor; and Task 8's parity guard derives two keys from CG-07's slash-separated cell.
+
+### The duty shape (Decision A)
+
+**C. Does P2 author `Slot`/`Duty` in its own contract, ahead of SL-01..07?**
+*Default: **YES.*** There is no alternative that is not worse: the types cannot be written against
+nothing, and letting each one invent a duty shape is twenty-two definitions of one fact. P3 adds a
+projector, not a second semantics.
+
+**D. Half-open intervals, and the three attribution readings.**
+*Default: intervals are `[start, end)`; the three readings are as tabled in Decision A, declared per
+type, and asserted as a matrix.* The abutting split-day/night pair and the Friday-night call are the
+two cases that decide it, and both are fixtured.
+
+**E. Weekly-cadence slots (SL-04) — do they carry a real extent?**
+*Default: **YES** — `cadence: 'daily'|'weekly'` plus `spanDays`, so `overlap_block`, `min_gap` in
+hours and `post_duty_exclusion` have a defined end against a home-call or backup duty.* The
+alternative, excluding weekly duties from window-measured types, is defensible but must then be
+stated; leaving it undefined is not, and they are exactly what a department names in a `from` set.
+
+**F. The carry-in tail.**
+*Default: `priorDuties` and `followingDuties` in the context, read-only; violations emitted only when
+their location falls inside `[horizon.from, horizon.to]`; every affected type fixtured at the seam.*
+Without it the eleven affected types are systematically wrong at exactly the dates a scheduler hits
+first.
+
+### Parameterisation
+
+**G. Ids or stable keys in condition params?**
+*Default: **stable keys** — `units.code`, level code, and a person key that is **not** `people.id`.*
+`people.id` and `users.id` are independent sequences; `units.code` carries an institution-blind UNIQUE
+index by D11's one-way commitment; `RotaExport` already refuses ids for person identity on the stated
+ground that *"ids are instance-local"*. This decision lands in five types (`eligibility`,
+`dow_restriction`, `same_unit_conflict`, `onboarding_grace`, and every level-keyed map) and must be
+made once.
+
+**H. `min_gap` endpoints, and the off-by-one.**
+*Default: the parameter carries an explicit `unit`. **`hours` measures END-to-START** (ACGME's *"10 h
+between duties"*). **`days` measures the difference between START DATES**, and `N` means **at least N
+apart** — 1 Aug → 4 Aug is legal at `N=3`. `post_duty_exclusion` anchors on the END of `a` and tests
+`b` by **start-in-window**.* Both `min_gap` semantics ship on one type, which is what CG-07's *"days
+or hours"* implies. The off-by-one is a month of different behaviour and is invisible in review, so
+CG-04's preview renders a worked example (Task 9).
+
+**I. `max_gap` — the unfinished trailing gap, and what stops the clock.**
+*Default: an **unfinished trailing gap is NOT evaluated** and is reported through `coverage()`; the
+clock **stops** during leave and before `joinedAt`, and does **NOT** stop for an off-roster rotation.*
+Evaluating the trailing gap flags nearly every person nearly every month; ignoring it silently is
+worse, which is what `coverage()` is for. Off-roster has no per-person column anywhere (MR-04), and
+inventing one from `units.call_target` would be exactly the inference `RotaAccessTest` exists to
+refuse.
+
+**J. `call_frequency_max` — window alignment and denominator.**
+*Default: **rolling**, anchored on the evaluated duty's date, with the window length in **days** and
+an explicit unit; denominator = **calendar days**.* A calendar-aligned window lets a person run
+1-in-2 across a block boundary and pass every window. The calendar denominator follows
+`App\Support\MissedDays`' precedent (owner decision 6: every calendar day, `dayType()` deliberately
+never consulted) — **but flag it**: ACGME's intent is arguably the availability denominator, and the
+owner may want the opposite.
+
+**K. `count_max` / `count_min` — whose count, and which windows?**
+*Default: **per PERSON**, with `levels` as a **scope filter** (which people the cap applies to), not a
+cohort total. Windows are `period` and `week` only; **`day` is not added**.* Appendix B routes *"Per-
+level, per-unit nightly counts"* to §14 SL-03 — coverage templates, P3 — and building a per-day cap
+here builds SL-03 twice. Note also that `levels` inside params duplicates CG-01's `scope`; the
+default is that **`scope` selects the population and a level-keyed MAP supplies per-level VALUES**,
+with a bare `levels` list documented as intersecting `scope` and fixtured.
+
+**L. Partial windows, and unequal period lengths.**
+*Default: **floors and targets evaluate only on windows fully inside `[evaluableFrom, evaluableTo]`**
+and skipped windows are reported through `coverage()`; **period-windowed numbers are ABSOLUTE**, not
+scaled by period length.* `institutions.block_weeks` defaults to twelve four-week blocks and a
+**five**-week block 13, so a "6 per period" cap is 25% looser there; the scaling question is real and
+the absolute reading is the one a department can state on a gate screen. Owner decision M adds one
+modifier predicate that can express the difference where it matters.
+
+**M. `target_per_period` — the modifier grammar.**
+*Default: an ordered list of `{ when, target }`; **first match wins**; **replace, not adjust**; the
+predicate vocabulary is **closed to two**: `vacationWeeksAtLeast: N` and `periodWeeksAtMost: N`; the
+person's level is read at the **PERIOD START**.* The spec gives one example and no syntax, and an open
+predicate language is CG-09's builder, which is Stage 4 and explicitly *"no free-form scripting"*. The
+second predicate exists because block 13 is five weeks and one vacation predicate cannot say so.
+
+**N. The vacation-week rule, and where holidays go in `composition`.**
+*Default: the vacation-week rule is **`AvailabilitySummary`'s verbatim** — any overlap with the week's
+**clipped** bounds counts as a whole week — carried in the context, never recomputed. `composition`'s
+buckets are **`{WD, WE, HOL}` with `HOL` OPTIONAL and folded into `WE` when absent**; `Calendar::
+dayType()` is never flattened to two values.* `dayType()` makes holiday win over weekend
+deliberately (*"a coverage template that asks for holiday staffing must get it on a holiday that
+happens to fall on a Friday"*), so a two-bucket parameter would silently drop every holiday duty —
+green on exactly the days it most matters. `composition`'s window is the **period**, stated explicitly
+rather than inherited.
+
+**O. Does the mirror implement `weeksIn()`?**
+*Default: **NO.** Week windows arrive in the context as `periods[].weeks` with clipped bounds,
+computed server-side by `Calendar::weeksIn()`.* `golden.json` has **zero** coverage of
+`clipped_starts_on`/`clipped_ends_on` (verified), so a mirror implementation would be an unasserted
+second definition of a per-department fact — and the alternative, extending `golden.json` to v3,
+modifies a file this plan declares an input. Same device as the day vector and the holiday resolution.
+
+**P. `eligibility` — a violation, or a picker filter?**
+*Default: **a Hard violation** on a committed assignment. The "auto-fill order" half is NOT a
+condition and does not ship in P2.* CG-07 leaves the type unmarked while WB-04 says pickers *"exclude
+hard-ineligible people"*, which makes it Hard in the workbench; ordering produces no violation at all,
+so one type would be carrying two contracts. Ordering is WB-04 fitness, P3. *(Note: this is the
+committed draft's decision F, renumbered, and it is unchanged.)*
+
+**Q. `fairness_distribution` — base, tolerance and mode.**
+*Default: **pro-rated expected share** from `eligibleDays` (not raw counts); tolerance **absolute,
+default 1**; `mode: 'deviation'` by default with `'spread'` available; `excludeExternal` defaults
+**true**.* Raw counts flag the person on leave as under-loaded and a solver's fix is to overload their
+few available days. A proportional tolerance on a base of 3 rounds to either nothing or a whole duty.
+`spread` (max−min) says nothing about **who** to fix, which is what WB-04's reason chips need.
+
+### The three types the tree cannot resolve
+
+**R. `unwanted_day_block` — where do unwanted days live, and who may see them?**
+*Default: **nowhere in P2**; the days arrive in the engine context. **The store is an approved RQ-01
+request** per §22 and §30's `requests/{reqId} { type:'unwanted'|… }`, which §35 places at Stage 3 =
+**P4** — not P3, and the plan says so rather than leaving it re-openable.* `people.constraints` is not
+a candidate as it stands: `json` nullable, validated only `['nullable','array']`, with one documented
+example in a textarea helper. **And the disclosure question is real and is the owner's:** the engine
+runs in the browser for WB-03, so one person's unwanted days enter another person's Inertia props; the
+nearest analogue today, `people.constraints`, is released only under `people.manage`, and a Scheduler
+holds `rota.manage`, which is not that.
+
+**S. `clinic_conflict` — which resolver, which variant, and the three attendee modes?**
+*Default: **the post-call variant ON, same-day-overlap OFF** (SPEC §4, frozen); it reads clinic rows
+from the context against the date and the person's unit-on-that-date — **design §14 item 22's
+formulation, not `ClinicRoster::forDate()`** — **extended to carry `attendee_mode` and its attendee
+rows**, without which it is wrong in both directions for `named` and `levels` clinics (finding 17).
+The same-day variant, when enabled, is a **calendar-day** overlap, because `clinics.session` is
+`string(2)` with no minutes.* Finding 16 records that item 22 and the P1e handoff are reconcilable
+rather than contradictory, and Task 1 clarifies the handoff sentence rather than overruling it.
+
+**T. `onboarding_grace` — N, the unit, and a missing join date.**
+*Default: a **missing `joined_at` is NO violation**, said out loud in the preview text; the window is
+**calendar days**; **day 1 is the join date**; `levels` is a scope filter; `external` people are in
+scope.* Finding 18: the column is populated by no seeder, factory or demo path, so the alternative
+would block an entire department silently. **N has never been stated by any owner** and the residency
+preset ships it absent rather than guessed (Decision H).
+
+**U. `same_unit_conflict` — which of three readings, and do exceptions lift or apply?**
+*Default, and it is the weakest default in this plan: reading **(a)** — two people **rotating on the
+same unit** are never on call together — with `day exceptions` being days on which the ban **LIFTS**.*
+`SPEC.md:100` is the type's only occurrence in the entire repository; the key name says *same unit*,
+the Meaning says *"Pairs never together"* (people?), and the parameters say *"unit pairs"*
+(cross-unit?) — (a) and the parameters' reading are **opposite predicates over the same input**, and
+the Meaning's reading needs a people-pair store that does not exist. The key name is the only one of
+the three signals that is internally unambiguous, and it needs no new store. **This should be routed
+to the owner before the type is implemented**, on the standing precedent of Owner Decision A on
+`levels.terminal` (2026-08-09), which rejected an inference outright because a wrong marker failed
+silently in two directions.
+
+### The bundle, and the rest
+
+**V. The 24 h continuous cap, and the transition allowance.**
+*Default: **`consecutive_max` gains `unit: 'days' | 'nights' | 'hours'`**, where `'hours'` measures a
+**contiguous duty chain** — duties joined when the gap between them is `<= transitionMinutes` — plus
+an explicit `transitionMinutes` parameter. **No new type key.*** CG-08's *"24 h continuous cap"* maps
+onto no catalog row as written: `consecutive_max` counts days, `rolling_hours_max` is rolling rather
+than contiguous, and the two genuinely differ. `transitionMinutes` lands SPEC Appendix A's *"with
+limited transition time"*, which CG-08 drops entirely — and without it the preset either forbids a
+legitimate handover overlap or silently permits an unbounded one.
+
+**W. `holiday_equity` — unknown versus zero, and which year.**
+*Default: `priorCredits[person][holiday]` is **`number | null`** with `null` meaning **UNKNOWN**;
+`historyAvailableFrom` states how far back history reaches; when it does not cover the requested
+lookback the type evaluates the **in-schedule spread only** and reports the years it could not see
+through `coverage()`. `yearBasis: 'ruleCalendar'` — a Hijri rule's year is a Hijri year — and the
+context carries `{ key, year }` per holiday. Working any part of a multi-day holiday is **one** credit
+for that holiday-year.* Encoding year-one absence as zero makes the lookback half silently do nothing
+in year one and actively mis-schedule in year two. **Two product facts belong with this decision:**
+the first real lookback year is no earlier than one year after P3 ships `assignments` and PU-01 ships
+`archives`; and the only way to have a real lookback sooner is an owner-entered seed of who worked Eid
+al-Fitr / Eid al-Adha / National Day in preceding years — cheap, needing a screen and a migration, so
+**not P2**, but worth proposing now rather than discovering in P5.
+
+**X. How does the engine learn `weekendDays` and `weekStartIsoDay`?**
+*Default: **from the context object only** — never a module default, never a literal in the package.*
+A bundled default is a second definition of a per-department fact, which is precisely what
+`golden.json` and AR-08 exist to prevent, and Task 6's weekday-vocabulary scan over `packages/`
+enforces the literal half.
+
+**Y. Does `services/engine` ship as a production container in P2?**
+*Default: **NO — P3**, with CG-05's publish gate as its first caller (Decision F).* P2 ships the Node
+entrypoint exercised in CI. A container nothing calls can be verified running and cannot be verified
+working, which is CLAUDE.md's named failure shape; and a third compose service touches fifteen pinned
+deployment invariants for zero callers.
+
+**Z. `we_pairing` — which reading, and does `fallbacks` ship?**
+*Default: pairs of **DAYS** — the weekend is covered as a **block** by one person rather than split
+between two, which is what gives everyone else a genuinely free weekend — and **`fallbacks` does NOT
+ship in P2**.* The competing reading (named pairs of **people**) needs a person-pair store that does
+not exist anywhere in the tree, which is the tie-breaker; if the owner prefers it, the store is a P3
+migration and the predicate is unchanged in shape. `fallbacks` produces no violation when used, so it
+is solver preference, not a condition — the same split as decision P.
+
+**AA. Does the mirror implement Hijri?**
+*Default: **NO** (Decision C).* Holidays are resolved server-side into Gregorian dates, and
+`holiday_equity`'s multi-year keying is solved by carrying the holiday's own-calendar **year** in the
+context (decision W), not by putting ICU in the browser. `Intl.DateTimeFormat` is a forbidden needle
+besides. The absence is declared in Task 5's coverage manifest so it reads as a decision.
+
+**AB. CG-08's residency numbers.**
+*Default: the residency preset ships as a **structure with named, un-filled numbers** and a manifest
+entry recording that the values are pending owner input; the SCFHS preset ships **present, empty, with
+a `pending` block**; the ACGME preset ships its numbers **and states the two clauses it cannot
+implement**.* D14 and D15 make the prototype's numbers unobtainable. A wrong residency default looks
+authoritative on a gate screen, and an absent preset entry and a guessed one are indistinguishable
+there — only the first is safe.
+
+---
+
+## Acceptance
+
+**P2 is done when:**
+
+1. `packages/engine` implements **the 22 type keys enumerated at the top of this plan** against the
+   CG-10 contract, with `forbidden_transition` registered and deliberately unimplemented; with a
+   synthetic fixture corpus in which every case carries a `why`; and with every type observed failing
+   on a planted defect.
+2. Task 8's catalog-parity guard derives CG-07's key set from `docs/munawib/SPEC.md` and matches the
+   registry **in both directions**, observed red in each.
+3. The calendar mirror asserts `golden.json` from TypeScript, `App\Support\Calendar` still asserts it
+   from PHP, **the file itself is unchanged**, and the coverage manifest names every block as asserted
+   or deliberately out of scope — including that no block covers `weeksIn()` and why.
+4. Every window- and cohort-located type has a partial-window fixture and asserts `coverage()`; every
+   carry-in type has a seam fixture at a period boundary. No window is silently dropped.
+5. The date guard covers `resources/js` **and** `packages/`, with an empty allow-list on both, and has
+   been observed red on a plant in each.
+6. `App\Support\Engine` builds the context at a bound that was **observed breaching** before it was
+   met, carries no contact field and no free text for any viewer, is guarded as a reader that
+   implements no rule, and contains none of the four app-wide raw needles.
+7. No migration, no index, no new environment variable, no compose change, no allow-list entry on any
+   existing guard.
+8. The three CG-08 preset bundles ship as package data, with **no invented number** for any figure §37
+   still owes.
+9. `php artisan engine:evaluate` runs against this department's real period and prints real violations
+   with plain-language explanations, and real coverage gaps — the phase's demoable artifact.
+10. The design doc, `docs/INVARIANTS.md` and `CLAUDE.md` record the enumeration, the corrected catalog
+    count, `forbidden_transition`'s exclusion with its citations, and the two relocations (Decisions F
+    and G). `grep -rn "D13-R" docs/superpowers/specs/ docs/munawib/ docs/INVARIANTS.md CLAUDE.md`
+    returns nothing.
+
+**What P2 explicitly does NOT accept, and must not be read as accepting:** Munawib Stage 2 (§35),
+which needs slots, templates, the gate, the workbench, publishing, the board and the tallies — all
+P3. *"P2 is complete"* and *"Stage 2 is accepted"* are different claims and only the first is a
+developer's to make (design §14 item 27's distinction, applied one phase along).
+
+**And the one thing all 21 rows does NOT buy:** the duty-hours and equity **numbers**. Every predicate
+ships; §37 still owes the SCFHS/local policy in numeric form; §38's second unvalidated assumption is
+that it maps onto the catalog. A department enabling `rolling_hours_max` in P3 will find the type
+present and the figure absent, which is the correct state and is stated on the preset itself.
+
+---
+
+## Next plan
+
+`docs/superpowers/plans/<date>-p2-2-<slug>.md`, written when P2-1 merges. After P2: **P3 — Munawib
+Stage 2**, which brings `slots`, `coverage_templates`, `conditions`, `schedules`, `assignments`, the
+gate screen with drag ranking, the workbench with live hints, and `services/engine` with its first
+caller. P3 also owes the render-site half of Task 9's CG-04 preview pair (rulings 41/49), and the
+gate's cap-versus-floor warning (Decision E). `forbidden_transition` waits for **P7 / Stage 5**, with
+the shift slots it constrains.

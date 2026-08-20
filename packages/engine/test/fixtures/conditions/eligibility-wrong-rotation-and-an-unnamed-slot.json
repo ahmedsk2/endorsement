@@ -1,0 +1,96 @@
+{
+    "name": "eligibility-wrong-rotation-and-an-unnamed-slot",
+    "why": "Two halves of the same rule, in one world. The night slot is limited to people rotating on NICU and this person is on PICU, so the duty on the 2nd violates on the ROTATION rather than the level — CG-07's cell says 'levels/rotations' and a predicate implementing only the first is green on every department that restricts by level alone. The day slot is NOT named in the map at all and the duty on the 3rd must therefore produce nothing: 'allowed levels per slot' names the RESTRICTED slots, and a department that has not restricted a slot has not restricted it. A predicate treating an absent entry as 'nobody may fill this' would block a whole rota silently.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-01", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-02", "isoWeekday": 7, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-03", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02", "2026-08-03"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "NICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "day",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 1020,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-03",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-06"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-02", "slotKey": "night" },
+            { "personKey": "p-ali", "date": "2026-08-03", "slotKey": "day" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-eligibility",
+            "typeKey": "eligibility",
+            "class": "hard",
+            "active": true,
+            "params": {
+                "allowed": {
+                    "night": { "levelKeys": ["R2", "R3"], "unitKeys": ["NICU"] }
+                }
+            }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-eligibility",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            "explanation": "Rotating on unit \"PICU\" on 2026-08-02; slot \"night\" is limited to NICU."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-eligibility", "evaluatedWindows": 1, "skipped": [] }]
+}

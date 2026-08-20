@@ -583,6 +583,42 @@ place a scheduling rule is allowed to exist.*
   assertion that catches it is `toleranceFor(0) === 1`. Do not delete the floor as redundant:
   `Math.round(0.1 * 4)` is 0, and `round` is what the next author reaches for.
 
+- **`intersects()` is the ONLY thing in the package that decides whether two windows overlap, and
+  `overlap_block`'s pair scan carries NO pruning.** The obvious optimisation — the duties are sorted
+  by start, so stop once a later duty starts at or after this one's end — was written first and made
+  the abutting fixture unfalsifiable: swapping `<` for `<=` inside `intersects()` left the suite
+  GREEN, because the `>=` in the loop's own stop condition had already skipped the pair. Two
+  definitions of the half-open rule, one of them invisible, three lines from the sentence explaining
+  the first. Found by planting. The scan is per person over one month; nothing there is worth buying
+  with a second copy of the rule. **`overlap_block` is PER PERSON** — a slot filled twice is SL-03
+  coverage-template territory and lands in P3 — and an overlapping pair reports at BOTH placements,
+  each naming the other, with `evaluate()`'s emission rule dropping whichever sits in the carry-in
+  tail.
+
+- **A duty naming a person the context does not describe THROWS, exactly as one naming an unsupplied
+  slot does.** Their leave, level and rotation are all unknown, so every placement type would answer
+  "no violation" for want of data — a Hard rule passing on incomplete input, which is strictly worse
+  than a crash. **CG-01's `scope` narrows and is never carried and ignored**: absent members are no
+  filter, present ones narrow together, and unit and level are read AT THE DATE (`support.ts`'s
+  `spanKeyAt`, the one definition of "the fact this person holds on this date"). A scope silently
+  ignored is rulings 41/49's shape pointing the other way — a control that appears to do LESS than
+  it says.
+
+- **`eligibility` is a Hard violation and its "auto-fill order" half does not ship** (owner decision
+  P) — ordering produces no violation at all and is WB-04 fitness, P3. The absence is ASSERTED, not
+  merely omitted: `PARAMS_SCHEMA` is closed, so a row carrying `autoFillOrder` is refused with the
+  schema's own error, and a source scan proves the ordering vocabulary appears nowhere in the
+  module's CODE. **That scan strips comments, and it had to be taught to** — the seventh time in
+  this phase that a docblock was scanned source, since `eligibility.ts`'s own docblock names the
+  identifier while explaining why it is absent. Pinned in both directions, per `SourceScanner`'s
+  recorded discipline: the prose is gone and a known code token is still there.
+
+- **A placement type's `evaluatedWindows` counts PLACEMENTS**, and a `needsCarryIn` one reports a
+  left-edge skip when `historyAvailableFrom` is `null` — never when `priorDuties` merely happens to
+  be empty, which is the caller saying *"I looked, and there were none"*. Conflating the two would
+  report a skipped window on every correctly-supplied month and train a reader to ignore the field.
+  STATED RESIDUAL: there is no `futureAvailableTo` counterpart, so the RIGHT edge is not reported.
+
 - **The TS calendar mirror is the ONE deliberate second implementation, and
   `tests/fixtures/calendar/golden.json` is its contract in BOTH directions.** §7 Decision A of P1a
   overruled the design doc's own "PHP plus a mirrored package" wording with *"ONE implementation, not

@@ -1,0 +1,105 @@
+{
+    "name": "overlap-block-night-crosses-into-the-next-date",
+    "why": "A night call runs 17:00 to 08:00 the following morning and an early duty starts at 06:00 that morning, so the two share two hours. This is the case the whole absolute-minute line exists for: an implementation comparing DATES rather than intervals sees a duty on the 2nd and a duty on the 3rd and reports nothing. Both placements are reported, each naming the other, because a scheduler may move either one.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-01", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-02", "isoWeekday": 7, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-03", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-04", "isoWeekday": 2, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-05", "isoWeekday": 3, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "early",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 360,
+                "endMinute": 840,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-05",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-08"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-02", "slotKey": "night" },
+            { "personKey": "p-ali", "date": "2026-08-03", "slotKey": "early" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-overlap",
+            "typeKey": "overlap_block",
+            "class": "hard",
+            "active": true,
+            "params": {}
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-overlap",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            "explanation": "Overlaps \"early\" on 2026-08-03."
+        },
+        {
+            "conditionId": "c-overlap",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-03",
+                "slotKey": "early"
+            },
+            "explanation": "Overlaps \"night\" on 2026-08-02."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-overlap", "evaluatedWindows": 2, "skipped": [] }]
+}

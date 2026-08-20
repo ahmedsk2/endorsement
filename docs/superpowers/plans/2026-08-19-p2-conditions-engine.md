@@ -2219,3 +2219,38 @@ dispatch while the type modules must import the sentences: one file would be a c
 `ConditionPreview` gained a third parameter, the message table, because AR-07's *"translations are
 future work"* is only true if the table is an ARGUMENT — `preview.test.ts` proves it by handing in a
 second table and watching the sentence change.
+
+### From Task 10 (2026-08-20) — a pruning optimisation made the phase's defining fixture unfalsifiable
+
+`overlap_block`'s pair scan was written with the obvious optimisation: the duties are sorted by
+interval start, so stop scanning once a later duty starts at or after this one's end. The plan's own
+plant for Decision A convention 1 — swap `<` for `<=` inside `intersects()` — was then applied, and
+**the suite stayed GREEN.** The `>=` in the loop's stop condition had already skipped the abutting
+pair before `intersects()` was consulted.
+
+**That is two definitions of the half-open rule, one of them invisible, three lines below the
+docblock sentence explaining the first** — `AuditChain::canonical()`'s defect, in the file whose
+whole purpose is the one comparison operator. The pruning is removed and its absence is stated in
+the module docblock, because it is exactly the change a later reader will propose as an obvious win.
+The scan is per person over one month; there is nothing there worth buying with a second copy of the
+rule. With it gone the plant fires, and so do four more: `overlap_block` keyed per slot rather than
+per person; `priorDuties` dropped; the emission rule disabled; and the vacation bound made exclusive.
+
+**The general lesson, since this is the second green plant in two tasks:** a plant that stays green
+is worth more than one that goes red, and the two tasks found different species of it. Task 9's was a
+guard asserted at an input where the defect cannot appear; Task 10's was a SECOND implementation
+short-circuiting the first. Neither is visible in review, and neither would have been found by
+reading the code — only by planting the defect the fixture claims to catch and watching what happens.
+
+*Three smaller findings from the same task.* A docblock is scanned source, for the SEVENTH time in
+this phase: `eligibility.ts`'s docblock names `autoFillOrder` while explaining why the ordering half
+is absent, so the absence scan failed the build on the documentation of its own rule and now strips
+comments (pinned both directions, `SourceScanner`'s discipline). `src/conditions/support.ts` is a
+file the plan does not name and the three types forced: `spanKeyAt` is the one definition of *"the
+fact this person holds on this date"*, and twenty-two predicates each deciding that for themselves
+would disagree only on the dates a promotion or a rotation change falls — which is to say, on the
+dates it matters. And a **violation's `explanation` does not go through the message table**:
+`ConditionPreview` takes it as an argument (AR-07) and `ConditionEvaluator`, fixed at Task 7, does
+not. **Recommended for early P2-2, before nineteen more types hardcode English** — threading the
+table through `evaluate()`/`coverage()` is a contract change worth making once, and it is cheaper at
+three types than at twenty-two.

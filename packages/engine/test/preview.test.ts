@@ -8,7 +8,7 @@ import { toleranceFor } from '../src/conditions/fairness_distribution';
 import { UnimplementedConditionTypeError, UnknownConditionTypeError } from '../src/evaluate';
 import { EN } from '../src/messages';
 import { NoPreviewForConditionTypeError, preview, previewWith } from '../src/preview';
-import { CATALOG, type RegistryEntry } from '../src/registry';
+import { CATALOG, registryEntry, type RegistryEntry } from '../src/registry';
 
 /**
  * CG-04's plain-language previews (P2 Task 9): *"preview text auto-generated from parameters"*.
@@ -198,12 +198,18 @@ describe('the matrix — every parameter a type reads is named by its preview', 
      * healthy tree, a deleted directory and a renamed module alike (P2 Task 6 measured exactly
      * that). What this check can really have gone wrong is finding nothing to check.
      */
-    it('runs over the four types whose wording the answered decisions settle, and their parameters', () => {
+    it('runs over every type that has a preview today, named one by one', () => {
         expect(previewed.map((entry) => entry.typeKey).sort()).toEqual([
+            // Task 10 — the three Hard placement types, preview and predicate together.
+            'eligibility',
+            // Task 9 — the four whose WORDING an answered owner decision settles. Their predicates
+            // land at Tasks 14, 16, 18 and 19 against the schema that is already here.
             'fairness_distribution',
             'min_gap',
+            'overlap_block',
             'rolling_hours_max',
             'target_per_period',
+            'vacation_block',
         ]);
 
         const parameters = previewed.flatMap((entry) =>
@@ -500,7 +506,8 @@ describe('what the dispatcher refuses, and how loudly', () => {
      * nothing, one layer along from rulings 41 and 49.
      */
     it('throws a distinguishable error for an implemented row with no preview yet', () => {
-        expect(() => preview(condition('overlap_block', {}), CONTEXT)).toThrow(NoPreviewForConditionTypeError);
+        expect(registryEntry('count_max')?.implemented).toBe(true);
+        expect(() => preview(condition('count_max', {}), CONTEXT)).toThrow(NoPreviewForConditionTypeError);
     });
 
     it('takes the catalog as an argument, so P3 can preview against a restricted one', () => {

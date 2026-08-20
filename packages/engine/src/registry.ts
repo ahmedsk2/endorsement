@@ -24,10 +24,13 @@ import type {
     LocationKind,
 } from './contract/types';
 import type { JsonSchema } from './contract/schema';
+import * as eligibility from './conditions/eligibility';
 import * as fairnessDistribution from './conditions/fairness_distribution';
 import * as minGap from './conditions/min_gap';
+import * as overlapBlock from './conditions/overlap_block';
 import * as rollingHoursMax from './conditions/rolling_hours_max';
 import * as targetPerPeriod from './conditions/target_per_period';
+import * as vacationBlock from './conditions/vacation_block';
 
 /**
  * Which way a type pushes, and it exists for a product hazard rather than for tidiness.
@@ -103,11 +106,17 @@ export interface RegistryEntry {
  * The order is the catalog's own so the two can be read side by side, and that is asserted rather
  * than merely intended.
  *
- * ## `evaluate` is absent on every entry, at this task
+ * ## `evaluate` arrives one task at a time, and `preview` may arrive AHEAD of it
  *
- * Tasks 10–20 fill them in. Until then a condition naming an implemented key throws
- * `UnimplementedConditionTypeError`, which is the honest answer: this engine cannot yet evaluate it,
- * and a silently ignored Hard rule is a control that appears to do nothing.
+ * Task 10 lands the three Hard placement types; Tasks 12–20 land the rest. Until an entry carries
+ * an evaluator, a condition naming its key throws `UnimplementedConditionTypeError` — the honest
+ * answer, because a silently ignored Hard rule is a control that appears to do nothing.
+ *
+ * The two fields are coupled in ONE direction, asserted in `preview.test.ts`: `evaluate` implies
+ * `preview` and `paramsSchema`, never the reverse. Four entries carry a schema and a sentence with
+ * no predicate behind them yet (Task 9 landed the four whose WORDING an owner decision settles),
+ * and that order is deliberate — the predicate then implements a schema that already exists,
+ * instead of the schema being back-formed from whatever the predicate happened to read.
  */
 export const CATALOG: readonly RegistryEntry[] = [
     {
@@ -186,6 +195,9 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'vacation_block',
         implemented: true,
+        evaluate: vacationBlock.evaluate,
+        preview: vacationBlock.preview,
+        paramsSchema: vacationBlock.PARAMS_SCHEMA,
         catalogDefault: 'hard',
         direction: 'block',
         locationKind: 'placement',
@@ -211,6 +223,9 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'eligibility',
         implemented: true,
+        evaluate: eligibility.evaluate,
+        preview: eligibility.preview,
+        paramsSchema: eligibility.PARAMS_SCHEMA,
         direction: 'block',
         locationKind: 'placement',
         needsCarryIn: false,
@@ -240,6 +255,9 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'overlap_block',
         implemented: true,
+        evaluate: overlapBlock.evaluate,
+        preview: overlapBlock.preview,
+        paramsSchema: overlapBlock.PARAMS_SCHEMA,
         // The ONE class the engine may assert, and the only row that states one it could: CG-07
         // calls it Hard AND built-in. The engine still never overrides the condition row — this is
         // a fact P3's gate may refuse a relaxation against, not an input to a severity.

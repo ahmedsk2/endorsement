@@ -53,6 +53,19 @@ mid-month cases proves nothing about the case a scheduler hits first, on the 1st
 on a green suite, from a type that works. Plant the defect the case exists to catch, watch the case
 go red, revert — and if it does not go red, the case is not yet a case.
 
+## Where the cases live
+
+`conditions/` holds one JSON file per case, named for the SHAPE it catches rather than for the type
+alone — `overlap-block-abutting-split-day-night`, not `overlap-block-1`. `conditions.test.ts` loads
+every file in that directory, validates it against the contract's own `Fixture` definition, asserts
+the file names itself the same thing inside, and runs it through the REAL `evaluate()` and
+`coverage()` rather than through a hand-called predicate: the emission rule, the severity stamp and
+the ordering are properties of the pipeline, and a test that skipped it would assert the predicate
+while leaving the three things most likely to be wrong at the horizon edge untested.
+
+The list of case names is asserted, one by one. A directory that has been moved or emptied iterates
+nothing and passes, and that looks exactly like a clean tree.
+
 ## The one case that ships with Task 7
 
 `contract-shapes.json` asserts the SERIALISER and the ORDER, not a rule. It constructs one

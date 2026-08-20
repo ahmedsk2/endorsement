@@ -49,6 +49,42 @@ jobs:
       - name: Type-check the engine package
         run: npx tsc --noEmit -p packages/engine
 
+      # D4 gives the engine TWO runtimes and CI exercised one. `npm test` transpiles the package
+      # per file through Vite and runs it in jsdom; `tsc --noEmit` reads types and emits nothing.
+      # Neither answers whether the module graph BUNDLES, or whether the result runs outside a
+      # bundler at all — and it cannot run from source: `moduleResolution: bundler` makes
+      # `import … from './calendar'` a directory import Node's resolver refuses, and Node's
+      # strip-only TypeScript mode refuses `evaluate.ts`'s constructor parameter properties. Both
+      # measured; both recorded in packages/engine/bin/evaluate.mjs.
+      #
+      # NOT added to `npm run build`, deliberately: that script is what the Dockerfile's asset
+      # stage runs, and the production image has no caller for this bundle (owner decision Y puts
+      # services/engine in P3). Building it there would put an artifact nothing uses into the
+      # image and would change a stage whose last surprise — `npm ci` exiting 0 with a declared
+      # workspace absent — cost a whole task to find.
+      - name: Bundle the engine for Node
+        run: npm run build:engine
+
+      # NAMED FOR WHAT IT IS, because the phase table's original wording — "the CI
+      # cross-validation job" — is exactly what a later reader would take as a commitment already
+      # met. THIS STEP IS SINGLE-IMPLEMENTATION REGRESSION COVERAGE (NF-08/QA-01). There is one
+      # conditions engine; running a corpus against it says it still does what it did yesterday,
+      # which is not the same claim as two implementations agreeing.
+      #
+      # The repository's one genuine cross-implementation check is elsewhere and runs under
+      # `npm test`: packages/engine/test/golden.test.ts asserts the TypeScript calendar mirror
+      # against tests/fixtures/calendar/golden.json, every value in which was produced by running
+      # App\Support\Calendar in PHP. §4.3's real cross-validation — the engine against the CP-SAT
+      # solver's evaluation mode — arrives in P4 with the solver that gives it a second side.
+      #
+      # What this step adds that `npm test` does not: the package under PLAIN NODE, reached only
+      # through its public entry (src/index.ts, the module `@engine` resolves to — every test in
+      # packages/engine/test imports by deep path), with the CLI's exit codes asserted per case.
+      # It also MEASURES NF-01 and prints the number; the measurement does not fail the build, the
+      # corpus above it does.
+      - name: Engine corpus and CLI through the compiled Node entrypoint (one implementation, not cross-validation)
+        run: npm run engine:corpus
+
       - name: Prepare environment
         run: |
           cp .env.example .env

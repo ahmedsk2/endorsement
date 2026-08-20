@@ -14,6 +14,10 @@
 /.zed
 /auth.json
 /node_modules
+# The Node bundle of packages/engine (P2 Task 23). Never committed: it is derived from src/ by
+# `npm run build:engine`, CI rebuilds it before every run, and a committed copy would be the
+# second artifact `tsconfig.base.json` refuses for the browser side for the same reason.
+/packages/engine/dist
 /public/build
 /public/fonts-manifest.dev.json
 /public/hot

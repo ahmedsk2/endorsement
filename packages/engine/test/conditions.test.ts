@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { addDays, isoWeekday, parseYmd, type Ymd } from '../src/calendar/ymd';
+import { addDays, compareYmd, isoWeekday, parseYmd, type Ymd } from '../src/calendar/ymd';
 import { carriedCredits } from '../src/conditions/holiday_equity';
 import { candidateStarts } from '../src/conditions/we_pairing';
 import type { Condition, EvaluationContext, Fixture, Person, Schedule } from '../src/contract/types';
@@ -1271,4 +1271,207 @@ describe('no condition module assembles a sentence of its own', () => {
             ),
         ).toEqual(['`On leave on ${duty.date}.` });', 'sameDay ? `A.` : `B.` });']);
     });
+});
+
+describe('the DATE a window- or cohort-located type resolves CG-01 scope at', () => {
+    /**
+     * WHEN the scope is read, which is one axis along from WHETHER it is read.
+     *
+     * P2-2's standing first plant — `personInScope` answering `true` — is now habitual and goes red
+     * on every one of these types. It says nothing about the date handed to it. Moving `window.from`
+     * to `window.to` at all nine sites left 571/571 green and the corpus green, because no case held
+     * a person whose SCOPED fact moved inside a window: the level-FILTER half of the same question
+     * is fixtured (`count-max-the-level-filter-is-read-at-the-window-start`,
+     * `target-per-period-the-level-is-read-at-the-period-start`) and CG-01's SCOPE half was not — on
+     * the very sites those two fixtures already cover for `levels`.
+     *
+     * It matters because the two filters answer different questions. `levels` is the type's own
+     * parameter and a department reads it beside the number; `scope` is the gate screen's own column
+     * and decides which rows apply to whom at all. A scope read at the wrong end of a block applies
+     * a rule to a window the person spent most of outside it — silently, and only where somebody
+     * rotates mid-block, which is to say only where it matters.
+     *
+     * ## TWO devices, and the second one is not decoration — it is what the first could not catch
+     *
+     * **`bounded`**, for a type whose windows all start at or before one nameable date: the last
+     * window START for a period- or week-windowed type, and `horizon.from` for a cohort type, whose
+     * window is the whole schedule. Two directions on one world:
+     *
+     *  - **Rotating only up to and including `readAt`** must leave the answer BYTE-IDENTICAL. Any
+     *    reader later than that date finds nobody on PICU and the type goes quiet.
+     *  - **Rotating only from the day AFTER it** must leave NO violation at all. This is the half
+     *    the review's species names — a filter asserted where it MATCHES and never where it must
+     *    not — since under any later reading somebody is back in scope and the rule fires again.
+     *
+     * **`rolling`**, for the three types whose windows are enumerated rather than supplied. The
+     * bounded device was WRITTEN FOR THESE FIRST AND STAYED GREEN on all three: `readAt` there is
+     * `horizon.to`, so the mutation's only surviving windows are the ones running past the horizon,
+     * and none of the three fixtures happens to carry a violation in one. That is this review's own
+     * species reappearing inside the case written to close it, so the probe is sharper here: the
+     * rotation is clipped to ONE date that IS a violating window's start, and every violation must
+     * then be located at a window starting on exactly that date. A reader `windowDays - 1` days out
+     * lands on the window ENDING there instead, which is a different window with a different answer.
+     *
+     * Only `unitSpans` is moved. `levelSpans` is left alone deliberately, so a type that reads a
+     * LEVEL for its own purposes — `composition` and `target_per_period` both do, at the period
+     * start — measures the same thing before and after, and the only thing that moved is the date
+     * the scope was asked about.
+     */
+    const SITES: {
+        typeKey: string;
+        fixture: string;
+        probe: 'bounded' | 'rolling';
+        readAt: string;
+        window: string;
+    }[] = [
+        {
+            typeKey: 'count_max',
+            fixture: 'count-max-the-scope-and-the-levels-list-intersect',
+            probe: 'bounded',
+            readAt: '2026-08-02',
+            window: 'its one week starts on the 2nd',
+        },
+        {
+            typeKey: 'count_min',
+            fixture: 'count-min-a-person-who-joined-part-way-through-the-window',
+            probe: 'bounded',
+            readAt: '2026-08-09',
+            window: 'the later of its two weeks starts on the 9th',
+        },
+        {
+            typeKey: 'target_per_period',
+            fixture: 'target-per-period-a-level-with-no-entry-in-the-map-has-no-target',
+            probe: 'bounded',
+            readAt: '2026-08-02',
+            window: 'its one period starts on the 2nd',
+        },
+        {
+            typeKey: 'composition',
+            fixture: 'composition-a-holiday-that-falls-on-a-weekend-is-its-own-bucket',
+            probe: 'bounded',
+            readAt: '2026-08-02',
+            window: 'its one period starts on the 2nd',
+        },
+        {
+            typeKey: 'free_day_min',
+            fixture: 'free-day-min-a-twenty-four-hour-call-on-the-fifth-leaves-the-sixth-occupied',
+            probe: 'rolling',
+            readAt: '2026-08-05',
+            window: 'the two-day window it fires on starts on the 5th',
+        },
+        {
+            typeKey: 'rolling_hours_max',
+            fixture: 'rolling-hours-max-the-scope-excludes-somebody-their-own-hours-would-flag',
+            probe: 'rolling',
+            readAt: '2026-08-01',
+            window: 'the averaged two-day window it fires on starts on the 1st',
+        },
+        {
+            typeKey: 'call_frequency_max',
+            fixture: 'call-frequency-max-the-scope-excludes-somebody-their-own-calls-would-flag',
+            probe: 'rolling',
+            readAt: '2026-08-01',
+            window: 'the two-day window it fires on starts on the 1st',
+        },
+        {
+            typeKey: 'fairness_distribution',
+            fixture: 'fairness-distribution-the-scope-excludes-somebody-their-own-share-would-flag',
+            probe: 'bounded',
+            readAt: '2026-08-01',
+            window: 'a cohort window is the whole schedule, so it starts at the horizon',
+        },
+        {
+            typeKey: 'holiday_equity',
+            fixture: 'holiday-equity-the-scope-excludes-somebody-their-own-credits-would-flag',
+            probe: 'bounded',
+            readAt: '2026-08-01',
+            window: 'a cohort window is the whole schedule, so it starts at the horizon',
+        },
+        {
+            typeKey: 'we_pairing',
+            fixture: 'we-pairing-the-scope-excludes-a-weekend-split-between-people-it-does-not-cover',
+            probe: 'bounded',
+            readAt: '2026-08-07',
+            window: 'a cohort window is the whole schedule, so it starts at the horizon',
+        },
+    ];
+
+    /** The fixture's own rows, with the unit half of the scope pinned so the device has a lever. */
+    const scopedToPicu = (fixture: Fixture): Condition[] =>
+        fixture.conditions.map((condition) => ({
+            ...condition,
+            scope: { ...(condition.scope ?? {}), unitKeys: ['PICU'] },
+        }));
+
+    const rotatingUntil = (context: EvaluationContext, through: Ymd): EvaluationContext =>
+        withPeople(context, (copy) => {
+            for (const person of copy.people) {
+                person.unitSpans = person.unitSpans
+                    .filter((span) => compareYmd(span.from, through) <= 0)
+                    .map((span) => ({ ...span, to: compareYmd(span.to, through) <= 0 ? span.to : through }));
+            }
+        });
+
+    const rotatingFrom = (context: EvaluationContext, notBefore: Ymd): EvaluationContext =>
+        withPeople(context, (copy) => {
+            for (const person of copy.people) {
+                person.unitSpans = person.unitSpans
+                    .filter((span) => compareYmd(span.to, notBefore) >= 0)
+                    .map((span) => ({ ...span, from: compareYmd(span.from, notBefore) >= 0 ? span.from : notBefore }));
+            }
+        });
+
+    /**
+     * A NAMED list rather than a derived one, with a floor under it. Deriving the sites from the
+     * registry would keep them in step with the catalog and would carry no `latestRead`, which is
+     * the whole assertion — a derived list would have to guess the date and would then be asserting
+     * its own guess. This is what fails when a tenth site is written and not listed.
+     */
+    it('covers every type that resolves the scope at a window rather than at a duty', () => {
+        expect(SITES.map((site) => site.typeKey).sort()).toEqual([
+            'call_frequency_max',
+            'composition',
+            'count_max',
+            'count_min',
+            'fairness_distribution',
+            'free_day_min',
+            'holiday_equity',
+            'rolling_hours_max',
+            'target_per_period',
+            'we_pairing',
+        ]);
+    });
+
+    for (const site of SITES) {
+        const fixture = FIXTURES.find((entry) => entry.name === site.fixture) as Fixture;
+
+        it(`${site.typeKey} reads it at ${site.readAt} — ${site.window}`, () => {
+            const conditions = scopedToPicu(fixture);
+            const asIs = evaluate(fixture.schedule, fixture.context, conditions);
+            const readAt = d(site.readAt);
+
+            // A world producing nothing makes every direction the same empty answer, which is the
+            // shape this whole describe exists to refuse.
+            expect(asIs.length, `${site.fixture} produces no violation under a PICU scope`).toBeGreaterThan(0);
+
+            if (site.probe === 'bounded') {
+                expect(evaluate(fixture.schedule, rotatingUntil(fixture.context, readAt), conditions)).toEqual(asIs);
+                expect(
+                    evaluate(fixture.schedule, rotatingFrom(fixture.context, addDays(readAt, 1)), conditions),
+                ).toEqual([]);
+
+                return;
+            }
+
+            const onlyThatDay = rotatingFrom(rotatingUntil(fixture.context, readAt), readAt);
+            const found = evaluate(fixture.schedule, onlyThatDay, conditions);
+
+            expect(found.length, 'rotating on the violating window’s own start day found nothing').toBeGreaterThan(
+                0,
+            );
+            expect([...new Set(found.map((violation) => (violation.location as { from: Ymd }).from))]).toEqual([
+                readAt,
+            ]);
+        });
+    }
 });

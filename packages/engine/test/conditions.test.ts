@@ -1396,6 +1396,49 @@ describe('five smaller readings the P2-2 review found unasserted', () => {
     });
 
     /**
+     * 2b. THE "NEVER REACHED" CHECK IS CLIPPED TO THE HORIZON, and pointing it at the whole day
+     * vector left the suite green — no case carried a named holiday in its carry-in tail.
+     *
+     * It is the most consequential shape this row has, because it fails SILENTLY IN BOTH HALVES at
+     * once. Credits are counted over the horizon alone (a cohort location has no date, so CG-03 is
+     * the type's own to keep), so a holiday sitting only in the tail credits nobody — and if the
+     * reached check consulted the unfiltered vector it would ALSO conclude the holiday was reached
+     * and print no coverage row. The rule would do nothing for that holiday and say nothing about
+     * it, which is exactly the state this row's skip sentence exists to prevent.
+     *
+     * The first two probes here went red and hid it: `reached` answering `false` and `true`
+     * unconditionally are both caught by the corpus. Only the third axis — WHICH days it looks at —
+     * was open, and it is the axis the P2-2 review names.
+     */
+    it('reports a named holiday that falls only in the carry-in tail as never reached', () => {
+        const world = FIXTURES.find(
+            (fixture) => fixture.name === 'holiday-equity-a-named-holiday-the-schedule-never-reaches-is-reported',
+        ) as Fixture;
+
+        const context = withPeople(world.context, (copy) => {
+            copy.days = [
+                {
+                    date: d('2026-07-30'),
+                    isoWeekday: 4,
+                    dayType: 'HOL',
+                    periodKey: null,
+                    holidays: [{ key: 'national-day', year: 2026 }],
+                },
+                ...copy.days,
+            ];
+        });
+
+        const schedule: Schedule = {
+            ...world.schedule,
+            horizon: { ...world.schedule.horizon, evaluableFrom: d('2026-07-30') },
+        };
+
+        expect(coverage(schedule, context, world.conditions)[0]?.skipped).toEqual(
+            (world.expectedCoverage as NonNullable<Fixture['expectedCoverage']>)[0]?.skipped,
+        );
+    });
+
+    /**
      * 3. `we_pairing` DE-DUPLICATES the people holding a slot on a day, and dropping the de-dup left
      * the suite green because no case gives one person two duties in one slot on one date. That is
      * a schedule `overlap_block` would refuse, but conditions are independent and a department may

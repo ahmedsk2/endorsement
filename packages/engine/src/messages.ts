@@ -781,6 +781,27 @@ export interface ViolationMessages extends Vocabulary {
      * prevent, and it was one branch away from the state already reported correctly.
      */
     historyShortOfWindowSkip(args: { from: string; to: string; historyAvailableFrom: string }): string;
+
+    /**
+     * `composition` met a duty on a date the day vector does not describe (P2-2 review).
+     *
+     * `Day` is *"one date of the horizon"* and this type's window is the PERIOD, which routinely
+     * opens before the horizon does — so a context carrying exactly what the contract promises can
+     * hold a duty whose day type is genuinely unknown here. `dayType` is never re-derived from
+     * `weekendDays` (AR-08, and holiday beats weekend deliberately), so there is no honest local
+     * answer; before this sentence existed the type threw a `RangeError` on that ordinary input.
+     *
+     * Reported PER PERSON, because the buckets are per person: a colleague whose every duty the
+     * vector describes still gets a real answer, and suppressing the whole window for everybody
+     * would hide it. The date is named so the reader knows how far the vector has to reach.
+     */
+    unknownDayTypeSkip(args: {
+        personKey: string;
+        first: string;
+        dates: number;
+        from: string;
+        to: string;
+    }): string;
 }
 
 /** The whole table. What `EN` implements and what a second language would. */
@@ -1527,6 +1548,15 @@ export const EN: Messages = {
             `only to ${historyAvailableFrom}, so its first days were never supplied. A window that is ` +
             'merely shorter is a correct answer to a smaller question; one whose first days are ' +
             'unknown is a wrong answer to the right one, so this window was left unjudged.'
+        );
+    },
+
+    unknownDayTypeSkip({ personKey, first, dates, from, to }) {
+        return (
+            `The period ${from} to ${to} was not judged for "${personKey}": ` +
+            `${EN.plural(dates, 'duty falls', 'duties fall')} on a date the day vector does not ` +
+            `describe, starting at ${first}. Whether a date is a weekday, a weekend or a holiday is ` +
+            'the department’s own answer and is never re-derived here, so the mix could not be counted.'
         );
     },
 };

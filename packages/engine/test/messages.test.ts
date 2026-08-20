@@ -227,6 +227,28 @@ describe('the violation half of the message table', () => {
     });
 
     /**
+     * The FIFTH, for the same reason and from the same review. `composition`'s window is the PERIOD
+     * and `Day` promises the HORIZON, so a context carrying exactly what the contract states can
+     * hold a duty whose day type is unknown here — which used to be a `RangeError` rather than a
+     * row. A corpus case for it would be a case built around an under-supplied context, which is
+     * not data anybody should copy, so the state is reached by trimming the vector here.
+     */
+    it('renders the undescribed-day reason through the table too', () => {
+        const fixture = FIXTURES.find(
+            (row: Fixture) => row.name === 'composition-the-period-that-begins-in-the-published-month',
+        ) as Fixture;
+
+        const from = fixture.schedule.horizon.from;
+        const context = { ...fixture.context, days: fixture.context.days.filter((day) => day.date >= from) };
+
+        expect(
+            coverage(fixture.schedule, context, fixture.conditions, SHOUTING)[0]?.skipped.map(
+                (skipped) => skipped.reason,
+            ),
+        ).toEqual(['«unknownDayTypeSkip»']);
+    });
+
+    /**
      * The non-vacuity floor under all three checks above.
      *
      * A corpus directory that has been moved or emptied iterates nothing, produces no violation and

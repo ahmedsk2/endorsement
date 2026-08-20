@@ -1274,6 +1274,61 @@ describe('no condition module assembles a sentence of its own', () => {
     });
 });
 
+describe('composition, on a context whose day vector stops at the horizon', () => {
+    /**
+     * `Day` is documented as *"one date of the horizon"* and `ContextBuilder` builds the vector over
+     * whatever range its caller asked for, so a context describing the horizon and no more is
+     * ordinary rather than malformed. `composition`'s window is the PERIOD, which routinely opens
+     * before the horizon does — that is what the seam case in the corpus is for — and it bucketed
+     * every duty in that window through `days.get()`, which THROWS on a date the vector does not
+     * describe.
+     *
+     * So the type crashed on a contract-valid context, and only on the shape it is most likely to
+     * meet: a block that began in the already-published month. The corpus never saw it because its
+     * seam case supplies day rows across the whole tail, which is generous rather than required.
+     *
+     * A crash is the wrong answer twice over. `dayIndex().get()` throws to stop a HARD rule passing
+     * for want of data, and this is a target rather than a bar; the package already has the honest
+     * answer for a legitimate reach past the vector — `find()` and a coverage row, which is what
+     * `clinic_conflict` does for its post-duty window on the last date of a month.
+     */
+    const world = FIXTURES.find(
+        (fixture) => fixture.name === 'composition-the-period-that-begins-in-the-published-month',
+    ) as Fixture;
+
+    /** The same world with the day vector trimmed to the horizon, which is all `Day` promises. */
+    const horizonDaysOnly = (): EvaluationContext =>
+        withPeople(world.context, (copy) => {
+            copy.days = copy.days.filter(
+                (day) =>
+                    compareYmd(day.date, world.schedule.horizon.from) >= 0 &&
+                    compareYmd(day.date, world.schedule.horizon.to) <= 0,
+            );
+        });
+
+    it('reports the person whose duties it cannot bucket, rather than throwing', () => {
+        const context = horizonDaysOnly();
+        const rows = coverage(world.schedule, context, world.conditions)[0];
+
+        // p-ali holds two duties on 27 and 28 July, inside the block and outside the vector. Their
+        // period is unjudged and NAMED; nothing about p-noor, whose duties are all described.
+        expect(rows?.skipped.map((row) => row.reason.includes('p-ali'))).toEqual([true]);
+        expect(rows?.skipped[0]?.reason).toContain('2026-07-27');
+        expect(rows?.skipped[0]?.from).toBe(d('2026-07-26'));
+
+        expect(evaluate(world.schedule, context, world.conditions)).toEqual([]);
+    });
+
+    /**
+     * And the vector reaching across the whole window still answers in full, so the row above is a
+     * report of missing input rather than a rule that quietly stopped working. Same world, same
+     * conditions, the corpus's own generous day vector: no skip at all.
+     */
+    it('says nothing when the vector reaches across the whole period', () => {
+        expect(coverage(world.schedule, world.context, world.conditions)).toEqual(world.expectedCoverage);
+    });
+});
+
 describe('a window whose left part no history reaches is never DROPPED, only reported', () => {
     /**
      * `wholeWindowVerdict` answers `{measure: false, skip: null}` for a window reaching back before

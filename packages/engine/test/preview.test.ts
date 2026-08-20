@@ -5,6 +5,7 @@ import type { Condition, Day, EvaluationContext } from '../src/contract/types';
 import { CONTRACT_SCHEMA, type JsonSchema } from '../src/contract/schema';
 import { ASSERTION_KEYWORDS, keywordsUsedBy } from '../src/contract/validate';
 import { toleranceFor } from '../src/conditions/fairness_distribution';
+import { clauseFor } from '../src/conditions/target_per_period';
 import { UnimplementedConditionTypeError, UnknownConditionTypeError } from '../src/evaluate';
 import { EN } from '../src/messages';
 import { NoPreviewForConditionTypeError, preview, previewWith } from '../src/preview';
@@ -811,5 +812,44 @@ describe('the message table — English today, and a second one is possible tomo
 
         expect(notFromTheTable).toEqual([]);
         expect(previewed.length).toBeGreaterThanOrEqual(14);
+    });
+
+    /**
+     * THE ONE THING THE CHECK ABOVE STRUCTURALLY CANNOT SEE, and it had a real occupant.
+     *
+     * A type may assemble a FRAGMENT and pass it into a table sentence, and the outer tag then
+     * swallows the fragment whole — the shouting table returns `«targetPerPeriod»` whatever its
+     * `modifiers[].clause` says. `clauseFor()` was exactly that: it routed its two predicate clauses
+     * through the table and kept `'the period is any period at all'` and a `' and '` joiner inline,
+     * green under every check in this file. Found by surveying the package's string literals rather
+     * than by a guard, which is the honest way to record how it was found.
+     *
+     * So the fragment builder is asserted at ITS OWN boundary, which is the only place the fragment
+     * is visible. The joiner is now `conjoin` — a modifier has exactly two possible members, so this
+     * is `conjoin`'s two-item case and a local `' and '` was a second definition of one connective.
+     */
+    it('renders a modifier CLAUSE through the table too, including the one that names no predicate', () => {
+        const shouting = Object.fromEntries(
+            Object.keys(EN).map((key) => [key, () => `«${key}»`]),
+        ) as unknown as typeof EN;
+
+        // `conjoin` stays REAL so the composition is visible: a fully shouting table would return
+        // `«conjoin»` for the two-member case and hide which fragments went into it.
+        const leaves = { ...shouting, conjoin: EN.conjoin };
+
+        expect(clauseFor({}, leaves)).toBe('«anyPeriodClause»');
+        expect(clauseFor({ vacationWeeksAtLeast: 2 }, leaves)).toBe('«vacationWeeksAtLeast»');
+        expect(clauseFor({ vacationWeeksAtLeast: 2, periodWeeksAtMost: 4 }, leaves)).toBe(
+            '«vacationWeeksAtLeast» and «periodWeeksAtMost»',
+        );
+
+        // And the JOINER is the table's too, not a local `' and '`.
+        expect(clauseFor({ vacationWeeksAtLeast: 2, periodWeeksAtMost: 4 }, shouting)).toBe('«conjoin»');
+
+        // The English did not move with it: both fragments still read as they did.
+        expect(clauseFor({}, EN)).toBe('the period is any period at all');
+        expect(clauseFor({ vacationWeeksAtLeast: 2, periodWeeksAtMost: 4 }, EN)).toBe(
+            'a person has at least 2 vacation weeks in the period and the period is at most 4 weeks long',
+        );
     });
 });

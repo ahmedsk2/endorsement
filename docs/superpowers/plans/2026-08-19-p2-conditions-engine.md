@@ -2494,3 +2494,21 @@ given honestly, not a sentence on a gate screen, and routing it through a locale
 translator between a crash and the person debugging it. Schema `description` strings are the one
 genuinely borderline set: they are authored documentation of a parameter, they are not rendered by
 anything today, and P3's gate screen is where that decision is owed.
+
+**One residual found AFTER the three proofs were green, by surveying the package's string literals
+rather than by a guard — and it is the residual named two paragraphs up, with an occupant.**
+`target_per_period`'s `clauseFor()` routed both of its predicate clauses through the table and kept
+`'the period is any period at all'` and a `' and '` joiner inline. It was green under every check in
+`preview.test.ts`, and STRUCTURALLY so: a type may assemble a FRAGMENT and pass it into a table
+sentence, and the outer tag swallows the fragment whole — the shouting table returns
+`«targetPerPeriod»` whatever `modifiers[].clause` says. Fixed (`anyPeriodClause()`, and the joiner is
+now `conjoin`, since a modifier has exactly two possible members and a local `' and '` was a second
+definition of one connective), and asserted at the FRAGMENT's own boundary, which is the only place
+it is visible: `clauseFor()` is called with a table whose leaves shout and whose `conjoin` is real, so
+the composition shows rather than collapsing to one tag. Planted by restoring the inline literal —
+red on the new check, green on the whole-catalog one and on the parameter matrix, which is the
+measurement that says the new check earns its place rather than duplicating one.
+
+*And the mechanical lesson, paid for once more.* The plant script's `git checkout --` restored
+`target_per_period.ts` from HEAD and took an UNCOMMITTED fix with it. The plan's own warning names
+this; it costs a re-application every time it is ignored.

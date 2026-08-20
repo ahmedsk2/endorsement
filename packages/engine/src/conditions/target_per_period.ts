@@ -116,7 +116,10 @@ export function clauseFor(when: TargetModifierWhen, messages: PreviewMessages): 
         clauses.push(messages.periodWeeksAtMost(when.periodWeeksAtMost));
     }
 
-    return clauses.length === 0 ? 'the period is any period at all' : clauses.join(' and ');
+    // Both the degenerate clause and the joiner come from the table, and the joiner is `conjoin`
+    // rather than a second `' and '`: a modifier has exactly two possible members, so this is
+    // `conjoin`'s two-item case and a local joiner would be a second definition of one connective.
+    return clauses.length === 0 ? messages.anyPeriodClause() : messages.conjoin(clauses);
 }
 
 /** CG-04's sentence: the base target per level, and the effective target at every branch. */

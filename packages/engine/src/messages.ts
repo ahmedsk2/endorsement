@@ -154,6 +154,15 @@ export interface PreviewMessages extends Vocabulary {
     /** A modifier's `periodWeeksAtMost` predicate, as a clause. */
     periodWeeksAtMost(weeks: number): string;
 
+    /**
+     * A modifier whose `when` names no predicate at all — the clause for *"always"*.
+     *
+     * It has to say something: owner decision M makes a modifier REPLACE the target, so a branch
+     * that applied unconditionally and printed a blank where its condition belongs would read as a
+     * second base target rather than as an exception that always fires.
+     */
+    anyPeriodClause(): string;
+
     /** Owner decision R: the days arrive from the caller; P2 stores none of them. No parameters. */
     unwantedDayBlock(): string;
 
@@ -426,6 +435,10 @@ export const EN: Messages = {
 
     periodWeeksAtMost(weeks) {
         return `the period is at most ${EN.plural(weeks, 'week', 'weeks')} long`;
+    },
+
+    anyPeriodClause() {
+        return 'the period is any period at all';
     },
 
     unwantedDayBlock() {

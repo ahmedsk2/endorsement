@@ -2254,3 +2254,52 @@ dates it matters. And a **violation's `explanation` does not go through the mess
 not. **Recommended for early P2-2, before nineteen more types hardcode English** — threading the
 table through `evaluate()`/`coverage()` is a contract change worth making once, and it is cheaper at
 three types than at twenty-two.
+
+### From Task 11 (2026-08-20) — §4.1 was prose, `composition` is affordable, and the needle count is five not two
+
+**The measurement the task asked for, taken.** `app/Support/FakeRules.php` was planted with
+`public static function minGap()`, the literals `'min_gap'`, `'severity' => 'hard'` and
+`'eligibility'`, and a loop building a `$violations` array — two catalog types implemented in PHP.
+`php artisan test` returned **rc=0, 1685 passing**. Design §4.1's *"No PHP implementation of the
+rules exists anywhere"* had nothing behind it, and now does.
+
+**Three needle decisions differ from the task's text, each measured over the tree rather than
+predicted.**
+
+1. **`composition` IS bought.** The task declines it on the ground that it *"collides with ordinary
+   English in docblocks about object composition"*. Over `app/`, `routes/` and `database/` the word
+   appears in no docblock at all — and the scan strips docblocks regardless, which is the same
+   argument that bought `eligibility`. Zero hits, so it costs nothing.
+2. **`severity` IS bought**, though the task's list does not name it. Zero hits, and a PHP rule
+   engine grades violations.
+3. **`violation` is bought CASE-INSENSITIVELY, at the price of one allow-list entry.** Lowercase
+   `violation` measures zero and misses `class Violation`, `$violations` and `ViolationChecker` —
+   every form a PHP implementation would actually take, so a case-sensitive needle would be measuring
+   zero for the wrong reason. Case-insensitively it hits one file:
+   `RosterImport`'s `UniqueConstraintViolationException`, Laravel's own vocabulary in a CSV importer,
+   which is not the file a scheduling rule is born in — the test ruling 42 actually sets.
+
+**So the allow-list does NOT start empty, and that is the better outcome.** It carries one entry, per
+file **and per needle** — `RosterImport` is exempt from `violation` alone and still scanned for the
+other twenty-seven, where a whole-file exemption would have blinded the guard to a `min_gap` landing
+in that file later. And because the list has an entry, the staleness twin iterates something: Task
+6's finding was that a staleness check over an allow-list empty by design passes on a healthy tree, a
+deleted directory and a renamed module alike, and this one does not have that problem.
+
+**Two other departures.** The scope is `app/`, `routes/` and `database/` rather than `app/` alone —
+`CalendarIsTheOnlyConverterTest`'s three roots, for its recorded reason (I1: narrow scope is the
+recurring weakness in these guards), and all three measured zero so the widening is free. And the
+class is **five tests, not the two the task's arithmetic assumes** (`1685 + 2 = 1687`): the guard
+itself, the staleness twin, a non-vacuity floor on the file scan, a non-vacuity floor on the CG-07
+parse, and the stripper pinned in both directions. **1685 + 5 = 1690.**
+
+**Proved in four directions, each by planting.** The rule in code → red, naming the file and four
+needles. The identical text moved entirely inside a docblock → GREEN, which is the stripper proving
+it strips. A changed CG-07 table header → the parse floor red rather than the needle set silently
+collapsing to five. A stale allow-list entry, a stripper returning the empty string, and the scan
+pointed at a missing directory → each twin red.
+
+**A residual worth naming rather than implying:** `resources/js` is not scanned. A rival rule
+implementation there would be in the engine's own language, and a needle set of snake_case type keys
+is the wrong shape to find one. `@engine` resolving through the Vite alias makes the real engine
+reachable; nothing yet makes a rival unreachable.

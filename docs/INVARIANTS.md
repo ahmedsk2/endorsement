@@ -696,6 +696,32 @@ place a scheduling rule is allowed to exist.*
   must not evaluate conditions, and both are satisfied by the crossing living in the engine's own
   namespace and reading those modules' data.
 
+- **"No PHP implementation of the rules exists anywhere" is now ENFORCED, by
+  `tests/Feature/Build/RulesLiveOnlyInTheEngineTest.php`** (P2 Task 11). It was prose with nothing
+  behind it until then, and that was measured rather than assumed: `app/Support/FakeRules.php` was
+  planted carrying `minGap()`, the literals `'min_gap'`, `'severity' => 'hard'` and `'eligibility'`,
+  and a `$violations` loop — **`php artisan test` returned rc=0 with 1685 passing.** The guard
+  needles the **23 CG-07 type keys DERIVED from `docs/munawib/SPEC.md`'s own table** (located by its
+  header, never a line number, so a twenty-fourth row becomes a needle the same day) plus
+  `violation`, `severity`, `hard_block`, `soft_block` and `rank_order`, over **`app/`, `routes/` and
+  `database/`**, with **comments stripped** — `ClinicRoster`, `AvailabilitySummary` and `RotaFill`
+  each say *"MUST NEVER BECOME AN ELIGIBILITY COMPUTATION"* in a docblock, and a guard that fails the
+  build on the documentation of its own rule teaches people to delete the documentation
+  (`RotaAccessTest`'s recorded departure). **Measured, per ruling 42:** every type key measured ZERO,
+  `composition` included — the task's own text predicted it would collide with docblock prose and
+  against this tree it does not, and the stripper removes docblocks anyway; `violation` is bought
+  CASE-INSENSITIVELY, because the case-sensitive form misses `class Violation`, `$violations` and
+  `ViolationChecker`, which are the forms a PHP implementation would actually take. **The allow-list
+  is per file AND per needle** — `RosterImport` is exempt from `violation` alone
+  (`UniqueConstraintViolationException`) and still scanned for the other twenty-seven; a whole-file
+  exemption would blind the guard to a `min_gap` appearing in that file later. `condition` is NOT
+  bought (two files, one of them `DepartmentSetup`, which is plausibly adjacent to where P3's gate
+  lands) and that is a stated residual, as is `resources/js`, which this needle set is the wrong
+  shape to search. **Proved in four directions by planting:** the rule in code → red naming the file
+  and four needles; the identical text inside a docblock only → GREEN, the stripper proving it
+  strips; a changed table header → the derivation twin red; a stale allow-list entry, a stripper that
+  eats code, and a scan pointed at a missing directory → each twin red.
+
 - **"No PHP implementation of the rules exists anywhere" is scoped to rule SEMANTICS, not to data
   access — and the leak risk is the serialiser, not the loader.** Flattening rota spans into a
   per-date unit vector implements no rule. Sending only the "eligible" people would be `eligibility`

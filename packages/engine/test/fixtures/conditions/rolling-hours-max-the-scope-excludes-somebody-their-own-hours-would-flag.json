@@ -1,0 +1,215 @@
+{
+    "name": "rolling-hours-max-the-scope-excludes-somebody-their-own-hours-would-flag",
+    "why": "CG-01's scope, asserted rather than merely carried — the standing first plant for a new window-located type, after five of Tasks 15-17 forty-seven plants stayed green on exactly this. Three people hold identical twenty-four-hour pairs and would each be flagged on their own figures; the scope names PICU and R1, so p-noor (R1 on NICU) and p-zaid (R2 on PICU) are excluded by one filter each and only p-ali is judged. It also exercises the averaged branch of the violation sentence, where the printed cap is the rule's own figure multiplied out rather than the number a reader would find on the condition row.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "NICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-zaid",
+                "levelSpans": [
+                    {
+                        "key": "R2",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "day",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 1200,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-03",
+            "evaluableFrom": "2026-07-25",
+            "evaluableTo": "2026-08-10"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-01",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-02",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-zaid",
+                "date": "2026-08-01",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-zaid",
+                "date": "2026-08-02",
+                "slotKey": "day"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-rolling",
+            "typeKey": "rolling_hours_max",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "hours": 6,
+                "windowDays": 1,
+                "averagingWeeks": 2
+            },
+            "rank": 3,
+            "scope": {
+                "unitKeys": [
+                    "PICU"
+                ],
+                "levelKeys": [
+                    "R1"
+                ]
+            }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-rolling",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-ali",
+                "from": "2026-08-01",
+                "to": "2026-08-02",
+                "contributing": [
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-01",
+                        "slotKey": "day"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-02",
+                        "slotKey": "day"
+                    }
+                ]
+            },
+            "explanation": "24 h of duty in the 2 days from 2026-08-01 to 2026-08-02; at most 12 h are allowed. Hours are split at midnight, so a duty running overnight counts on both of the dates it occupies, and slots that do not count toward duty hours are left out. The 12 h figure is 2 of the rule's own windows taken together rather than the number written on the rule itself.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-rolling",
+            "evaluatedWindows": 4,
+            "skipped": []
+        }
+    ]
+}

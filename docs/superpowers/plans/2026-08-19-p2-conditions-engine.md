@@ -1631,9 +1631,13 @@ fail another, and that case is in the corpus. `countsHours: false` slots are exc
 on consecutive days while a `min_gap` of three days forbids them; both ship and the corpus contains a
 case where they disagree. Its window is **rolling and expressed in days** with an explicit unit, never
 "4 weeks", so a department changing `weekend_days` cannot silently move a duty-hours rule
-(`weekStartIsoDay()` is derived from that list). Its denominator is **calendar days**, following
+(`weekStartIsoDay()` is derived from that list). ~~Its denominator is **calendar days**, following
 `App\Support\MissedDays`' own precedent, and owner decision J flags that ACGME's intent is arguably
-the availability reading.
+the availability reading.~~ **SUPERSEDED BY THE ANSWER TO OWNER DECISION J (2026-08-20): the
+denominator is ELIGIBLE DAYS.** The sentence above was written before J was answered and was never
+updated, so it stated the opposite of the shipped rule for two days — recorded here rather than
+silently rewritten, because a task brief contradicting an answered decision is exactly the trap the
+answer's own "stated once so it is on the record" paragraph exists to prevent.
 
 ### Task 19: `fairness_distribution` and `holiday_equity`
 
@@ -2005,15 +2009,21 @@ limited transition time"*, which CG-08 drops entirely — and without it the pre
 legitimate handover overlap or silently permits an unbounded one.
 
 **W. `holiday_equity` — unknown versus zero, and which year.**
-> **ANSWERED 2026-08-20 — default CONFIRMED. `priorCredits` starts at ZERO for everyone**, not
+> **ANSWERED 2026-08-20 — default OVERRIDDEN. `priorCredits` starts at ZERO for everyone**, not
 > `null`/unknown. Year one distributes on that year's own assignments alone.
+>
+> **LABEL CORRECTED AT TASK 19.** This block shipped saying *"default CONFIRMED"* while the
+> default printed beneath it says `null` means **UNKNOWN** — the two are opposite readings of the
+> same field, and the entry contradicted itself. The ANSWER was never in doubt (zero); only the
+> word was wrong, and an entry a reader can catch out is one they stop trusting. The default
+> below is therefore marked SUPERSEDED rather than confirmed.
 >
 > **The limitation is accepted knowingly and belongs in the preview, not just here:** duty covered on
 > paper rotas before this system existed is invisible, so year one spreads evenly on top of a past
 > that may not have been. If that becomes a complaint, the fix is an operator-entered prior-credit
 > field, which is additive and needs no schema change to the condition.
 
-*Confirmed default follows:*
+*Superseded default follows:*
 *Default: `priorCredits[person][holiday]` is **`number | null`** with `null` meaning **UNKNOWN**;
 `historyAvailableFrom` states how far back history reaches; when it does not cover the requested
 lookback the type evaluates the **in-schedule spread only** and reports the years it could not see
@@ -2648,3 +2658,144 @@ empty and never ASSUMED empty"* and nothing asserted the second half;
 `max-gap-the-gap-that-begins-in-the-published-month` supplies one, and needs to — it is what closes
 the trailing gap so the seam guard's single expected coverage row is not competing with an open-edge
 row.
+
+### From Tasks 18–20 (2026-08-20) — the catalog is complete, and owner decision L's line was in the wrong place
+
+**The last five predicates.** `rolling_hours_max`/`call_frequency_max`,
+`fairness_distribution`/`holiday_equity` and `we_pairing` ship, so **all 22 implemented registry
+entries now carry an evaluator, a preview and a params schema.** `implemented: true` was a
+DECLARATION for most of this phase — an entry could say so while carrying no predicate at all — and
+`registry.test.ts` now asserts the declaration and the reality as one named set. `Violation` is
+still five fields, `evaluate()` still returns `Violation[]`, `Location` is still a three-member
+union: **P2-2 added eleven predicates and no shared shape.**
+
+#### 1. Owner decision L's dividing line is NOT cap-versus-floor. It is AUTHORED versus DERIVED limit
+
+The decision lets a **cap** evaluate a window the engine can only see part of, on the stated ground
+that *"a count that is too low never exceeds a limit"*. That argument silently assumes the limit is
+a number a department wrote down.
+
+`call_frequency_max`'s is not. Owner decision J's answer makes the allowance
+`floor(availableDays / n)` — computed from the window's OWN contents — so a partial window shrinks
+the allowance alongside the count and false-positives **exactly as a floor does**. One measured
+example is in the corpus: the window reaching two days outside the evaluable range shows one call
+against an allowance of zero. It therefore calls `wholeWindowVerdict`, and `rolling_hours_max` — a
+cap with an authored figure, landed in the same task — does not. Both are asserted on ONE world so
+the pair cannot drift into looking like two unrelated choices.
+
+`partialWindowSkip`'s stated reason was widened with it. It shipped saying *"a count that is short
+cannot exceed a cap, but it can fall below a floor every time"*, which is FALSE for this type, and a
+coverage row a reader can catch out is one they stop reading — `carryInSkip`'s own recorded lesson,
+in the sentence beside it.
+
+**Decision J's per-PERSON half goes the other way too.** Decision L suppresses a floor for somebody
+who joined mid-window, because an absolute number they could not have reached is a false positive.
+This rule's number is not absolute — the days before they joined are already out of their
+denominator — so `midWindowJoinSkip` is deliberately NOT called, and suppressing anyway would delete
+the rule for every new starter's first window, which is when a department is likeliest to over-call
+them.
+
+#### 2. Owner decision W's entry contradicted itself, and the plan said the opposite of the shipped rule twice
+
+Two documentation defects found by implementing against them, both corrected above rather than
+silently rewritten:
+
+- **W was labelled *"default CONFIRMED"*** while the default printed beneath it says `null` means
+  UNKNOWN — the opposite of the answer's own sentence (*"starts at ZERO for everyone"*). The answer
+  was never in doubt; the word was wrong, and the default is now marked superseded.
+- **Task 18's own brief still said the denominator is *"calendar days, following `MissedDays`'
+  precedent"***, written before J was answered and never updated. It stated the opposite of the
+  shipped rule.
+
+The contract carried the same defect in code: `contract/types.ts` and `contract/schema.ts` both
+asserted `null` means UNKNOWN. Both now record the answer. **The SHAPE is deliberately unchanged** —
+`Record<holidayKey, number | null>` stays, so `App\Support\Engine` may serialise either spelling and
+`holiday_equity`'s `carriedCredits()` is the one definition of the reading.
+
+#### 3. `holiday_equity` per-holiday is structurally incapable of firing, and the threshold is a definition
+
+Written per holiday key first, and unfalsifiable: a one-month horizon holds at most one YEAR of any
+one holiday, so every person holds nought or one of it and `max − min` can never exceed one. The
+rule would have been unable to produce a finding in the very year decision W says it must distribute
+in. **The comparison is over the NAMED SET**, which is also what CG-07's cell says — *"spread named
+holidays across people & years"*, plural on both axes.
+
+`max − min <= 1` is a DEFINITION rather than an invented number: a credit is indivisible, so the
+fairest reachable allocation of `k` credits over `n` people has a spread of at most one, and
+anything wider contains a credit that could have gone to somebody holding fewer. CG-07 gives this
+row no tolerance parameter and none was invented. **STATED RESIDUAL: availability does not enter** —
+somebody on leave across a whole holiday cannot take it, and `fairness_distribution` is the type
+that owns pro-rating.
+
+**`lookbackYears` cannot be verified for DEPTH inside the engine.** `priorCredits` arrives already
+aggregated, and turning `historyAvailableFrom` into a count of rule-calendar years needs the Hijri
+conversion decision AA keeps out of this package. What it can prove is the case where the caller had
+nothing to aggregate, and that is reported through `coverage()`.
+
+#### 4. `fairness_distribution`'s `spread` threshold is DERIVED from `deviation`'s
+
+The sum of the two extremes' own tolerances — the widest gap `deviation` would have permitted
+between them — so a schedule clean under one mode is clean under the other **by construction**. A
+threshold of its own lets one mode of one rule call a draft fair while the other calls it unfair,
+with nothing on either screen able to adjudicate. Recorded as an inference; no document states it.
+
+#### 5. `we_pairing`: the parameter shape was chosen by the PROBE GENERATOR, and one branch was dead
+
+A pair is a `{first, second}` OBJECT rather than a two-element array because `preview.test.ts`'s
+probe generator builds an array's low probe as a ONE-element list: an inner `minItems: 2` would be
+refused by the very schema the matrix is probing, and the matrix would report a crash instead of an
+ignored parameter. Worth knowing before the next type reaches for a tuple.
+
+A **SPLIT** is a violation and a **GAP** is not — one day covered and the other held by nobody is a
+coverage requirement (SL-03, P3) rather than a pairing preference. Both readings are in the corpus
+on one world.
+
+And the emission-rule check inside its scan was **DEAD CODE**: for a two-day pair,
+`windowTouchesHorizon` holds for every start in `[from − 1, to]`, which is exactly what
+`candidateStarts` returns. It is deleted, the rule is stated once in the bounds that do the work,
+and a property in `conditions.test.ts` ties the two together in both directions.
+
+#### 6. FORTY-THREE PLANTS, and the ranking is what is worth keeping
+
+Red, naming their own case: 38. Green: 3, plus 2 more found in the same sweeps and closed with them.
+**The standing `personInScope` → `true` first plant went RED on all five types** — the habit works,
+and this is the first phase task in which no type shipped with an unasserted scope.
+
+The three that stayed green, and their species:
+
+1. **`spread` never updating `quietest`** — the world had TWO people, so the array head already WAS
+   the quietest. Closed by a third person listed FIRST and neither extreme.
+2. **`holiday_equity`'s `holidays` filter deleted** — no case carried a holiday in its day vector
+   that the rule did not name. *A filter asserted only where it MATCHES*, which is Tasks 15–17's
+   finding 3 and Task 9's species, now at seven instances in the phase.
+3. **`we_pairing`'s explicit `windowTouchesHorizon` check** — not a corpus gap at all. See item 5.
+
+Two more, closed in the same passes: **`fairness_distribution`'s and `holiday_equity`'s horizon
+filters** (no case had a duty, or a holiday day, outside its own horizon — and for the first, a
+fixture cannot express one without becoming confusing corpus data, so it is asserted in
+`conditions.test.ts` byte-identically rather than by length). And a sixth, at `we_pairing`'s far
+edge: **`candidateStarts` stopping one day early**, because no case had a preferred pair beginning
+on its LAST horizon date. That case is only the second in the whole package to supply a
+`followingDuties` the contract says must never be assumed empty.
+
+**One plant is green BY CONSTRUCTION and is not a hole.** Relaxing `<=` to `<` in either fairness
+comparison changes nothing on any input: `1 <= 1 + 1e-9` and `1 < 1 + 1e-9` are both true, so
+`COMPARISON_EPSILON` — not the operator — is the control, and the corpus pins the BOUNDARY either
+side of it. Recorded on the constant rather than left for the next author to rediscover.
+
+**One process note, paid for once.** The plant runner reverts with `git checkout --`, so an
+uncommitted fix made between two sweeps is destroyed and the next sweep reports RED for an import
+error rather than for the defect. *"Commit before planting"* is not advice about hygiene; it is what
+makes the sweep's own result readable.
+
+#### 7. Two smaller things
+
+**`preview.test.ts`'s *"an implemented row with no preview yet"* exemplar has run out of real rows.**
+It moved from `count_max` to `holiday_equity` to `we_pairing` as each was written, and at Task 20
+the catalog is complete — so it is a CONSTRUCTED entry now, with a floor asserting that no shipped
+row is in that state either. A probe pointed at a row that has since been written passes while
+checking nothing.
+
+**A cohort location has no date, so CG-03 is the TYPE's to keep.** `evaluate()`'s emission rule is
+unconditionally true for one, so all three cohort-located types filter their own inputs to the
+horizon. That is not visible in the union and it cost two green plants to establish.

@@ -929,6 +929,105 @@ place a scheduling rule is allowed to exist.*
   all after a live disclosure. Its query budget is **watched breaching** on a populated fixture
   before it is trusted; a budget measured on an empty grid only ever proves the empty case.
 
+- **THE CATALOG IS COMPLETE, and `implemented: true` is now the same statement as the reality**
+  (P2-2 Tasks 18–20: `rolling_hours_max`, `call_frequency_max`, `fairness_distribution`,
+  `holiday_equity`, `we_pairing`). All 22 implemented registry entries carry an evaluator, a preview
+  AND a params schema; `registry.test.ts` asserts that as a named SET, because for most of the phase
+  an entry could declare itself implemented while carrying no predicate at all and `evaluate()`
+  threw on it — honest, and indistinguishable from a row nobody had got to. **`Violation` is still
+  five fields, `evaluate()` still returns `Violation[]`, `Location` is still a three-member union:
+  P2-2 added eleven predicates and no shared shape**, which is what makes CG-10's *"new types are
+  additive"* measured rather than asserted. `preview.test.ts`'s *"an implemented row with no preview
+  yet"* exemplar consequently ran out of real rows and is a CONSTRUCTED entry, with a floor
+  asserting no shipped row is in that state.
+
+- **Owner decision L's dividing line is NOT cap-versus-floor. It is AUTHORED versus DERIVED limit.**
+  The decision lets a cap evaluate a partial window because *"a count that is too low never exceeds
+  a limit"* — which assumes the limit is a number a department wrote down. `rolling_hours_max`'s is;
+  **`call_frequency_max`'s is not**: owner decision J makes the allowance
+  `floor(availableDays / n)`, computed from the window's OWN contents, so a partial window shrinks
+  the allowance alongside the count and false-positives exactly as a floor does. It therefore calls
+  `wholeWindowVerdict` and `rolling_hours_max` does not, and the two are asserted **on one world**
+  so the pair cannot drift into looking like unrelated choices. `partialWindowSkip`'s stated reason
+  was widened with it — it announced a justification false for this type, and a coverage row a
+  reader can catch out is one they stop reading.
+
+- **Owner decision J, ANSWERED: `call_frequency_max`'s denominator is ELIGIBLE DAYS.** Days on
+  leave, before `joinedAt` and off the roster are removed, so the rule **TIGHTENS** around somebody's
+  leave — fourteen eligible days in a twenty-eight-day window means *"one in 4"* permits three calls
+  and not seven. That is the intended reading and the opposite of what a reader predicts, so the
+  CG-04 preview names the denominator and every violation prints the available-day count it actually
+  used. `permittedFor()` is the one definition and it rounds DOWN. **Decision L's per-PERSON half is
+  deliberately NOT applied**: the days before somebody joined are already out of their denominator,
+  so suppressing their first window would delete the rule when a department is likeliest to over-call
+  a new starter. `rolling_hours_max` is the catalog's only consumer of Decision A's
+  SPLIT-AT-MIDNIGHT reading, excludes `countsHours: false` slots entirely, and multiplies BOTH
+  numbers through the `effectiveCap` its preview already printed.
+
+- **Owner decision W, ANSWERED: a carried holiday credit starts at ZERO, never at unknown.** `null`
+  and an absent key are the SAME answer and `holiday_equity`'s `carriedCredits()` is the one
+  definition of it. The contract's `Record<holidayKey, number | null>` SHAPE is deliberately
+  unchanged so a caller may serialise either spelling; the prose in `contract/types.ts` and
+  `contract/schema.ts` asserted the superseded reading until Task 19 and now records the answer. The
+  accepted limitation — duty covered on paper before this system existed is invisible, so year one
+  spreads evenly on top of a past that may not have been — is in the CG-04 preview, where the
+  decision puts it. **The comparison is over the NAMED SET of holidays, not one key at a time**: per
+  key it is structurally incapable of firing, since a one-month horizon holds at most one YEAR of any
+  holiday, so everybody holds nought or one and `max − min` can never exceed one. One credit per
+  holiday per YEAR however many of its days somebody works; `max − min <= 1` is a DEFINITION (a
+  credit is indivisible) rather than an invented number, and CG-07 gives this row no tolerance
+  parameter. STATED RESIDUAL: availability does not enter — `fairness_distribution` owns pro-rating.
+  `lookbackYears` cannot be verified for DEPTH inside the engine (that needs the Hijri conversion
+  decision AA keeps out of the package); the one case it CAN prove — no history supplied at all — is
+  reported through `coverage()`.
+
+- **`fairness_distribution`'s `spread` threshold is DERIVED from `deviation`'s**, and that is what
+  stops one rule contradicting itself. It is the sum of the two extremes' own tolerances — the widest
+  gap `deviation` would have permitted between them — so a schedule clean under one mode is clean
+  under the other by construction. A threshold of its own lets one mode call a draft fair while the
+  other calls it unfair with nothing able to adjudicate. Recorded as an inference; no document states
+  it. `deviation` produces one finding PER PERSON (WB-04's reason chips cannot act on one chip naming
+  five people); `spread` produces ONE naming the pair. `COMPARISON_EPSILON` is the float control, and
+  **it makes the comparison OPERATOR unobservable** — `<=` and `<` cannot differ on any input a
+  roster can produce, so the corpus pins the BOUNDARY either side of it and swapping the operator is
+  a plant that stays green by construction rather than for want of a case.
+
+- **Owner decision Z, as implemented: `we_pairing` is pairs of DAYS and `fallbacks` does not ship.**
+  A preferred pair is two ISO WEEKDAYS on consecutive dates, covered as a BLOCK by the same person
+  rather than split between two. The absence of `fallbacks` is ASSERTED, not omitted: the params
+  schema is closed and a source scan proves the vocabulary appears nowhere in the module's CODE,
+  comments stripped — the ninth *"a docblock is scanned source"* of the phase. §4.3's open *"shared
+  definition of what 'preference broken' means"* is resolved as the honoured pairing not being the
+  preferred one. **A SPLIT is a violation and a GAP is not** — one day covered and the other held by
+  nobody is a coverage requirement (SL-03, P3) — and both readings sit on ONE corpus world. The
+  comparison is per SLOT. The pair is a `{first, second}` OBJECT rather than a two-element array
+  because `preview.test.ts`'s probe generator builds an array's low probe as a ONE-element list, so
+  an inner `minItems: 2` would be refused by the very schema the matrix is probing.
+
+- **A COHORT location carries no date, so CG-03 is the TYPE's to keep.** `evaluate()`'s emission rule
+  is unconditionally true for a cohort violation, so all three cohort-located types filter their own
+  inputs to the horizon — the counted duties, the day vector, the pair enumeration. That is invisible
+  in the union and cost two green plants to establish. `we_pairing`'s explicit
+  `windowTouchesHorizon` check was DEAD CODE for exactly that reason: for a two-day pair the
+  predicate holds for every start in `[from − 1, to]`, which is what `candidateStarts` returns, so
+  the rule is stated once in the bounds that do the work and a property ties the two together in both
+  directions. `scopeLabel` is text from the message table like every other sentence, and it is most
+  of a cohort violation's meaning. `contributing` is optional on this member and every cohort type
+  supplies it anyway, empty included — Task 15's distinction one member along.
+
+- **FORTY-THREE PLANTS ACROSS TASKS 18–20, and the standing first plant went RED on all five types.**
+  `personInScope` → `true` is now a habit rather than a rediscovery, and this is the first task in
+  the phase where no type shipped with an unasserted scope. Six holes were still found: three by
+  plants that stayed green (`spread` never updating `quietest` — the world had two people, so the
+  array head already WAS the quietest; `holiday_equity`'s `holidays` filter — no case carried a
+  holiday the rule did not name, which is *a filter asserted only where it MATCHES*, seven instances
+  in the phase; and `we_pairing`'s dead branch), and three more in the same sweeps
+  (`fairness_distribution`'s and `holiday_equity`'s horizon filters, and `candidateStarts` stopping
+  one day early at the far edge — the seam case's mirror, where the Saturday arrives in
+  `followingDuties`). **Commit BEFORE planting**: the sweep reverts with `git checkout --`, so an
+  uncommitted fix made between two sweeps is destroyed and the next sweep reports RED for an import
+  error rather than for the defect it planted.
+
 - **Fixtures stay synthetic, permanently.** No real month's duty roster and no real staff list enters
   the engine's corpus at any time. The corpus exercises specific violation shapes — a gap of exactly
   the boundary value, a duty on a period's last day, a run spanning the 31st into the 1st, a person

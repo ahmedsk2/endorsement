@@ -4,12 +4,13 @@ import { datesBetween, isoWeekday, parseYmd, type Ymd } from '../src/calendar/ym
 import type { Condition, Day, EvaluationContext } from '../src/contract/types';
 import { CONTRACT_SCHEMA, type JsonSchema } from '../src/contract/schema';
 import { ASSERTION_KEYWORDS, keywordsUsedBy } from '../src/contract/validate';
+import { permittedFor } from '../src/conditions/call_frequency_max';
 import { toleranceFor } from '../src/conditions/fairness_distribution';
 import { clauseFor } from '../src/conditions/target_per_period';
 import { UnimplementedConditionTypeError, UnknownConditionTypeError } from '../src/evaluate';
 import { EN } from '../src/messages';
 import { NoPreviewForConditionTypeError, preview, previewWith } from '../src/preview';
-import { CATALOG, registryEntry, type RegistryEntry } from '../src/registry';
+import { CATALOG, type RegistryEntry } from '../src/registry';
 
 /**
  * CG-04's plain-language previews (P2 Task 9): *"preview text auto-generated from parameters"*.
@@ -235,6 +236,9 @@ describe('the matrix — every parameter a type reads is named by its preview', 
      */
     it('runs over every type that has a preview today, named one by one', () => {
         expect(previewed.map((entry) => entry.typeKey).sort()).toEqual([
+            // Task 18 — owner decision J's AVAILABLE-day denominator, which the sentence has to name
+            // because the rule tightens around leave rather than loosening.
+            'call_frequency_max',
             // Task 13 — the two the tree could not resolve without the owner: decision S's three
             // attendee modes, and decision U's confirmed reading (a).
             'clinic_conflict',
@@ -257,6 +261,9 @@ describe('the matrix — every parameter a type reads is named by its preview', 
             // Task 17 — the two absence-shaped types: owner decision I's unfinished gap, and the
             // occupied-interval reading of "fully free".
             'free_day_min',
+            // Task 19 — owner decision W's ANSWERED reading: a carried credit starts at zero, and
+            // the accepted limitation (a past on paper is invisible) belongs in the sentence.
+            'holiday_equity',
             'max_gap',
             'min_gap',
             'onboarding_grace',
@@ -267,6 +274,9 @@ describe('the matrix — every parameter a type reads is named by its preview', 
             'target_per_period',
             'unwanted_day_block',
             'vacation_block',
+            // Task 20 — owner decision Z's pairs of DAYS, and the two absences the sentence has
+            // to carry: `fallbacks` does not ship, and a half-covered weekend is not a split.
+            'we_pairing',
         ]);
 
         const parameters = previewed.flatMap((entry) =>
@@ -427,6 +437,56 @@ describe('rolling_hours_max — the averaging multiplication, in words', () => {
         expect(sentence).toContain('7 consecutive days');
         expect(sentence).not.toContain('320');
         expect(sentence).not.toMatch(/averaged/i);
+    });
+});
+
+describe('call_frequency_max — owner decision J, the denominator said out loud', () => {
+    const render = (params: Record<string, unknown>): string =>
+        preview(condition('call_frequency_max', params), CONTEXT);
+
+    /**
+     * THE FIFTH SENTENCE WHOSE WORDING IS AN OWNER DECISION RATHER THAN TASTE, and the decision
+     * says so itself: *"the plain-language preview must say which denominator it used."*
+     *
+     * It has to, because the answer runs the opposite way to the reading a gate screen invites. A
+     * calendar denominator loosens as somebody takes leave; this one tightens, so *"one in 4"* over
+     * a 28-day window in which somebody was available on 14 days permits three calls and not seven.
+     * A reader who assumes calendar days will predict double the real allowance for exactly the
+     * person the rule exists to protect.
+     */
+    it('names AVAILABLE days as the denominator, and says the allowance falls rather than rises', () => {
+        const sentence = render({ n: 4, windowDays: 28 });
+
+        expect(sentence).toMatch(/available/i);
+        expect(sentence).toMatch(/not calendar days/i);
+        expect(sentence).toMatch(/leave/i);
+        expect(sentence).toMatch(/FALLS/);
+    });
+
+    /**
+     * The worked points, for `fairness_distribution`'s reason one type along: an allowance stated
+     * as a rule rather than as a number leaves the reader to divide, and the number they arrive at
+     * is the wrong one under half the inputs. Both points are printed, and the halved one is the
+     * one a calendar-denominator reader gets wrong.
+     */
+    it('works the allowance out at a full window and at one halved by leave', () => {
+        const sentence = render({ n: 4, windowDays: 28 });
+
+        expect(sentence).toContain('28 available days allow 7 calls');
+        expect(sentence).toContain('14 available days allow 3 calls');
+    });
+
+    it('rounds the allowance DOWN, which is what makes a short window permit nothing', () => {
+        expect(permittedFor(3, 4)).toBe(0);
+        expect(permittedFor(4, 4)).toBe(1);
+        expect(permittedFor(27, 4)).toBe(6);
+    });
+
+    it('measures the window in days, and never names a week', () => {
+        const sentence = render({ n: 4, windowDays: 28 });
+
+        expect(sentence).toContain('28 consecutive days');
+        expect(sentence).not.toMatch(/\bweek/i);
     });
 });
 
@@ -747,14 +807,40 @@ describe('what the dispatcher refuses, and how loudly', () => {
      * rendering a blank cell where a rule should be described is a control that appears to do
      * nothing, one layer along from rulings 41 and 49.
      */
+    /**
+     * THE EXEMPLAR RAN OUT OF REAL ROWS AT TASK 20, WHICH IS THE CATALOG BEING FINISHED.
+     *
+     * It was `count_max` until Task 15 wrote that row's preview, `holiday_equity` until Task 19 and
+     * `we_pairing` until Task 20 — a probe pointed at a row that has since been written checks
+     * nothing while still passing, because it throws the SCHEMA's refusal instead: a different
+     * error class reaching the same `toThrow`. Every implemented entry now carries a preview.
+     *
+     * So the state is CONSTRUCTED rather than borrowed, exactly as the coupling check's own plant
+     * and the restricted-catalog probe below already are. The floor under it is the second
+     * assertion: no SHIPPED entry is in this state either, because a constructed probe alone would
+     * stay green over a real row that lost its preview tomorrow.
+     */
     it('throws a distinguishable error for an implemented row with no preview yet', () => {
-        // The exemplar moves as tasks land, and it has to: it was `count_max` until Task 15 gave
-        // that row a preview, and a probe pointed at a row that has since been written checks
-        // nothing while still passing — it would throw the SCHEMA's refusal instead, which is a
-        // different error class reaching the same `toThrow`. `holiday_equity` is Task 19's.
-        expect(registryEntry('holiday_equity')?.implemented).toBe(true);
-        expect(registryEntry('holiday_equity')?.preview).toBeUndefined();
-        expect(() => preview(condition('holiday_equity', {}), CONTEXT)).toThrow(NoPreviewForConditionTypeError);
+        const unwritten: RegistryEntry[] = [
+            {
+                typeKey: 'probe',
+                implemented: true,
+                direction: 'equity',
+                locationKind: 'cohort',
+                needsCarryIn: false,
+                evaluate: () => ({ findings: [], coverage: { evaluatedWindows: 0, skipped: [] } }),
+            },
+        ];
+
+        expect(() => previewWith(unwritten, condition('probe', {}), CONTEXT, EN)).toThrow(
+            NoPreviewForConditionTypeError,
+        );
+
+        expect(
+            CATALOG.filter((entry) => entry.implemented && entry.preview === undefined).map(
+                (entry) => entry.typeKey,
+            ),
+        ).toEqual([]);
     });
 
     it('takes the catalog as an argument, so P3 can preview against a restricted one', () => {

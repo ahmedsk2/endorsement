@@ -1,0 +1,186 @@
+{
+    "name": "we-pairing-the-weekend-that-straddles-the-month-boundary-is-one-weekend",
+    "why": "THE SEAM, AND THE REASON THIS TYPE NEEDS THE CARRY-IN TAIL AT ALL. Friday 31 July is in the already-published month and Saturday 1 August is in the draft, and together they are ONE weekend — the half in the tail is the only thing that says whether it was covered as a block or split. p-ali holds the Friday and p-noor the Saturday, so it was split. The violation is located at the cohort, which the emission rule always admits, and the pair itself touches the horizon. Strip the history and the same call goes quiet, which is correct and is indistinguishable on its own from a type that never read the tail; the coverage row naming the unexaminable left edge is what tells them apart. The Friday is also outside the day vector, so the case exercises the one permitted weekday fallback.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1200,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-07-31",
+                "slotKey": "night"
+            }
+        ],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-05",
+            "evaluableFrom": "2026-07-20",
+            "evaluableTo": "2026-08-12"
+        },
+        "duties": [
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-we-pairing",
+            "typeKey": "we_pairing",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "preferredPairs": [
+                    {
+                        "first": 5,
+                        "second": 6
+                    }
+                ]
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-we-pairing",
+            "severity": "soft",
+            "location": {
+                "kind": "cohort",
+                "personKeys": [
+                    "p-ali",
+                    "p-noor"
+                ],
+                "scopeLabel": "everybody in this schedule",
+                "contributing": [
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-07-31",
+                        "slotKey": "night"
+                    },
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-01",
+                        "slotKey": "night"
+                    }
+                ]
+            },
+            "explanation": "The weekend of 2026-07-31 and 2026-08-01 is split for slot \"night\": \"p-ali\" on the first day and \"p-noor\" on the second. This rule asks for the pair to be covered as a block by the same person, so that everybody else gets a genuinely free weekend.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-we-pairing",
+            "evaluatedWindows": 1,
+            "skipped": []
+        }
+    ]
+}

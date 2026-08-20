@@ -1,0 +1,201 @@
+{
+    "name": "rolling-hours-max-a-slot-that-does-not-count-toward-hours-is-left-out",
+    "why": "SL-01's countsHours flag, which this type is the only consumer of. p-ali holds one twelve-hour duty that counts and one twelve-hour administrative session that does not, on adjacent dates, so the pair is exactly at the cap under the rule and double it under an implementation that ignores the flag. p-noor holds two counting duties on adjacent dates and is over, which is what stops the case passing on a world where nothing could ever breach — a green that would look identical to the filter working.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "admin",
+                "kind": "admin",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 1200,
+                "crossesMidnight": false,
+                "countsHours": false,
+                "tallyKey": "admin"
+            },
+            {
+                "key": "day",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 1200,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-05",
+            "evaluableFrom": "2026-07-25",
+            "evaluableTo": "2026-08-10"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "admin"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-03",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-04",
+                "slotKey": "day"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-rolling",
+            "typeKey": "rolling_hours_max",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "hours": 12,
+                "windowDays": 2
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-rolling",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-noor",
+                "from": "2026-08-03",
+                "to": "2026-08-04",
+                "contributing": [
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-03",
+                        "slotKey": "day"
+                    },
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-04",
+                        "slotKey": "day"
+                    }
+                ]
+            },
+            "explanation": "24 h of duty in the 2 days from 2026-08-03 to 2026-08-04; at most 12 h are allowed. Hours are split at midnight, so a duty running overnight counts on both of the dates it occupies, and slots that do not count toward duty hours are left out.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-rolling",
+            "evaluatedWindows": 6,
+            "skipped": []
+        }
+    ]
+}

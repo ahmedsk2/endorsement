@@ -1,0 +1,169 @@
+{
+    "name": "call-frequency-max-a-window-it-can-only-see-part-of-is-left-unjudged",
+    "why": "A CAP WHOSE LIMIT THE WINDOW ITSELF DECIDES IS NOT THE HARMLESS DIRECTION, AND OWNER DECISION L NEVER SAID IT WAS. The decision lets a cap evaluate a partial window because a short count cannot exceed an authored number. This limit is not authored: it is floor(availableDays / n), so a partial window shrinks the allowance alongside the count and false-positives exactly as a floor does. Four of the five windows here reach outside the evaluable range and are reported rather than judged — the first of them would otherwise show one call against an allowance of zero — and the one whole window carries the real violation.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-08-01",
+                    "2026-08-02",
+                    "2026-08-03"
+                ],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1200,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-03",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-03"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-frequency",
+            "typeKey": "call_frequency_max",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "n": 2,
+                "windowDays": 3
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-frequency",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-ali",
+                "from": "2026-08-01",
+                "to": "2026-08-03",
+                "contributing": [
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-01",
+                        "slotKey": "night"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-02",
+                        "slotKey": "night"
+                    }
+                ]
+            },
+            "explanation": "2 calls in the 3 days from 2026-08-01 to 2026-08-03; at most 1 is permitted. The person was available on 3 days of that window and the rule allows one call in every 2: leave, days before the join date and days off the roster are not counted, so the allowance falls around them rather than rising.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-frequency",
+            "evaluatedWindows": 1,
+            "skipped": [
+                {
+                    "from": "2026-07-30",
+                    "to": "2026-08-01",
+                    "reason": "The window 2026-07-30 to 2026-08-01 is not wholly inside the evaluable range 2026-08-01 to 2026-08-03, so part of it could not be counted. A count that is short cannot exceed an authored cap, but it can fall below a floor, miss a target, or shrink a limit the window's own contents decide — so this window was left unjudged."
+                },
+                {
+                    "from": "2026-07-31",
+                    "to": "2026-08-02",
+                    "reason": "The window 2026-07-31 to 2026-08-02 is not wholly inside the evaluable range 2026-08-01 to 2026-08-03, so part of it could not be counted. A count that is short cannot exceed an authored cap, but it can fall below a floor, miss a target, or shrink a limit the window's own contents decide — so this window was left unjudged."
+                },
+                {
+                    "from": "2026-08-02",
+                    "to": "2026-08-04",
+                    "reason": "The window 2026-08-02 to 2026-08-04 is not wholly inside the evaluable range 2026-08-01 to 2026-08-03, so part of it could not be counted. A count that is short cannot exceed an authored cap, but it can fall below a floor, miss a target, or shrink a limit the window's own contents decide — so this window was left unjudged."
+                },
+                {
+                    "from": "2026-08-03",
+                    "to": "2026-08-05",
+                    "reason": "The window 2026-08-03 to 2026-08-05 is not wholly inside the evaluable range 2026-08-01 to 2026-08-03, so part of it could not be counted. A count that is short cannot exceed an authored cap, but it can fall below a floor, miss a target, or shrink a limit the window's own contents decide — so this window was left unjudged."
+                }
+            ]
+        }
+    ]
+}

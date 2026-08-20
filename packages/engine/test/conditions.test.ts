@@ -3,11 +3,14 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { isoWeekday, parseYmd, type Ymd } from '../src/calendar/ymd';
-import type { Condition, EvaluationContext, Fixture, Schedule } from '../src/contract/types';
+import { addDays, isoWeekday, parseYmd, type Ymd } from '../src/calendar/ymd';
+import { carriedCredits } from '../src/conditions/holiday_equity';
+import { candidateStarts } from '../src/conditions/we_pairing';
+import type { Condition, EvaluationContext, Fixture, Person, Schedule } from '../src/contract/types';
 import { validate } from '../src/contract/validate';
 import { coverage } from '../src/coverage';
 import { evaluate, locationIsReportable, sortViolations } from '../src/evaluate';
+import { windowTouchesHorizon } from '../src/duty/windows';
 import { preview } from '../src/preview';
 import { CATALOG, registryEntry } from '../src/registry';
 
@@ -73,6 +76,11 @@ describe('the condition corpus', () => {
      */
     it('found the cases it claims to, and each states why it exists', () => {
         expect(FIXTURES.map((fixture) => fixture.name)).toEqual([
+            'call-frequency-max-a-window-it-can-only-see-part-of-is-left-unjudged',
+            'call-frequency-max-is-density-where-min-gap-is-spacing',
+            'call-frequency-max-the-denominator-is-eligible-days-not-calendar-days',
+            'call-frequency-max-the-scope-excludes-somebody-their-own-calls-would-flag',
+            'call-frequency-max-the-window-that-begins-in-the-published-month',
             'clinic-conflict-a-named-attendee-who-rotates-nowhere',
             'clinic-conflict-levels-mode-reads-the-level-on-the-clinic-date',
             'clinic-conflict-post-call-reaches-the-day-after-the-last-horizon-date',
@@ -102,10 +110,21 @@ describe('the condition corpus', () => {
             'eligibility-mid-window-promotion',
             'eligibility-no-level-and-no-rotation-on-the-date-both-fail-closed',
             'eligibility-wrong-rotation-and-an-unnamed-slot',
+            'fairness-distribution-a-pro-rated-target-of-zero-still-allows-one-duty',
+            'fairness-distribution-a-quantity-nothing-tallies-is-reported-rather-than-passing-quietly',
+            'fairness-distribution-external-people-are-left-out-when-the-rule-says-so',
+            'fairness-distribution-spread-mode-measures-the-widest-gap-and-names-the-pair',
+            'fairness-distribution-the-expected-share-is-pro-rated-by-availability',
+            'fairness-distribution-the-scope-excludes-somebody-their-own-share-would-flag',
             'free-day-min-a-twenty-four-hour-call-on-the-fifth-leaves-the-sixth-occupied',
             'free-day-min-leave-counts-as-a-free-day-unless-the-rule-says-otherwise',
             'free-day-min-the-averaging-multiplies-the-window-and-the-requirement',
             'free-day-min-the-window-that-begins-in-the-published-month',
+            'holiday-equity-a-carried-credit-of-zero-is-what-an-unrecorded-one-counts-as',
+            'holiday-equity-a-named-holiday-the-schedule-never-reaches-is-reported',
+            'holiday-equity-an-unseen-lookback-is-reported-and-the-schedule-judged-on-its-own',
+            'holiday-equity-the-scope-excludes-somebody-their-own-credits-would-flag',
+            'holiday-equity-working-any-part-of-a-holiday-is-one-credit-for-that-holiday-year',
             'max-gap-an-unfinished-gap-is-reported-rather-than-evaluated',
             'max-gap-at-exactly-the-limit-and-a-day-beyond-it',
             'max-gap-leave-stops-the-clock-and-an-off-roster-rotation-does-not',
@@ -125,6 +144,11 @@ describe('the condition corpus', () => {
             'post-duty-exclusion-a-weekly-cadence-from-duty-ends-by-spandays',
             'post-duty-exclusion-the-from-and-to-kinds-each-narrow',
             'post-duty-exclusion-the-window-opens-on-the-thirty-first-and-closes-on-the-first',
+            'rolling-hours-max-a-night-call-counts-its-hours-on-both-dates-it-runs-on',
+            'rolling-hours-max-a-slot-that-does-not-count-toward-hours-is-left-out',
+            'rolling-hours-max-the-averaging-multiplies-both-the-window-and-the-cap',
+            'rolling-hours-max-the-scope-excludes-somebody-their-own-hours-would-flag',
+            'rolling-hours-max-the-window-that-begins-in-the-published-month',
             'same-unit-conflict-a-day-exception-lifts-the-ban-on-that-date-alone',
             'same-unit-conflict-two-rotators-on-one-unit-and-a-colleague-elsewhere',
             'target-per-period-a-level-with-no-entry-in-the-map-has-no-target',
@@ -135,6 +159,13 @@ describe('the condition corpus', () => {
             'target-per-period-two-modifiers-and-the-first-match-wins',
             'unwanted-day-block-a-registered-day-and-a-colleague-with-none',
             'vacation-block-both-bounds-inclusive',
+            'we-pairing-a-pair-the-calendar-never-produces-is-reported-rather-than-silent',
+            'we-pairing-a-weekend-split-between-two-people-is-not-the-preferred-pairing',
+            'we-pairing-a-weekend-with-only-one-of-its-days-covered-is-not-a-split',
+            'we-pairing-an-adjacency-the-rule-does-not-name-is-not-a-weekend',
+            'we-pairing-the-scope-excludes-a-weekend-split-between-people-it-does-not-cover',
+            'we-pairing-the-weekend-that-runs-into-the-month-after-the-horizon',
+            'we-pairing-the-weekend-that-straddles-the-month-boundary-is-one-weekend',
         ]);
 
         for (const fixture of FIXTURES) {
@@ -657,6 +688,7 @@ describe('the horizon-edge corpus — what the carry-in tail is actually asserte
         );
 
         expect(claiming).toEqual([
+            'call_frequency_max',
             'composition',
             'consecutive_max',
             'count_max',
@@ -666,7 +698,9 @@ describe('the horizon-edge corpus — what the carry-in tail is actually asserte
             'min_gap',
             'overlap_block',
             'post_duty_exclusion',
+            'rolling_hours_max',
             'target_per_period',
+            'we_pairing',
         ]);
         expect(claiming.filter((typeKey) => !covered.has(typeKey))).toEqual([]);
     });
@@ -735,6 +769,7 @@ describe('the horizon-edge corpus — what the carry-in tail is actually asserte
 
     it('runs over the carry-in cases, named', () => {
         expect(seamCases.map((fixture) => fixture.name)).toEqual([
+            'call-frequency-max-the-window-that-begins-in-the-published-month',
             'composition-the-period-that-begins-in-the-published-month',
             'consecutive-max-the-run-spans-the-thirty-first-into-the-first',
             'count-max-the-week-that-begins-in-the-published-month',
@@ -744,8 +779,387 @@ describe('the horizon-edge corpus — what the carry-in tail is actually asserte
             'min-gap-hours-across-the-carry-in-from-the-published-month',
             'overlap-block-carry-in-at-the-left-edge',
             'post-duty-exclusion-the-window-opens-on-the-thirty-first-and-closes-on-the-first',
+            'rolling-hours-max-the-window-that-begins-in-the-published-month',
             'target-per-period-the-period-that-begins-in-the-published-month',
+            'we-pairing-the-weekend-that-straddles-the-month-boundary-is-one-weekend',
         ]);
+    });
+});
+
+describe('the two duty-hours caps of Task 18, and the line between them', () => {
+    const world = FIXTURES.find(
+        (f) => f.name === 'call-frequency-max-a-window-it-can-only-see-part-of-is-left-unjudged',
+    ) as Fixture;
+
+    const row = (typeKey: string, params: Record<string, unknown>): Condition => ({
+        id: 'c-probe',
+        typeKey,
+        class: 'soft',
+        rank: 3,
+        active: true,
+        params,
+    });
+
+    /**
+     * OWNER DECISION L'S DIVIDING LINE IS NOT CAP-VERSUS-FLOOR, AND THIS IS WHERE THAT SHOWS.
+     *
+     * The decision lets a cap evaluate a window the engine can only see part of, on the stated
+     * ground that *"a count that is too low never exceeds a limit"* — which is true only when the
+     * limit was AUTHORED. `rolling_hours_max`'s is: a department wrote 12 h down. `call_frequency_max`'s
+     * is `floor(availableDays / n)`, computed from the window's own contents, so a partial window
+     * loses eligible days as fast as it loses calls and the allowance falls with the count.
+     *
+     * Both are `direction: 'cap'` in the registry and both are asserted HERE, on ONE world, because
+     * a fixture apiece would let the two behaviours drift into looking like two unrelated choices.
+     * Five windows; the hours cap measures all five, the frequency cap measures the one whole window
+     * and reports the other four.
+     */
+    it('the hours cap measures a partial window and the frequency cap declines it', () => {
+        const hours = coverage(world.schedule, world.context, [
+            row('rolling_hours_max', { hours: 12, windowDays: 3 }),
+        ]);
+        const frequency = coverage(world.schedule, world.context, [
+            row('call_frequency_max', { n: 2, windowDays: 3 }),
+        ]);
+
+        expect(hours[0]?.evaluatedWindows).toBe(5);
+        expect(hours[0]?.skipped).toEqual([]);
+        expect(frequency[0]?.evaluatedWindows).toBe(1);
+        expect(frequency[0]?.skipped).toHaveLength(4);
+    });
+
+    /**
+     * THE FALSE POSITIVE THE GATE PREVENTS, MEASURED RATHER THAN ASSERTED IN PROSE. The window
+     * 30 Jul – 1 Aug reaches two days outside the evaluable range: one call is visible in it and one
+     * eligible day, so the allowance computes to zero and the call is "over" — on a person who took
+     * two calls in three days they were available for, which is exactly at the rule. Reaching that
+     * verdict needs the gate removed, so it is reached by evaluating the window directly.
+     */
+    it('would have reported the partial window as a breach, which is why it is declined', () => {
+        const widened: Schedule = {
+            ...world.schedule,
+            horizon: { ...world.schedule.horizon, from: d('2026-07-30'), evaluableFrom: d('2026-07-30') },
+        };
+
+        const wide = evaluate(widened, world.context, [row('call_frequency_max', { n: 2, windowDays: 3 })]);
+
+        expect(wide.map((violation) => (violation.location as { from: Ymd }).from)).toContain(d('2026-07-30'));
+        expect(evaluate(world.schedule, world.context, world.conditions)).toHaveLength(1);
+    });
+
+    /**
+     * Owner decision L's per-PERSON half is deliberately NOT applied by `call_frequency_max`, and
+     * the two readings are one line apart. A floor suppresses somebody who joined mid-window because
+     * an absolute number they could not have reached is a false positive. This rule's number is not
+     * absolute: the days before they joined are already out of the denominator, so the allowance has
+     * moved with them. Suppressing anyway would delete the rule for every new starter's first window
+     * — which is when a department is likeliest to over-call them — and would show up as a coverage
+     * row instead of a violation.
+     */
+    it('judges a person who joined part way through the window rather than naming them in coverage', () => {
+        const joined = withPeople(world.context, (copy) => {
+            for (const person of copy.people) {
+                person.joinedAt = d('2026-08-01');
+            }
+        });
+
+        const conditions = [row('call_frequency_max', { n: 2, windowDays: 3 })];
+
+        expect(evaluate(world.schedule, joined, conditions)).toHaveLength(1);
+        expect(coverage(world.schedule, joined, conditions)[0]?.skipped).toHaveLength(4);
+    });
+});
+
+describe('the two cohort-located types of Task 19, beyond the corpus', () => {
+    const fairWorld = FIXTURES.find(
+        (f) => f.name === 'fairness-distribution-external-people-are-left-out-when-the-rule-says-so',
+    ) as Fixture;
+
+    const holidayWorld = FIXTURES.find(
+        (f) => f.name === 'holiday-equity-a-carried-credit-of-zero-is-what-an-unrecorded-one-counts-as',
+    ) as Fixture;
+
+    const fairness = (params: Record<string, unknown>, scope?: Condition['scope']): Condition => ({
+        id: 'c-fair',
+        typeKey: 'fairness_distribution',
+        class: 'soft',
+        rank: 3,
+        active: true,
+        params,
+        ...(scope === undefined ? {} : { scope }),
+    });
+
+    const DEVIATION = { quantity: 'nights', mode: 'deviation', excludeExternal: true };
+
+    /**
+     * `excludeExternal` MOVES THE DENOMINATOR, so the flip is not a longer list of violations but a
+     * DIFFERENT one — the fixture can only assert one side of that, and a parameter asserted where
+     * flipping it merely adds a row is the shape of a filter nobody would notice going missing.
+     * Counting the external person in spreads six nights over thirty available days instead of
+     * twenty, which drops the expected share from three to two: p-ali becomes clean and p-ext,
+     * holding nothing, becomes a violation in their place.
+     */
+    it('counting external people in changes who is flagged, not merely how many', () => {
+        const excluded = evaluate(fairWorld.schedule, fairWorld.context, [fairness(DEVIATION)]);
+        const included = evaluate(fairWorld.schedule, fairWorld.context, [
+            fairness({ ...DEVIATION, excludeExternal: false }),
+        ]);
+
+        const named = (violations: typeof excluded): string[] =>
+            violations.flatMap((violation) => (violation.location as { personKeys: string[] }).personKeys).sort();
+
+        expect(named(excluded)).toEqual(['p-ali', 'p-noor']);
+        expect(named(included)).toEqual(['p-ext', 'p-noor']);
+    });
+
+    /**
+     * THE TWO MODES MAY NOT CONTRADICT EACH OTHER, and this is the property that makes `spread`'s
+     * derived allowance load-bearing rather than tidy. Spread's threshold is the sum of the two
+     * extremes' OWN tolerances — the widest gap deviation mode would have permitted between them —
+     * so a schedule clean under `deviation` is clean under `spread` by construction. A threshold of
+     * its own would let one mode of one rule call a draft fair while the other calls it unfair,
+     * with nothing on either screen able to adjudicate.
+     *
+     * Asserted over every fairness world in the corpus rather than over one, because the property
+     * is about the arithmetic and not about any particular roster.
+     */
+    it('never reports a spread violation on a schedule deviation mode calls clean', () => {
+        const worlds = FIXTURES.filter((fixture) => fixture.name.startsWith('fairness-distribution-'));
+
+        const disagreements = worlds.filter((world) => {
+            const scope = world.conditions[0]?.scope;
+            const params = (world.conditions[0] as Condition).params as Record<string, unknown>;
+            const clean = evaluate(world.schedule, world.context, [
+                fairness({ ...params, mode: 'deviation' }, scope),
+            ]);
+            const spread = evaluate(world.schedule, world.context, [
+                fairness({ ...params, mode: 'spread' }, scope),
+            ]);
+
+            return clean.length === 0 && spread.length > 0;
+        });
+
+        expect(disagreements.map((world) => world.name)).toEqual([]);
+        expect(worlds.length).toBeGreaterThanOrEqual(6);
+    });
+
+    /**
+     * A COHORT LOCATION CARRIES NO DATE, so `evaluate()`'s emission rule is unconditionally true
+     * for one and CG-03 has to be kept by the TYPE. Found by a plant that stayed green: deleting
+     * the horizon filter from the counted duties changed nothing anywhere, because every case's
+     * duties already sat inside their own horizon and no fixture could express otherwise without
+     * being confusing corpus data.
+     *
+     * A duty dated in the already-published month must not move the cohort's total, its
+     * denominator or anybody's expected share — and the check is that the whole answer is
+     * BYTE-IDENTICAL rather than merely the same length, because the arithmetic is what shifts:
+     * counting it would take the total from six to seven and every printed share with it.
+     */
+    it('counts no duty dated outside the horizon, however it arrived in the schedule', () => {
+        const withTail: Schedule = {
+            ...fairWorld.schedule,
+            duties: [
+                { personKey: 'p-ali', date: d('2026-07-31'), slotKey: 'night' },
+                ...fairWorld.schedule.duties,
+            ],
+        };
+
+        expect(evaluate(withTail, fairWorld.context, [fairness(DEVIATION)])).toEqual(
+            evaluate(fairWorld.schedule, fairWorld.context, [fairness(DEVIATION)]),
+        );
+    });
+
+    /**
+     * SPREAD'S BOUNDARY, EITHER SIDE OF IT, because the corpus case sits well past it and a
+     * threshold asserted only where it is exceeded is a threshold that could be any number below
+     * the one it is.
+     *
+     * Four nights spread 3–1 gives an expected share of two each, deviations of ±1, a gap of 2 and
+     * an allowance of `tolerance(2) + tolerance(2)` = 2 — clean at exactly the limit. One more
+     * night for the same person makes the expected share 2.5, the deviations ±1.5 and the gap 3
+     * against the same allowance, which is over. The pair is what makes the sum-of-two-tolerances
+     * derivation falsifiable rather than merely stated.
+     */
+    it('permits a gap of exactly the allowance and refuses the next duty past it', () => {
+        const spread = { quantity: 'nights', mode: 'spread', excludeExternal: true };
+        const nights = (count: number): Schedule => ({
+            ...fairWorld.schedule,
+            duties: [
+                { personKey: 'p-ali', date: d('2026-08-01'), slotKey: 'night' },
+                ...Array.from({ length: count }, (_unused, index) => ({
+                    personKey: 'p-noor',
+                    date: d(`2026-08-0${index + 2}`),
+                    slotKey: 'night',
+                })),
+            ],
+        });
+
+        expect(evaluate(nights(3), fairWorld.context, [fairness(spread)])).toEqual([]);
+        expect(evaluate(nights(4), fairWorld.context, [fairness(spread)])).toHaveLength(1);
+    });
+
+    /**
+     * Owner decision W, ANSWERED, stated in words a reader can grep for rather than only encoded in
+     * a fixture's arithmetic. An explicit `null` and an omitted key are the SAME answer, and both
+     * are zero. The superseded default held a `null` person out of the comparison, which is what
+     * made the lookback silently do nothing in year one — so the check is that the flagged set does
+     * not move when the spelling does.
+     */
+    it('reads an explicit null carried credit exactly as it reads an absent one', () => {
+        const spelled = withPeople(holidayWorld.context, (copy) => {
+            for (const person of copy.people) {
+                if (person.priorCredits?.['eid-al-fitr'] === null) {
+                    delete person.priorCredits;
+                }
+            }
+        });
+
+        expect(evaluate(holidayWorld.schedule, spelled, holidayWorld.conditions)).toEqual(
+            evaluate(holidayWorld.schedule, holidayWorld.context, holidayWorld.conditions),
+        );
+
+        expect(carriedCredits(holidayWorld.context.people[2] as Person, 'eid-al-fitr')).toBe(0);
+        expect(carriedCredits(holidayWorld.context.people[0] as Person, 'eid-al-fitr')).toBe(0);
+        expect(carriedCredits(holidayWorld.context.people[1] as Person, 'eid-al-fitr')).toBe(2);
+    });
+
+    /**
+     * A rule naming no holiday spreads nothing, which on a gate screen is a control that appears to
+     * do nothing. The schema refuses it with its own error rather than admitting a condition whose
+     * every evaluation is silence.
+     */
+    it('refuses a holiday_equity row that names no holiday at all', () => {
+        const empty: Condition = {
+            ...(holidayWorld.conditions[0] as Condition),
+            params: { holidays: [], lookbackYears: 0 },
+        };
+
+        expect(() => evaluate(holidayWorld.schedule, holidayWorld.context, [empty])).toThrow(
+            /fewer than the 1 required/,
+        );
+    });
+
+    /**
+     * A cohort violation has no date and no slot, so the POPULATION is most of its meaning: the same
+     * sentence against the whole department and against the four R1s on PICU are different claims,
+     * and the badge carries nothing else able to tell them apart. It comes from the message table
+     * like every other sentence (AR-07), and it narrows with the scope rather than being a constant.
+     */
+    it('labels the population a cohort violation compared somebody against', () => {
+        const scoped = evaluate(fairWorld.schedule, fairWorld.context, [
+            fairness(DEVIATION, { unitKeys: ['PICU'], levelKeys: ['R1'] }),
+        ]);
+        const unscoped = evaluate(fairWorld.schedule, fairWorld.context, [fairness(DEVIATION)]);
+
+        const label = (violations: typeof scoped): string | undefined =>
+            (violations[0]?.location as { scopeLabel: string } | undefined)?.scopeLabel;
+
+        expect(label(unscoped)).toBe('everybody in this schedule');
+        expect(label(scoped)).toBe('people at R1 and rotating on PICU');
+    });
+});
+
+describe('we_pairing — owner decision Z, and the half of it that does not ship', () => {
+    const world = FIXTURES.find(
+        (f) => f.name === 'we-pairing-a-weekend-split-between-two-people-is-not-the-preferred-pairing',
+    ) as Fixture;
+
+    /**
+     * `fallbacks` IS ABSENT AND THE ABSENCE IS ASSERTED, not merely omitted. Owner decision Z keeps
+     * it out of P2 on the ground that an ordered list of acceptable alternatives produces no
+     * violation when one is used — it produces a worse-but-acceptable placement, which is WB-04
+     * fitness and AU-02's rank-weighted penalty terms, exactly the split decision P already makes
+     * for `eligibility`'s auto-fill order.
+     *
+     * A department that writes the parameter must LEARN that this engine will not honour it. A
+     * silently ignored key is a control that appears to do nothing, and here what appears to do
+     * nothing is the second choice somebody believed the rule would fall back on.
+     */
+    it('refuses a condition row that carries a fallbacks list', () => {
+        expect(() =>
+            evaluate(world.schedule, world.context, [
+                {
+                    ...(world.conditions[0] as Condition),
+                    params: { preferredPairs: [{ first: 5, second: 6 }], fallbacks: [{ first: 6, second: 7 }] },
+                },
+            ]),
+        ).toThrow(/unknown property "fallbacks"/);
+    });
+
+    /**
+     * A DOCBLOCK IS SCANNED SOURCE — the ninth occurrence in this phase, and `we_pairing.ts`'s own
+     * prose explains at length why `fallbacks` is not here. So the scan strips comments, exactly as
+     * `eligibility.ts`'s absence scan does, and is pinned in BOTH directions for that file's
+     * recorded reason: eating the code would make every needle miss, which looks identical to a
+     * clean tree.
+     */
+    it('names no fallback vocabulary in its CODE, docblocks stripped', () => {
+        const path = join(import.meta.dirname, '..', 'src', 'conditions', 'we_pairing.ts');
+        const raw = readFileSync(path, 'utf8');
+        const code = withoutComments(raw);
+
+        expect(raw, 'the docblock should still explain the absence').toContain('fallbacks');
+        expect(code, 'the stripper ate the code, not just the prose').toContain('export const evaluate');
+
+        for (const needle of ['fallbacks', 'fallback', 'alternative']) {
+            expect(code, `we_pairing.ts names "${needle}" in code`).not.toContain(needle);
+        }
+    });
+
+    /**
+     * THE ENUMERATION IS THE EMISSION RULE, and this is what stops the derivation becoming two
+     * definitions of one fact.
+     *
+     * A cohort location has no date, so `evaluate()`'s rule is unconditionally true for one and
+     * CG-03 has to be kept by the type. `we_pairing.ts` did that with an explicit
+     * `windowTouchesHorizon` check inside its scan, and a plant proved it DEAD: for a two-day pair,
+     * the predicate holds for every start in `[from - 1, to]`, which is precisely the range
+     * `candidateStarts` returns. A branch that cannot be taken is a control that appears to do
+     * something, so it is gone — and this property is what keeps its reason true. Both directions:
+     * every candidate touches, and the date one earlier does not.
+     */
+    it('enumerates exactly the pair starts the emission rule would have admitted', () => {
+        const horizon = world.schedule.horizon;
+        const starts = candidateStarts(horizon);
+
+        expect(
+            starts.filter((start) => !windowTouchesHorizon(start, addDays(start, 1), horizon)),
+        ).toEqual([]);
+        expect(starts[0]).toBe(addDays(horizon.from, -1));
+        expect(windowTouchesHorizon(addDays(horizon.from, -2), addDays(horizon.from, -1), horizon)).toBe(false);
+        expect(windowTouchesHorizon(addDays(horizon.to, 1), addDays(horizon.to, 2), horizon)).toBe(false);
+    });
+
+    /**
+     * A pair is of DAYS, so both ends are ISO INTEGERS and a day NAME is refused with the schema's
+     * own error rather than quietly matching nothing — `dow_restriction`'s rule, one type along, and
+     * for its reason: there is no name-to-number table in this package and there deliberately never
+     * will be one.
+     *
+     * THE NAME IS ASSEMBLED RATHER THAN WRITTEN, for the reason `dow_restriction`'s own test
+     * records: `CalendarIsTheOnlyConverterTest`'s quoted-weekday pattern scans this file too, so a
+     * test proving a weekday name is refused cannot itself contain one.
+     */
+    it('refuses a weekday name and a number outside 1..7 at either end of a pair', () => {
+        const pairing = (pair: unknown): Condition => ({
+            ...(world.conditions[0] as Condition),
+            params: { preferredPairs: [pair] },
+        });
+
+        const name = ['Fri', 'day'].join('');
+
+        expect(() => evaluate(world.schedule, world.context, [pairing({ first: name, second: 6 })])).toThrow(
+            /expected integer/,
+        );
+        expect(() => evaluate(world.schedule, world.context, [pairing({ first: 5, second: 8 })])).toThrow(
+            /above the maximum 7/,
+        );
+        expect(() => evaluate(world.schedule, world.context, [pairing({ first: 5 })])).toThrow(/second/);
+        expect(() =>
+            evaluate(world.schedule, world.context, [
+                { ...(world.conditions[0] as Condition), params: { preferredPairs: [] } },
+            ]),
+        ).toThrow(/fewer than the 1 required/);
     });
 });
 

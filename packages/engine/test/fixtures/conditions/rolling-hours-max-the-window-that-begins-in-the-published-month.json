@@ -1,0 +1,159 @@
+{
+    "name": "rolling-hours-max-the-window-that-begins-in-the-published-month",
+    "why": "THE SEAM. A rolling window that begins on the last night of the already-published month and reaches the 1st is what makes the 1st unschedulable, and it is invisible to any type that only reads the horizon. The duty on 31 July is in the carry-in tail and the duty on 1 August is in the draft; together they are twenty-four hours in two days against a cap of twelve. Strip the history and the same call goes quiet — which is correct, and on its own is indistinguishable from a type that never read the tail, so the coverage row saying the left edge could not be examined is asserted with it.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "day",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 1200,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-07-31",
+                "slotKey": "day"
+            }
+        ],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-05",
+            "evaluableFrom": "2026-07-20",
+            "evaluableTo": "2026-08-12"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "day"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-rolling",
+            "typeKey": "rolling_hours_max",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "hours": 12,
+                "windowDays": 2
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-rolling",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-ali",
+                "from": "2026-07-31",
+                "to": "2026-08-01",
+                "contributing": [
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-07-31",
+                        "slotKey": "day"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-01",
+                        "slotKey": "day"
+                    }
+                ]
+            },
+            "explanation": "24 h of duty in the 2 days from 2026-07-31 to 2026-08-01; at most 12 h are allowed. Hours are split at midnight, so a duty running overnight counts on both of the dates it occupies, and slots that do not count toward duty hours are left out.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-rolling",
+            "evaluatedWindows": 6,
+            "skipped": []
+        }
+    ]
+}

@@ -1,0 +1,150 @@
+{
+    "name": "we-pairing-a-pair-the-calendar-never-produces-is-reported-rather-than-silent",
+    "why": "A PREFERRED PAIRING NAMING A COMBINATION THIS SCHEDULE NEVER CONTAINS. The condition asks about ISO weekday 2 followed by 3 over a Friday-to-Sunday horizon, so the pair occurs nowhere and the rule reports nothing — which is exactly what a perfectly paired month reports, and only one of the two is fine. The coverage row names the pair it could not examine. A department that wrote its weekend down in the wrong order has done precisely this, and on a gate screen the rule would otherwise look as if it were working.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-07",
+                "isoWeekday": 5,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-08",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-09",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1200,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-07",
+            "to": "2026-08-09",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-14"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-07",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-08",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-we-pairing",
+            "typeKey": "we_pairing",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "preferredPairs": [
+                    {
+                        "first": 2,
+                        "second": 3
+                    }
+                ]
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-we-pairing",
+            "evaluatedWindows": 0,
+            "skipped": [
+                {
+                    "from": "2026-08-07",
+                    "to": "2026-08-09",
+                    "reason": "No two consecutive dates reaching 2026-08-07 to 2026-08-09 are ISO weekdays 2 then 3, so this pair could not be examined at all. A preferred pairing that names a combination the calendar never produces is a rule that appears to be doing something and is not."
+                }
+            ]
+        }
+    ]
+}

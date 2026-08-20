@@ -1,0 +1,166 @@
+{
+    "name": "call-frequency-max-is-density-where-min-gap-is-spacing",
+    "why": "THE TWO TYPES DISAGREE ON ONE WORLD, WHICH IS WHY BOTH SHIP. p-ali takes calls on consecutive dates. One call in every three available days, measured over six consecutive days, permits two of them: density says nothing about where in the window they fall, so the pair is clean. A min_gap of three days forbids exactly that pair and reports at both placements. A department that believes these are the same rule will set one and get the other, and a corpus in which they never disagreed would let an implementation collapse one into the other unnoticed.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-07-27",
+                    "2026-07-28",
+                    "2026-07-29",
+                    "2026-07-30",
+                    "2026-07-31",
+                    "2026-08-01",
+                    "2026-08-02",
+                    "2026-08-03",
+                    "2026-08-04",
+                    "2026-08-05",
+                    "2026-08-06",
+                    "2026-08-07"
+                ],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1200,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-02",
+            "evaluableFrom": "2026-07-27",
+            "evaluableTo": "2026-08-07"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-frequency",
+            "typeKey": "call_frequency_max",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "n": 3,
+                "windowDays": 6
+            },
+            "rank": 3
+        },
+        {
+            "id": "c-min-gap",
+            "typeKey": "min_gap",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "value": 3,
+                "unit": "days"
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-min-gap",
+            "severity": "soft",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            },
+            "explanation": "1 day between this duty and \"night\" on 2026-08-02, counted between the dates they start on; at least 3 are required.",
+            "rank": 3
+        },
+        {
+            "conditionId": "c-min-gap",
+            "severity": "soft",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            "explanation": "1 day between this duty and \"night\" on 2026-08-01, counted between the dates they start on; at least 3 are required.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-frequency",
+            "evaluatedWindows": 7,
+            "skipped": []
+        },
+        {
+            "conditionId": "c-min-gap",
+            "evaluatedWindows": 2,
+            "skipped": []
+        }
+    ]
+}

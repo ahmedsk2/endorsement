@@ -136,6 +136,18 @@ export interface ToleranceExample {
     allowance: number;
 }
 
+/**
+ * One worked point on `call_frequency_max`'s curve — owner decision J's denominator, in numbers.
+ *
+ * The decision's own consequence is that the rule TIGHTENS around leave, and it says so because a
+ * reader assuming calendar days will predict the opposite. Two points either side of a full window
+ * are what make that visible without asking anybody to divide.
+ */
+export interface AvailabilityExample {
+    availableDays: number;
+    permitted: number;
+}
+
 /** One slot's allowance, already normalised — absent lists arrive as empty ones. */
 export interface SlotAllowanceText {
     slotKey: string;
@@ -174,6 +186,17 @@ export interface Vocabulary {
      * hours print whole: a scheduler reading `4.0 h` wonders what the missing precision was.
      */
     hours(minutes: number): string;
+
+    /**
+     * A possibly-fractional count: `3`, `3.3`, `0.7`. Whole numbers print whole.
+     *
+     * {@link Vocabulary.hours} is the precedent and the reason is identical — a decimal SEPARATOR is
+     * a locale's decision, which is the half a formatter living beside the arithmetic could never
+     * honour. `fairness_distribution` is where a fractional number actually arises in this catalog:
+     * a pro-rated expected share is a division, and a reader shown `3.0000000000000004` on a badge
+     * stops believing the rest of it.
+     */
+    fraction(value: number): string;
 
     /**
      * OWNER DECISION M'S MODIFIER CLAUSES, and they are in the SHARED vocabulary rather than in
@@ -220,6 +243,22 @@ export interface PreviewMessages extends Vocabulary {
         averagedDays: number | null;
     }): string;
 
+    /**
+     * Owner decision J: the denominator is AVAILABLE days, and the sentence has to say which.
+     *
+     * The decision names this explicitly — *"the plain-language preview must say which denominator
+     * it used"* — because the consequence is the opposite of what a reader predicts. A calendar
+     * denominator loosens as somebody takes leave (fewer duties, same divisor); the availability one
+     * TIGHTENS, so *"one in 4"* over a 28-day window in which somebody was available on 14 days
+     * permits three calls and not seven. The worked points are what make that arithmetic visible on
+     * a gate screen, since nobody divides while reading one.
+     */
+    callFrequencyMax(args: {
+        n: number;
+        windowDays: number;
+        examples: readonly AvailabilityExample[];
+    }): string;
+
     /** Owner decision Q: the allowance is stated as a NUMBER at both regimes, never as a percentage. */
     fairnessDistribution(args: {
         quantity: string;
@@ -227,6 +266,16 @@ export interface PreviewMessages extends Vocabulary {
         excludeExternal: boolean;
         examples: readonly ToleranceExample[];
     }): string;
+
+    /**
+     * Owner decision W, ANSWERED: carried credits start at ZERO, and the limitation belongs HERE.
+     *
+     * The decision accepts knowingly that duty covered on paper before this system existed is
+     * invisible, and says the acceptance belongs in the preview rather than only in the plan — a
+     * department told *"holidays are spread across years"* on a gate screen will otherwise read the
+     * first year's even distribution as a statement about their history, which it is not.
+     */
+    holidayEquity(args: { holidays: readonly string[]; lookbackYears: number }): string;
 
     /** Owner decision M: an exception REPLACES the target, and every branch prints its own number. */
     targetPerPeriod(args: { targets: readonly LevelTarget[]; modifiers: readonly TargetModifier[] }): string;
@@ -287,6 +336,21 @@ export interface PreviewMessages extends Vocabulary {
         leaveCountsAsFree: boolean;
     }): string;
 
+
+    /**
+     * Owner decision Z: pairs of DAYS, and what this rule deliberately does NOT say.
+     *
+     * The sentence has to carry two absences a reader would otherwise supply for themselves. The
+     * pair is of DAYS rather than of PEOPLE — the competing reading needs a person-pair store that
+     * exists nowhere in this repository — and a weekend with only one of its days covered is not a
+     * split and is not reported, because WHO must be on duty at all is a coverage template (SL-03,
+     * P3) and not this rule. `fallbacks` does not ship, so the sentence promises no second choice.
+     *
+     * ISO integers, exactly as `dowRestriction` uses them: the day NAMES belong to the department's
+     * own calendar and are rendered by the server (AR-07), and there is no name table in this
+     * package.
+     */
+    wePairing(args: { pairs: readonly { first: number; second: number }[] }): string;
 
     /** Owner decision R: the days arrive from the caller; P2 stores none of them. No parameters. */
     unwantedDayBlock(): string;
@@ -510,6 +574,155 @@ export interface ViolationMessages extends Vocabulary {
     }): string;
 
     /**
+     * The duty-hours cap, breached — and the two readings a reader would otherwise get wrong.
+     *
+     * `minutes` is what the predicate summed under the SPLIT-AT-MIDNIGHT reading, which is this
+     * type's alone: a night call is twelve hours on one date and twelve on the next here, and one
+     * Friday call to every other type in the catalog. A reader counting duties by eye will get a
+     * different number from the badge unless the sentence says so.
+     *
+     * `hours` and `windowDays` are the EFFECTIVE cap, after averaging. Printing the rule's own
+     * figure instead would be the defect `rollingHoursMax`'s preview exists to prevent, one screen
+     * along: *"at most 80 h"* beside a window of 28 days is a rule nobody can check.
+     */
+    rollingHoursMaxViolation(args: {
+        minutes: number;
+        hours: number;
+        windowDays: number;
+        averagingWeeks: number | null;
+        from: string;
+        to: string;
+    }): string;
+
+    /**
+     * Owner decision J's denominator, in the one place the applied number is actually knowable.
+     *
+     * `availableDays` is what the predicate counted for THIS person over THIS window, and
+     * `permitted` is what that allowed. Both are printed because the decision's intended reading is
+     * counter-intuitive: a person on leave is measured against a smaller denominator, so the
+     * allowance falls. A badge stating only *"at most 0 are permitted"* on a window with two duties
+     * in it reads as a defect in the tool rather than as the rule doing what it was chosen to do.
+     */
+    callFrequencyMaxViolation(args: {
+        calls: number;
+        permitted: number;
+        n: number;
+        availableDays: number;
+        windowDays: number;
+        from: string;
+        to: string;
+    }): string;
+
+    /**
+     * WHICH POPULATION a cohort violation compared somebody against — `Location.cohort.scopeLabel`.
+     *
+     * It is text a scheduler reads, so it comes from the table like every other sentence, and it is
+     * the one entry here that is not an `explanation`. A cohort violation carries no date and no
+     * slot, so the population IS most of its meaning: *"unevenly loaded"* against the whole
+     * department and against the four R1s on PICU are different statements, and the badge has
+     * nothing else on it to tell them apart.
+     */
+    cohortScopeLabel(args: {
+        unitKeys: readonly string[];
+        levelKeys: readonly string[];
+        personKeys: readonly string[];
+    }): string;
+
+    /**
+     * Owner decision Q's `deviation` mode: WHO is over or under, and the tolerance ACTUALLY APPLIED.
+     *
+     * The decision requires the applied allowance as a NUMBER and never as `10%`, and this is the
+     * only place it can be: a preview has the department's parameters and not its schedule, so it
+     * cannot know the pro-rated target the tolerance is computed from. The predicate is handed the
+     * table on the same call that measures, which is what P2-2's first task was chartered to make
+     * possible.
+     *
+     * `expected` and `deviation` are fractions because a pro-rated share is a division. They arrive
+     * already decided; {@link Vocabulary.fraction} decides only how they are said.
+     */
+    fairnessDeviationViolation(args: {
+        quantity: string;
+        actual: number;
+        expected: number;
+        deviation: number;
+        tolerance: number;
+        over: boolean;
+        cohortSize: number;
+    }): string;
+
+    /**
+     * Owner decision Q's `spread` mode: the widest gap, and the pair it is between.
+     *
+     * The decision's own note is that spread *"says nothing about WHO to fix"*, which is why the
+     * default is `deviation`. It says something about which TWO, though, and naming them is what
+     * makes the badge actionable at all — so both keys appear in the sentence as well as in the
+     * location, deliberately breaking this interface's usual rule that a sentence never repeats its
+     * location. A two-person cohort location has no single person for a badge to sit under.
+     */
+    fairnessSpreadViolation(args: {
+        quantity: string;
+        busiest: { personKey: string; actual: number; expected: number };
+        quietest: { personKey: string; actual: number; expected: number };
+        gap: number;
+        allowance: number;
+        cohortSize: number;
+    }): string;
+
+    /**
+     * Holiday credits, unevenly spread — and whether anything was carried in.
+     *
+     * `fewest` is what the least-loaded person in the comparison holds, because *"holds 3"* on its
+     * own says nothing: three credits is uneven beside somebody holding one and perfectly even
+     * beside somebody holding two. `lookbackCounted` is owner decision W made visible — the same
+     * totals mean different things depending on whether earlier years are in them.
+     */
+    holidayEquityViolation(args: {
+        holidays: readonly string[];
+        holdings: readonly { personKey: string; credits: number }[];
+        fewest: number;
+        lookbackCounted: boolean;
+        lookbackYears: number;
+    }): string;
+
+    /**
+     * A weekend covered by two different people where the rule asks for one — owner decision Z.
+     *
+     * A cohort location carries no date and no slot, so BOTH are in the sentence: which weekend and
+     * which slot were split is the whole of what a scheduler acts on, and the location's
+     * `personKeys` names the people without saying which of them holds which day. §4.3's open
+     * *"shared definition of what 'preference broken' means"* is resolved here as the honoured
+     * pairing not being the preferred one, and with `fallbacks` unshipped there is no third answer.
+     */
+    wePairingViolation(args: {
+        slotKey: string;
+        firstDate: string;
+        secondDate: string;
+        firstHolders: readonly string[];
+        secondHolders: readonly string[];
+    }): string;
+
+    /** A preferred pair no two consecutive dates of the schedule form. `coverage()` only. */
+    wePairingNoOccurrenceSkip(args: { first: number; second: number; from: string; to: string }): string;
+
+    /**
+     * A quantity nothing in the schedule tallies. `coverage()` only.
+     *
+     * SL-01's tally vocabulary is stored nowhere in this repository and is opaque to this package
+     * (Decision A), so a mistyped `quantity` is the likeliest way this rule ever goes quiet — and a
+     * schedule that is already perfectly even produces exactly the same silence.
+     */
+    fairnessNoQuantitySkip(args: { quantity: string; from: string; to: string }): string;
+
+    /** Nobody in the comparison has an available day, so there is no denominator. `coverage()` only. */
+    fairnessNoDenominatorSkip(args: { from: string; to: string }): string;
+
+    /** A named holiday no date of the schedule falls on. `coverage()` only. */
+    holidayNotInHorizonSkip(args: { holidayKey: string; from: string; to: string }): string;
+
+    /** Owner decision W's year one, reported rather than left as silence. `coverage()` only. */
+    holidayLookbackSkip(args: { lookbackYears: number; from: string; to: string }): string;
+
+    /**
      * Owner decision I: a gap with only one end, reported rather than evaluated. `coverage()` only.
      *
      * Both edges take this shape — the gap after somebody's last duty and the gap before their
@@ -529,6 +742,16 @@ export interface ViolationMessages extends Vocabulary {
      * It prints the evaluable range beside the window, because the two together are what a reader
      * needs to decide whether to widen the context or to accept the gap — the window alone reads as
      * an unexplained refusal, and a refusal a reader cannot act on is one they learn to ignore.
+     *
+     * ## The justification was WIDENED at Task 18, because a fourth family arrived
+     *
+     * It shipped saying *"a count that is short cannot exceed a cap, but it can fall below a floor
+     * every time"*, which is true of the three families that existed and FALSE of
+     * `call_frequency_max`. That type is a cap whose limit is not authored: owner decision J makes
+     * the allowance `floor(availableDays / n)`, computed from the window's OWN contents, so a
+     * partial window shrinks the limit alongside the count and false-positives exactly as a floor
+     * does. A coverage row whose stated reason a reader can catch out is one they stop reading —
+     * `carryInSkip`'s recorded lesson, in the sentence beside it.
      */
     partialWindowSkip(args: { from: string; to: string; evaluableFrom: string; evaluableTo: string }): string;
 
@@ -580,6 +803,14 @@ export const EN: Messages = {
         return Number.isInteger(value) ? String(value) : value.toFixed(1);
     },
 
+    fraction(value) {
+        // Rounded BEFORE the whole-number test, or a pro-rated share of exactly three arrives as
+        // 3.0000000000000004 and prints as "3.0" — a precision a reader would go looking for.
+        const rounded = Math.round(value * 10) / 10;
+
+        return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+    },
+
     minGap({ value, unit, kinds }) {
         const between = kinds.length === 0 ? 'duties' : `duties of kind ${EN.conjoin(kinds)}`;
 
@@ -606,6 +837,24 @@ export const EN: Messages = {
         return (
             `${base}, averaged over ${averagingWeeks} such windows — at most ${averagedHours} h in any ` +
             `${averagedDays} consecutive days.`
+        );
+    },
+
+    callFrequencyMax({ n, windowDays, examples }) {
+        const worked = EN.conjoin(
+            examples.map(
+                ({ availableDays, permitted }) =>
+                    `${EN.plural(availableDays, 'available day', 'available days')} allow ` +
+                    `${EN.plural(permitted, 'call', 'calls')}`,
+            ),
+        );
+
+        return (
+            `At most one call in every ${EN.plural(n, 'day', 'days')} a person is actually AVAILABLE, ` +
+            `measured over any ${windowDays} consecutive days. The denominator is available days and ` +
+            'not calendar days: days on leave, days before the person joined and days off the roster ' +
+            `are removed, so the allowance FALLS around somebody's leave rather than rising — in one ` +
+            `such window ${worked}.`
         );
     },
 
@@ -718,6 +967,19 @@ export const EN: Messages = {
 
     anyPeriodClause() {
         return 'the period is any period at all';
+    },
+
+    wePairing({ pairs }) {
+        const named = EN.conjoin(pairs.map(({ first, second }) => `${first} then ${second}`));
+
+        return (
+            `Weekends run as BLOCKS: the pair of ISO weekdays ${named} is covered by the same person ` +
+            'rather than split between two, which is what gives everybody else a genuinely free ' +
+            'weekend. The days are ISO numbers because the day names belong to the department\'s own ' +
+            'calendar and are rendered by the server. A pair with only ONE of its days covered is ' +
+            'not a split and is not reported here — who has to be on duty at all is a coverage ' +
+            'requirement rather than a pairing preference.'
+        );
     },
 
     unwantedDayBlock() {
@@ -861,6 +1123,23 @@ export const EN: Messages = {
             `Who may fill which slot: ${clauses.join('; ')}. A person is judged by the level and the ` +
             'rotation they hold on the day of the duty, so a promotion part-way through changes the ' +
             'answer from that day on. Slots not named here are unrestricted.'
+        );
+    },
+
+    holidayEquity({ holidays, lookbackYears }) {
+        const across =
+            lookbackYears === 0
+                ? 'this schedule alone'
+                : `this schedule together with ${EN.plural(lookbackYears, 'year', 'years')} of credits ` +
+                  'carried forward';
+
+        return (
+            `${EN.conjoin(holidays as string[])} are spread evenly across the department, counted over ` +
+            `${across}. Working ANY part of a holiday is one credit for that holiday and that year, ` +
+            'however many of its days somebody works, and nobody may end up holding more than one ' +
+            'credit more than whoever holds the fewest. A credit nothing recorded counts as ZERO ' +
+            "rather than as unknown, so the first year spreads on that year's own assignments alone " +
+            '— duty covered on paper before this system existed is invisible here.'
         );
     },
 
@@ -1047,6 +1326,149 @@ export const EN: Messages = {
         );
     },
 
+    cohortScopeLabel({ unitKeys, levelKeys, personKeys }) {
+        const parts: string[] = [];
+
+        if (levelKeys.length > 0) {
+            parts.push(`at ${EN.conjoin(levelKeys as string[])}`);
+        }
+
+        if (unitKeys.length > 0) {
+            parts.push(`rotating on ${EN.conjoin(unitKeys as string[])}`);
+        }
+
+        if (personKeys.length > 0) {
+            parts.push('named on this rule');
+        }
+
+        return parts.length === 0 ? 'everybody in this schedule' : `people ${EN.conjoin(parts)}`;
+    },
+
+    fairnessDeviationViolation({ quantity, actual, expected, deviation, tolerance, over, cohortSize }) {
+        return (
+            `Holds ${actual} of the ${quantity} in this schedule against an expected share of ` +
+            `${EN.fraction(expected)} — ${EN.fraction(deviation)} ${over ? 'over' : 'under'}, where ` +
+            `this rule allows ${EN.plural(tolerance, 'duty', 'duties')} either side. The share is ` +
+            `pro-rated by the days each of the ${EN.plural(cohortSize, 'person', 'people')} compared ` +
+            'was actually available, so somebody on leave is expected to hold fewer rather than ' +
+            'being reported as under-loaded.'
+        );
+    },
+
+    fairnessSpreadViolation({ quantity, busiest, quietest, gap, allowance, cohortSize }) {
+        return (
+            `"${busiest.personKey}" holds ${busiest.actual} of the ${quantity} against an expected ` +
+            `share of ${EN.fraction(busiest.expected)} and "${quietest.personKey}" holds ` +
+            `${quietest.actual} against ${EN.fraction(quietest.expected)} — a gap of ` +
+            `${EN.fraction(gap)} where ${EN.fraction(allowance)} is allowed between those two. This ` +
+            `rule is set to measure only the widest gap across the ${EN.plural(cohortSize, 'person', 'people')} ` +
+            'compared, so it names the pair to move a duty between rather than everybody who is off.'
+        );
+    },
+
+    holidayEquityViolation({ holidays, holdings, fewest, lookbackCounted, lookbackYears }) {
+        const named = EN.conjoin(
+            holdings.map(({ personKey, credits }) => `"${personKey}" holds ${credits}`),
+        );
+
+        // THREE branches, not two, because "nothing was carried forward" has two causes and a
+        // reader can tell them apart: the rule asked for no lookback, or it asked and no history
+        // reached. One sentence covering both would be false half the time it was shown.
+        const counted = lookbackCounted
+            ? `Credits carried forward from ${EN.plural(lookbackYears, 'earlier year', 'earlier years')} ` +
+              'are included in these totals.'
+            : lookbackYears === 0
+              ? 'This rule looks back no further than the schedule itself, so these totals are this ' +
+                "schedule's alone."
+              : 'No duty history was supplied, so nothing is carried forward and these totals are this ' +
+                "schedule's alone.";
+
+        return (
+            `Holiday credits for ${EN.conjoin(holidays as string[])} are unevenly spread: ${named}, ` +
+            `where whoever holds the fewest holds ${fewest}. One credit per holiday per year, so a ` +
+            'difference of more than one is a credit that could have gone to somebody else. ' +
+            counted
+        );
+    },
+
+    wePairingViolation({ slotKey, firstDate, secondDate, firstHolders, secondHolders }) {
+        return (
+            `The weekend of ${firstDate} and ${secondDate} is split for slot "${slotKey}": ` +
+            `${EN.conjoin(firstHolders.map((key) => `"${key}"`))} on the first day and ` +
+            `${EN.conjoin(secondHolders.map((key) => `"${key}"`))} on the second. This rule asks for ` +
+            'the pair to be covered as a block by the same person, so that everybody else gets a ' +
+            'genuinely free weekend.'
+        );
+    },
+
+    wePairingNoOccurrenceSkip({ first, second, from, to }) {
+        return (
+            `No two consecutive dates reaching ${from} to ${to} are ISO weekdays ${first} then ` +
+            `${second}, so this pair could not be examined at all. A preferred pairing that names a ` +
+            'combination the calendar never produces is a rule that appears to be doing something ' +
+            'and is not.'
+        );
+    },
+
+    fairnessNoQuantitySkip({ quantity, from, to }) {
+        return (
+            `No duty between ${from} and ${to} is tallied as "${quantity}", so there was nothing to ` +
+            'spread. A quantity nothing tallies and a schedule that is already even produce exactly ' +
+            'the same silence, and only one of them is fine.'
+        );
+    },
+
+    fairnessNoDenominatorSkip({ from, to }) {
+        return (
+            `Nobody in this comparison has a single available day between ${from} and ${to}, so the ` +
+            'expected share cannot be pro-rated at all. Comparing raw counts instead would report ' +
+            'whoever was on leave as under-loaded, which is the reading owner decision Q refuses.'
+        );
+    },
+
+    holidayNotInHorizonSkip({ holidayKey, from, to }) {
+        return (
+            `No date between ${from} and ${to} falls on "${holidayKey}", so this schedule could not ` +
+            'spread it. Only credits carried in from earlier years count toward it here.'
+        );
+    },
+
+    holidayLookbackSkip({ lookbackYears, from, to }) {
+        return (
+            `This rule asks for ${EN.plural(lookbackYears, 'year', 'years')} of history and none was ` +
+            `supplied, so the schedule from ${from} to ${to} was judged on its own assignments. That ` +
+            'is the first year, reported rather than left silent: a lookback that quietly counted ' +
+            'zero would look identical to one that had been read and found nothing.'
+        );
+    },
+
+    rollingHoursMaxViolation({ minutes, hours, windowDays, averagingWeeks, from, to }) {
+        const averaged =
+            averagingWeeks === null
+                ? ''
+                : ` The ${hours} h figure is ${averagingWeeks} of the rule's own windows taken ` +
+                  'together rather than the number written on the rule itself.';
+
+        return (
+            `${EN.hours(minutes)} h of duty in the ${EN.plural(windowDays, 'day', 'days')} from ` +
+            `${from} to ${to}; at most ` +
+            `${hours} h are allowed. Hours are split at midnight, so a duty running overnight counts ` +
+            'on both of the dates it occupies, and slots that do not count toward duty hours are ' +
+            `left out.${averaged}`
+        );
+    },
+
+    callFrequencyMaxViolation({ calls, permitted, n, availableDays, windowDays, from, to }) {
+        return (
+            `${EN.plural(calls, 'call', 'calls')} in the ${EN.plural(windowDays, 'day', 'days')} from ` +
+            `${from} to ${to}; at ` +
+            `most ${permitted} ${permitted === 1 ? 'is' : 'are'} permitted. The person was available ` +
+            `on ${EN.plural(availableDays, 'day', 'days')} of that window and the rule allows one ` +
+            `call in every ${n}: leave, days before the join date and days off the roster are not ` +
+            'counted, so the allowance falls around them rather than rising.'
+        );
+    },
+
     openGapSkip({ personKey, from, to }) {
         return (
             `The gap for "${personKey}" between ${from} and ${to} has only one end, so it was not ` +
@@ -1067,8 +1489,9 @@ export const EN: Messages = {
     partialWindowSkip({ from, to, evaluableFrom, evaluableTo }) {
         return (
             `The window ${from} to ${to} is not wholly inside the evaluable range ${evaluableFrom} to ` +
-            `${evaluableTo}, so part of it could not be counted. A count that is short cannot exceed a ` +
-            'cap, but it can fall below a floor every time, so this window was left unjudged.'
+            `${evaluableTo}, so part of it could not be counted. A count that is short cannot exceed an ` +
+            "authored cap, but it can fall below a floor, miss a target, or shrink a limit the window's own " +
+            'contents decide — so this window was left unjudged.'
         );
     },
 

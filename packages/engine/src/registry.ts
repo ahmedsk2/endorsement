@@ -24,6 +24,7 @@ import type {
     LocationKind,
 } from './contract/types';
 import type { JsonSchema } from './contract/schema';
+import * as callFrequencyMax from './conditions/call_frequency_max';
 import * as clinicConflict from './conditions/clinic_conflict';
 import * as composition from './conditions/composition';
 import * as consecutiveMax from './conditions/consecutive_max';
@@ -32,6 +33,7 @@ import * as dowRestriction from './conditions/dow_restriction';
 import * as eligibility from './conditions/eligibility';
 import * as fairnessDistribution from './conditions/fairness_distribution';
 import * as freeDayMin from './conditions/free_day_min';
+import * as holidayEquity from './conditions/holiday_equity';
 import * as maxGap from './conditions/max_gap';
 import * as minGap from './conditions/min_gap';
 import * as onboardingGrace from './conditions/onboarding_grace';
@@ -42,6 +44,7 @@ import * as sameUnitConflict from './conditions/same_unit_conflict';
 import * as targetPerPeriod from './conditions/target_per_period';
 import * as unwantedDayBlock from './conditions/unwanted_day_block';
 import * as vacationBlock from './conditions/vacation_block';
+import * as wePairing from './conditions/we_pairing';
 
 /**
  * Which way a type pushes, and it exists for a product hazard rather than for tidiness.
@@ -117,17 +120,20 @@ export interface RegistryEntry {
  * The order is the catalog's own so the two can be read side by side, and that is asserted rather
  * than merely intended.
  *
- * ## `evaluate` arrives one task at a time, and `preview` may arrive AHEAD of it
+ * ## `evaluate` arrived one task at a time, and `preview` was allowed to arrive AHEAD of it
  *
- * Task 10 lands the three Hard placement types; Tasks 12–20 land the rest. Until an entry carries
- * an evaluator, a condition naming its key throws `UnimplementedConditionTypeError` — the honest
- * answer, because a silently ignored Hard rule is a control that appears to do nothing.
+ * Task 10 landed the three Hard placement types and Tasks 12–20 landed the rest; **as of Task 20
+ * every one of the twenty-two implemented entries carries an evaluator, a preview and a params
+ * schema**, which `registry.test.ts` asserts as a set rather than as a number. Until an entry
+ * carried an evaluator, a condition naming its key threw `UnimplementedConditionTypeError` — the
+ * honest answer, because a silently ignored Hard rule is a control that appears to do nothing.
  *
  * The two fields are coupled in ONE direction, asserted in `preview.test.ts`: `evaluate` implies
- * `preview` and `paramsSchema`, never the reverse. Four entries carry a schema and a sentence with
- * no predicate behind them yet (Task 9 landed the four whose WORDING an owner decision settles),
- * and that order is deliberate — the predicate then implements a schema that already exists,
- * instead of the schema being back-formed from whatever the predicate happened to read.
+ * `preview` and `paramsSchema`, never the reverse. Four entries carried a schema and a sentence
+ * with no predicate behind them for the middle of the phase (Task 9 landed the four whose WORDING
+ * an owner decision settles), and that order was deliberate — the predicate then implemented a
+ * schema that already existed, instead of the schema being back-formed from whatever the predicate
+ * happened to read.
  */
 export const CATALOG: readonly RegistryEntry[] = [
     {
@@ -200,6 +206,9 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'we_pairing',
         implemented: true,
+        evaluate: wePairing.evaluate,
+        preview: wePairing.preview,
+        paramsSchema: wePairing.PARAMS_SCHEMA,
         direction: 'target',
         locationKind: 'cohort',
         // A weekend straddling the month boundary is one weekend, and the half in the tail is what
@@ -209,6 +218,7 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'fairness_distribution',
         implemented: true,
+        evaluate: fairnessDistribution.evaluate,
         paramsSchema: fairnessDistribution.PARAMS_SCHEMA,
         preview: fairnessDistribution.preview,
         direction: 'equity',
@@ -330,6 +340,7 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'rolling_hours_max',
         implemented: true,
+        evaluate: rollingHoursMax.evaluate,
         paramsSchema: rollingHoursMax.PARAMS_SCHEMA,
         preview: rollingHoursMax.preview,
         direction: 'cap',
@@ -349,6 +360,13 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'call_frequency_max',
         implemented: true,
+        evaluate: callFrequencyMax.evaluate,
+        preview: callFrequencyMax.preview,
+        paramsSchema: callFrequencyMax.PARAMS_SCHEMA,
+        // A CAP whose limit is DERIVED rather than authored — `floor(availableDays / n)`, owner
+        // decision J — which is why it declines a partial window where `rolling_hours_max`, the
+        // other cap in its own task, evaluates one. `direction` records what CG-07 calls the row;
+        // the gate the type applies is in its own docblock, because the two are not the same fact.
         direction: 'cap',
         locationKind: 'window',
         needsCarryIn: true,
@@ -367,6 +385,9 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'holiday_equity',
         implemented: true,
+        evaluate: holidayEquity.evaluate,
+        preview: holidayEquity.preview,
+        paramsSchema: holidayEquity.PARAMS_SCHEMA,
         direction: 'equity',
         locationKind: 'cohort',
         // Its history arrives as `priorCredits` and `historyAvailableFrom`, not as prior DUTIES —

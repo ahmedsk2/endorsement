@@ -1,6 +1,6 @@
 {
-    "name": "count-min-a-floor-leaves-a-window-it-can-only-see-part-of-unjudged",
-    "why": "Owner decision L, and it is the asymmetry the whole window machinery turns on: a partial window makes both directions under-count, which is harmless for a cap and a false positive EVERY time for a floor, because the duties it cannot see are precisely the ones that would have met the number. The evaluable range here is the horizon itself, so the week reaching back to 26 July and the week reaching forward to 15 August are both partial, both left unjudged and both REPORTED — a silently dropped window is a guard that looks green. Only the middle week is measured, where p-ali is one short and p-zaid, who holds no duty at all, is two short. p-zaid is the second half of the case: a floor iterating duties rather than the roster would never see the person a floor exists to find.",
+    "name": "fairness-distribution-spread-mode-measures-the-widest-gap-and-names-the-pair",
+    "why": "THE TWO MODES ANSWER DIFFERENT QUESTIONS, AND THE THIRD PERSON IS WHY THIS WORLD IS NOT THE EXTERNAL ONE. Nine nights over three people who are each available every day: p-noor holds five, p-mid three, p-ali one, against an expected share of three each. Deviation mode names p-noor and p-ali, once each; spread mode measures only the distance between the busiest and the quietest and produces ONE finding naming that pair. The allowance is the widest gap deviation would have permitted between those two — each person's own tolerance, added — so a schedule clean under deviation is clean under spread. p-mid is listed FIRST and is neither extreme: found by a plant that stayed green, because with only two people the array head IS the quietest and never updating it changed nothing.",
     "context": {
         "timezone": "Asia/Riyadh",
         "weekStartIsoDay": 7,
@@ -79,64 +79,42 @@
                 "dayType": "WD",
                 "periodKey": "block-01",
                 "holidays": []
-            },
-            {
-                "date": "2026-08-11",
-                "isoWeekday": 2,
-                "dayType": "WD",
-                "periodKey": "block-01",
-                "holidays": []
-            },
-            {
-                "date": "2026-08-12",
-                "isoWeekday": 3,
-                "dayType": "WD",
-                "periodKey": "block-01",
-                "holidays": []
-            },
-            {
-                "date": "2026-08-13",
-                "isoWeekday": 4,
-                "dayType": "WD",
-                "periodKey": "block-01",
-                "holidays": []
-            },
-            {
-                "date": "2026-08-14",
-                "isoWeekday": 5,
-                "dayType": "WE",
-                "periodKey": "block-01",
-                "holidays": []
             }
         ],
-        "periods": [
-            {
-                "key": "block-01",
-                "startsOn": "2026-07-26",
-                "endsOn": "2026-08-15",
-                "weeks": [
-                    {
-                        "startsOn": "2026-07-26",
-                        "endsOn": "2026-08-01",
-                        "clippedStartsOn": "2026-07-26",
-                        "clippedEndsOn": "2026-08-01"
-                    },
-                    {
-                        "startsOn": "2026-08-02",
-                        "endsOn": "2026-08-08",
-                        "clippedStartsOn": "2026-08-02",
-                        "clippedEndsOn": "2026-08-08"
-                    },
-                    {
-                        "startsOn": "2026-08-09",
-                        "endsOn": "2026-08-15",
-                        "clippedStartsOn": "2026-08-09",
-                        "clippedEndsOn": "2026-08-15"
-                    }
-                ]
-            }
-        ],
+        "periods": [],
         "people": [
+            {
+                "key": "p-mid",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-08-01",
+                    "2026-08-02",
+                    "2026-08-03",
+                    "2026-08-04",
+                    "2026-08-05",
+                    "2026-08-06",
+                    "2026-08-07",
+                    "2026-08-08",
+                    "2026-08-09",
+                    "2026-08-10"
+                ],
+                "external": false
+            },
             {
                 "key": "p-ali",
                 "levelSpans": [
@@ -155,7 +133,18 @@
                 ],
                 "leaveDays": [],
                 "unwantedDays": [],
-                "eligibleDays": [],
+                "eligibleDays": [
+                    "2026-08-01",
+                    "2026-08-02",
+                    "2026-08-03",
+                    "2026-08-04",
+                    "2026-08-05",
+                    "2026-08-06",
+                    "2026-08-07",
+                    "2026-08-08",
+                    "2026-08-09",
+                    "2026-08-10"
+                ],
                 "external": false
             },
             {
@@ -176,28 +165,18 @@
                 ],
                 "leaveDays": [],
                 "unwantedDays": [],
-                "eligibleDays": [],
-                "external": false
-            },
-            {
-                "key": "p-zaid",
-                "levelSpans": [
-                    {
-                        "key": "R1",
-                        "from": "2026-01-01",
-                        "to": "2026-12-31"
-                    }
+                "eligibleDays": [
+                    "2026-08-01",
+                    "2026-08-02",
+                    "2026-08-03",
+                    "2026-08-04",
+                    "2026-08-05",
+                    "2026-08-06",
+                    "2026-08-07",
+                    "2026-08-08",
+                    "2026-08-09",
+                    "2026-08-10"
                 ],
-                "unitSpans": [
-                    {
-                        "key": "PICU",
-                        "from": "2026-01-01",
-                        "to": "2026-12-31"
-                    }
-                ],
-                "leaveDays": [],
-                "unwantedDays": [],
-                "eligibleDays": [],
                 "external": false
             }
         ],
@@ -208,7 +187,7 @@
                 "unitKey": "PICU",
                 "cadence": "daily",
                 "spanDays": 1,
-                "startMinute": 1020,
+                "startMinute": 1200,
                 "endMinute": 480,
                 "crossesMidnight": true,
                 "countsHours": true,
@@ -223,91 +202,125 @@
     "schedule": {
         "horizon": {
             "from": "2026-08-01",
-            "to": "2026-08-14",
+            "to": "2026-08-10",
             "evaluableFrom": "2026-08-01",
-            "evaluableTo": "2026-08-14"
+            "evaluableTo": "2026-08-10"
         },
         "duties": [
             {
+                "personKey": "p-mid",
+                "date": "2026-08-07",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-mid",
+                "date": "2026-08-08",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-mid",
+                "date": "2026-08-09",
+                "slotKey": "night"
+            },
+            {
                 "personKey": "p-ali",
-                "date": "2026-08-02",
+                "date": "2026-08-01",
                 "slotKey": "night"
             },
             {
                 "personKey": "p-noor",
                 "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-04",
                 "slotKey": "night"
             },
             {
                 "personKey": "p-noor",
                 "date": "2026-08-05",
                 "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-06",
+                "slotKey": "night"
             }
         ]
     },
     "conditions": [
         {
-            "id": "c-count-min",
-            "typeKey": "count_min",
+            "id": "c-fair",
+            "typeKey": "fairness_distribution",
             "class": "soft",
             "active": true,
             "params": {
-                "count": 2,
-                "window": "week"
+                "quantity": "nights",
+                "mode": "spread",
+                "excludeExternal": true
             },
             "rank": 3
         }
     ],
     "expected": [
         {
-            "conditionId": "c-count-min",
+            "conditionId": "c-fair",
             "severity": "soft",
             "location": {
-                "kind": "window",
-                "personKey": "p-ali",
-                "from": "2026-08-02",
-                "to": "2026-08-08",
+                "kind": "cohort",
+                "personKeys": [
+                    "p-noor",
+                    "p-ali"
+                ],
+                "scopeLabel": "everybody in this schedule",
                 "contributing": [
                     {
-                        "personKey": "p-ali",
+                        "personKey": "p-noor",
                         "date": "2026-08-02",
+                        "slotKey": "night"
+                    },
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-03",
+                        "slotKey": "night"
+                    },
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-04",
+                        "slotKey": "night"
+                    },
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-05",
+                        "slotKey": "night"
+                    },
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-06",
+                        "slotKey": "night"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-01",
                         "slotKey": "night"
                     }
                 ]
             },
-            "explanation": "1 duty in the week 2026-08-02 to 2026-08-08; at least 2 are required.",
-            "rank": 3
-        },
-        {
-            "conditionId": "c-count-min",
-            "severity": "soft",
-            "location": {
-                "kind": "window",
-                "personKey": "p-zaid",
-                "from": "2026-08-02",
-                "to": "2026-08-08",
-                "contributing": []
-            },
-            "explanation": "0 duties in the week 2026-08-02 to 2026-08-08; at least 2 are required.",
+            "explanation": "\"p-noor\" holds 5 of the nights against an expected share of 3 and \"p-ali\" holds 1 against 3 — a gap of 4 where 2 is allowed between those two. This rule is set to measure only the widest gap across the 3 people compared, so it names the pair to move a duty between rather than everybody who is off.",
             "rank": 3
         }
     ],
     "expectedCoverage": [
         {
-            "conditionId": "c-count-min",
+            "conditionId": "c-fair",
             "evaluatedWindows": 1,
-            "skipped": [
-                {
-                    "from": "2026-07-26",
-                    "to": "2026-08-01",
-                    "reason": "The window 2026-07-26 to 2026-08-01 is not wholly inside the evaluable range 2026-08-01 to 2026-08-14, so part of it could not be counted. A count that is short cannot exceed an authored cap, but it can fall below a floor, miss a target, or shrink a limit the window's own contents decide — so this window was left unjudged."
-                },
-                {
-                    "from": "2026-08-09",
-                    "to": "2026-08-15",
-                    "reason": "The window 2026-08-09 to 2026-08-15 is not wholly inside the evaluable range 2026-08-01 to 2026-08-14, so part of it could not be counted. A count that is short cannot exceed an authored cap, but it can fall below a floor, miss a target, or shrink a limit the window's own contents decide — so this window was left unjudged."
-                }
-            ]
+            "skipped": []
         }
     ]
 }

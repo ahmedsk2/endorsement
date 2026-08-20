@@ -1,0 +1,146 @@
+{
+    "name": "fairness-distribution-a-quantity-nothing-tallies-is-reported-rather-than-passing-quietly",
+    "why": "SL-01's tally vocabulary is stored nowhere in this repository and is opaque to this package, so a mistyped quantity is the likeliest way this rule ever goes quiet. The slots here tally nights and the condition asks about holidays: nothing is counted, nobody is over or under, and the answer is identical to a schedule that is already perfectly even. The coverage row is the only thing that tells the two apart, and it says which quantity it looked for.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-08-01",
+                    "2026-08-02",
+                    "2026-08-03",
+                    "2026-08-04",
+                    "2026-08-05"
+                ],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1200,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-05",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-05"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-fair",
+            "typeKey": "fairness_distribution",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "quantity": "holidays",
+                "mode": "deviation",
+                "excludeExternal": true
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-fair",
+            "evaluatedWindows": 0,
+            "skipped": [
+                {
+                    "from": "2026-08-01",
+                    "to": "2026-08-05",
+                    "reason": "No duty between 2026-08-01 and 2026-08-05 is tallied as \"holidays\", so there was nothing to spread. A quantity nothing tallies and a schedule that is already even produce exactly the same silence, and only one of them is fine."
+                }
+            ]
+        }
+    ]
+}

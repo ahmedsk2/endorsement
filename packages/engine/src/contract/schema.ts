@@ -185,7 +185,11 @@ export const CONTRACT_SCHEMA: JsonSchemaDocument = {
         },
 
         Person: {
-            description: 'priorCredits is number|null per holiday key; null means UNKNOWN, not zero.',
+            description:
+                'priorCredits is number|null per holiday key. CORRECTED AT P2-2 TASK 19: null and ' +
+                'an absent key both read as ZERO (owner decision W, answered). The null spelling ' +
+                'stays admissible so a caller may serialise either; holiday_equity reads both the ' +
+                'same way.',
             type: 'object',
             required: ['key', 'levelSpans', 'unitSpans', 'leaveDays', 'unwantedDays', 'eligibleDays', 'external'],
             additionalProperties: false,

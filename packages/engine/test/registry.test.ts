@@ -47,6 +47,56 @@ describe('the registry as a whole', () => {
         expect(mismatched).toEqual([]);
     });
 
+    /**
+     * THE CATALOG IS COMPLETE, AND THE CLAIM IS DERIVED RATHER THAN COUNTED.
+     *
+     * `implemented: true` was a DECLARATION for most of this phase: an entry could say so while
+     * carrying no predicate at all, and `evaluate()` threw `UnimplementedConditionTypeError` on it —
+     * which is honest, and is also indistinguishable from a row nobody has got to yet. As of Task 20
+     * every implemented entry carries all three of an evaluator, a preview and a params schema, so
+     * the declaration and the reality are the same statement.
+     *
+     * Named rather than counted, because a count survives the set being replaced by a different one
+     * — and the number 22 has been miscounted in this repository often enough that `registry.ts`
+     * deliberately writes it down nowhere.
+     */
+    it('has a predicate, a preview and a schema behind every row it declares implemented', () => {
+        const incomplete = implemented
+            .filter(
+                (entry) =>
+                    entry.evaluate === undefined ||
+                    entry.preview === undefined ||
+                    entry.paramsSchema === undefined,
+            )
+            .map((entry) => entry.typeKey);
+
+        expect(incomplete).toEqual([]);
+        expect(implemented.map((entry) => entry.typeKey).sort()).toEqual([
+            'call_frequency_max',
+            'clinic_conflict',
+            'composition',
+            'consecutive_max',
+            'count_max',
+            'count_min',
+            'dow_restriction',
+            'eligibility',
+            'fairness_distribution',
+            'free_day_min',
+            'holiday_equity',
+            'max_gap',
+            'min_gap',
+            'onboarding_grace',
+            'overlap_block',
+            'post_duty_exclusion',
+            'rolling_hours_max',
+            'same_unit_conflict',
+            'target_per_period',
+            'unwanted_day_block',
+            'vacation_block',
+            'we_pairing',
+        ]);
+    });
+
     it('is reachable by key', () => {
         expect(registryEntry('overlap_block')?.locationKind).toBe('placement');
         expect(registryEntry('no_such_type')).toBeUndefined();

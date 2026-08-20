@@ -256,6 +256,41 @@ describe('vacation_block, beyond the corpus', () => {
 
         expect(evaluate(schedule, context, WORLD.conditions)).toEqual([]);
     });
+
+    /**
+     * THE TWO DAY LISTS ARE DIFFERENT CLINICAL FACTS, and until now they were held apart only by
+     * the corpus happening to leave one of them empty in each world — true, and true by accident.
+     * P2-1's review asked whether the pair had collapsed into one; it had not, and the swap fails
+     * four corpus cases. But a future case giving one person leave AND a registration on the same
+     * date would make that swap invisible again, in a pair whose whole difference is Hard against
+     * top-soft: a leave violation blocks publication and a preference violation is a warning, so a
+     * type reading the wrong list misgrades a gate rather than mislabelling a badge.
+     *
+     * So: move the dates from one list to the other on ONE world, and the answers move with them.
+     * PLANTED both ways — `vacation_block` reading `unwantedDays`, `unwanted_day_block` reading
+     * `leaveDays` — each red here as well as in the corpus. Reverted.
+     */
+    it('reads leaveDays where unwanted_day_block reads unwantedDays, on one world', () => {
+        const moved = withPeople(WORLD.context, (copy) => {
+            for (const person of copy.people) {
+                person.unwantedDays = person.leaveDays;
+                person.leaveDays = [];
+            }
+        });
+
+        const registration: Condition = {
+            id: 'c-unwanted',
+            typeKey: 'unwanted_day_block',
+            class: 'soft',
+            rank: 1,
+            active: true,
+            params: {},
+        };
+
+        expect(evaluate(WORLD.schedule, moved, WORLD.conditions)).toEqual([]);
+        expect(evaluate(WORLD.schedule, moved, [registration])).toHaveLength(2);
+        expect(evaluate(WORLD.schedule, WORLD.context, [registration])).toEqual([]);
+    });
 });
 
 describe("eligibility's auto-fill order half does not ship, and the absence is asserted", () => {

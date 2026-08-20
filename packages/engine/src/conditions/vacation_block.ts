@@ -20,6 +20,19 @@
  *
  * CG-07's cell is an em dash. Which people the rule applies to is CG-01's `scope`, not a parameter
  * of the type — the same separation owner decision K draws for `count_max`.
+ *
+ * ## This type and `unwanted_day_block` CAN be told apart, and that was checked rather than assumed
+ *
+ * P2-1's review suspected the two of collapsing into one clinical fact — a leave violation and a
+ * preference violation being indistinguishable, which would be a defect rather than a gap in the
+ * corpus. MEASURED and REFUTED: swapping the field each type reads — `leaveDays` here for
+ * `unwantedDays`, and the mirror in `unwanted_day_block` — fails 4 corpus tests, because this
+ * case's person registers no unwanted days and that case's registers no leave.
+ *
+ * That held by ACCIDENT, though: a future case giving one person both on one date would make the
+ * swap invisible again, in a pair whose whole difference is Hard against top-soft. So it is now
+ * held on purpose too, by moving the dates from one list to the other on one world and asserting
+ * that the answers swap with them (`conditions.test.ts`).
  */
 
 import type { JsonSchema } from '../contract/schema';

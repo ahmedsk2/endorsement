@@ -613,10 +613,21 @@ place a scheduling rule is allowed to exist.*
   identifier while explaining why it is absent. Pinned in both directions, per `SourceScanner`'s
   recorded discipline: the prose is gone and a known code token is still there.
 
-- **A placement type's `evaluatedWindows` counts PLACEMENTS**, and a `needsCarryIn` one reports a
-  left-edge skip when `historyAvailableFrom` is `null` — never when `priorDuties` merely happens to
-  be empty, which is the caller saying *"I looked, and there were none"*. Conflating the two would
-  report a skipped window on every correctly-supplied month and train a reader to ignore the field.
+- **A placement type's `evaluatedWindows` counts the placements it COULD have badged**, which is
+  not the same as every placement it looped over: a duty of a kind outside `kinds`/`to`, or filling
+  a slot absent from `eligibility`'s map, can never appear in a finding, so counting it claims the
+  rule examined a cell it is structurally incapable of badging. `eligibility` and `consecutive_max`
+  always read it that way; `min_gap` and `post_duty_exclusion` were corrected to (P2-1 review), each
+  reading its kind filter ONCE and using it for both the count and the scan. `post_duty_exclusion`
+  applies `to` and deliberately not `from`, because `from` selects the ANCHOR and an anchor is not
+  the placement a violation is located at.
+  A `needsCarryIn` type reports a left-edge skip when no usable history reaches back past
+  `horizon.from` — `historyAvailableFrom` being `null`, **or** being real and starting at or after
+  `horizon.from`, which is what a first-ever draft has. **The two are DIFFERENT sentences**: the
+  reason shipped announcing *"historyAvailableFrom is null"* for both, and a coverage row a reader
+  can catch out is one they stop reading. Never when `priorDuties` merely happens to be empty, which
+  is the caller saying *"I looked, and there were none"* — conflating that with a gap would report a
+  skipped window on every correctly-supplied month.
   STATED RESIDUAL: there is no `futureAvailableTo` counterpart, so the RIGHT edge is not reported.
 
 - **The eleven placement-located types are shipped (P2-1, Tasks 10, 12, 13, 14)** — `overlap_block`,

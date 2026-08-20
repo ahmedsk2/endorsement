@@ -41,6 +41,25 @@
  * is after its own start — but a proof that lets a scan skip a comparison is exactly what made
  * `overlap_block`'s abutting fixture unfalsifiable at Task 10: a second, invisible statement of the
  * rule the fixture exists to test. So both orderings are tested and `startsWithin()` decides.
+ *
+ * ## `to` decides what was EVALUATED; `from` decides nothing about the count, and that is stated
+ *
+ * A placement whose kind is not in `to` can never be reported by this condition, so it is not a
+ * placement this condition judged — the reading `eligibility` already uses for a slot absent from
+ * its map, and `consecutive_max` for a duty outside its `kinds`. Counting it would claim the rule
+ * examined a cell it is structurally incapable of badging, which is the kind of coverage number a
+ * reader learns to stop trusting.
+ *
+ * `from` is deliberately NOT applied to the count, and that is a decision rather than an oversight:
+ * `from` selects the ANCHOR, and an anchor is not the placement a violation is located at. Every
+ * duty is offered to both loops, so a `from`-only kind is still counted, or not, on its own merits
+ * as a subject.
+ *
+ * The narrowing of BOTH lists was unfalsifiable until P2-1's review: replacing either with the `[]`
+ * that means *"every kind"* left 587/587 green while the rule blocked every kind after every kind —
+ * CG-07's defining sentence for this type discarded entirely. The corpus case
+ * `post-duty-exclusion-the-from-and-to-kinds-each-narrow` is what fails now, on each side
+ * separately, and its coverage row is what fails if the count moves back above the `to` test.
  */
 
 import type { JsonSchema } from '../contract/schema';
@@ -121,11 +140,18 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
         const ordered = orderedDutiesFor(personKey, streams, slots);
 
         for (const subject of ordered) {
-            if (subject.origin === 'horizon' && personInScope(person, subject.duty.date, condition.scope)) {
+            // ONE reading of `to`, used by the count and by the scan. Two would be two rules.
+            const blockable = kindMatches(subject.slot.kind, params.to);
+
+            if (
+                blockable &&
+                subject.origin === 'horizon' &&
+                personInScope(person, subject.duty.date, condition.scope)
+            ) {
                 evaluated += 1;
             }
 
-            if (!kindMatches(subject.slot.kind, params.to)) {
+            if (!blockable) {
                 continue;
             }
 

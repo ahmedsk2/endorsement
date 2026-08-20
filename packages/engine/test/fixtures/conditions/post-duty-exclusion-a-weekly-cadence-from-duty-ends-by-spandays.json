@@ -195,7 +195,7 @@
     "expectedCoverage": [
         {
             "conditionId": "c-post",
-            "evaluatedWindows": 3,
+            "evaluatedWindows": 2,
             "skipped": []
         }
     ]

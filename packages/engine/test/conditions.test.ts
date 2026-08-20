@@ -95,6 +95,7 @@ describe('the condition corpus', () => {
             'overlap-block-is-per-person-not-per-slot',
             'overlap-block-night-crosses-into-the-next-date',
             'post-duty-exclusion-a-weekly-cadence-from-duty-ends-by-spandays',
+            'post-duty-exclusion-the-from-and-to-kinds-each-narrow',
             'post-duty-exclusion-the-window-opens-on-the-thirty-first-and-closes-on-the-first',
             'same-unit-conflict-a-day-exception-lifts-the-ban-on-that-date-alone',
             'same-unit-conflict-two-rotators-on-one-unit-and-a-colleague-elsewhere',

@@ -1,0 +1,262 @@
+{
+    "name": "composition-the-period-that-begins-in-the-published-month",
+    "why": "The mix's seam case, and it carries the unmapped-level half as well. p-ali's block began on 26 July: two weekday duties there and one weekend duty in the draft make the stated mix of two and one exactly, so dropping the carry-in tail turns a clean row into two weekdays short. p-noor is an R3 with three duties and no entry in the map, so nothing judges them — a level absent from the map has no target, and defaulting it to a mix of zeroes would flag them for every duty they hold. Both assertions are empty lists, and both go non-empty under their own mistake.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-07-26",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-13",
+                "holidays": []
+            },
+            {
+                "date": "2026-07-27",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-13",
+                "holidays": []
+            },
+            {
+                "date": "2026-07-28",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-13",
+                "holidays": []
+            },
+            {
+                "date": "2026-07-29",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-13",
+                "holidays": []
+            },
+            {
+                "date": "2026-07-30",
+                "isoWeekday": 4,
+                "dayType": "WD",
+                "periodKey": "block-13",
+                "holidays": []
+            },
+            {
+                "date": "2026-07-31",
+                "isoWeekday": 5,
+                "dayType": "WE",
+                "periodKey": "block-13",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-13",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-13",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-13",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-13",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-13",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-06",
+                "isoWeekday": 4,
+                "dayType": "WD",
+                "periodKey": "block-13",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-07",
+                "isoWeekday": 5,
+                "dayType": "WE",
+                "periodKey": "block-13",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-08",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-13",
+                "holidays": []
+            }
+        ],
+        "periods": [
+            {
+                "key": "block-13",
+                "startsOn": "2026-07-26",
+                "endsOn": "2026-08-08",
+                "weeks": [
+                    {
+                        "startsOn": "2026-07-26",
+                        "endsOn": "2026-08-01",
+                        "clippedStartsOn": "2026-07-26",
+                        "clippedEndsOn": "2026-08-01"
+                    },
+                    {
+                        "startsOn": "2026-08-02",
+                        "endsOn": "2026-08-08",
+                        "clippedStartsOn": "2026-08-02",
+                        "clippedEndsOn": "2026-08-08"
+                    }
+                ]
+            }
+        ],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R3",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-07-27",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-07-28",
+                "slotKey": "night"
+            }
+        ],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-05",
+            "evaluableFrom": "2026-07-20",
+            "evaluableTo": "2026-08-12"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-04",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-mix",
+            "typeKey": "composition",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "targets": {
+                    "R1": {
+                        "WD": 2,
+                        "WE": 1
+                    }
+                }
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-mix",
+            "evaluatedWindows": 1,
+            "skipped": []
+        }
+    ]
+}

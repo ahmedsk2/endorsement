@@ -81,7 +81,6 @@
  *     people are mirror images so that either direction of the mistake turns one row into the other.
  */
 
-import { compareYmd } from '../calendar/ymd';
 import type { JsonSchema } from '../contract/schema';
 import type {
     Condition,
@@ -95,18 +94,19 @@ import type {
 } from '../contract/types';
 import { assertValidAgainst } from '../contract/validate';
 import type { Duty } from '../duty/interval';
-import { orderedDutiesFor, slotIndex } from '../duty/order';
+import { slotIndex, type DutyStreams, type SlotIndex } from '../duty/order';
 import type { Window } from '../duty/windows';
 import {
     carryInLeftEdge,
     dutyStreams,
-    historyReaches,
     kindMatches,
+    positionedIn,
     levelFilterMatches,
-    onRosterThroughout,
+    midWindowJoinSkip,
     periodWindows,
     personInScope,
     rosterFor,
+    wholeWindowVerdict,
 } from './support';
 
 /** Which way one condition row of this pair points. Not a parameter — it is the type key. */
@@ -232,27 +232,18 @@ export function evaluateCount(
     let evaluated = 0;
 
     for (const { window } of windows) {
-        const seen = historyReaches(context, schedule.horizon, window.from);
+        // A FLOOR refuses both partial shapes and a CAP refuses neither — the asymmetry is owner
+        // decision L and it lives in `wholeWindowVerdict`, shared with the two types Task 16 adds.
+        if (direction === 'min') {
+            const verdict = wholeWindowVerdict(window, context, schedule.horizon, messages);
 
-        // A FLOOR refuses both partial shapes; a CAP refuses neither. Only the first is named per
-        // window — see the module docblock for why the second is one row rather than many.
-        if (direction === 'min' && !window.fullyEvaluable) {
-            skipped.push({
-                from: window.from,
-                to: window.to,
-                reason: messages.partialWindowSkip({
-                    from: window.from,
-                    to: window.to,
-                    evaluableFrom: schedule.horizon.evaluableFrom,
-                    evaluableTo: schedule.horizon.evaluableTo,
-                }),
-            });
+            if (!verdict.measure) {
+                if (verdict.skip !== null) {
+                    skipped.push(verdict.skip);
+                }
 
-            continue;
-        }
-
-        if (direction === 'min' && !seen) {
-            continue;
+                continue;
+            }
         }
 
         evaluated += 1;
@@ -265,17 +256,10 @@ export function evaluateCount(
             // Owner decision L, per person rather than per window: a floor judges only a window
             // this person actually had. A cap is unaffected — somebody who joined on the 20th and
             // took four calls by the 28th has exceeded a cap of three however short their window.
-            if (direction === 'min' && !onRosterThroughout(person, window.from)) {
-                skipped.push({
-                    from: window.from,
-                    to: window.to,
-                    reason: messages.midWindowJoinSkip({
-                        personKey: person.key,
-                        joinedAt: person.joinedAt as string,
-                        from: window.from,
-                        to: window.to,
-                    }),
-                });
+            const joinSkip = direction === 'min' ? midWindowJoinSkip(person, window, messages) : null;
+
+            if (joinSkip !== null) {
+                skipped.push(joinSkip);
 
                 continue;
             }
@@ -319,29 +303,24 @@ export function evaluateCount(
 }
 
 /**
- * The duties this person holds in this window, in chronological order — the count, and the
+ * The duties this person holds in this window and this rule counts — the number, and the
  * `contributing` list a workbench badge needs.
  *
- * `contributing` is MANDATORY on a window violation for exactly this reason: a scheduler told a week
- * is over budget and not which placement to move has been told nothing they can act on. The tail
- * duties are in it too, because a cap breached by three duties two of which were published last
- * month is a different problem from one breached by three drafted this week, and the list is what
- * says which.
+ * The anchor-date filter is `positionedIn`'s, shared with the three other window-located types; the
+ * only thing this adds is `kinds`, which is the only thing CG-07 gives this row and not those. The
+ * TAIL duties are in the list too, because a cap breached by three duties two of which were
+ * published last month is a different problem from one breached by three drafted this week, and the
+ * list is what says which.
  */
 function countedFor(
     personKey: string,
     window: Window,
     params: CountParams,
-    streams: Parameters<typeof orderedDutiesFor>[1],
-    slots: Parameters<typeof orderedDutiesFor>[2],
+    streams: DutyStreams,
+    slots: SlotIndex,
 ): Duty[] {
-    return orderedDutiesFor(personKey, streams, slots)
-        .filter(
-            (positioned) =>
-                kindMatches(positioned.slot.kind, params.kinds) &&
-                compareYmd(positioned.duty.date, window.from) >= 0 &&
-                compareYmd(positioned.duty.date, window.to) <= 0,
-        )
+    return positionedIn(personKey, window, streams, slots)
+        .filter((positioned) => kindMatches(positioned.slot.kind, params.kinds))
         .map((positioned) => positioned.duty);
 }
 

@@ -1,0 +1,312 @@
+{
+    "name": "composition-a-holiday-that-falls-on-a-weekend-is-its-own-bucket",
+    "why": "Calendar::dayType() makes a holiday beat a weekend deliberately, and 7 August is a Friday — a weekend day in this department — that is also Eid. Owner decision N's optional HOL bucket is what stops that duty being counted as an ordinary weekend one: p-ali holds two weekdays, one weekend day and the holiday, which is exactly the stated mix, and flattening the day type to two values makes them two over on weekends and one short on holidays. p-noor holds two weekend days and no holiday and is off in both directions at once, which is what proves the rule still fires rather than the case being green because nothing was measured.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-06",
+                "isoWeekday": 4,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-07",
+                "isoWeekday": 5,
+                "dayType": "HOL",
+                "periodKey": "block-01",
+                "holidays": [
+                    {
+                        "key": "eid",
+                        "year": 1448
+                    }
+                ]
+            },
+            {
+                "date": "2026-08-08",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-09",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-10",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-11",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-12",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-13",
+                "isoWeekday": 4,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-14",
+                "isoWeekday": 5,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-15",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [
+            {
+                "key": "block-01",
+                "startsOn": "2026-08-02",
+                "endsOn": "2026-08-15",
+                "weeks": [
+                    {
+                        "startsOn": "2026-08-02",
+                        "endsOn": "2026-08-08",
+                        "clippedStartsOn": "2026-08-02",
+                        "clippedEndsOn": "2026-08-08"
+                    },
+                    {
+                        "startsOn": "2026-08-09",
+                        "endsOn": "2026-08-15",
+                        "clippedStartsOn": "2026-08-09",
+                        "clippedEndsOn": "2026-08-15"
+                    }
+                ]
+            }
+        ],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-02",
+            "to": "2026-08-15",
+            "evaluableFrom": "2026-07-26",
+            "evaluableTo": "2026-08-22"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-04",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-07",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-08",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-10",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-11",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-14",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-15",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-mix",
+            "typeKey": "composition",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "targets": {
+                    "R1": {
+                        "WD": 2,
+                        "WE": 1,
+                        "HOL": 1
+                    }
+                }
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-mix",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-noor",
+                "from": "2026-08-02",
+                "to": "2026-08-15",
+                "contributing": [
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-10",
+                        "slotKey": "night"
+                    },
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-11",
+                        "slotKey": "night"
+                    },
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-14",
+                        "slotKey": "night"
+                    },
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-15",
+                        "slotKey": "night"
+                    }
+                ]
+            },
+            "explanation": "In the period 2026-08-02 to 2026-08-15 the mix for R1 is off: 2 on weekends where 1 is expected and 0 on holidays where 1 is expected.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-mix",
+            "evaluatedWindows": 1,
+            "skipped": []
+        }
+    ]
+}

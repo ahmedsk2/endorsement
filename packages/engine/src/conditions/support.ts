@@ -37,7 +37,7 @@
  * decides how either is said.
  */
 
-import { addDays, compareYmd, isoWeekday, type Ymd } from '../calendar/ymd';
+import { addDays, compareYmd, datesBetween, isoWeekday, type Ymd } from '../calendar/ymd';
 import type {
     ConditionScope,
     CoverageDetail,
@@ -51,7 +51,7 @@ import type {
     Week,
 } from '../contract/types';
 import type { Duty } from '../duty/interval';
-import type { DutyStreams } from '../duty/order';
+import { orderedDutiesFor, type DutyStreams, type PositionedDuty, type SlotIndex } from '../duty/order';
 import { windowFor, windowTouchesHorizon, type Horizon, type Window } from '../duty/windows';
 import type { Span } from '../contract/types';
 
@@ -466,6 +466,145 @@ export function levelFilterMatches(person: Person, date: Ymd, levels: readonly s
  */
 export function onRosterThroughout(person: Person, from: Ymd): boolean {
     return person.joinedAt === undefined || compareYmd(person.joinedAt, from) <= 0;
+}
+
+/**
+ * One person's duties whose ANCHOR DATE falls inside a window, chronologically — with their slots.
+ *
+ * Decision A's anchor-date reading, in one place for the four window-located types that take it: a
+ * Friday-night call running to Saturday morning is ONE Friday call, in the window Friday falls in
+ * and in no other. Four copies of that filter would disagree only at a week boundary, which is
+ * where a scheduler is least able to check it by eye.
+ *
+ * It reads all three streams, so a window reaching into the carry-in tail counts what is there.
+ */
+export function positionedIn(
+    personKey: string,
+    window: Window,
+    streams: DutyStreams,
+    slots: SlotIndex,
+): PositionedDuty[] {
+    return orderedDutiesFor(personKey, streams, slots).filter(
+        (positioned) =>
+            compareYmd(positioned.duty.date, window.from) >= 0 &&
+            compareYmd(positioned.duty.date, window.to) <= 0,
+    );
+}
+
+/**
+ * The same list as bare duties — a window violation's `contributing`.
+ *
+ * `contributing` is MANDATORY on a window location for exactly this reason: a scheduler told a
+ * period is off target and not which placement to move has been told nothing they can act on. It
+ * MAY be empty, and that is a floor or a target answering rather than failing to — the person who
+ * holds nothing is precisely whom a floor exists to find.
+ */
+export function dutiesIn(
+    personKey: string,
+    window: Window,
+    streams: DutyStreams,
+    slots: SlotIndex,
+): Duty[] {
+    return positionedIn(personKey, window, streams, slots).map((positioned) => positioned.duty);
+}
+
+/** May this window be measured, and if not, is there a row to show for it? */
+export type WindowVerdict = { measure: true } | { measure: false; skip: SkippedWindow | null };
+
+/**
+ * Owner decision L's gate, in ONE place for the three types that need it.
+ *
+ * A floor and a target may measure only a WHOLE window, and a window can fail to be whole in two
+ * different ways that deserve two different reports:
+ *
+ *  - **Clipped by the evaluable range** — named individually, because *which* window it was is the
+ *    actionable half and the answer differs per window.
+ *  - **Reaching back before the horizon with no history behind it** — reported by
+ *    {@link carryInLeftEdge}'s single row instead, because the answer is identical for every such
+ *    window and one row apiece would repeat one fact until a reader stopped reading them. The
+ *    `skip: null` is that decision, spelled as a value rather than left as a missing branch.
+ *
+ * A CAP does not call this at all: an under-count cannot exceed a limit, so it evaluates both
+ * shapes. That asymmetry is the whole of decision L and it is why this returns a verdict rather
+ * than a boolean — a boolean would have made the two skip shapes one, which is the distinction.
+ */
+export function wholeWindowVerdict(
+    window: Window,
+    context: EvaluationContext,
+    horizon: Horizon,
+    messages: ViolationMessages,
+): WindowVerdict {
+    if (!window.fullyEvaluable) {
+        return {
+            measure: false,
+            skip: {
+                from: window.from,
+                to: window.to,
+                reason: messages.partialWindowSkip({
+                    from: window.from,
+                    to: window.to,
+                    evaluableFrom: horizon.evaluableFrom,
+                    evaluableTo: horizon.evaluableTo,
+                }),
+            },
+        };
+    }
+
+    if (!historyReaches(context, horizon, window.from)) {
+        return { measure: false, skip: null };
+    }
+
+    return { measure: true };
+}
+
+/**
+ * The per-PERSON half of the same gate: did they have the whole of this window? (Owner decision L.)
+ *
+ * Returns the row when they did not, so the caller both skips and says so in one place — the pair
+ * that P2-1's carry-in types learned to assert together, because a rule going quiet and a rule
+ * reporting nothing look identical on a green suite.
+ */
+export function midWindowJoinSkip(
+    person: Person,
+    window: Window,
+    messages: ViolationMessages,
+): SkippedWindow | null {
+    if (onRosterThroughout(person, window.from)) {
+        return null;
+    }
+
+    return {
+        from: window.from,
+        to: window.to,
+        reason: messages.midWindowJoinSkip({
+            personKey: person.key,
+            joinedAt: person.joinedAt as string,
+            from: window.from,
+            to: window.to,
+        }),
+    };
+}
+
+/**
+ * `AvailabilitySummary`'s vacation-week rule, VERBATIM: any overlap with a week's CLIPPED bounds
+ * counts as a whole vacation week (owner decision N).
+ *
+ * So a Thursday-to-Monday leave is TWO vacation weeks and a Sunday-to-Thursday leave is one, and
+ * the count moves with where the leave falls rather than with how long it is. That is deliberately
+ * not the intuitive reading, which is exactly why it is carried from one definition: the engine and
+ * the rota screen reporting different counts for the same person in the same period is a
+ * disagreement nobody could adjudicate from either screen.
+ *
+ * It reads the CLIPPED bounds for the same reason `periodWindows` does — at a block edge the
+ * department's week is shorter, and leave in the days the block does not own belongs to the
+ * neighbouring block's count.
+ */
+export function vacationWeeksIn(person: Person, period: Period): number {
+    const leave = new Set<string>(person.leaveDays);
+
+    return period.weeks.filter((week) =>
+        datesBetween(week.clippedStartsOn, week.clippedEndsOn).some((date) => leave.has(date)),
+    ).length;
 }
 
 /**

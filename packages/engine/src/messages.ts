@@ -89,6 +89,35 @@ export interface CountWindowText {
     kinds: readonly string[];
 }
 
+/** One level's composition target, with `holiday` null when the target folds holidays into WE. */
+export interface CompositionLevelText {
+    levelKey: string;
+    weekday: number;
+    weekend: number;
+    holiday: number | null;
+}
+
+/** One bucket that is off: which, what was asked for, and what the person actually holds. */
+export interface BucketText {
+    bucket: 'WD' | 'WE' | 'HOL';
+    target: number;
+    actual: number;
+}
+
+/**
+ * One `target_per_period` window that missed — with the EFFECTIVE target and the branch it came
+ * from. `clause` is `null` when the level's own number applied and a rendered predicate when a
+ * modifier replaced it (owner decision M).
+ */
+export interface TargetWindowText {
+    actual: number;
+    target: number;
+    levelKey: string;
+    from: string;
+    to: string;
+    clause: string | null;
+}
+
 /** One base target, already paired with the level it belongs to. */
 export interface LevelTarget {
     levelKey: string;
@@ -145,6 +174,36 @@ export interface Vocabulary {
      * hours print whole: a scheduler reading `4.0 h` wonders what the missing precision was.
      */
     hours(minutes: number): string;
+
+    /**
+     * OWNER DECISION M'S MODIFIER CLAUSES, and they are in the SHARED vocabulary rather than in
+     * the preview half — which is where they started and where they no longer belong.
+     *
+     * Decision M's whole argument for *replace* over *adjust* is that *"replace makes the effective
+     * target readable at both branches"*. That is only true if BOTH branches can say which branch
+     * they took, and until Task 16 the violation could not: the clauses lived in
+     * {@link PreviewMessages} and `ConditionEvaluator` is handed {@link ViolationMessages}. A
+     * violation reading *"the target is 2"* with no way to say why it was not 4 hands a reader the
+     * number and withholds the reason for it, which is the shape of preview defect decision M
+     * exists to refuse, one screen along.
+     *
+     * They are vocabulary in the strict sense the interface means: a FRAGMENT both halves compose
+     * into their own sentence, like `conjoin` and `hours`. Duplicating them into the violation half
+     * would have been two renderings of one predicate, disagreeing only once somebody reworded one.
+     */
+    vacationWeeksAtLeast(weeks: number): string;
+
+    /** The second and last member of decision M's closed predicate vocabulary. */
+    periodWeeksAtMost(weeks: number): string;
+
+    /**
+     * A modifier whose `when` names no predicate at all — the clause for *"always"*.
+     *
+     * It has to say something: owner decision M makes a modifier REPLACE the target, so a branch
+     * that applied unconditionally and printed a blank where its condition belongs would read as a
+     * second base target rather than as an exception that always fires.
+     */
+    anyPeriodClause(): string;
 }
 
 /** Every sentence CG-04's preview can produce (P2 Task 9, completed here). */
@@ -191,20 +250,16 @@ export interface PreviewMessages extends Vocabulary {
      */
     countMin(args: CountRuleText): string;
 
-    /** A modifier's `vacationWeeksAtLeast` predicate, as a clause. */
-    vacationWeeksAtLeast(weeks: number): string;
-
-    /** A modifier's `periodWeeksAtMost` predicate, as a clause. */
-    periodWeeksAtMost(weeks: number): string;
-
     /**
-     * A modifier whose `when` names no predicate at all — the clause for *"always"*.
+     * Owner decision N: the mix per level, and what happens to a holiday under each shape of target.
      *
-     * It has to say something: owner decision M makes a modifier REPLACE the target, so a branch
-     * that applied unconditionally and printed a blank where its condition belongs would read as a
-     * second base target rather than as an exception that always fires.
+     * The fold is described in WORDS rather than left to the numbers, because a department reading
+     * *"2 weekday, 2 weekend"* has no way to know from the numbers alone whether Eid counts as a
+     * weekend day here — and `Calendar::dayType()` makes holiday beat weekend, so the intuitive
+     * answer is wrong in the one direction nobody checks.
      */
-    anyPeriodClause(): string;
+    composition(args: { targets: readonly CompositionLevelText[] }): string;
+
 
     /** Owner decision R: the days arrive from the caller; P2 stores none of them. No parameters. */
     unwantedDayBlock(): string;
@@ -299,6 +354,35 @@ export interface ViolationMessages extends Vocabulary {
 
     /** The floor, breached. Same shape; the comparison is the only thing that differs. */
     countMinViolation(args: CountWindowText): string;
+
+    /**
+     * The target, exceeded — and `clause` is owner decision M's *"readable at both branches"*.
+     *
+     * `target` is the EFFECTIVE number, after a modifier has replaced the level's own, and `clause`
+     * is that modifier's predicate rendered through the shared vocabulary, or `null` when the base
+     * target applied. Printing the number without the branch hands a reader a figure and withholds
+     * the reason for it, which is the defect decision M rejects *adjust* in order to avoid.
+     */
+    targetPerPeriodAboveViolation(args: TargetWindowText): string;
+
+    /** The target, undershot. Same numbers, opposite instruction to whoever reads the badge. */
+    targetPerPeriodBelowViolation(args: TargetWindowText): string;
+
+    /**
+     * Owner decision N's mix, off in one or more buckets — and the fold said OUT LOUD.
+     *
+     * `holidaysFolded` is not decoration: when the target names no `HOL` bucket a holiday duty was
+     * counted as a weekend one, and a reader counting weekend duties by eye will get a different
+     * number from the badge with no way to find out which is wrong. Only the buckets that are
+     * actually off are listed — naming the ones that are right would bury the ones that are not.
+     */
+    compositionViolation(args: {
+        levelKey: string;
+        from: string;
+        to: string;
+        holidaysFolded: boolean;
+        buckets: readonly BucketText[];
+    }): string;
 
     /** The anchor-date reading, said as a date rather than as a range. */
     vacationBlockViolation(args: { date: string }): string;
@@ -517,6 +601,20 @@ export const EN: Messages = {
             `${window} the evaluation can only see part of, or one a person joined part way through, is ` +
             'left unjudged and reported rather than counted short.'
         );
+    },
+
+    composition({ targets }) {
+        const mixes = targets.map(({ levelKey, weekday, weekend, holiday }) =>
+            holiday === null
+                ? `${levelKey} ${weekday} on weekdays and ${weekend} on weekends`
+                : `${levelKey} ${weekday} on weekdays, ${weekend} on weekends and ${holiday} on holidays`,
+        );
+
+        const holidays = targets.every(({ holiday }) => holiday === null)
+            ? 'A holiday counts as a weekend day here, because no holiday figure is set.'
+            : 'A holiday counts as a holiday rather than as a weekend day, even when it falls on one.';
+
+        return `Each period, per person: ${EN.conjoin(mixes)}. ${holidays}`;
     },
 
     vacationWeeksAtLeast(weeks) {
@@ -807,6 +905,32 @@ export const EN: Messages = {
         );
     },
 
+    targetPerPeriodAboveViolation({ actual, target, levelKey, from, to, clause }) {
+        return (
+            `${EN.plural(actual, 'duty', 'duties')} in the period ${from} to ${to}; the target for ` +
+            `${levelKey} is ${target}${becauseText(clause)}.`
+        );
+    },
+
+    targetPerPeriodBelowViolation({ actual, target, levelKey, from, to, clause }) {
+        return (
+            `Only ${EN.plural(actual, 'duty', 'duties')} in the period ${from} to ${to}; the target ` +
+            `for ${levelKey} is ${target}${becauseText(clause)}.`
+        );
+    },
+
+    compositionViolation({ levelKey, from, to, holidaysFolded, buckets }) {
+        const named = EN.conjoin(
+            buckets.map(({ bucket, target, actual }) => `${actual} ${BUCKET_NOUN[bucket]} where ${target} ${target === 1 ? 'is' : 'are'} expected`),
+        );
+
+        const fold = holidaysFolded
+            ? ' Holiday duties are counted as weekend duties here, because this rule sets no holiday figure.'
+            : '';
+
+        return `In the period ${from} to ${to} the mix for ${levelKey} is off: ${named}.${fold}`;
+    },
+
     unknownJoinDateSkip({ personKey, placements }) {
         return (
             `No join date is recorded for "${personKey}", so ${placements} ` +
@@ -845,3 +969,20 @@ function countedText(kinds: readonly string[]): string {
 function appliesToText(levels: readonly string[]): string {
     return levels.length === 0 ? '' : `, for people at ${EN.conjoin(levels)}`;
 }
+
+/**
+ * Owner decision M's branch, named in the violation. Empty when the level's own target applied.
+ *
+ * The clause itself comes from the shared vocabulary rather than from here, so the sentence a
+ * violation prints and the one the gate-screen preview printed are the same words.
+ */
+function becauseText(clause: string | null): string {
+    return clause === null ? '' : `, which replaced the level's own figure because ${clause}`;
+}
+
+/** What one bucket of the mix is called in a sentence. Three entries, and there are three buckets. */
+const BUCKET_NOUN: Record<'WD' | 'WE' | 'HOL', string> = {
+    WD: 'on weekdays',
+    WE: 'on weekends',
+    HOL: 'on holidays',
+};

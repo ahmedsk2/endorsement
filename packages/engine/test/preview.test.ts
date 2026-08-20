@@ -238,6 +238,8 @@ describe('the matrix — every parameter a type reads is named by its preview', 
             // Task 13 — the two the tree could not resolve without the owner: decision S's three
             // attendee modes, and decision U's confirmed reading (a).
             'clinic_conflict',
+            // Task 16 — owner decision N's optional HOL bucket, folded into WE when absent.
+            'composition',
             // Task 14 — owner decision V's third unit, and the transition allowance CG-08 drops.
             'consecutive_max',
             // Task 15 — owner decisions K and L: two keys sharing one schema, the count per PERSON,

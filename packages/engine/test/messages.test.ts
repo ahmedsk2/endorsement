@@ -130,6 +130,7 @@ describe('the violation half of the message table', () => {
     it('renders every explanation the corpus produces through the table it is handed', () => {
         expect(sentencesByTypeKey(SHOUTING)).toEqual({
             clinic_conflict: ['«clinicConflictViolation»'],
+            composition: ['«compositionViolation»'],
             consecutive_max: ['«consecutiveMaxDatesViolation»', '«consecutiveMaxHoursViolation»'],
             count_max: ['«countMaxViolation»'],
             count_min: ['«countMinViolation»'],
@@ -143,6 +144,7 @@ describe('the violation half of the message table', () => {
             overlap_block: ['«overlapBlockViolation»'],
             post_duty_exclusion: ['«postDutyExclusionViolation»'],
             same_unit_conflict: ['«sameUnitConflictViolation»'],
+            target_per_period: ['«targetPerPeriodAboveViolation»', '«targetPerPeriodBelowViolation»'],
             unwanted_day_block: ['«unwantedDayBlockViolation»'],
             vacation_block: ['«vacationBlockViolation»'],
         });
@@ -198,10 +200,10 @@ describe('the violation half of the message table', () => {
      * two tables genuinely differ and the checks above are not comparing a thing with itself.
      */
     it('found violations and reasons to render, and English under EN rather than tags', () => {
-        expect(FIXTURES.length).toBeGreaterThanOrEqual(45);
+        expect(FIXTURES.length).toBeGreaterThanOrEqual(54);
         expect(violationCount(SHOUTING)).toBeGreaterThanOrEqual(30);
         expect(violationCount(EN)).toBe(violationCount(SHOUTING));
-        expect(Object.keys(sentencesByTypeKey(EN))).toHaveLength(13);
+        expect(Object.keys(sentencesByTypeKey(EN))).toHaveLength(15);
 
         const underEn = [...Object.values(sentencesByTypeKey(EN)).flat(), ...coverageReasons(EN)];
 

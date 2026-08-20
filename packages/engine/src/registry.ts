@@ -25,6 +25,7 @@ import type {
 } from './contract/types';
 import type { JsonSchema } from './contract/schema';
 import * as clinicConflict from './conditions/clinic_conflict';
+import * as composition from './conditions/composition';
 import * as consecutiveMax from './conditions/consecutive_max';
 import * as count from './conditions/count';
 import * as dowRestriction from './conditions/dow_restriction';
@@ -174,6 +175,7 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'target_per_period',
         implemented: true,
+        evaluate: targetPerPeriod.evaluate,
         paramsSchema: targetPerPeriod.PARAMS_SCHEMA,
         preview: targetPerPeriod.preview,
         direction: 'target',
@@ -183,6 +185,9 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'composition',
         implemented: true,
+        evaluate: composition.evaluate,
+        preview: composition.preview,
+        paramsSchema: composition.PARAMS_SCHEMA,
         direction: 'target',
         locationKind: 'window',
         needsCarryIn: true,

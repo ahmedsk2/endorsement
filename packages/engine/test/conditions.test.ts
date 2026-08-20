@@ -77,6 +77,9 @@ describe('the condition corpus', () => {
             'clinic-conflict-levels-mode-reads-the-level-on-the-clinic-date',
             'clinic-conflict-post-call-reaches-the-day-after-the-last-horizon-date',
             'clinic-conflict-the-same-day-variant-is-a-calendar-day-not-a-time-overlap',
+            'composition-a-holiday-that-falls-on-a-weekend-is-its-own-bucket',
+            'composition-a-target-with-no-holiday-figure-folds-them-into-the-weekend',
+            'composition-the-period-that-begins-in-the-published-month',
             'consecutive-max-days-a-run-of-count-is-clean-and-the-next-date-breaks-it',
             'consecutive-max-hours-a-stretch-of-exactly-the-cap-is-clean',
             'consecutive-max-hours-joins-a-chain-across-a-short-transition',
@@ -116,6 +119,12 @@ describe('the condition corpus', () => {
             'post-duty-exclusion-the-window-opens-on-the-thirty-first-and-closes-on-the-first',
             'same-unit-conflict-a-day-exception-lifts-the-ban-on-that-date-alone',
             'same-unit-conflict-two-rotators-on-one-unit-and-a-colleague-elsewhere',
+            'target-per-period-a-level-with-no-entry-in-the-map-has-no-target',
+            'target-per-period-a-modifier-replaces-the-target-and-a-vacation-week-is-any-overlap',
+            'target-per-period-a-period-longer-than-the-modifier-allows-does-not-match',
+            'target-per-period-the-level-is-read-at-the-period-start',
+            'target-per-period-the-period-that-begins-in-the-published-month',
+            'target-per-period-two-modifiers-and-the-first-match-wins',
             'unwanted-day-block-a-registered-day-and-a-colleague-with-none',
             'vacation-block-both-bounds-inclusive',
         ]);
@@ -640,12 +649,14 @@ describe('the horizon-edge corpus — what the carry-in tail is actually asserte
         );
 
         expect(claiming).toEqual([
+            'composition',
             'consecutive_max',
             'count_max',
             'count_min',
             'min_gap',
             'overlap_block',
             'post_duty_exclusion',
+            'target_per_period',
         ]);
         expect(claiming.filter((typeKey) => !covered.has(typeKey))).toEqual([]);
     });
@@ -714,12 +725,14 @@ describe('the horizon-edge corpus — what the carry-in tail is actually asserte
 
     it('runs over the carry-in cases, named', () => {
         expect(seamCases.map((fixture) => fixture.name)).toEqual([
+            'composition-the-period-that-begins-in-the-published-month',
             'consecutive-max-the-run-spans-the-thirty-first-into-the-first',
             'count-max-the-week-that-begins-in-the-published-month',
             'count-min-the-floor-counts-the-week-that-begins-in-the-published-month',
             'min-gap-hours-across-the-carry-in-from-the-published-month',
             'overlap-block-carry-in-at-the-left-edge',
             'post-duty-exclusion-the-window-opens-on-the-thirty-first-and-closes-on-the-first',
+            'target-per-period-the-period-that-begins-in-the-published-month',
         ]);
     });
 });

@@ -55,9 +55,9 @@ import type { Duty, Slot } from '../duty/interval';
 import type { Horizon } from '../duty/windows';
 import type { DayType } from '../calendar';
 import type { Ymd } from '../calendar/ymd';
-import type { Messages, PreviewMessages, ViolationMessages } from '../messages';
+import type { Messages, PreviewMessages, ViolationMessages, Vocabulary } from '../messages';
 
-export type { Messages, PreviewMessages, ViolationMessages };
+export type { Messages, PreviewMessages, ViolationMessages, Vocabulary };
 
 /**
  * One date of the horizon, PRECOMPUTED server-side by the one converter.

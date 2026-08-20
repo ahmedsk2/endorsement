@@ -1,0 +1,403 @@
+{
+    "name": "target-per-period-a-modifier-replaces-the-target-and-a-vacation-week-is-any-overlap",
+    "why": "Two decisions in one world, because they are only ever exercised together. Owner decision M makes a matching modifier REPLACE the level's own number rather than adjust it — adding the modifier's 2 to the base 4 gives 6 and flags p-ali, ignoring modifiers altogether gives 4 and flags them too, and only replacement leaves them clean. Owner decision N carries AvailabilitySummary's vacation-week rule VERBATIM: any overlap with a week's clipped bounds is a whole vacation week, so p-ali's Thursday-to-Monday leave is TWO weeks and p-noor's Sunday-to-Thursday leave is ONE, though p-noor's is the longer of the two by a day. Counting only weeks the leave covers whole gives p-ali nought and flags them. The engine and the rota screen reporting different counts for the same person in the same period is a disagreement nobody could adjudicate from either screen, which is why the rule is carried rather than rewritten.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-06",
+                "isoWeekday": 4,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-07",
+                "isoWeekday": 5,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-08",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-09",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-10",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-11",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-12",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-13",
+                "isoWeekday": 4,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-14",
+                "isoWeekday": 5,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-15",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-16",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-17",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-18",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-19",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-20",
+                "isoWeekday": 4,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-21",
+                "isoWeekday": 5,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-22",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-23",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-24",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-25",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-26",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-27",
+                "isoWeekday": 4,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-28",
+                "isoWeekday": 5,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-29",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [
+            {
+                "key": "block-01",
+                "startsOn": "2026-08-02",
+                "endsOn": "2026-08-29",
+                "weeks": [
+                    {
+                        "startsOn": "2026-08-02",
+                        "endsOn": "2026-08-08",
+                        "clippedStartsOn": "2026-08-02",
+                        "clippedEndsOn": "2026-08-08"
+                    },
+                    {
+                        "startsOn": "2026-08-09",
+                        "endsOn": "2026-08-15",
+                        "clippedStartsOn": "2026-08-09",
+                        "clippedEndsOn": "2026-08-15"
+                    },
+                    {
+                        "startsOn": "2026-08-16",
+                        "endsOn": "2026-08-22",
+                        "clippedStartsOn": "2026-08-16",
+                        "clippedEndsOn": "2026-08-22"
+                    },
+                    {
+                        "startsOn": "2026-08-23",
+                        "endsOn": "2026-08-29",
+                        "clippedStartsOn": "2026-08-23",
+                        "clippedEndsOn": "2026-08-29"
+                    }
+                ]
+            }
+        ],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [
+                    "2026-08-06",
+                    "2026-08-07",
+                    "2026-08-08",
+                    "2026-08-09",
+                    "2026-08-10"
+                ],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [
+                    "2026-08-09",
+                    "2026-08-10",
+                    "2026-08-11",
+                    "2026-08-12",
+                    "2026-08-13"
+                ],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-02",
+            "to": "2026-08-29",
+            "evaluableFrom": "2026-07-26",
+            "evaluableTo": "2026-09-05"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-17",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-18",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-19",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-20",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-target",
+            "typeKey": "target_per_period",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "targets": {
+                    "R1": 4
+                },
+                "modifiers": [
+                    {
+                        "when": {
+                            "vacationWeeksAtLeast": 2
+                        },
+                        "target": 2
+                    }
+                ]
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-target",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-noor",
+                "from": "2026-08-02",
+                "to": "2026-08-29",
+                "contributing": [
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-19",
+                        "slotKey": "night"
+                    },
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-20",
+                        "slotKey": "night"
+                    }
+                ]
+            },
+            "explanation": "Only 2 duties in the period 2026-08-02 to 2026-08-29; the target for R1 is 4.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-target",
+            "evaluatedWindows": 1,
+            "skipped": []
+        }
+    ]
+}

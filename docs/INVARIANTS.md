@@ -503,3 +503,109 @@ never *why*, and the why is what stops you re-introducing it a different way.
   rename survives `db:seed --force` because `ReferenceSeeder` writes `name` on CREATE only —
   asserted, not assumed. `institutions.code` is **not** `App\Support\Instance::slug()`
   (`INSTANCE_SLUG`, which names the backup archive); they are different values.
+
+---
+
+## Engine
+
+*Added 2026-08-20 (P2 Task 1). `packages/engine` is the repository's first TypeScript and the one
+place a scheduling rule is allowed to exist.*
+
+- **The catalog is 22 rows / 23 type keys, and P2 implements 21 rows / 22 keys.** `count_max /
+  count_min` is one row with two keys; `forbidden_transition` is the one row the catalog marks
+  `(Stage 5)` in its own parameters cell. `22 − 1 = 21` is D13's number and `23 − 1 = 22` is the
+  implemented key count — the arithmetic lives under CG-07's table in `docs/munawib/SPEC.md` and is
+  not to be restated as a bare number anywhere. `forbidden_transition` is **registered with
+  `implemented: false`** and its three citations, because an entry is a decision, not documentation.
+
+- **The TS calendar mirror is the ONE deliberate second implementation, and
+  `tests/fixtures/calendar/golden.json` is its contract in BOTH directions.** §7 Decision A of P1a
+  overruled the design doc's own "PHP plus a mirrored package" wording with *"ONE implementation, not
+  two"* precisely because two definitions of one fact is the failure class
+  `AuditChain::canonical()` already carries a docblock against — two copies drifted the day
+  `APP_TIMEZONE` was set and the live system announced its whole audit trail as tampered, and nothing
+  had been. P2 knowingly creates the second implementation and pays for it with a fixture asserted
+  from both sides: `GoldenFixtureTest` (PHP, shipped) and the mirror's own suite. **`golden.json` is
+  an INPUT to P2, not something P2 authors** — its `_purpose` already names this package. The mirror
+  therefore implements the smallest possible surface: `Ymd` parse/format, civil-date arithmetic,
+  `isoWeekday`, `datesBetween`, `weekdayColumns`, `weekOf`, `isWeekend`, `dayType`. **No Hijri** (ICU
+  in the browser is not guaranteed to agree with PHP's, and `Intl.DateTimeFormat` is a forbidden
+  needle besides) and **no `weeksIn()`** (`golden.json` has zero coverage of its clipped bounds, so a
+  mirror copy would be an unasserted second definition of a per-department fact). Holidays arrive
+  already resolved to Gregorian dates and week windows arrive as `periods[].weeks` — the one
+  converter resolves both, server-side, once.
+
+- **`App\Support\Calendar` remains the ONLY date converter, and every department-varying fact is a
+  PARAMETER of the mirror, never a literal in it.** `weekendDays`, `weekStartIsoDay`, the resolved
+  holiday set and `today` all arrive in the evaluation context. A bundled default would be exactly
+  the second definition the fixture exists to prevent.
+
+- **The engine holds no `Date`, no instant and no timezone — so there is nothing to allow-list.**
+  `CalendarIsTheOnlyConverterTest`'s two `resources/js` scans carry **no allow-list at all,
+  deliberately**, over ten date-construction needles and a quoted weekday-vocabulary pattern; the
+  same scan extends to `packages/` with the allow-list empty in both directions, and the mirror
+  passes on its own merits rather than by exemption. Its date type is a branded `Ymd` string and all
+  arithmetic is integer civil-date arithmetic; its time type is minutes from local midnight. A
+  Node/Vitest process with `TZ` unset runs at UTC and a browser at +03:00 does not — **an engine with
+  no instants cannot have that bug**, which is a stronger guarantee than a test that remembers to set
+  `TZ`. "Today" is never computed; it arrives in the context.
+
+- **Intervals are HALF-OPEN, `[start, end)`.** Under a configurable split day/night the night window
+  begins exactly when the day window ends, so closed intervals would flag every legal split-call
+  department on every single day. Fixtured on the abutting pair, and the plant that proves it is
+  swapping one comparison operator.
+
+- **Duty-to-date attribution has THREE readings, each type declares which it uses, and the fatal
+  failure is a type picking one silently.** This is the largest source of divergence between two
+  implementations of one catalog.
+  - **Anchor date** — the whole duty belongs to the calendar date its slot *starts* on:
+    `vacation_block`, `unwanted_day_block`, `onboarding_grace`, `dow_restriction`, `clinic_conflict`,
+    `same_unit_conflict`, `eligibility`, `consecutive_max`, `count_max`, `count_min`,
+    `target_per_period`, `composition`, `max_gap`, `call_frequency_max`, `fairness_distribution`,
+    `holiday_equity`, `we_pairing`.
+  - **Occupied interval** — the half-open absolute-minute interval: `overlap_block`, `min_gap` in
+    hours, `post_duty_exclusion`, `free_day_min`.
+  - **Split at midnight** — minutes apportioned to each civil date they fall on: `rolling_hours_max`
+    **only**.
+  A Friday-night call is **one Friday call**, and it is also twelve Friday hours plus twelve Saturday
+  hours in the one type that sums minutes into a day-bounded window. Both are right for their family.
+  Asserted as a matrix across every type touching a slot window — the `PickerParityTest` shape, every
+  fixture × every type — not case by case.
+
+- **The horizon edge: violations are emitted ONLY when their location falls inside
+  `[horizon.from, horizon.to]`, and prior duties are read-only context.** A draft is built one period
+  at a time and the preceding period is a different, already-published schedule, so `priorDuties` and
+  `followingDuties` sit in the context and are never re-evaluated — which is what keeps CG-03's
+  *"never retroactive on published schedules"* intact. Every window-measured and pairwise type is
+  fixtured **at the seam**: a corpus of only mid-month cases proves nothing about the case a
+  scheduler hits first, on the 1st. A window that cannot be evaluated is reported through
+  `coverage()`, never dropped — a silently dropped window is a guard that looks green.
+
+- **`App\Support\Engine` is a READER, and where it lives is forced rather than chosen.** Three live
+  source scans see P2's type keys, and none of them has an allow-list P2 may add to:
+  `RotaAccessTest::test_nothing_in_the_rota_infers_on_call_eligibility` walks
+  **`File::allFiles(app_path())` — every `.php` file under `app/` — with comments NOT stripped** for
+  `off_roster`, `offRoster`, `callEligib`, `call_eligib`, so none of those four strings may appear
+  anywhere under `app/`, **docblocks included**; its namespace twin globs `app/Support/Rota/*.php`
+  for those plus a bare `eligib`, so the `eligibility` type key alone would fail the build there; and
+  `ClinicHooksTest` globs `app/Support/Clinics/*.php` for `condition`, `severity`, `violation` and
+  five more, so `clinic_conflict`'s reader would fail the build there. **`App\Support\Engine\` is
+  clear of all three, and P2 adds no allow-list entry to any of them.** That is not a workaround:
+  MR-04's rule is that *the rota* must not infer eligibility and CL-03's is that *the clinic module*
+  must not evaluate conditions, and both are satisfied by the crossing living in the engine's own
+  namespace and reading those modules' data.
+
+- **"No PHP implementation of the rules exists anywhere" is scoped to rule SEMANTICS, not to data
+  access — and the leak risk is the serialiser, not the loader.** Flattening rota spans into a
+  per-date unit vector implements no rule. Sending only the "eligible" people would be `eligibility`
+  re-implemented as a `where`, and that is the shape to guard against. The context builder writes no
+  table, adds no index, filters on no `institution_id`, and carries **no contact field and no free
+  text for any viewer** — asserted on the most permissive institution setting the system can produce,
+  exactly as the rota read view already asserts it, because `RotaGrid::forYear()` takes no viewer at
+  all after a live disclosure. Its query budget is **watched breaching** on a populated fixture
+  before it is trusted; a budget measured on an empty grid only ever proves the empty case.
+
+- **Fixtures stay synthetic, permanently.** No real month's duty roster and no real staff list enters
+  the engine's corpus at any time. The corpus exercises specific violation shapes — a gap of exactly
+  the boundary value, a duty on a period's last day, a run spanning the 31st into the 1st, a person
+  whose level changes mid-window — not a plausible department.

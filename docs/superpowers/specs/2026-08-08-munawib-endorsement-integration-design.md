@@ -80,6 +80,19 @@ decided. Recorded so the reasoning survives, not to re-litigate.
   long phase with nothing demoable at its end, and fixes fairness and duty-hour semantics
   before a single real month has tested them.
 
+  *(Note added 2026-08-20, P2 Task 1. **The paragraph above is the OBJECTION, and it is overruled —
+  D13 stands as decided.** §1.3's own preamble says both objections "were reaffirmed by the owner and
+  both are being implemented as decided. Recorded so the reasoning survives, not to re-litigate," and
+  the paragraph is therefore left exactly as argued, unedited. It is recorded here because during P2
+  planning **this paragraph was very nearly cited as the decision D13.** It is not D13; D13 is the row
+  in §1.1, `All 21 types in P2`, and there is no reversal of it anywhere in the tree. Two readings of
+  this paragraph must not be carried forward. First, it is not a scoping statement: its parenthetical
+  "shift transitions" places `forbidden_transition` **inside** the 21, which the catalog's own
+  `(Stage 5)` marking contradicts — see the footnote under CG-07 in `docs/munawib/SPEC.md`, where the
+  arithmetic is 22 rows / 23 keys, minus the one Stage-5 row, = 21 rows / 22 implemented keys.
+  Second, its "nine" enumerates to nothing: no document in this repository lists those nine types.
+  The ordering the risk table sanctions (§15) is real; the nine is loose prose.)*
+
 ### 1.4 Provenance
 
 The QHN Block 11 prototype **informed the requirements; no code was derived from it.**
@@ -299,6 +312,14 @@ discovered late: `fairness_distribution` (violation count vs. min-max objective)
 `rolling_hours_max` and `free_day_min` (sliding windows, including partial windows at period
 boundaries), `holiday_equity` (multi-year lookback reduced to a per-schedule violation), and
 `we_pairing` (a shared definition of what "preference broken" means).
+
+**One omission from that list, recorded 2026-08-20 (P2 Task 1).** `call_frequency_max` — *"in-house
+call ≤ one night in N, averaging window"* — has **exactly the sliding-window shape** the list flags
+`rolling_hours_max` and `free_day_min` for, including the partial window at a period boundary. Its
+absence above is an omission in this section, **not evidence that the type is easy to reconcile.**
+Treat it as a sixth member of the list when the P4 job is built. P2's seam already places all six on
+the same side of the split (window- and cohort-located types, P2-2), so the reconciliation risk is
+concentrated rather than spread — which is one of the four reasons that seam was chosen.
 
 ---
 
@@ -1049,7 +1070,7 @@ Both halves were planned only once P1c-1 had merged, per this programme's own co
 claims this plan's own P1c item made turned out false and are corrected at their own sections:
 PE-02's projection is `PersonPresenter`, not `$hidden` (§5.1); LV-02's "resend invitations" is an
 account action, not a roster one, and ships in P1c-2. **P1d-1 — SHIPPED, 2026-08-10.** The master rota's data and its editor: `rota.view` (every seeded position) and `rota.manage` capabilities — P1d-1 seeded the latter to Administrator **and Chief Resident**, which P1d-2 reversed to Administrator-only the same day on an owner decision (§9.1); the department's own week inside `Calendar` (§7); `master_rota_assignments` (one row per span, overlaps refused, gaps allowed and counted, §6.3) and its one writer `App\Support\Rota\RotaAssignment`; `vacations` (no `period_id`) and its one writer `App\Support\Rota\VacationBooking`; the `PeriodController::destroy()` hardening the first table makes necessary; the `PersonPresenter` `email` gating; `/admin/rota`'s grid — rows by level, columns by period, per-cell save, splits, vacations — at a measured, bounded query count. **P1d-2 — SHIPPED, 2026-08-10**, in two branches (2a read and summarise, 2b move), adding **no migration in either half**: MR-05's resident-facing read view (`/rota`, `cap:rota.view`, search, level filter, per-person period strip, and a router-level assertion that *every* route behind `cap:rota.view` is a GET — no publish gate exists to add one for); MR-07's `App\Support\Rota\AvailabilitySummary`, one pure, query-free fold over the grid feeding **both** screens, counting uncovered days and the people carrying them separately and reporting who is on leave each week — **the Stage 1 acceptance criterion**; the contact-free projection that closes a props-payload disclosure on the editor as well as the read view (§9.1's neighbour, `PersonPresenter::contactFree()`, and `RotaGrid` taking no viewer at all); and MR-06's bulk moves — `RotaFill` (four action keys, one shared `analyse()`, a digest-pinned confirm, one `rota_fill` audit row per operation on `AuditAnomalies`' watch list, and a split-carrying target skipped unless explicitly confirmed), the two-file CSV export carrying no contact field, and `RotaImport`, which invents no person, unit or period and whose unit of outcome is the (person, period) cell rather than the line. MR-06 is six words in Munawib and the most destructive surface in the rota; the bulk discipline this codebase already had (P1 finding 12, `AccessControlController::updateRoles()`; `RosterImport`'s preview/commit/digest) is not optional for it, which is why every clause above about validation, transactions and confirmation is stated rather than assumed. **P1e — SHIPPED, 2026-08-11**, in two branches and with **two** migrations, both new tables in the reserved `2026_08_16_*` slot: **P1e-1** the department's own week inside `Calendar` (ISO-8601 weekday vocabulary, `weekdayColumns()` rotated to the derived week start, extending `golden.json` as P2's contract), `clinics` + `clinic_attendees` and their one writer `ClinicWriter` (§6.3), `ClinicRoster`'s read-time resolution, the `structure.manage` CRUD screen with no destroy route, and CL-05's weekly map behind a new `clinics.view` seeded to every position — `auth`, contact-free, GET-only over the router, and **not** link-public (§1.2); **P1e-2** `institutions.name` gaining the screen §14 item 12 had left it without, `App\Support\Setup\DepartmentSetup`'s nine-step derived checklist at `/admin/setup` (holding no state anywhere, and named `DepartmentSetup` throughout because `Setup*` belongs to the per-USER 2FA flow), and ST-05's demo department — ledgered in `demo_rows`, minting no account, removable whole or not at all, and provable by a whole-schema round trip. **Three requirements were NOT shipped and are recorded rather than quietly dropped:** ST-03's launch presets are not shippable in P1 in any subset (§1.2, and the P1 plan's split table is wrong to list them), and CL-03/CL-04 are P2/P3 with their absence asserted rather than merely unimplemented (item 22). **With P1e, P1 is complete**, and every clause of Stage 1's acceptance criterion (§35) now has the product behind it — item 27 states precisely what that does and does not mean, because *"P1 is complete"* and *"Stage 1 is accepted"* are different claims and only the first is a developer's to make. Each sub-plan was written when its predecessor merged, per the P0a–P0d convention. |
-| **P2 — Engine** | `packages/engine` with **all 21 CG-07 types** (D13), golden fixtures, plain-language previews, severity/rank model; `services/engine`; the CI cross-validation job. |
+| **P2 — Engine** | `packages/engine` — the repository's first TypeScript — carrying the CG-10 contract, the calendar mirror asserted against `tests/fixtures/calendar/golden.json`, the severity/rank model, CG-04's plain-language previews, the CG-08 preset bundles as package data, `App\Support\Engine`'s read-only context builder and a plain-Node entrypoint. It implements **every condition type in CG-07's shipped catalog except the one that catalog itself marks `(Stage 5)`**, stated as the list rather than as a bare number: `overlap_block`, `vacation_block`, `eligibility`, `unwanted_day_block`, `onboarding_grace`, `dow_restriction`, `clinic_conflict`, `same_unit_conflict`, `min_gap`, `post_duty_exclusion`, `consecutive_max`, `count_max`, `count_min`, `target_per_period`, `composition`, `max_gap`, `free_day_min`, `rolling_hours_max`, `call_frequency_max`, `fairness_distribution`, `holiday_equity`, `we_pairing` — **21 catalog rows = 22 type keys**, which is D13's number (see the footnote under CG-07 in `docs/munawib/SPEC.md`). `forbidden_transition` is **registered with `implemented: false`** and its three citations, so the gap is a decision and not an oversight. **No migration and no screen** — the conditions gate, the `conditions` table and the workbench are P3. Two deliverables this row used to name move, and are moved here rather than silently missed: **`services/engine` moves to P3**, where CG-05's publish gate is its first real caller (a container with nothing calling it can be verified *running* and never verified *working*), and **§4.3's cross-validation job moves to P4**, with the CP-SAT mapping it exists to compare against — P2's CI job is `golden.json` asserted from **both** `App\Support\Calendar` and the TS mirror, which is the repository's first genuine cross-implementation check, plus a catalog-parity guard deriving the key set from CG-07's own table in both directions. |
 | **P3 — Munawib Stage 2** | Slots, call windows, coverage templates, conditions gate with drag ranking, draft workbench with live hints, trackers, undo ≥30, unfilled lens, publish + archive, morning coverage, who's-on-call board, personal pages, tallies, exports. **L1 and the §9.1 share-token feed land here.** |
 | **P4 — Munawib Stage 3** | *Prerequisite: host scaled to 4 OCPU / 24 GB.* Solver service, §4.2 evaluation mode, ranked-sacrifice report, per-placement explanations, partial modes, infeasibility reporting, AU-06 against §11.2's fixture; requests with deadlines and reminders; approval queue with coverage impact; versioned change log; ICS feeds. **L4 lands here.** |
 | **P5 — Munawib Stage 4** | Swaps, backup slots and sick replacement, equity and holiday equity, duty-hour compliance (ACGME preset), audit and version browser, webhooks, condition builder. **L2 lands here.** |
@@ -1458,6 +1479,128 @@ None block starting P0.
     four now have a guard asserting they are unbuilt rather than merely absent (items 18 and 22),
     ST-03 being the exception because it has no module to guard.
 
+28. **P2's engine deliverables move, and the moves are recorded here rather than read later as
+    commitments missed.** The phase table's P2 row named `services/engine` and *"the CI
+    cross-validation job"*; both are now stated in that row itself, and this item carries the
+    reasoning. **`services/engine` moves to P3.** P2 has no server-side consumer for it — CG-05's
+    publish gate and the workbench are P3, TL-03's compliance report is P5, the solver is P4 — and a
+    container deployed with nothing calling it can be verified *running* and never verified
+    *working*, which is this codebase's named failure shape (a Cloudflare trust fix once passed every
+    test, deployed healthy, and changed nothing at all, because the compose default it edited was
+    dead code). The cost is not zero either: `docker-compose.production.yml` has two services and
+    fifteen invariants pinned by `DeploymentInvariantsTest`, CI's `docker-build` job builds the root
+    Dockerfile alone, and `docker/instance-env.sh` selects a stack's containers. P2 ships
+    `packages/engine/bin/evaluate.mjs` instead — CG-10 JSON on stdin, `violations[]` on stdout,
+    exercised in CI — which proves the compiled package runs outside a bundler under plain Node, and
+    deploys nothing. **§4.3's cross-validation job moves to P4.** §4.3 compares the TS engine against
+    the Python solver's §4.2 evaluation mode, and both `services/solver` and that evaluation mode are
+    P4 deliverables in this same table — so the P2 row was naming a job whose second implementation
+    does not exist for two more phases. **What P2's CI job actually is**, stated so it is not
+    oversold: `tests/fixtures/calendar/golden.json` asserted from **both** sides — `App\Support\Calendar`
+    in PHP (`GoldenFixtureTest`, shipped) and the TypeScript calendar mirror (new) — which is a
+    genuine two-implementation check and the repository's first; plus a catalog-parity guard deriving
+    CG-07's key set from `docs/munawib/SPEC.md`'s own table and comparing in both directions, which is
+    a second *source* rather than a second implementation (the
+    `UnitMergeCoversEveryUnitReferenceTest` device); plus the conditions golden-fixture corpus, which
+    is **one** implementation and is regression coverage, labelled as such.
+
+29. **`forbidden_transition` ships registered and unimplemented, and that is a decision with three
+    citations.** It is CG-07's twenty-second row and twenty-third type key, and the only one the
+    catalog marks `(Stage 5)` inside its own parameters cell (`docs/munawib/SPEC.md:110`); §35 names
+    *"forbidden transitions"* verbatim in the Stage 5 deliverable list (`:252`); and §36 makes *"Shift
+    features before Stage 5."* an explicit non-goal (`:256`) — a **named non-goal**, which is the
+    decisive one, because building the type in P2 contradicts it rather than merely running ahead of
+    a stage ordering. P2's registry therefore carries the key with `implemented: false` and those
+    citations, so the absence reads as a decision and not an oversight. **What it is waiting for is
+    not engine code**: the predicate itself is cheap (P2's `Slot.kind` is an opaque string by design,
+    so no shift substrate is needed to express it), but there would be no shift kind to parameterise
+    it with, no preset to seed it, no gate screen to offer it and no real input to prove it against.
+    A type whose only fixture is one its author invented, with no consumer and no policy, is a stub
+    with tests. **P7 (Stage 5) owns it**, and what it needs first is a `shift` slot kind.
+
+30. **`unwanted_day_block` has no store anywhere in the tree, and the spec's own answer is an RQ-01
+    request — which is Stage 3 = P4, not P3.** `grep -rl unwanted app/ database/ resources/js/`
+    returns nothing. `people.constraints` is not a candidate as it stands: `json`, nullable, validated
+    only as `['nullable','array']` (`app/Http/Requests/Admin/PersonRequest.php:79`), with one
+    documented example in a textarea helper — free-form text a scheduler typed, not a set of dates.
+    RQ-01 (`docs/munawib/SPEC.md:164`) lists *"unwanted day(s)"* as its first request type and says
+    *"approved requests immediately become engine constraints"*, and §30 sketches the row
+    (`:239` — `requests/{reqId} { type:'unwanted'|'leave'|'sick'|'swap', … }`); §35 places requests in
+    **Stage 3**, which this table maps to **P4** (`:274`). Recorded now, with its phase, so P3 does
+    not re-open it as an unanswered gap and invent a second store beside the one the spec already
+    names. In P2 the days arrive in the engine context and the type is proved against fixtures.
+    **One question genuinely open and genuinely the owner's:** the engine runs in the browser for
+    WB-03's live hints, so one person's unwanted days enter another person's Inertia props. The
+    nearest analogue shipped today, `people.constraints`, is released only under `people.manage`, and
+    a Scheduler holds `rota.manage`, which is not that. §9.1's neighbour — `RotaGrid::forYear()`
+    taking no viewer at all after a live disclosure — is the precedent for treating this as a payload
+    decision made once, at the builder, rather than per screen.
+
+31. **`same_unit_conflict` is three-way ambiguous, and `docs/munawib/SPEC.md:100` is the only place in
+    this repository that describes it at all.** No Appendix B sentence, no §14/§16/§17 elaboration, no
+    design-doc mention, no prototype note — so more reading cannot resolve it, and only an owner can.
+    The three signals point three ways: the **key name** says *same unit*; the **Meaning** column says
+    *"Pairs never together"*, which reads as named pairs of people; and the **parameters** column says
+    *"unit pairs; day exceptions"*, which reads as two different units. The first and third are
+    **opposite predicates over the same input**, and the second needs a people-pair store that exists
+    nowhere. **P2's default, recorded 2026-08-20 and the weakest default in that plan:** reading (a) —
+    two people rotating on the **same** unit are never on call together — with `day exceptions` being
+    days on which the ban **LIFTS**. The key name is the only one of the three signals that is
+    internally unambiguous and it needs no new store. **This should be routed to the owner before the
+    type is implemented**, on the standing precedent of Owner Decision A on `levels.terminal`
+    (2026-08-09), which rejected an inference outright because a wrong marker fails silently in two
+    directions.
+
+32. **`clinics.session` is `string(2)` holding AM or PM with no time window, so CL-03's stricter
+    same-day variant cannot be a *time* overlap.** The column is declared at
+    `database/migrations/2026_08_16_120001_create_clinics_and_attendees_tables.php:115`; there is no
+    start minute, no end minute and no session-to-minutes configuration anywhere in the platform, and
+    `clinics.weekday` is a plain ISO 1–7 integer beside it. CG-07's `clinic_conflict` offers *"Clinic
+    vs post-call (and optionally same-day)"*; the post-call variant is frozen ON by SPEC §4 and needs
+    no minutes, but the optional same-day variant, **when a department enables it, is a calendar-day
+    overlap and is documented as one** — not a time overlap dressed up as one. Making it a real time
+    overlap is a configuration surface (per-session start/end minutes, per unit or per institution)
+    that nobody has asked for and that would be a second definition of a clinic's extent beside
+    SL-01's slot windows. Recorded so P3 does not read "same-day" as "overlapping hours" and quietly
+    add the columns.
+
+33. **Item 22's clinic formulation is INCOMPLETE for two of the three attendee modes, and the P1e
+    handoff sentence beside it is clarified rather than contradicted.** Item 22 says the P2 condition
+    *"reads `clinics.weekday` and `clinics.unit_id` against a date and a person's current unit"*. That
+    resolves `attendee_mode = 'rotators'` correctly and is **wrong in both directions for the other
+    two**: a `named` attendee — CL-02's external consultant, who rotates nowhere — has a clinic that
+    day with no rota span on that unit, and would never trigger; a `levels` clinic includes only
+    rotators whose level **on that date** is in the attached set, so a plain unit match over-triggers.
+    The engine context must therefore carry `attendee_mode` and the `clinic_attendees` rows, and the
+    condition must branch on the mode. **Separately, the P1e handoff's sentence** — *"`ClinicRoster`
+    resolves and never stores, so a condition asking who is at this clinic on this date asks it rather
+    than reading a cached list; and the clinic module is guarded against becoming a conditions engine,
+    so P2's first condition lives in the conditions module and reads clinics, never the other way
+    round"* — has two operative claims, *never a cached list* and *the condition lives in the
+    conditions module and reads clinics*, and **item 22 satisfies both exactly.** The two differ only
+    on WHICH RESOLVER, and item 22 wins on four verifiable grounds: `ClinicRoster::forDate()` is
+    clinic-first (one clinic in, people out), so asking whether a person has a clinic on a date means
+    iterating every active clinic per person per date; `ClinicRoster::rotatingOn()` is `private`;
+    `forDate()` returns `PersonPresenter::contactFree()` **projections** rather than ids and takes no
+    viewer by deliberate design, which is the wrong shape for an engine context and re-opens the
+    payload question §9.1 settled; and `golden.json`'s `weekday_columns._description` already decided
+    it in writing — CL-03 *"must map a date to an ISO weekday and compare it to `clinics.weekday`
+    client-side with no round trip (UX-05)"*, and `ClinicRoster` is a server call.
+
+34. **`people.joined_at` exists and is empty on every instance, so `onboarding_grace` must treat NULL
+    as NO violation and say so in its preview text.** The column is declared nullable at
+    `database/migrations/2026_08_10_120001_create_people_and_link_users.php:65`, projected **ungated**
+    by `PersonPresenter::one()` (unlike `phone`/`email`, which sit under `viewContact()`), validated
+    `['nullable','date_format:Y-m-d']` by `PersonRequest`, and accepted by
+    `RosterImport::OPTIONAL_FIELDS` — but **no seeder, no factory and no demo path sets it**
+    (verified). On any existing instance, the deployed QCH one included, it is NULL for every person
+    unless an administrator typed it. The alternative reading — treat a missing join date as *joined
+    today* — would block an entire department's duties silently on the day the type is first enabled,
+    green on every test and wrong on every row. Saying it in the **preview text** rather than only in
+    a docblock is the point: a department turning the type on sees, on the gate screen, that people
+    without a recorded join date are not covered by it. **N has never been stated by any owner**, and
+    the residency preset ships that number absent rather than guessed.
+
 ---
 
 ## 15. Risks
@@ -1465,7 +1608,7 @@ None block starting P0.
 | Risk | Mitigation |
 |---|---|
 | Engine and solver semantics drift | The CI cross-validation job (§4.3) with the §4.2 evaluation mode; divergence fails the build. This is the failure that killed the prototype and is designed against explicitly. |
-| D13 makes P2 long and undemoable | Accepted by the owner (§1.3). Mitigate by ordering the 21 types so the prototype's proven nine land first and are demoable, even though all 21 ship before P3. |
+| D13 makes P2 long and undemoable | Accepted by the owner (§1.3). Mitigate by ordering the 21 types so the prototype's proven nine land first and are demoable, even though all 21 ship before P3. **The ordering is the P2 plan's seam, and it is drawn on a tree-verifiable criterion rather than on the "nine", which enumerates to nothing in any document here: placement-located types first — `overlap_block`, `vacation_block`, `eligibility`, `unwanted_day_block`, `onboarding_grace`, `dow_restriction`, `clinic_conflict`, `same_unit_conflict`, `min_gap`, `post_duty_exclusion`, `consecutive_max`, eleven keys, demoable at the seam through `php artisan engine:evaluate` — then window- and cohort-located types.** That line is the CG-10 contract's own `location` discriminator, so the second half adds predicates and touches no shared shape; it is also the line WB-03's live hint on a prospective placement draws, and the line §4.3's hard-to-reconcile types fall on. |
 | D3 (one `users` table for roster + accounts) weakens auth invariants | **REVERSED, 2026-08-08 (P0c).** `people` and `users` are now two tables; a roster-only person has no `users` row and cannot authenticate by construction (§5.1) — five of the original six §5.2 mitigations became unnecessary and the sixth (roster-import email matching) shipped as ordinary correctness logic rather than a risk mitigation. Residual risk from the split itself, not from D3: `$user->full_name`/`position`/`member_email` are read-through accessors that silently resolve to null if a narrowed `select()`/`with()` omits `person_id` — broke four live sites before test coverage existed (CLAUDE.md carries this as a standing rule now); and `users.member_email` survives as dead weight awaiting removal (§14 item 9). |
 | PHI leaks into Rota | Named query services as the only crossing, plus the §9.2 guard test. |
 | Share tokens forwarded outside the department | Expiry, revocation, audit, no contact data, `noindex`; policy documented in the PDPL pack. |

@@ -1826,7 +1826,20 @@ inventing one from `units.call_target` would be exactly the inference `RotaAcces
 refuse.
 
 **J. `call_frequency_max` — window alignment and denominator.**
-*Default: **rolling**, anchored on the evaluated duty's date, with the window length in **days** and
+> **ANSWERED 2026-08-20 — the default was OVERRIDDEN. Denominator = ELIGIBLE DAYS.** Days on leave,
+> before `joinedAt`, and off the roster are removed from the denominator. This is the alternative this
+> entry itself flagged ("ACGME's intent is arguably the availability denominator"), so the answer
+> follows the standard's intent rather than `MissedDays`' precedent. **Window alignment is unchanged:
+> rolling, anchored on the evaluated duty's date, length in days.**
+>
+> **The consequence, stated once so it is on the record rather than discovered:** the constraint
+> TIGHTENS as somebody takes leave. A person with 14 days' leave in a 28-day window is measured
+> against 14 eligible days, so `one in 4` permits 3 calls rather than 7. That is the intended reading
+> — it protects people from being back-loaded around their own leave — and it is the opposite of what
+> a reader assuming a calendar denominator would expect, so the plain-language preview (CG-04) must
+> say which denominator it used.
+
+*Superseded default: **rolling**, anchored on the evaluated duty's date, with the window length in **days** and
 an explicit unit; denominator = **calendar days**.* A calendar-aligned window lets a person run
 1-in-2 across a block boundary and pass every window. The calendar denominator follows
 `App\Support\MissedDays`' precedent (owner decision 6: every calendar day, `dayType()` deliberately
@@ -1890,6 +1903,11 @@ few available days. A proportional tolerance on a base of 3 rounds to either not
 ### The three types the tree cannot resolve
 
 **R. `unwanted_day_block` — where do unwanted days live, and who may see them?**
+> **ANSWERED 2026-08-20 — default CONFIRMED. P2 stores nothing.** Unwanted days arrive in the
+> evaluation context from the caller; the store and its screen land with the requests feature
+> (RQ-01) that owns them. P2 stays an engine rather than a half-built feature, and does not commit
+> to a schema the owning feature would then have to change. **The disclosure half of this question
+> is therefore deferred with the store** — nothing in P2 can leak a preference it never holds.
 *Default: **nowhere in P2**; the days arrive in the engine context. **The store is an approved RQ-01
 request** per §22 and §30's `requests/{reqId} { type:'unwanted'|… }`, which §35 places at Stage 3 =
 **P4** — not P3, and the plan says so rather than leaving it re-openable.* `people.constraints` is not
@@ -1916,7 +1934,12 @@ would block an entire department silently. **N has never been stated by any owne
 preset ships it absent rather than guessed (Decision H).
 
 **U. `same_unit_conflict` — which of three readings, and do exceptions lift or apply?**
-*Default, and it is the weakest default in this plan: reading **(a)** — two people **rotating on the
+> **ANSWERED 2026-08-20 — reading (a) CONFIRMED by the owner**, so it is no longer an inference and
+> the `levels.terminal` precedent no longer applies. Two people **rotating on the same unit** are
+> never on call together; the person's unit on the date comes from the master rota, which `RotaGrid`
+> already answers, so no new store is needed. `day exceptions` LIFT the ban, per the default below.
+
+*Default, and it was the weakest default in this plan until it was answered: reading **(a)** — two people **rotating on the
 same unit** are never on call together — with `day exceptions` being days on which the ban **LIFTS**.*
 `SPEC.md:100` is the type's only occurrence in the entire repository; the key name says *same unit*,
 the Meaning says *"Pairs never together"* (people?), and the parameters say *"unit pairs"*

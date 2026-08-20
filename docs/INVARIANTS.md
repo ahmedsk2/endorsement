@@ -865,17 +865,19 @@ place a scheduling rule is allowed to exist.*
   last statement in the file. The run is now inside one try and a throw is one more entry in the
   list. Found by planting; unreachable by reading.
 
-- **NF-01 is MEASURED here and does not fail the build — but the measurement is gated on not being
-  vacuous.** 93 duties (20 people × 3 slots × 31 days), all 22 implemented types active,
-  998 findings from 14 conditions: `evaluate()` median **94–112 ms across runs on this machine**
-  against a 100 ms budget, so it STRADDLES the budget rather than meeting it, and the number is
-  printed either way — a budget quietly missed is worse than a budget missed out loud. Two things
-  belong with it: the case is deliberately violation-DENSE (round-robin duties), so it is an upper
-  bound and a publishable schedule produces a handful of findings; and `coverage()` is a second full
-  traversal, so `evaluate() + coverage()` — what the entrypoint does per request — is roughly double.
-  A step that cannot fail is worse than none, so the benchmark asserts the run produced findings from
-  more than one condition: a benchmark of an engine that resolved nothing measures process startup
-  and reports it as headroom.
+- **NF-01 IS MISSED on this machine, and the measurement does not fail the build.** 93 duties
+  (20 people × 3 slots × 31 days), all 22 implemented types active, 998 findings from 14 conditions:
+  `evaluate()` median **~120 ms against a 100 ms budget** (76/94/104/112/122/123 across six runs; the
+  two consecutive quiet-machine runs both read ~122, so 76 was an early outlier and not the truth).
+  The number is printed on every run either way — a budget quietly missed is worse than a budget
+  missed out loud. Three things belong with it: the case is deliberately violation-DENSE (round-robin
+  duties), so it is an UPPER BOUND and a publishable schedule produces a handful of findings;
+  `coverage()` is a second full traversal, so `evaluate() + coverage()` — what the entrypoint does per
+  request — is roughly double at 181–231 ms, which is the first place to look if the budget matters at
+  request scale; and the CI runner's own figure is unknown, which the first CI log answers.
+  **The measurement is gated on not being VACUOUS** — the run must produce findings from more than
+  one condition — because a step that cannot fail is worse than none, and a benchmark of an engine
+  that resolved nothing measures process startup and reports it as headroom.
 
 - **The benchmark builds its synthetic month with the engine's own `Ymd` core**, not with epoch
   helpers. `CalendarIsTheOnlyConverterTest` refused the first draft, and then refused the DOCBLOCK

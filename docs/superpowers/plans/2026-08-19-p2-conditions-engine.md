@@ -1762,11 +1762,13 @@ Three things it is not, each stated in the command's own docblock and asserted:
       lookup) and **113** (`$assignment->unit` per span). A third planted trap — a narrowed
       `select()` on the person query — is CHEAPER than the correct code and no budget can see it;
       a behavioural assertion on the join date is what caught it.
-- [x] NF-01 measured with **all 22 types active** and the number recorded, met or not: 93 duties
-      (20 people × 3 slots × 31 days), 998 findings from 14 conditions, `evaluate()` median
-      **94–112 ms across runs** against the 100 ms budget — it STRADDLES the budget on this machine
-      rather than meeting it, and the case is deliberately violation-dense, so it is an upper bound.
-      `evaluate() + coverage()` is roughly double, `coverage()` being a second full traversal.
+- [x] NF-01 measured with **all 22 types active** and the number recorded, met or not — **NOT MET**:
+      93 duties (20 people × 3 slots × 31 days), 998 findings from 14 conditions, `evaluate()` median
+      **~120 ms** on this machine against the 100 ms budget (76/94/104/112/122/123 across six runs;
+      the two consecutive quiet-machine runs both read ~122, so 76 was an early outlier). The case is
+      deliberately violation-dense and is therefore an upper bound, `evaluate() + coverage()` is
+      roughly double because `coverage()` is a second full traversal, and the CI runner's own figure
+      is unknown — the harness prints it on every run. See Task 23's amendment.
 - [ ] **No migration in P2 at all:** `git diff --stat main..<P2-2 head> -- database/migrations` empty.
 - [ ] `RotaAccessTest`, `ClinicHooksTest` and every single-writer guard unchanged.
 - [ ] `docker-compose.production.yml` unchanged; `DeploymentInvariantsTest` untouched and green.
@@ -3042,16 +3044,30 @@ arithmetic the evaluators consume. Then the guard refused the sentence *describi
 because the needles are substrings over whole files. **A docblock is scanned source.** Both written
 around; the allow-list stays empty in both directions.
 
-**8. NF-01, WITH THE NUMBER AND WHAT IT IS WORTH.** 93 duties (20 people × 3 slots × 31 days), all 22
-implemented types active, 998 findings from 14 conditions. `evaluate()` median **76 / 94 / 104 / 112
-ms across four runs** on a machine also running a browser — it STRADDLES the 100 ms budget rather than
-meeting it, and reporting a single sample would have been reporting a precision the measurement does
-not have, so the harness takes nine samples after a warm-up and prints median with best and worst.
-Two caveats travel with the number and are printed beside it: the case is deliberately violation-DENSE
-(round-robin duties, so spacing and cap types fire on most of the month), which makes it an upper
-bound rather than a typical load; and `coverage()` is a **second full traversal**, so
-`evaluate() + coverage()` — what the entrypoint does per request — is roughly double, 181–215 ms.
-**If the budget matters at request scale, the traversal is where to look, not the evaluators.**
+**8. NF-01 IS MISSED, AND THE NUMBER IS RECORDED RATHER THAN MASSAGED.** 93 duties (20 people ×
+3 slots × 31 days), all 22 implemented types active, 998 findings from 14 conditions. `evaluate()`
+median across six runs on this machine: **76, 94, 104, 112, 122, 123 ms** against the 100 ms budget.
+The last two are consecutive and taken with nothing else running, so ~120 ms is the stable reading and
+**76 ms was an early outlier, not the truth**. A single sample would have been a precision the
+measurement does not have, so the harness takes nine after a warm-up and prints median with best and
+worst — on the settled runs, best ~107 and worst ~149.
+
+Three things belong with the number rather than after it:
+
+- **The case is deliberately violation-DENSE.** Duties are dealt round-robin, so spacing and cap types
+  fire across most of the month and 998 findings are constructed, each with a generated sentence. A
+  schedule a department would actually publish produces a handful. This is an upper bound, and
+  whether the budget is missed on a REAL month is not answered here.
+- **`coverage()` is a second full traversal**, so `evaluate() + coverage()` — what the entrypoint does
+  per request — is roughly double at 181–231 ms. If the budget matters at request scale, the second
+  traversal is the first place to look, not the evaluators.
+- **The CI runner's figure is unknown**; this is one developer machine. The harness prints the number
+  on every run, so the first CI log answers it.
+
+Recorded, not fixed: a budget quietly missed is worse than a budget missed out loud, and the fix — one
+traversal feeding both projections at the caller, or cheaper finding construction — is a change to
+`runConditions()`'s callers that belongs to whoever needs the budget, with a measurement in front of
+it rather than behind.
 
 The measurement does not fail the build, per the plan. A step that cannot fail is worse than none, so
 it is gated on not being VACUOUS instead: the run must produce findings from more than one condition,

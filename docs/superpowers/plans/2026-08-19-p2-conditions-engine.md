@@ -2314,3 +2314,25 @@ pointed at a missing directory → each twin red.
 implementation there would be in the engine's own language, and a needle set of snake_case type keys
 is the wrong shape to find one. `@engine` resolving through the Vite alias makes the real engine
 reachable; nothing yet makes a rival unreachable.
+
+### ACCEPTED 2026-08-20 — thread `explanation` through the message table, FIRST TASK OF P2-2
+
+`ConditionEvaluator` was fixed at Task 7 without a message table, so every type hardcodes its
+violation English inline. **The owner has accepted threading it through, as the first task of P2-2,
+before the remaining types are written.**
+
+Why the ordering is the whole point: it is a contract change to `evaluate()`/`coverage()`. Done now
+it costs roughly half a task. Done after P2-2 it means unpicking nineteen types that have each
+hardcoded a sentence, and by then the shape is set by whichever type happened to be written first.
+
+It also decides whether **AR-07** — *"strings are externalized from launch so a future locale is
+translation work, not a rewrite"* — holds for violations the way it already holds for weekday names
+(`lang/en/calendar.php`) and Hijri months. Today it does not. `preview` already goes through the
+table (Task 9, proved by handing in a second table and watching the sentence change); `explanation`
+is the half that was missed, and the two should not diverge.
+
+**The argument for delaying, considered and rejected:** P2-2's types are where one learns what a good
+explanation reads like, so threading a table now fixes the shape before that knowledge exists. It is
+rejected because the table is a *lookup*, not a schema — a key and an interpolation map — and
+learning better wording later changes the values, not the shape. Hardcoded English is the thing that
+would be expensive to revisit.

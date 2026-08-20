@@ -1,0 +1,205 @@
+{
+    "name": "free-day-min-the-averaging-multiplies-the-window-and-the-requirement",
+    "why": "'One free day in two, averaged over two windows' is 'at least two free days in any four consecutive days' — BOTH numbers move, and an implementation that multiplied only the window would ask for one free day in four, which is a materially weaker rule wearing the same parameters. p-ali works the 1st to the 3rd, so the four days from the 1st hold a single free day and fail while the four from the 2nd hold exactly two and pass: the boundary sits between two adjacent windows, where multiplying only one of the two numbers moves it. The case also exercises the floor's own gate — the three windows reaching back before the evaluable range are left unjudged and REPORTED rather than counted short.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-06",
+                "isoWeekday": 4,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-07",
+                "isoWeekday": 5,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-08",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "day",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 1020,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-05",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-10"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-03",
+                "slotKey": "day"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-free",
+            "typeKey": "free_day_min",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "n": 2,
+                "averagingWeeks": 2
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-free",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-ali",
+                "from": "2026-08-01",
+                "to": "2026-08-04",
+                "contributing": [
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-01",
+                        "slotKey": "day"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-02",
+                        "slotKey": "day"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-03",
+                        "slotKey": "day"
+                    }
+                ]
+            },
+            "explanation": "1 fully free day in the 4 days from 2026-08-01 to 2026-08-04; at least 2 are required. A day any duty runs into is not free, even when no duty starts on it. Days on leave are counted as free here.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-free",
+            "evaluatedWindows": 5,
+            "skipped": [
+                {
+                    "from": "2026-07-29",
+                    "to": "2026-08-01",
+                    "reason": "The window 2026-07-29 to 2026-08-01 is not wholly inside the evaluable range 2026-08-01 to 2026-08-10, so part of it could not be counted. A count that is short cannot exceed a cap, but it can fall below a floor every time, so this window was left unjudged."
+                },
+                {
+                    "from": "2026-07-30",
+                    "to": "2026-08-02",
+                    "reason": "The window 2026-07-30 to 2026-08-02 is not wholly inside the evaluable range 2026-08-01 to 2026-08-10, so part of it could not be counted. A count that is short cannot exceed a cap, but it can fall below a floor every time, so this window was left unjudged."
+                },
+                {
+                    "from": "2026-07-31",
+                    "to": "2026-08-03",
+                    "reason": "The window 2026-07-31 to 2026-08-03 is not wholly inside the evaluable range 2026-08-01 to 2026-08-10, so part of it could not be counted. A count that is short cannot exceed a cap, but it can fall below a floor every time, so this window was left unjudged."
+                }
+            ]
+        }
+    ]
+}

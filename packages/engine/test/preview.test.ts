@@ -254,6 +254,10 @@ describe('the matrix — every parameter a type reads is named by its preview', 
             // Task 9 — the four whose WORDING an answered owner decision settles. Their predicates
             // land at Tasks 14, 16, 18 and 19 against the schema that is already here.
             'fairness_distribution',
+            // Task 17 — the two absence-shaped types: owner decision I's unfinished gap, and the
+            // occupied-interval reading of "fully free".
+            'free_day_min',
+            'max_gap',
             'min_gap',
             'onboarding_grace',
             'overlap_block',

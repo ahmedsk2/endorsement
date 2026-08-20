@@ -255,6 +255,13 @@ export function modifierApplies(when: TargetModifierWhen, person: Person, period
  * by `target-per-period-a-period-longer-than-the-modifier-allows-does-not-match`, whose block is
  * five weeks against a limit of four. The sibling predicate was already asserted in both directions
  * by accident rather than by design, which is why this one was not.
+ *
+ * **CG-01's SCOPE was the plant that stayed green on all four window types at once.** Deleting
+ * `personInScope` from this module changed nothing anywhere in the corpus, because no case of this
+ * type set a scope — P2-1 review's thirteen-instance finding, reappearing on `max_gap`,
+ * `free_day_min`, `composition` and `target_per_period` together, one task after `count_max` was
+ * caught by exactly the same probe. Each is now closed by a third person in its own defining
+ * fixture who would be flagged on their own figures and is excluded by the scope alone.
  */
 export const evaluate: ConditionEvaluator = (condition, schedule, context, messages) => {
     const params = readParams(condition);

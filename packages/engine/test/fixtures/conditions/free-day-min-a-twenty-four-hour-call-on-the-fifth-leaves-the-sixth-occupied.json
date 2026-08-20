@@ -1,0 +1,216 @@
+{
+    "name": "free-day-min-a-twenty-four-hour-call-on-the-fifth-leaves-the-sixth-occupied",
+    "why": "The word 'fully' is doing all the work in this row, and this is the case that separates the two readings of it. p-ali's call starts at eight on the 5th and ends at eight on the 6th, so no duty row is dated the 6th and the person was in the hospital for a third of it — 'no on-duty minute' makes the 6th occupied and 'no duty row dated D' makes it free, which is the difference between a rule that protects rest and one that reports it was protected. p-noor holds a duty on the same date under a slot that ends the same evening, so their 6th really is free: same anchor date, opposite answer, and the only thing between them is the occupied-interval reading. The third person is here because a PLANT STAYED GREEN: deleting CG-01's scope from this type changed nothing anywhere in the corpus, since no case of it set one — the same defect P2-1's review found thirteen times, reappearing on all four remaining window types at once. p-zaid rotates on NICU and would be flagged on their own figures; the scope naming PICU is the only thing between them and a violation.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-06",
+                "isoWeekday": 4,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-07",
+                "isoWeekday": 5,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-08",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-zaid",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "NICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "call24",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "day",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 1020,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-05",
+            "to": "2026-08-06",
+            "evaluableFrom": "2026-08-04",
+            "evaluableTo": "2026-08-08"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-05",
+                "slotKey": "call24"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-05",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-zaid",
+                "date": "2026-08-05",
+                "slotKey": "call24"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-free",
+            "typeKey": "free_day_min",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "n": 2
+            },
+            "rank": 3,
+            "scope": {
+                "unitKeys": [
+                    "PICU"
+                ]
+            }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-free",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-ali",
+                "from": "2026-08-05",
+                "to": "2026-08-06",
+                "contributing": [
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-05",
+                        "slotKey": "call24"
+                    }
+                ]
+            },
+            "explanation": "0 fully free days in the 2 days from 2026-08-05 to 2026-08-06; at least 1 is required. A day any duty runs into is not free, even when no duty starts on it. Days on leave are counted as free here.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-free",
+            "evaluatedWindows": 3,
+            "skipped": []
+        }
+    ]
+}

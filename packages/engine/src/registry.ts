@@ -31,6 +31,8 @@ import * as count from './conditions/count';
 import * as dowRestriction from './conditions/dow_restriction';
 import * as eligibility from './conditions/eligibility';
 import * as fairnessDistribution from './conditions/fairness_distribution';
+import * as freeDayMin from './conditions/free_day_min';
+import * as maxGap from './conditions/max_gap';
 import * as minGap from './conditions/min_gap';
 import * as onboardingGrace from './conditions/onboarding_grace';
 import * as overlapBlock from './conditions/overlap_block';
@@ -143,6 +145,9 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'max_gap',
         implemented: true,
+        evaluate: maxGap.evaluate,
+        preview: maxGap.preview,
+        paramsSchema: maxGap.PARAMS_SCHEMA,
         direction: 'spacing',
         locationKind: 'window',
         needsCarryIn: true,
@@ -334,6 +339,9 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'free_day_min',
         implemented: true,
+        evaluate: freeDayMin.evaluate,
+        preview: freeDayMin.preview,
+        paramsSchema: freeDayMin.PARAMS_SCHEMA,
         direction: 'floor',
         locationKind: 'window',
         needsCarryIn: true,

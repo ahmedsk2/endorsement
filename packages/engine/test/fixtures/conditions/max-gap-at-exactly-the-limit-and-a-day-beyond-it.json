@@ -1,6 +1,6 @@
 {
-    "name": "composition-a-holiday-that-falls-on-a-weekend-is-its-own-bucket",
-    "why": "Calendar::dayType() makes a holiday beat a weekend deliberately, and 7 August is a Friday — a weekend day in this department — that is also Eid. Owner decision N's optional HOL bucket is what stops that duty being counted as an ordinary weekend one: p-ali holds two weekdays, one weekend day and the holiday, which is exactly the stated mix, and flattening the day type to two values makes them two over on weekends and one short on holidays. p-noor holds two weekend days and no holiday and is off in both directions at once, which is what proves the rule still fires rather than the case being green because nothing was measured. The third person is here because a PLANT STAYED GREEN: deleting CG-01's scope from this type changed nothing anywhere in the corpus, since no case of it set one — the same defect P2-1's review found thirteen times, reappearing on all four remaining window types at once. p-zaid rotates on NICU and would be flagged on their own figures; the scope naming PICU is the only thing between them and a violation.",
+    "name": "max-gap-at-exactly-the-limit-and-a-day-beyond-it",
+    "why": "`max_gap` measures what `min_gap` measures, in the other direction: the difference between the dates two duties START on, with N meaning AT MOST N apart (owner decision H, applied to the row whose cell is the same word reversed). The boundary is one comparison operator and a month of different behaviour, and it is invisible in review — so it is fixtured on both sides of itself. p-ali's duties are five days apart against a limit of five and are clean; p-noor's are six and are not. Swapping the comparison for >= flags p-ali, and nothing else in the corpus would notice. The third person is here because a PLANT STAYED GREEN: deleting CG-01's scope from this type changed nothing anywhere in the corpus, since no case of it set one — the same defect P2-1's review found thirteen times, reappearing on all four remaining window types at once. p-zaid rotates on NICU and would be flagged on their own figures; the scope naming PICU is the only thing between them and a violation.",
     "context": {
         "timezone": "Asia/Riyadh",
         "weekStartIsoDay": 7,
@@ -10,6 +10,13 @@
         ],
         "today": "2026-08-01",
         "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
             {
                 "date": "2026-08-02",
                 "isoWeekday": 7,
@@ -48,14 +55,9 @@
             {
                 "date": "2026-08-07",
                 "isoWeekday": 5,
-                "dayType": "HOL",
+                "dayType": "WE",
                 "periodKey": "block-01",
-                "holidays": [
-                    {
-                        "key": "eid",
-                        "year": 1448
-                    }
-                ]
+                "holidays": []
             },
             {
                 "date": "2026-08-08",
@@ -114,27 +116,7 @@
                 "holidays": []
             }
         ],
-        "periods": [
-            {
-                "key": "block-01",
-                "startsOn": "2026-08-02",
-                "endsOn": "2026-08-15",
-                "weeks": [
-                    {
-                        "startsOn": "2026-08-02",
-                        "endsOn": "2026-08-08",
-                        "clippedStartsOn": "2026-08-02",
-                        "clippedEndsOn": "2026-08-08"
-                    },
-                    {
-                        "startsOn": "2026-08-09",
-                        "endsOn": "2026-08-15",
-                        "clippedStartsOn": "2026-08-09",
-                        "clippedEndsOn": "2026-08-15"
-                    }
-                ]
-            }
-        ],
+        "periods": [],
         "people": [
             {
                 "key": "p-ali",
@@ -202,16 +184,16 @@
         ],
         "slots": [
             {
-                "key": "night",
+                "key": "day",
                 "kind": "call",
                 "unitKey": "PICU",
                 "cadence": "daily",
                 "spanDays": 1,
-                "startMinute": 1020,
-                "endMinute": 480,
-                "crossesMidnight": true,
+                "startMinute": 480,
+                "endMinute": 1020,
+                "crossesMidnight": false,
                 "countsHours": true,
-                "tallyKey": "nights"
+                "tallyKey": "days"
             }
         ],
         "clinics": [],
@@ -221,88 +203,52 @@
     },
     "schedule": {
         "horizon": {
-            "from": "2026-08-02",
+            "from": "2026-08-01",
             "to": "2026-08-15",
-            "evaluableFrom": "2026-07-26",
+            "evaluableFrom": "2026-07-25",
             "evaluableTo": "2026-08-22"
         },
         "duties": [
             {
                 "personKey": "p-ali",
-                "date": "2026-08-03",
-                "slotKey": "night"
-            },
-            {
-                "personKey": "p-ali",
-                "date": "2026-08-04",
-                "slotKey": "night"
+                "date": "2026-08-02",
+                "slotKey": "day"
             },
             {
                 "personKey": "p-ali",
                 "date": "2026-08-07",
-                "slotKey": "night"
+                "slotKey": "day"
             },
             {
-                "personKey": "p-ali",
+                "personKey": "p-noor",
+                "date": "2026-08-02",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-noor",
                 "date": "2026-08-08",
-                "slotKey": "night"
-            },
-            {
-                "personKey": "p-noor",
-                "date": "2026-08-10",
-                "slotKey": "night"
-            },
-            {
-                "personKey": "p-noor",
-                "date": "2026-08-11",
-                "slotKey": "night"
-            },
-            {
-                "personKey": "p-noor",
-                "date": "2026-08-14",
-                "slotKey": "night"
-            },
-            {
-                "personKey": "p-noor",
-                "date": "2026-08-15",
-                "slotKey": "night"
+                "slotKey": "day"
             },
             {
                 "personKey": "p-zaid",
-                "date": "2026-08-10",
-                "slotKey": "night"
+                "date": "2026-08-02",
+                "slotKey": "day"
             },
             {
                 "personKey": "p-zaid",
-                "date": "2026-08-11",
-                "slotKey": "night"
-            },
-            {
-                "personKey": "p-zaid",
-                "date": "2026-08-14",
-                "slotKey": "night"
-            },
-            {
-                "personKey": "p-zaid",
-                "date": "2026-08-15",
-                "slotKey": "night"
+                "date": "2026-08-12",
+                "slotKey": "day"
             }
         ]
     },
     "conditions": [
         {
-            "id": "c-mix",
-            "typeKey": "composition",
+            "id": "c-gap",
+            "typeKey": "max_gap",
             "class": "soft",
             "active": true,
             "params": {
-                "targets": {
-                    "R1": {
-                        "WD": 2,
-                        "WE": 1,
-                        "HOL": 1
-                    }
-                }
+                "days": 5
             },
             "rank": 3,
             "scope": {
@@ -314,45 +260,61 @@
     ],
     "expected": [
         {
-            "conditionId": "c-mix",
+            "conditionId": "c-gap",
             "severity": "soft",
             "location": {
                 "kind": "window",
                 "personKey": "p-noor",
                 "from": "2026-08-02",
-                "to": "2026-08-15",
+                "to": "2026-08-08",
                 "contributing": [
                     {
                         "personKey": "p-noor",
-                        "date": "2026-08-10",
-                        "slotKey": "night"
+                        "date": "2026-08-02",
+                        "slotKey": "day"
                     },
                     {
                         "personKey": "p-noor",
-                        "date": "2026-08-11",
-                        "slotKey": "night"
-                    },
-                    {
-                        "personKey": "p-noor",
-                        "date": "2026-08-14",
-                        "slotKey": "night"
-                    },
-                    {
-                        "personKey": "p-noor",
-                        "date": "2026-08-15",
-                        "slotKey": "night"
+                        "date": "2026-08-08",
+                        "slotKey": "day"
                     }
                 ]
             },
-            "explanation": "In the period 2026-08-02 to 2026-08-15 the mix for R1 is off: 2 on weekends where 1 is expected and 0 on holidays where 1 is expected.",
+            "explanation": "6 days between the duty on 2026-08-02 and the next one on 2026-08-08; at most 5 are allowed.",
             "rank": 3
         }
     ],
     "expectedCoverage": [
         {
-            "conditionId": "c-mix",
-            "evaluatedWindows": 1,
-            "skipped": []
+            "conditionId": "c-gap",
+            "evaluatedWindows": 2,
+            "skipped": [
+                {
+                    "from": "2026-07-25",
+                    "to": "2026-08-02",
+                    "reason": "The gap for \"p-ali\" between 2026-07-25 and 2026-08-02 has only one end, so it was not measured. Evaluating an unfinished gap against the edge of the schedule would flag nearly everybody nearly every month (owner decision I)."
+                },
+                {
+                    "from": "2026-08-07",
+                    "to": "2026-08-15",
+                    "reason": "The gap for \"p-ali\" between 2026-08-07 and 2026-08-15 has only one end, so it was not measured. Evaluating an unfinished gap against the edge of the schedule would flag nearly everybody nearly every month (owner decision I)."
+                },
+                {
+                    "from": "2026-07-25",
+                    "to": "2026-08-02",
+                    "reason": "The gap for \"p-noor\" between 2026-07-25 and 2026-08-02 has only one end, so it was not measured. Evaluating an unfinished gap against the edge of the schedule would flag nearly everybody nearly every month (owner decision I)."
+                },
+                {
+                    "from": "2026-08-08",
+                    "to": "2026-08-15",
+                    "reason": "The gap for \"p-noor\" between 2026-08-08 and 2026-08-15 has only one end, so it was not measured. Evaluating an unfinished gap against the edge of the schedule would flag nearly everybody nearly every month (owner decision I)."
+                },
+                {
+                    "from": "2026-08-01",
+                    "to": "2026-08-15",
+                    "reason": "The gap for \"p-zaid\" between 2026-08-01 and 2026-08-15 has only one end, so it was not measured. Evaluating an unfinished gap against the edge of the schedule would flag nearly everybody nearly every month (owner decision I)."
+                }
+            ]
         }
     ]
 }

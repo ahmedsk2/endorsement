@@ -51,6 +51,13 @@
  * removed so a holiday duty is dropped when it does not; the unmapped level defaulting to a mix of
  * zeroes; the two-sided comparison reduced to a cap; and the carry-in tail dropped from the count.
  * Each went red naming its own case.
+ *
+ * **CG-01's SCOPE was the plant that stayed green on all four window types at once.** Deleting
+ * `personInScope` from this module changed nothing anywhere in the corpus, because no case of this
+ * type set a scope — P2-1 review's thirteen-instance finding, reappearing on `max_gap`,
+ * `free_day_min`, `composition` and `target_per_period` together, one task after `count_max` was
+ * caught by exactly the same probe. Each is now closed by a third person in its own defining
+ * fixture who would be flagged on their own figures and is excluded by the scope alone.
  */
 
 import type { JsonSchema } from '../contract/schema';

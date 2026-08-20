@@ -136,6 +136,8 @@ describe('the violation half of the message table', () => {
             count_min: ['«countMinViolation»'],
             dow_restriction: ['«dowRestrictionViolation»'],
             eligibility: ['«eligibilityViolation»'],
+            free_day_min: ['«freeDayMinViolation»'],
+            max_gap: ['«maxGapViolation»'],
             min_gap: ['«minGapViolation»'],
             onboarding_grace: [
                 '«onboardingGraceBeforeJoinViolation»',
@@ -161,6 +163,7 @@ describe('the violation half of the message table', () => {
         expect(coverageReasons(SHOUTING)).toEqual([
             '«carryInSkip»',
             '«midWindowJoinSkip»',
+            '«openGapSkip»',
             '«partialWindowSkip»',
             '«unknownJoinDateSkip»',
         ]);
@@ -200,10 +203,10 @@ describe('the violation half of the message table', () => {
      * two tables genuinely differ and the checks above are not comparing a thing with itself.
      */
     it('found violations and reasons to render, and English under EN rather than tags', () => {
-        expect(FIXTURES.length).toBeGreaterThanOrEqual(54);
+        expect(FIXTURES.length).toBeGreaterThanOrEqual(62);
         expect(violationCount(SHOUTING)).toBeGreaterThanOrEqual(30);
         expect(violationCount(EN)).toBe(violationCount(SHOUTING));
-        expect(Object.keys(sentencesByTypeKey(EN))).toHaveLength(15);
+        expect(Object.keys(sentencesByTypeKey(EN))).toHaveLength(17);
 
         const underEn = [...Object.values(sentencesByTypeKey(EN)).flat(), ...coverageReasons(EN)];
 

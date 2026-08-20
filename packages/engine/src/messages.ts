@@ -260,6 +260,33 @@ export interface PreviewMessages extends Vocabulary {
      */
     composition(args: { targets: readonly CompositionLevelText[] }): string;
 
+    /**
+     * Owner decision H's off-by-one in the OPPOSITE direction, rendered as a worked example.
+     *
+     * `max_gap` and `min_gap` measure one quantity — the difference between two start dates — and a
+     * reader who has just read one of the two previews will carry the boundary across. So this
+     * sentence puts the legal and the illegal side on dates, exactly as `minGap` does, rather than
+     * stating the number and hoping. It also names what stops the clock, because a rule that goes
+     * quiet around somebody's leave looks broken to whoever expected it to fire.
+     */
+    maxGap(args: { days: number; kinds: readonly string[] }): string;
+
+    /**
+     * *"One free day in N, averaged over W weeks"*, with the multiplication performed.
+     *
+     * Both numbers move: the window becomes `N × W` days and the requirement becomes `W` free days.
+     * A reader shown only the unaveraged figure will predict a weekly rule that may be made up
+     * later, which is a different rule with the same words. The leave reading is stated too — it is
+     * the only thing that separates two identical-looking sentences for a person on leave.
+     */
+    freeDayMin(args: {
+        n: number;
+        averagingWeeks: number | null;
+        averagedDays: number | null;
+        averagedFreeDays: number | null;
+        leaveCountsAsFree: boolean;
+    }): string;
+
 
     /** Owner decision R: the days arrive from the caller; P2 stores none of them. No parameters. */
     unwantedDayBlock(): string;
@@ -456,6 +483,43 @@ export interface ViolationMessages extends Vocabulary {
      */
     carryInSkip(args: { horizonFrom: string; historyAvailableFrom: string | null }): string;
 
+    /**
+     * The gap that was too long — and `stopped` is owner decision I made visible.
+     *
+     * `apart` is what the predicate MEASURED, after the days the person could not have worked were
+     * removed; `stopped` is how many those were. Printing the measured number alone would leave a
+     * reader counting dates on a calendar and getting a different answer, with the leave that
+     * explains the difference nowhere on the badge.
+     */
+    maxGapViolation(args: { apart: number; stopped: number; days: number; from: string; to: string }): string;
+
+    /**
+     * Too few fully free days — and the sentence says what *"free"* meant, in both respects.
+     *
+     * The window's real length is printed because it is `n × averagingWeeks` rather than the `n` on
+     * the gate screen, and the leave reading is printed because it is the only difference between
+     * two otherwise identical sentences for a person who was on leave.
+     */
+    freeDayMinViolation(args: {
+        free: number;
+        required: number;
+        windowDays: number;
+        from: string;
+        to: string;
+        leaveCountsAsFree: boolean;
+    }): string;
+
+    /**
+     * Owner decision I: a gap with only one end, reported rather than evaluated. `coverage()` only.
+     *
+     * Both edges take this shape — the gap after somebody's last duty and the gap before their
+     * first — because both are unfinished for the same reason, and a person with no duty at all is
+     * one open gap over the whole horizon. Evaluating any of them against the horizon's own bounds
+     * would flag nearly every person nearly every month, which is a rule a department switches off
+     * in its first week.
+     */
+    openGapSkip(args: { personKey: string; from: string; to: string }): string;
+
     /** Owner decision T's other half: the person whose join date nothing recorded, named out loud. */
     unknownJoinDateSkip(args: { personKey: string; placements: number }): string;
 
@@ -615,6 +679,33 @@ export const EN: Messages = {
             : 'A holiday counts as a holiday rather than as a weekend day, even when it falls on one.';
 
         return `Each period, per person: ${EN.conjoin(mixes)}. ${holidays}`;
+    },
+
+    maxGap({ days, kinds }) {
+        const between = kinds.length === 0 ? 'duties' : `duties of kind ${EN.conjoin(kinds)}`;
+
+        return (
+            `At most ${EN.plural(days, 'day', 'days')} between ${between}, counted between the dates ` +
+            `they start on — 1 Aug then ${1 + days} Aug is allowed, 1 Aug then ${2 + days} Aug is not. ` +
+            'Days on leave, and days before the person joined, are not counted against the gap; a ' +
+            'rotation away from the department is.'
+        );
+    },
+
+    freeDayMin({ n, averagingWeeks, averagedDays, averagedFreeDays, leaveCountsAsFree }) {
+        const leave = leaveCountsAsFree
+            ? 'A day on leave counts as a free day.'
+            : 'A day on leave does NOT count as a free day.';
+
+        if (averagingWeeks === null || averagedDays === null || averagedFreeDays === null) {
+            return `At least one fully free day in every ${n} consecutive days. ${leave}`;
+        }
+
+        return (
+            `At least one fully free day in every ${n} consecutive days, averaged over ` +
+            `${averagingWeeks} such windows — at least ${EN.plural(averagedFreeDays, 'free day', 'free days')} ` +
+            `in any ${averagedDays} consecutive days. ${leave}`
+        );
     },
 
     vacationWeeksAtLeast(weeks) {
@@ -929,6 +1020,39 @@ export const EN: Messages = {
             : '';
 
         return `In the period ${from} to ${to} the mix for ${levelKey} is off: ${named}.${fold}`;
+    },
+
+    maxGapViolation({ apart, stopped, days, from, to }) {
+        const because =
+            stopped === 0
+                ? ''
+                : ` (${stopped} ${stopped === 1 ? 'day' : 'days'} on leave or before the join date ` +
+                  'were not counted against it)';
+
+        return (
+            `${EN.plural(apart, 'day', 'days')} between the duty on ${from} and the next one on ` +
+            `${to}${because}; at most ${days} are allowed.`
+        );
+    },
+
+    freeDayMinViolation({ free, required, windowDays, from, to, leaveCountsAsFree }) {
+        const leave = leaveCountsAsFree
+            ? 'Days on leave are counted as free here.'
+            : 'Days on leave are NOT counted as free here.';
+
+        return (
+            `${EN.plural(free, 'fully free day', 'fully free days')} in the ${windowDays} days from ` +
+            `${from} to ${to}; at least ${required} ${required === 1 ? 'is' : 'are'} required. A day ` +
+            `any duty runs into is not free, even when no duty starts on it. ${leave}`
+        );
+    },
+
+    openGapSkip({ personKey, from, to }) {
+        return (
+            `The gap for "${personKey}" between ${from} and ${to} has only one end, so it was not ` +
+            'measured. Evaluating an unfinished gap against the edge of the schedule would flag ' +
+            'nearly everybody nearly every month (owner decision I).'
+        );
     },
 
     unknownJoinDateSkip({ personKey, placements }) {

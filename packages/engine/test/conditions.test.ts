@@ -13,6 +13,7 @@ import { evaluate, locationIsReportable, sortViolations } from '../src/evaluate'
 import { windowTouchesHorizon } from '../src/duty/windows';
 import { preview } from '../src/preview';
 import { CATALOG, registryEntry } from '../src/registry';
+import { withoutComments } from './support/source';
 
 /**
  * The three Hard placement types (P2 Task 10): `overlap_block`, `vacation_block`, `eligibility`.
@@ -39,16 +40,6 @@ import { CATALOG, registryEntry } from '../src/registry';
  */
 
 const FIXTURE_DIR = join(import.meta.dirname, 'fixtures', 'conditions');
-
-/**
- * `SourceScanner::withoutComments()`'s non-PHP path, in TypeScript: block comments, then lines whose
- * first non-space characters are `//`. Conservative on purpose and for the reason that file records
- * — leaving a comment behind is a noisy false positive, eating code is a silent false negative.
- * Strings are NOT stripped: an exception message carrying a forbidden word is code a user can see.
- */
-function withoutComments(source: string): string {
-    return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-}
 
 const d = (value: string): Ymd => parseYmd(value);
 

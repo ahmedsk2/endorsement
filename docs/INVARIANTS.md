@@ -1102,3 +1102,75 @@ place a scheduling rule is allowed to exist.*
   loader carries every resolved holiday rather than pre-filtering on the flag, because filtering
   would be the loader deciding what that type may see; closing it properly needs a contract field,
   which is a P3 decision, not a P2 workaround.
+
+- **CG-08's three presets are DATA in the package, and the manifest fails in BOTH directions**
+  (P2-2 Task 21, `packages/engine/src/presets/`). A preset is data the engine can be **called**
+  with, not seed data — there is no `conditions` table until P3, so a seeder would need a table that
+  does not exist, and *"seeded"* is CG-08's own word that a later reader will take literally.
+  `preset:acgme` ships **five soft, active rows at one rank** — `rolling_hours_max` {80 h, 7 d, ×4},
+  `call_frequency_max` {1-in-3, 28 d}, `free_day_min` {1-in-7, ×4}, `min_gap` {10 h, end-to-start},
+  `consecutive_max` {24 h, `transitionMinutes` 240}; `preset:residency` is **structure-only** (seven
+  types, every parameter awaited, no number anywhere); `preset:scfhs` is **present, empty and
+  pending** (owner decision AB). Soft rather than Hard because CG-05 makes Hard block publishing and
+  an untested duty-hours rule would block a department's first publish; **one rank for all five**
+  because CG-02's drag is the department's own gesture and five distinct ranks would be five
+  importance judgements no document makes, arriving pre-made on the screen whose purpose is to make
+  them.
+
+- **The preset manifest is a hand-written SECOND declaration, compared four ways.** A manifest
+  derived from the presets agrees with them always and catches nothing. `presets.test.ts` therefore
+  fails on: a preset naming a key the catalog does not **implement** (a bundle seeding
+  `forbidden_transition` throws at install time, which on a gate screen is a rule that appears
+  configured and cannot run); a key the manifest claims that the bundle does not carry; a row a
+  bundle grew without declaring; and a declared `state` that is not the state the contents produce
+  (all rows deleted declares `ready` and derives `empty`). **The second is the direction a manifest
+  is usually written without, and it is the one that catches a deleted row** — measured by planting
+  that deletion, on which every other check in the suite stays green. `UnitMergeCoversEveryUnit
+  ReferenceTest`'s device, and `catalog-parity.test.ts`'s one layer along. A preset that is not
+  `ready` must carry `pending` — what is awaited, who supplies it, when somebody last asked —
+  because an empty array is indistinguishable from a failed load and from nobody having written it
+  yet.
+
+- **The five ACGME figures are PARSED out of CG-08's own sentence and compared against the
+  parameters**, so *"the numbers are sourced rather than invented"* is machine-checked and the spec
+  moving a figure fails the build. `transitionMinutes` is the **one number in the bundle that no
+  document in this repository states**: CG-08 drops the clause entirely and Appendix A names it in
+  words only, so the preset carries ACGME's published four hours and says so in its own
+  `limitations`, beside the two Decision H names — in-house home-call time is excluded (no
+  timekeeping surface exists and §36 puts time out of scope), and 80 h summed over call slots is a
+  **floor, not an audited total** (`master_rota_assignments` records which unit, never for how long).
+  The case asserts the ABSENCE at the source too: a transition figure appearing in CG-08 later would
+  make the limitation false and nothing else would notice. A third limitation records that this
+  engine reads the allowance as what JOINS two duties into one stretch, so the gap counts inside the
+  24 h where the standard permits four hours on top — reporting a stretch it might allow rather than
+  missing one it forbids, which is the right direction for a soft warning.
+
+- **A preset is CONFIGURATION, not code, and that is asserted as a property of the VALUE.**
+  `JSON.parse(JSON.stringify(PRESETS))` must deep-equal `PRESETS` — no function, no `undefined`, no
+  class instance survives that trip — plus a source half the runtime one cannot see: the four data
+  files may contain only `import type`, and no `function` and no `=>` at all, comments stripped.
+  Decision H says a preset *"can physically be a JSON data file"*; the ONE deviation is the
+  extension, on `contract/schema.ts`'s precedent, since a JSON import *"would resolve differently
+  under the bundler, under plain Node and under `tsc`"*. **`residency`'s `awaiting` lists are
+  DERIVED**, compared against each type's own `PARAMS_SCHEMA.required` rather than restated — a
+  hand-written copy agrees until a schema gains a parameter, and then the structure reads as complete
+  while a department fills in a form missing a field. Two of its seven types publish an EMPTY schema
+  and await nothing; they are still drafts, because **a preset a department installs half of is a
+  preset that looks finished on a gate screen**.
+
+- **A bundle is proved to FIRE and to stay QUIET, because parameters that merely validate are
+  inert.** `windowDays: 7` with no averaging validates against `rolling_hours_max`'s schema and asks
+  for a quarter of what CG-08 says. So the five rows are run through `evaluate()` on two generated
+  worlds — somebody on call every day of a 35-day horizon, where all five fire, and a light month
+  where none does — and the pair is what makes the first non-vacuous. It is also what found the
+  invariant below.
+
+- **`eligibleDays` is a fact about the EVALUABLE range, never about the horizon.** Owner decision J
+  makes `call_frequency_max`'s allowance `floor(availableDays / n)` over the window's own contents,
+  and its windows reach `windowDays - 1` days back past `horizon.from`. Handed availability for the
+  horizon alone, the rule reads those earlier windows as *"available on one day of the 28"*, permits
+  ZERO calls, and fires on a schedule that breaches nothing — found by the ACGME bundle's quiet world
+  at Task 21, which is what a quiet world is for. `ContextBuilder::forHorizon()` builds `days` and
+  `eligibleDays` over the single range it is given, so **its caller must pass the EVALUABLE range**
+  and set `horizon.evaluableFrom`/`evaluableTo` to match. Absence of data and unavailability are
+  indistinguishable in a list of dates, and only the caller can tell them apart.

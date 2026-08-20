@@ -275,6 +275,15 @@ export function isoWeekdayAt(days: DayIndex, date: Ymd): number {
  * *"I looked, and there were no duties"*, which is an answer. Conflating the two would report a
  * skipped window on every correctly-supplied month and train a reader to ignore the field.
  *
+ * ## There are TWO ways to have no usable history, and the reason names the one that happened
+ *
+ * `null` is one. The other is a `historyAvailableFrom` that is real but does not reach BACK PAST
+ * `horizon.from` — history supplied only from the 1st onwards, which is what a first-ever draft or
+ * a freshly provisioned instance has. The window is unevaluable either way and the skip is correct
+ * either way, but the reason shipped saying *"historyAvailableFrom is null"* in both, so the second
+ * case printed a sentence contradicted by the very field it names. A coverage row a reader can
+ * catch out is one they stop reading, which is the whole thing this function exists to avoid.
+ *
  * STATED RESIDUAL: there is no `futureAvailableTo` counterpart, so the RIGHT edge is not reported.
  * `followingDuties` is usually empty and legitimately so, and no context field distinguishes
  * *"nothing follows"* from *"nothing was supplied"*. Adding one is a contract change; guessing from
@@ -282,7 +291,9 @@ export function isoWeekdayAt(days: DayIndex, date: Ymd): number {
  * second paragraph refuses.
  */
 export function carryInLeftEdge(context: EvaluationContext, horizon: Horizon): SkippedWindow[] {
-    if (context.historyAvailableFrom !== null && compareYmd(context.historyAvailableFrom, horizon.from) < 0) {
+    const available = context.historyAvailableFrom;
+
+    if (available !== null && compareYmd(available, horizon.from) < 0) {
         return [];
     }
 
@@ -297,8 +308,10 @@ export function carryInLeftEdge(context: EvaluationContext, horizon: Horizon): S
             from: horizon.evaluableFrom,
             to,
             reason:
-                `No duty history was supplied before ${horizon.from} (historyAvailableFrom is null), so a ` +
-                'duty running past midnight into the horizon cannot be seen.',
+                (available === null
+                    ? `No duty history was supplied before ${horizon.from} (historyAvailableFrom is null)`
+                    : `Duty history begins at ${available}, which is not before ${horizon.from}`) +
+                ', so a duty running past midnight into the horizon cannot be seen.',
         },
     ];
 }

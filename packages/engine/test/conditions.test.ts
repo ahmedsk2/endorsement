@@ -636,6 +636,29 @@ describe('the horizon-edge corpus — what the carry-in tail is actually asserte
         }
     });
 
+    /**
+     * THE OTHER WAY TO HAVE NO USABLE HISTORY, and the reason had been announcing the wrong one.
+     * `historyAvailableFrom` set to the 1st itself is history that exists and does not reach back
+     * past the horizon — a first-ever draft, or a freshly provisioned instance. The skip is right;
+     * the sentence saying *"historyAvailableFrom is null"* about a field the caller can see is not
+     * null was not, and a coverage row a reader can catch out is one they stop reading.
+     */
+    it.each(seamCases.map((fixture) => fixture.name))('%s names the reason when history starts too late', (name) => {
+        const fixture = seamCases.find((candidate) => candidate.name === name) as Fixture;
+        const context: EvaluationContext = {
+            ...fixture.context,
+            historyAvailableFrom: fixture.schedule.horizon.from,
+            priorDuties: [],
+        };
+
+        for (const row of coverage(fixture.schedule, context, fixture.conditions)) {
+            expect(row.skipped).toHaveLength(1);
+            expect(row.skipped[0]?.reason).toMatch(/begins at 2026-08-01, which is not before 2026-08-01/);
+            expect(row.skipped[0]?.reason).not.toMatch(/is null/);
+            expect(row.skipped[0]?.to).toBe(d('2026-07-31'));
+        }
+    });
+
     it('runs over the four carry-in cases, named', () => {
         expect(seamCases.map((fixture) => fixture.name)).toEqual([
             'consecutive-max-the-run-spans-the-thirty-first-into-the-first',

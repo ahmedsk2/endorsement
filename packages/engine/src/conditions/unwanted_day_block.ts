@@ -51,7 +51,7 @@ export const PARAMS_SCHEMA: JsonSchema = {
 export const preview: ConditionPreview = (_condition, _context, messages) => messages.unwantedDayBlock();
 
 /** The predicate. See the module docblock for every decision in it. */
-export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
+export const evaluate: ConditionEvaluator = (condition, schedule, context, messages) => {
     assertValidAgainst(PARAMS_SCHEMA, condition.params, `unwanted_day_block on condition "${condition.id}"`);
 
     const people = personIndex(context);
@@ -71,7 +71,7 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
         if (person.unwantedDays.includes(duty.date)) {
             findings.push({
                 location: { kind: 'placement', personKey: duty.personKey, date: duty.date, slotKey: duty.slotKey },
-                explanation: `${duty.date} is registered as an unwanted day.`,
+                explanation: messages.unwantedDayBlockViolation({ date: duty.date }),
             });
         }
     }

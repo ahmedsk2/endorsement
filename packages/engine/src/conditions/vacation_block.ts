@@ -48,13 +48,10 @@ export const PARAMS_SCHEMA: JsonSchema = {
 };
 
 /** CG-04's sentence. It states the anchor-date reading, because that is what a reader will query. */
-export const preview: ConditionPreview = () =>
-    'No duty on a day the person is on leave, counting the day the duty starts on — the first and ' +
-    'the last day of a leave period both count, and a night duty starting the evening before leave ' +
-    'begins does not.';
+export const preview: ConditionPreview = (_condition, _context, messages) => messages.vacationBlock();
 
 /** The predicate. */
-export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
+export const evaluate: ConditionEvaluator = (condition, schedule, context, messages) => {
     assertValidAgainst(PARAMS_SCHEMA, condition.params, `vacation_block on condition "${condition.id}"`);
 
     const people = personIndex(context);
@@ -74,7 +71,7 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
         if (person.leaveDays.includes(duty.date)) {
             findings.push({
                 location: { kind: 'placement', personKey: duty.personKey, date: duty.date, slotKey: duty.slotKey },
-                explanation: `On leave on ${duty.date}.`,
+                explanation: messages.vacationBlockViolation({ date: duty.date }),
             });
         }
     }

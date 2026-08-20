@@ -38,7 +38,7 @@
 import type { JsonSchema } from '../contract/schema';
 import type { Condition, ConditionEvaluator, ConditionPreview, Finding } from '../contract/types';
 import { assertValidAgainst } from '../contract/validate';
-import { dayIndex, list, personInScope, personIndex, placementsCovered } from './support';
+import { dayIndex, personInScope, personIndex, placementsCovered } from './support';
 
 /** `dow_restriction`'s parameters: the ISO weekdays this condition bans. */
 export interface DowRestrictionParams {
@@ -76,12 +76,11 @@ export const preview: ConditionPreview = (condition, _context, messages) =>
     messages.dowRestriction(readParams(condition));
 
 /** The predicate. See the module docblock for every decision in it. */
-export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
+export const evaluate: ConditionEvaluator = (condition, schedule, context, messages) => {
     const { days } = readParams(condition);
     const people = personIndex(context);
     const daysByDate = dayIndex(context);
     const findings: Finding[] = [];
-    const banned = list(days.map((day) => String(day)));
 
     let evaluated = 0;
 
@@ -99,9 +98,7 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
         if (days.includes(isoWeekday)) {
             findings.push({
                 location: { kind: 'placement', personKey: duty.personKey, date: duty.date, slotKey: duty.slotKey },
-                explanation:
-                    `${duty.date} is ISO weekday ${isoWeekday}, and this rule bans ISO ` +
-                    `${days.length === 1 ? 'weekday' : 'weekdays'} ${banned}.`,
+                explanation: messages.dowRestrictionViolation({ date: duty.date, isoWeekday, days }),
             });
         }
     }

@@ -20,13 +20,21 @@
  *    so rather than treat the 1st as the start of time. A silently dropped window is a guard that
  *    looks green.
  *
- * ## Explanations are English literals here, and that is a STATED residual
+ * ## NO ENGLISH LIVES IN THIS FILE ANY MORE, and it used to
  *
- * CG-04's preview text goes through `messages.ts` because `ConditionPreview` takes the table as an
- * argument (AR-07). A violation's `explanation` does not: `ConditionEvaluator` was fixed at Task 7
- * without one. Threading the table through `evaluate()`/`coverage()` is a contract change worth
- * making ONCE, before nineteen more types hardcode English — recorded in the plan's recommended
- * additions rather than done here, because it is a change to Task 7's shape and not to Task 10's.
+ * Until P2-2's first task, `ConditionPreview` took the message table as an argument and
+ * `ConditionEvaluator` did not, so every violation `explanation` and every `coverage()` reason was
+ * assembled from literals at the call site — AR-07 holding for the preview beside them and not for
+ * them. Threading the table through `evaluate()`/`coverage()` was a contract change worth making
+ * ONCE, before eleven more types hardcoded English, and this file lost two things to it:
+ *
+ *  - **`list()`**, a second `conjoin`, deleted rather than kept. It existed because a predicate had
+ *    no table to reach for, and a second definition of *"a, b and c"* is a second thing to translate.
+ *  - **`hoursText()`**, moved to the table's `Vocabulary.hours`, because a decimal SEPARATOR is a
+ *    locale's decision and a formatter outside the table can never honour one.
+ *
+ * {@link carryInLeftEdge} still decides WHICH of the two left-edge shapes happened; it no longer
+ * decides how either is said.
  */
 
 import { addDays, compareYmd, isoWeekday, type Ymd } from '../calendar/ymd';
@@ -38,19 +46,11 @@ import type {
     Person,
     Schedule,
     SkippedWindow,
+    ViolationMessages,
 } from '../contract/types';
 import type { Duty } from '../duty/interval';
 import type { Horizon } from '../duty/windows';
 import type { Span } from '../contract/types';
-
-/** `a`, `a and b`, `a, b and c` — for an explanation. Not the message table; see the docblock. */
-export function list(items: readonly string[]): string {
-    if (items.length <= 1) {
-        return items[0] ?? '';
-    }
-
-    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1] as string}`;
-}
 
 /**
  * The key of the span covering `date`, or `null` when none does.
@@ -157,19 +157,6 @@ export function personIndex(context: EvaluationContext): { get(key: string): Per
             return person;
         },
     };
-}
-
-/**
- * Minutes as hours, for an explanation: `4 h`, `26 h`, `10.5 h`.
- *
- * ONE definition, because `min_gap` and `consecutive_max` both render a duration and two
- * formatters would eventually disagree about the same number on two badges of the same cell.
- * Whole hours print whole — a scheduler reading `4.0 h` wonders what the missing precision was.
- */
-export function hoursText(minutes: number): string {
-    const hours = minutes / 60;
-
-    return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
 }
 
 /**
@@ -290,7 +277,11 @@ export function isoWeekdayAt(days: DayIndex, date: Ymd): number {
  * emptiness would report a skip on almost every evaluation, which is the noise this function's own
  * second paragraph refuses.
  */
-export function carryInLeftEdge(context: EvaluationContext, horizon: Horizon): SkippedWindow[] {
+export function carryInLeftEdge(
+    context: EvaluationContext,
+    horizon: Horizon,
+    messages: ViolationMessages,
+): SkippedWindow[] {
     const available = context.historyAvailableFrom;
 
     if (available !== null && compareYmd(available, horizon.from) < 0) {
@@ -307,11 +298,8 @@ export function carryInLeftEdge(context: EvaluationContext, horizon: Horizon): S
         {
             from: horizon.evaluableFrom,
             to,
-            reason:
-                (available === null
-                    ? `No duty history was supplied before ${horizon.from} (historyAvailableFrom is null)`
-                    : `Duty history begins at ${available}, which is not before ${horizon.from}`) +
-                ', so a duty running past midnight into the horizon cannot be seen.',
+            // WHICH shape happened is this function's decision; how it is SAID is the table's.
+            reason: messages.carryInSkip({ horizonFrom: horizon.from, historyAvailableFrom: available }),
         },
     ];
 }

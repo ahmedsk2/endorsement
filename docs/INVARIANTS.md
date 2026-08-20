@@ -574,6 +574,50 @@ place a scheduling rule is allowed to exist.*
   (decision Q). `target_per_period`'s modifier REPLACES and the sentence says so in words (decision
   M) — a delta grammar lets two modifiers compound below zero silently.
 
+- **EVERY sentence this engine produces comes from `messages.ts`, violations and coverage reasons
+  included** (P2-2 Task 1). `ConditionPreview` took the table from Task 9 and `ConditionEvaluator`
+  did not — it was fixed at Task 7 without one — so eleven types assembled their violation English at
+  the call site and AR-07's *"strings are externalized from launch"* held for the weekday names in
+  `lang/en/calendar.php` and not for the sentence beside them. `ConditionEvaluator` now takes a
+  fourth argument, `ViolationMessages`, **required rather than defaulted**: a type that could forget
+  it would fall back to English silently, which is the one failure a message table exists to make
+  impossible. The default sits on `evaluate()`/`coverage()` and **nowhere inside** — `runConditions()`
+  requires it, so a caller cannot thread a second table into one projection while the other keeps
+  English. **The ordering was the point**: eleven call sites at P2-2's first task, twenty-two after
+  it, with the shape set by whichever type happened to be written first. The argument for waiting
+  (*"P2-2's types are where one learns what a good explanation reads like"*) was rejected because the
+  table is a LOOKUP — a key and an interpolation map — so better wording later changes values, not
+  shape. **Three interfaces, not one**: `Vocabulary` is shared, `PreviewMessages` describes a RULE on
+  the gate screen before a draft exists, `ViolationMessages` describes a PLACEMENT in one that does,
+  and neither half can reach the other's sentences. `support.ts`'s `list()` was deleted (a second
+  `conjoin`) and its `hoursText()` moved to `Vocabulary.hours` — a decimal SEPARATOR is a locale's
+  decision. **`min_gap`'s `shortfall()` returns a NUMBER now**, not `"1 day"`, and that is what makes
+  owner decision Q reachable: a proportional tolerance must print the number ACTUALLY APPLIED, a
+  preview cannot know it, and the predicate is handed the table on the same call that measures it —
+  Task 19 owes the sentence, not the plumbing.
+
+- **The three-way proof that the threading BITES, and why one check was not enough.** The behavioural
+  half hands `evaluate()`/`coverage()` a second table **derived from `EN`'s own keys** — every method,
+  vocabulary included, returning its own name — and asserts the tag per TYPE across the whole corpus,
+  eleven types and fourteen sentence shapes (`messages.test.ts`). Derived rather than written out: a
+  hand-listed second table naming ten of eleven methods hides exactly the defect it exists to catch.
+  `preview.test.ts`'s equivalent was widened from `min_gap` alone to all fourteen previewable
+  entries — **that one type was the whole proof, and the plan's note that *"`preview` already goes
+  through the table"* was consequently half true**: `overlap_block`, `vacation_block` and
+  `eligibility` carried English inline and passed every check in the file, because the parameter
+  matrix only asks that a sentence REACT to a parameter and two of those three have none. A property
+  asserted at the one input where the defect cannot appear is P2-1's recurring green plant. The
+  SOURCE half (`conditions.test.ts`) requires every `explanation:`/`reason:` in `src/conditions/` to
+  begin `messages.`, **comments stripped** — the eighth *"a docblock is scanned source"* of the phase
+  — and is planted against a bare literal AND a ternary of two, because ten of the eleven migrated
+  sites were ternaries and a needle anchored on a quote would have seen only the first branch. It
+  reaches what the corpus cannot: a branch no fixture exercises. **STATED RESIDUAL:** a module calling
+  a local helper that builds English would pass, and the needle for that (*"no long string literal in
+  this directory"*) matches every parameter's schema `description` and would need nine allow-list
+  entries, blinding the guard where a real offender is born. **The English itself did not move**, and
+  the corpus is what says so: all 34 cases compare `explanation` verbatim, so a relocation that
+  became a rewording fails there rather than here.
+
 - **`fairness_distribution`'s tolerance floor stays, and the reason is measured.** Owner decision Q
   fixes `max(1, ceil(0.1 × proRatedTarget))`, and `toleranceFor()` is its only definition. The
   decision's own justification (*"0.4 floors to a tolerance of zero"*) describes rounding DOWN while

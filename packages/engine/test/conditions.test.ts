@@ -727,3 +727,93 @@ describe('the eleven placement types are registered as implemented, with a previ
         expect(entry?.locationKind).toBe('placement');
     });
 });
+
+describe('no condition module assembles a sentence of its own', () => {
+    /**
+     * The SOURCE half of P2-2 Task 1, and it exists because the behavioural half cannot reach
+     * everything.
+     *
+     * `messages.test.ts` hands `evaluate()` a second table and watches all eleven types' sentences
+     * change — but it can only see the sentence shapes the CORPUS produces, and several types carry
+     * a second shape no case reaches (`min_gap`'s overlapping pair, `consecutive_max` under a unit
+     * the fixture does not use). A type that routed one branch through the table and kept a literal
+     * in the other would be green there. This scan sees every site.
+     *
+     * ## What it is and what it deliberately is not
+     *
+     * It requires every `explanation:` and every `reason:` in a condition module to be an expression
+     * beginning `messages.`. That reaches the shape a hardcoded sentence actually takes — the eleven
+     * this task migrated were every one of them a literal or a ternary of literals at the property.
+     *
+     * **STATED RESIDUAL:** a module that called a local helper which itself built English would pass.
+     * That is not bought, and the reason is measurement rather than optimism: the needle for it would
+     * have to be *"no string literal longer than N appears in this directory"*, which matches the
+     * schema `description` on every parameter of every type — text the gate screen legitimately
+     * renders and which is already the table's problem to translate one layer along. A needle that
+     * fires on nine files it must then allow-list blinds the guard exactly where a real offender is
+     * born, which is ruling 42's whole finding.
+     *
+     * ## A docblock is scanned source, for the eighth time this phase, so comments are stripped
+     *
+     * Every one of these modules explains its explanations in prose — `onboarding_grace.ts` writes
+     * *"the two shapes carry different explanations"* — and a guard that fails the build on the
+     * documentation of its own rule teaches people to delete the documentation. `withoutComments()`
+     * is the same stripper `eligibility.ts`'s absence scan uses, and it is pinned in both directions
+     * below for the same recorded reason: eating code is a silent false negative that looks green.
+     */
+    const CONDITION_DIR = join(import.meta.dirname, '..', 'src', 'conditions');
+
+    /** Every `explanation:`/`reason:` in this source whose value does not begin `messages.`. */
+    function sentencesNotFromTheTable(source: string): string[] {
+        return [...withoutComments(source).matchAll(/(?:explanation|reason):\s*(?!messages\.)(\S[^\n]*)/g)].map(
+            (match) => (match[1] as string).trim(),
+        );
+    }
+
+    const modules = readdirSync(CONDITION_DIR)
+        .filter((name) => name.endsWith('.ts'))
+        .sort();
+
+    it('routes every explanation and every coverage reason through the message table', () => {
+        const offenders = modules.flatMap((name) =>
+            sentencesNotFromTheTable(readFileSync(join(CONDITION_DIR, name), 'utf8')).map(
+                (site) => `${name}: ${site}`,
+            ),
+        );
+
+        expect(offenders).toEqual([]);
+    });
+
+    /**
+     * The two floors under it. A scan pointed at a moved directory iterates nothing and passes, and
+     * a stripper that ate the code makes every needle miss — both look exactly like a clean tree.
+     */
+    it('scanned the modules it claims to, with the code still in them', () => {
+        expect(modules).toContain('support.ts');
+        expect(modules.length).toBeGreaterThanOrEqual(12);
+
+        const stripped = modules.map((name) => withoutComments(readFileSync(join(CONDITION_DIR, name), 'utf8')));
+
+        expect(stripped.filter((code) => code.includes('messages.')).length).toBeGreaterThanOrEqual(11);
+        expect(stripped.join('\n')).toContain('export const evaluate');
+        expect(stripped.join('\n')).not.toContain('CG-04');
+    });
+
+    /**
+     * PLANTED, permanently, in both shapes this task removed: a bare literal and a ternary over two
+     * of them. Green over the shipped modules is only meaningful if the same function is red over a
+     * module that hardcodes, and the ternary is there because ten of the eleven migrated sites were
+     * written as one and a needle anchored on a quote would have missed every branch but the first.
+     */
+    it('bites on a literal explanation and on a ternary of them', () => {
+        expect(
+            sentencesNotFromTheTable(
+                [
+                    "findings.push({ location, explanation: `On leave on ${duty.date}.` });",
+                    'findings.push({ location, explanation: sameDay ? `A.` : `B.` });',
+                    'skipped.push({ from, to, reason: messages.carryInSkip({ horizonFrom }) });',
+                ].join('\n'),
+            ),
+        ).toEqual(['`On leave on ${duty.date}.` });', 'sameDay ? `A.` : `B.` });']);
+    });
+});

@@ -54,7 +54,7 @@ import type { JsonSchema } from '../contract/schema';
 import type { Condition, ConditionEvaluator, ConditionPreview, Finding } from '../contract/types';
 import { assertValidAgainst } from '../contract/validate';
 import type { Duty } from '../duty/interval';
-import { list, personInScope, personIndex, placementsCovered, unitKeyAt } from './support';
+import { personInScope, personIndex, placementsCovered, unitKeyAt } from './support';
 
 /** `same_unit_conflict`'s parameters, normalised — both lists absent means "every unit, no lifts". */
 export interface SameUnitConflictParams {
@@ -93,7 +93,7 @@ export const preview: ConditionPreview = (condition, _context, messages) =>
     messages.sameUnitConflict(readParams(condition));
 
 /** The predicate. See the module docblock for every decision in it. */
-export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
+export const evaluate: ConditionEvaluator = (condition, schedule, context, messages) => {
     const { units, exceptDates } = readParams(condition);
     const people = personIndex(context);
     const findings: Finding[] = [];
@@ -136,9 +136,7 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
 
             findings.push({
                 location: { kind: 'placement', personKey: duty.personKey, date: duty.date, slotKey: duty.slotKey },
-                explanation:
-                    `Also on call with ${list(partners.map((key) => `"${key}"`))} on ${date}, and ` +
-                    `${partners.length === 1 ? 'both are' : 'all of them are'} rotating on ${unit}.`,
+                explanation: messages.sameUnitConflictViolation({ partners, date, unitKey: unit }),
             });
         }
     }

@@ -63,7 +63,9 @@ import type {
     Location,
     Schedule,
     Violation,
+    ViolationMessages,
 } from './contract/types';
+import { EN } from './messages';
 import { CATALOG, indexCatalog, type RegistryEntry } from './registry';
 import { stampViolation } from './severity';
 
@@ -116,6 +118,7 @@ export function runConditions(
     schedule: Schedule,
     context: EvaluationContext,
     conditions: readonly Condition[],
+    messages: ViolationMessages,
 ): ConditionRun[] {
     const byTypeKey = indexCatalog(catalog);
 
@@ -135,10 +138,10 @@ export function runConditions(
         }
 
         if (!condition.active) {
-            return { condition, outcome: nothingEvaluated(schedule.horizon) };
+            return { condition, outcome: nothingEvaluated(schedule.horizon, messages) };
         }
 
-        return { condition, outcome: entry.evaluate(condition, schedule, context) };
+        return { condition, outcome: entry.evaluate(condition, schedule, context, messages) };
     });
 }
 
@@ -150,18 +153,12 @@ export function runConditions(
  * and a condition contributing nothing because it silently failed to resolve look identical in a
  * violation list, and only one of them is fine.
  */
-function nothingEvaluated(horizon: Horizon): ConditionOutcome {
+function nothingEvaluated(horizon: Horizon, messages: ViolationMessages): ConditionOutcome {
     return {
         findings: [],
         coverage: {
             evaluatedWindows: 0,
-            skipped: [
-                {
-                    from: horizon.from,
-                    to: horizon.to,
-                    reason: 'The condition is inactive (CG-01 on/off), so nothing was evaluated.',
-                },
-            ],
+            skipped: [{ from: horizon.from, to: horizon.to, reason: messages.inactiveConditionSkip() }],
         },
     };
 }
@@ -179,10 +176,11 @@ export function evaluateWith(
     schedule: Schedule,
     context: EvaluationContext,
     conditions: readonly Condition[],
+    messages: ViolationMessages = EN,
 ): Violation[] {
     const violations: Violation[] = [];
 
-    for (const { condition, outcome } of runConditions(catalog, schedule, context, conditions)) {
+    for (const { condition, outcome } of runConditions(catalog, schedule, context, conditions, messages)) {
         for (const finding of outcome.findings) {
             violations.push(stampViolation(condition, finding));
         }
@@ -191,13 +189,21 @@ export function evaluateWith(
     return sortViolations(emitWithinHorizon(violations, schedule.horizon));
 }
 
-/** CG-10, against the shipped catalog. */
+/**
+ * CG-10, against the shipped catalog and the English table.
+ *
+ * `messages` defaults here and on {@link coverage} and NOWHERE INSIDE — `runConditions()` requires
+ * it. A default one layer down would let a future caller thread a second table into `evaluate()`
+ * while `coverage()` silently kept English, and the two disagreeing about the same evaluation is
+ * exactly what one shared producer exists to prevent.
+ */
 export function evaluate(
     schedule: Schedule,
     context: EvaluationContext,
     conditions: readonly Condition[],
+    messages: ViolationMessages = EN,
 ): Violation[] {
-    return evaluateWith(CATALOG, schedule, context, conditions);
+    return evaluateWith(CATALOG, schedule, context, conditions, messages);
 }
 
 /**

@@ -55,9 +55,9 @@ import type { Duty, Slot } from '../duty/interval';
 import type { Horizon } from '../duty/windows';
 import type { DayType } from '../calendar';
 import type { Ymd } from '../calendar/ymd';
-import type { PreviewMessages } from '../messages';
+import type { Messages, PreviewMessages, ViolationMessages } from '../messages';
 
-export type { PreviewMessages };
+export type { Messages, PreviewMessages, ViolationMessages };
 
 /**
  * One date of the horizon, PRECOMPUTED server-side by the one converter.
@@ -308,11 +308,28 @@ export interface CoverageReport {
  * type reporting a window as skipped in `coverage()` while still firing on it in `evaluate()` — and
  * that disagreement is invisible on a green suite. Returning both from one call makes the two
  * consistent by construction rather than by twenty-two authors remembering.
+ *
+ * ## `messages` is the fourth argument, and it arrived one task late on purpose-defeating terms
+ *
+ * This type was fixed at P2 Task 7 without one, so the eleven types P2-1 shipped each assembled
+ * their violation English at the call site and AR-07 held for the preview beside them and not for
+ * them. P2-2's first task threaded it, before the remaining eleven types were written: eleven call
+ * sites then, twenty-two later, with the shape set by whichever type happened to be written first.
+ *
+ * It is {@link ViolationMessages} and not the whole table, so a predicate cannot render a preview
+ * sentence — the two are read in different places at different moments — and it is REQUIRED rather
+ * than defaulted, because a type that could forget it would fall back to English silently, which is
+ * the one failure mode a message table exists to make impossible.
+ *
+ * The predicate is handed the table on the SAME call that measures, which is what lets a sentence
+ * print a number the schedule decided rather than one the condition row authored — owner decision
+ * Q's applied tolerance at Task 19, and `min_gap`'s measured shortfall today.
  */
 export type ConditionEvaluator = (
     condition: Condition,
     schedule: Schedule,
     context: EvaluationContext,
+    messages: ViolationMessages,
 ) => ConditionOutcome;
 
 /** What {@link ConditionEvaluator} returns. */

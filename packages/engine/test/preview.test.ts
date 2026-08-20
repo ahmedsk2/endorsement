@@ -772,4 +772,44 @@ describe('the message table — English today, and a second one is possible tomo
             'TRANSLATED',
         );
     });
+
+    /**
+     * THE SAME PROPERTY OVER EVERY PREVIEWABLE TYPE, AND IT DID NOT HOLD UNTIL P2-2's FIRST TASK.
+     *
+     * The check above proved it on `min_gap` — one type of fourteen — and the plan's own note said
+     * *"`preview` already goes through the table"* without qualification. That was half true:
+     * `overlap_block`, `vacation_block` and `eligibility` (Task 10) each carried English inline and
+     * would have passed every check in this file, because the matrix only asks that a sentence REACT
+     * to a parameter and two of those three have no parameters at all. A property asserted at the
+     * one input where the defect cannot appear is P2-1's recurring green plant, four times over.
+     *
+     * The second table is derived from `EN`'s own keys rather than written out, so a method added
+     * tomorrow is covered without anybody remembering — and the whole table shouts, vocabulary
+     * included, so a preview that called `conjoin` and wrapped a literal around it returns a tag
+     * with text around it rather than a tag.
+     *
+     * Every previewable entry is parameterised through the SAME probe generator the matrix uses, so
+     * a type whose sentence branches on its parameters is exercised on a real branch rather than on
+     * an empty object it would have refused anyway.
+     */
+    it('renders every previewable type through the table, not just the one that proved the device', () => {
+        const shouting = Object.fromEntries(
+            Object.keys(EN).map((key) => [key, () => `«${key}»`]),
+        ) as unknown as typeof EN;
+
+        const notFromTheTable = previewed
+            .map((entry) => ({
+                typeKey: entry.typeKey,
+                sentence: previewWith(
+                    CATALOG,
+                    condition(entry.typeKey, fullParams(entry.paramsSchema as JsonSchema)),
+                    CONTEXT,
+                    shouting,
+                ),
+            }))
+            .filter(({ sentence }) => !/^«[a-zA-Z]+»$/.test(sentence));
+
+        expect(notFromTheTable).toEqual([]);
+        expect(previewed.length).toBeGreaterThanOrEqual(14);
+    });
 });

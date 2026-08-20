@@ -2422,3 +2422,75 @@ asserting the rule the scan enforces.
   day of a block and continuing into the next is a run of five-plus, and the cap sees it. This is what
   the carry-in tail exists for, and a block boundary is an administrative artefact while the fatigue is
   not — a scheduler working block-by-block is precisely who would not otherwise notice.
+
+### DONE 2026-08-20 (P2-2 Task 1) — `explanation` threaded, and the "already goes through the table" note corrected in code
+
+**Both halves of the chartered task shipped.** `ConditionEvaluator` takes a fourth argument,
+`ViolationMessages`; the eleven placement types render every `explanation` and every `coverage()`
+reason through it; and `overlap_block`, `vacation_block` and `eligibility` render their previews
+through it too. The English is byte-identical — the 34-case corpus compares `explanation` verbatim
+and was untouched, which is the migration's own regression gate.
+
+**The shape, and the two alternatives it was chosen over.**
+
+- *Keys and an interpolation map on the `Finding`, rendered later.* Refused by CG-10: `Violation` is
+  exactly five fields and `explanation` is a `string`, PU-03's publish dialog consumes it unchanged,
+  so a deferred render would have widened the one shape this phase exists to keep still. Rendering
+  therefore happens inside the type, which is also where `ConditionPreview` already does it — one
+  mechanism, not two.
+- *One `Messages` interface for both halves.* Refused for a smaller reason but a real one: a preview
+  describes a RULE before a draft exists and a violation describes a PLACEMENT in one that does, and
+  they are read on different screens. `Vocabulary` is shared; `PreviewMessages` and
+  `ViolationMessages` are separate; `EN` implements `Messages`, which is both. A P2-2 type adding a
+  violation sentence does not widen the type every preview is written against.
+
+**`messages` is REQUIRED on `ConditionEvaluator` and on `runConditions()`, and defaulted only on
+`evaluate()`/`coverage()`.** A default one layer down would let a caller thread a second table into
+one projection while the other silently kept English — the two disagreeing about one evaluation is
+precisely what a single shared producer exists to prevent.
+
+**Two second definitions died with it.** `support.ts`'s `list()` was a second `conjoin`, and its
+`hoursText()` decided a decimal separator outside the table that a locale would have to change.
+`min_gap`'s `shortfall()` returned `"1 day"` / `"9 h"` and now returns a NUMBER — which is the
+concrete reason the ordering mattered: **owner decision Q's applied tolerance is now reachable.** A
+proportional allowance must print the number actually applied, a preview cannot know it (it has the
+parameters, not the schedule), and the predicate is handed the table on the same call that measures
+it. Task 19 owes the sentence; it no longer owes the plumbing. Decision M's effective target reaches
+`targetPerPeriod` the same way and always did.
+
+**Proved in three directions, because one was demonstrably not enough.** The second table is DERIVED
+from `EN`'s own keys — every method returning its own name, vocabulary included — so a method added
+tomorrow is covered without anybody remembering, and a preview that called `conjoin` and wrapped a
+literal around it returns a tag with text around it rather than a tag. `messages.test.ts` asserts the
+tag per TYPE over the whole corpus (eleven types, fourteen sentence shapes); `preview.test.ts`'s
+equivalent was widened from `min_gap` alone to all fourteen previewable entries; and
+`conditions.test.ts` scans `src/conditions/` for an `explanation:`/`reason:` not beginning
+`messages.`, comments stripped, planted against a bare literal AND a ternary of two.
+
+*Why the source scan as well.* The behavioural check sees only the sentence shapes the CORPUS
+produces, and several types carry a branch no case reaches — `min_gap`'s overlapping pair,
+`consecutive_max` under a unit its fixtures do not use. A type routing one branch through the table
+and keeping a literal in the other would have been green. **STATED RESIDUAL:** a module calling a
+local helper that itself built English still passes; the needle for that would be *"no long string
+literal in this directory"*, which matches every parameter's schema `description` and would need nine
+allow-list entries — blinding the guard exactly where a real offender is born (ruling 42).
+
+*Why the ternary is in the plant.* Ten of the eleven migrated sites were ternaries of literals, so a
+needle anchored on a quote would have matched only the first branch and passed the rest.
+
+**The correction this section owes, made in code rather than in prose.** The accepted note said
+`preview` goes through the table for Task 9's four and not Task 10's three. That was right, and the
+reason the gap survived review is worth recording: `preview.test.ts`'s parameter MATRIX only asks
+that a sentence react to a parameter, and two of those three types have no parameters at all, so
+they passed every check in the file while carrying English inline. A property asserted at the one
+input where the defect cannot appear is P2-1's recurring green plant, and this was its fifth
+instance — caught by widening an existing assertion rather than by reading the modules.
+
+**Nothing else under `packages/` still hardcodes English that a user reads.** What remains is
+`Error`/`RangeError` message text — the two dispatcher throws, `NoPreviewForConditionTypeError`,
+`personIndex`/`slotIndex`/`dayIndex`'s refusals and the schema validator's — and it stays, stated
+rather than implied: a throw is a defect report to a developer about input the engine could not be
+given honestly, not a sentence on a gate screen, and routing it through a locale table would put a
+translator between a crash and the person debugging it. Schema `description` strings are the one
+genuinely borderline set: they are authored documentation of a parameter, they are not rendered by
+anything today, and P3's gate screen is where that decision is owed.

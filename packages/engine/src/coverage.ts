@@ -36,8 +36,15 @@
  * one level down.
  */
 
-import type { Condition, CoverageReport, EvaluationContext, Schedule } from './contract/types';
+import type {
+    Condition,
+    CoverageReport,
+    EvaluationContext,
+    Schedule,
+    ViolationMessages,
+} from './contract/types';
 import { runConditions } from './evaluate';
+import { EN } from './messages';
 import { CATALOG, type RegistryEntry } from './registry';
 
 /**
@@ -52,19 +59,27 @@ export function coverageWith(
     schedule: Schedule,
     context: EvaluationContext,
     conditions: readonly Condition[],
+    messages: ViolationMessages = EN,
 ): CoverageReport[] {
-    return runConditions(catalog, schedule, context, conditions).map(({ condition, outcome }) => ({
+    return runConditions(catalog, schedule, context, conditions, messages).map(({ condition, outcome }) => ({
         conditionId: condition.id,
         evaluatedWindows: outcome.coverage.evaluatedWindows,
         skipped: outcome.coverage.skipped,
     }));
 }
 
-/** What each condition actually measured, and what it had to leave alone, against the registry. */
+/**
+ * What each condition actually measured, and what it had to leave alone, against the registry.
+ *
+ * A skipped window's `reason` comes from the SAME table `evaluate()`'s explanations come from
+ * (AR-07, P2-2 Task 1). It is text a scheduler reads beside the violations, and a sentence that is
+ * English wherever it happens to be assembled is not externalized because its neighbour is.
+ */
 export function coverage(
     schedule: Schedule,
     context: EvaluationContext,
     conditions: readonly Condition[],
+    messages: ViolationMessages = EN,
 ): CoverageReport[] {
-    return coverageWith(CATALOG, schedule, context, conditions);
+    return coverageWith(CATALOG, schedule, context, conditions, messages);
 }

@@ -43,13 +43,15 @@
  * alternative, judging a pair by everybody and then filtering the finding, makes a rule scoped to
  * R1s report on an R3, which is the opposite failure to the one a scope usually hides.
  *
- * ## The emission rule cannot help, so the pair filter is applied HERE
+ * ## The emission rule cannot help, so CG-03 is kept by the ENUMERATION
  *
  * A cohort location carries no date, so `evaluate()`'s rule is unconditionally true for one — the
  * same fact `fairness_distribution` and `holiday_equity` record. A pair lying WHOLLY in the
- * carry-in tail would otherwise produce a finding nothing could drop, which is exactly what CG-03
- * forbids. {@link windowTouchesHorizon} is the same predicate the emission rule applies, imported
- * rather than restated, so what is measured and what may be reported cannot disagree at the edge.
+ * carry-in tail would produce a finding nothing could drop, which is exactly what CG-03 forbids.
+ * {@link candidateStarts}'s bounds are what prevent it, and they are the SOLUTION SET of
+ * {@link windowTouchesHorizon} for a two-day pair rather than an approximation of it — proved by
+ * planting the explicit check and watching it stay green, because it could never be taken. See that
+ * function's docblock, and the property in `conditions.test.ts` that keeps the derivation honest.
  *
  * ## Duty→date reading: ANCHOR DATE, and the tail is read
  *
@@ -63,13 +65,19 @@
  * same reason `clinic_conflict` does: a pair beginning the day before the horizon starts on a date
  * the vector does not describe.
  *
- * ## PLANTED
+ * ## PLANTED, AND ONE OF THEM WAS DEAD CODE RATHER THAN AN UNASSERTED RULE
  *
- * `personInScope` answering `true` — the standing FIRST plant; the weekday pair matched on any two
- * consecutive dates rather than on the named one; the both-days-covered check removed, so a gap
- * reports as a split; the comparison taken across the whole day rather than per slot; the pair
- * enumeration started at `horizon.from` so the weekend straddling the boundary disappears; and the
- * no-occurrence coverage row suppressed. Each went red naming its own case.
+ * Red: `personInScope` answering `true` — the standing FIRST plant; the weekday pair matched on any
+ * two consecutive dates rather than on the named one; the both-days-covered check removed, so a gap
+ * reports as a split; the comparison taken across the whole day rather than per slot; the holders
+ * on the two days compared as sets that may never be equal; {@link candidateStarts} started at
+ * `horizon.from`, so the weekend straddling the boundary disappears, and separately widened by a
+ * week, which inflates `evaluatedWindows` with pairs nobody may see; the scope label replaced by a
+ * constant; the no-occurrence coverage row suppressed; and both sentences replaced by literals.
+ *
+ * Green, and it was NOT a corpus gap: **the explicit `windowTouchesHorizon` check inside the scan**.
+ * It could never be taken — see {@link candidateStarts} — so it is deleted rather than fixtured, and
+ * the property tying its reason to the bounds lives in `conditions.test.ts`.
  */
 
 import { addDays, datesBetween, type Ymd } from '../calendar/ymd';
@@ -169,8 +177,24 @@ function scopeLabelFor(scope: ConditionScope | undefined, messages: ViolationMes
  * It starts ONE day before `horizon.from` — a pair is two days, so a pair beginning on the last
  * date of the published month reaches the 1st, and that is the weekend a scheduler hits first. It
  * stops at `horizon.to`, since a pair beginning after it lies wholly in whatever follows.
+ *
+ * ## These bounds ARE `windowTouchesHorizon`, and a plant is what proved it
+ *
+ * An `if (!windowTouchesHorizon(start, addDays(start, 1), horizon)) continue;` sat inside the scan
+ * below, on the argument that a cohort location has no date for `evaluate()`'s emission rule to
+ * test and CG-03 therefore has to be kept here. That argument is right and the check was DEAD: for
+ * a pair of two days, `to >= horizon.from` holds for every start at or after `horizon.from - 1` and
+ * `from <= horizon.to` holds for every start at or before `horizon.to`, which is exactly this
+ * range. Deleting it left the whole suite green, and a branch that cannot be taken is a control
+ * that appears to do something — the shape this package refuses everywhere else, pointing inward.
+ *
+ * So the rule is stated ONCE, here, in the bounds that do the work, and `conditions.test.ts` ties
+ * the two definitions together as a property: every date this returns satisfies
+ * {@link windowTouchesHorizon} for its own pair, and the dates either side of the range do not.
+ * Exported for that check, which is the only thing that keeps a derivation like this true after the
+ * next edit.
  */
-function candidateStarts(horizon: Horizon): Ymd[] {
+export function candidateStarts(horizon: Horizon): Ymd[] {
     return datesBetween(addDays(horizon.from, -1), horizon.to);
 }
 
@@ -226,10 +250,8 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context, messa
                 continue;
             }
 
-            if (!windowTouchesHorizon(start, finish, horizon)) {
-                continue;
-            }
-
+            // NO emission-rule check here: `candidateStarts` already IS it — see its docblock, and
+            // the property in `conditions.test.ts` that keeps the two from becoming two.
             occurrences += 1;
             evaluated += 1;
 

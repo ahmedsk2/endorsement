@@ -3,12 +3,14 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { isoWeekday, parseYmd, type Ymd } from '../src/calendar/ymd';
+import { addDays, isoWeekday, parseYmd, type Ymd } from '../src/calendar/ymd';
 import { carriedCredits } from '../src/conditions/holiday_equity';
+import { candidateStarts } from '../src/conditions/we_pairing';
 import type { Condition, EvaluationContext, Fixture, Person, Schedule } from '../src/contract/types';
 import { validate } from '../src/contract/validate';
 import { coverage } from '../src/coverage';
 import { evaluate, locationIsReportable, sortViolations } from '../src/evaluate';
+import { windowTouchesHorizon } from '../src/duty/windows';
 import { preview } from '../src/preview';
 import { CATALOG, registryEntry } from '../src/registry';
 
@@ -1101,6 +1103,30 @@ describe('we_pairing — owner decision Z, and the half of it that does not ship
         for (const needle of ['fallbacks', 'fallback', 'alternative']) {
             expect(code, `we_pairing.ts names "${needle}" in code`).not.toContain(needle);
         }
+    });
+
+    /**
+     * THE ENUMERATION IS THE EMISSION RULE, and this is what stops the derivation becoming two
+     * definitions of one fact.
+     *
+     * A cohort location has no date, so `evaluate()`'s rule is unconditionally true for one and
+     * CG-03 has to be kept by the type. `we_pairing.ts` did that with an explicit
+     * `windowTouchesHorizon` check inside its scan, and a plant proved it DEAD: for a two-day pair,
+     * the predicate holds for every start in `[from - 1, to]`, which is precisely the range
+     * `candidateStarts` returns. A branch that cannot be taken is a control that appears to do
+     * something, so it is gone — and this property is what keeps its reason true. Both directions:
+     * every candidate touches, and the date one earlier does not.
+     */
+    it('enumerates exactly the pair starts the emission rule would have admitted', () => {
+        const horizon = world.schedule.horizon;
+        const starts = candidateStarts(horizon);
+
+        expect(
+            starts.filter((start) => !windowTouchesHorizon(start, addDays(start, 1), horizon)),
+        ).toEqual([]);
+        expect(starts[0]).toBe(addDays(horizon.from, -1));
+        expect(windowTouchesHorizon(addDays(horizon.from, -2), addDays(horizon.from, -1), horizon)).toBe(false);
+        expect(windowTouchesHorizon(addDays(horizon.to, 1), addDays(horizon.to, 2), horizon)).toBe(false);
     });
 
     /**

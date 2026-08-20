@@ -33,6 +33,7 @@ import * as dowRestriction from './conditions/dow_restriction';
 import * as eligibility from './conditions/eligibility';
 import * as fairnessDistribution from './conditions/fairness_distribution';
 import * as freeDayMin from './conditions/free_day_min';
+import * as holidayEquity from './conditions/holiday_equity';
 import * as maxGap from './conditions/max_gap';
 import * as minGap from './conditions/min_gap';
 import * as onboardingGrace from './conditions/onboarding_grace';
@@ -210,6 +211,7 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'fairness_distribution',
         implemented: true,
+        evaluate: fairnessDistribution.evaluate,
         paramsSchema: fairnessDistribution.PARAMS_SCHEMA,
         preview: fairnessDistribution.preview,
         direction: 'equity',
@@ -376,6 +378,9 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'holiday_equity',
         implemented: true,
+        evaluate: holidayEquity.evaluate,
+        preview: holidayEquity.preview,
+        paramsSchema: holidayEquity.PARAMS_SCHEMA,
         direction: 'equity',
         locationKind: 'cohort',
         // Its history arrives as `priorCredits` and `historyAvailableFrom`, not as prior DUTIES —

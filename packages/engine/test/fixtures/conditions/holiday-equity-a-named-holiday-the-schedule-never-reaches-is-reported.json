@@ -1,0 +1,194 @@
+{
+    "name": "holiday-equity-a-named-holiday-the-schedule-never-reaches-is-reported",
+    "why": "A HOLIDAY NAMED ON THE RULE THAT NO DATE OF THE SCHEDULE FALLS ON. The condition names Eid and National Day; only Eid occurs in this month. Nothing is wrong and nothing is missing, but a department that mistyped a holiday key would see exactly the same result — the rule quietly measuring one thing where it was told to measure two. The row names the key it could not reach, and the comparison over the key it could still runs, which is why the case reports one skipped and one evaluated rather than refusing altogether.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "HOL",
+                "periodKey": "block-01",
+                "holidays": [
+                    {
+                        "key": "eid-al-fitr",
+                        "year": 1447
+                    }
+                ]
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "HOL",
+                "periodKey": "block-01",
+                "holidays": [
+                    {
+                        "key": "eid-al-fitr",
+                        "year": 1447
+                    }
+                ]
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-zaid",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1200,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-05",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-05"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-holiday",
+            "typeKey": "holiday_equity",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "holidays": [
+                    "eid-al-fitr",
+                    "national-day"
+                ],
+                "lookbackYears": 0
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-holiday",
+            "evaluatedWindows": 1,
+            "skipped": [
+                {
+                    "from": "2026-08-01",
+                    "to": "2026-08-05",
+                    "reason": "No date between 2026-08-01 and 2026-08-05 falls on \"national-day\", so this schedule could not spread it. Only credits carried in from earlier years count toward it here."
+                }
+            ]
+        }
+    ]
+}

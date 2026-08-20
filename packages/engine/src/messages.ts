@@ -188,6 +188,17 @@ export interface Vocabulary {
     hours(minutes: number): string;
 
     /**
+     * A possibly-fractional count: `3`, `3.3`, `0.7`. Whole numbers print whole.
+     *
+     * {@link Vocabulary.hours} is the precedent and the reason is identical — a decimal SEPARATOR is
+     * a locale's decision, which is the half a formatter living beside the arithmetic could never
+     * honour. `fairness_distribution` is where a fractional number actually arises in this catalog:
+     * a pro-rated expected share is a division, and a reader shown `3.0000000000000004` on a badge
+     * stops believing the rest of it.
+     */
+    fraction(value: number): string;
+
+    /**
      * OWNER DECISION M'S MODIFIER CLAUSES, and they are in the SHARED vocabulary rather than in
      * the preview half — which is where they started and where they no longer belong.
      *
@@ -255,6 +266,16 @@ export interface PreviewMessages extends Vocabulary {
         excludeExternal: boolean;
         examples: readonly ToleranceExample[];
     }): string;
+
+    /**
+     * Owner decision W, ANSWERED: carried credits start at ZERO, and the limitation belongs HERE.
+     *
+     * The decision accepts knowingly that duty covered on paper before this system existed is
+     * invisible, and says the acceptance belongs in the preview rather than only in the plan — a
+     * department told *"holidays are spread across years"* on a gate screen will otherwise read the
+     * first year's even distribution as a statement about their history, which it is not.
+     */
+    holidayEquity(args: { holidays: readonly string[]; lookbackYears: number }): string;
 
     /** Owner decision M: an exception REPLACES the target, and every branch prints its own number. */
     targetPerPeriod(args: { targets: readonly LevelTarget[]; modifiers: readonly TargetModifier[] }): string;
@@ -578,6 +599,95 @@ export interface ViolationMessages extends Vocabulary {
     }): string;
 
     /**
+     * WHICH POPULATION a cohort violation compared somebody against — `Location.cohort.scopeLabel`.
+     *
+     * It is text a scheduler reads, so it comes from the table like every other sentence, and it is
+     * the one entry here that is not an `explanation`. A cohort violation carries no date and no
+     * slot, so the population IS most of its meaning: *"unevenly loaded"* against the whole
+     * department and against the four R1s on PICU are different statements, and the badge has
+     * nothing else on it to tell them apart.
+     */
+    cohortScopeLabel(args: {
+        unitKeys: readonly string[];
+        levelKeys: readonly string[];
+        personKeys: readonly string[];
+    }): string;
+
+    /**
+     * Owner decision Q's `deviation` mode: WHO is over or under, and the tolerance ACTUALLY APPLIED.
+     *
+     * The decision requires the applied allowance as a NUMBER and never as `10%`, and this is the
+     * only place it can be: a preview has the department's parameters and not its schedule, so it
+     * cannot know the pro-rated target the tolerance is computed from. The predicate is handed the
+     * table on the same call that measures, which is what P2-2's first task was chartered to make
+     * possible.
+     *
+     * `expected` and `deviation` are fractions because a pro-rated share is a division. They arrive
+     * already decided; {@link Vocabulary.fraction} decides only how they are said.
+     */
+    fairnessDeviationViolation(args: {
+        quantity: string;
+        actual: number;
+        expected: number;
+        deviation: number;
+        tolerance: number;
+        over: boolean;
+        cohortSize: number;
+    }): string;
+
+    /**
+     * Owner decision Q's `spread` mode: the widest gap, and the pair it is between.
+     *
+     * The decision's own note is that spread *"says nothing about WHO to fix"*, which is why the
+     * default is `deviation`. It says something about which TWO, though, and naming them is what
+     * makes the badge actionable at all — so both keys appear in the sentence as well as in the
+     * location, deliberately breaking this interface's usual rule that a sentence never repeats its
+     * location. A two-person cohort location has no single person for a badge to sit under.
+     */
+    fairnessSpreadViolation(args: {
+        quantity: string;
+        busiest: { personKey: string; actual: number; expected: number };
+        quietest: { personKey: string; actual: number; expected: number };
+        gap: number;
+        allowance: number;
+        cohortSize: number;
+    }): string;
+
+    /**
+     * Holiday credits, unevenly spread — and whether anything was carried in.
+     *
+     * `fewest` is what the least-loaded person in the comparison holds, because *"holds 3"* on its
+     * own says nothing: three credits is uneven beside somebody holding one and perfectly even
+     * beside somebody holding two. `lookbackCounted` is owner decision W made visible — the same
+     * totals mean different things depending on whether earlier years are in them.
+     */
+    holidayEquityViolation(args: {
+        holidays: readonly string[];
+        holdings: readonly { personKey: string; credits: number }[];
+        fewest: number;
+        lookbackCounted: boolean;
+        lookbackYears: number;
+    }): string;
+
+    /**
+     * A quantity nothing in the schedule tallies. `coverage()` only.
+     *
+     * SL-01's tally vocabulary is stored nowhere in this repository and is opaque to this package
+     * (Decision A), so a mistyped `quantity` is the likeliest way this rule ever goes quiet — and a
+     * schedule that is already perfectly even produces exactly the same silence.
+     */
+    fairnessNoQuantitySkip(args: { quantity: string; from: string; to: string }): string;
+
+    /** Nobody in the comparison has an available day, so there is no denominator. `coverage()` only. */
+    fairnessNoDenominatorSkip(args: { from: string; to: string }): string;
+
+    /** A named holiday no date of the schedule falls on. `coverage()` only. */
+    holidayNotInHorizonSkip(args: { holidayKey: string; from: string; to: string }): string;
+
+    /** Owner decision W's year one, reported rather than left as silence. `coverage()` only. */
+    holidayLookbackSkip(args: { lookbackYears: number; from: string; to: string }): string;
+
+    /**
      * Owner decision I: a gap with only one end, reported rather than evaluated. `coverage()` only.
      *
      * Both edges take this shape — the gap after somebody's last duty and the gap before their
@@ -656,6 +766,14 @@ export const EN: Messages = {
         const value = minutes / 60;
 
         return Number.isInteger(value) ? String(value) : value.toFixed(1);
+    },
+
+    fraction(value) {
+        // Rounded BEFORE the whole-number test, or a pro-rated share of exactly three arrives as
+        // 3.0000000000000004 and prints as "3.0" — a precision a reader would go looking for.
+        const rounded = Math.round(value * 10) / 10;
+
+        return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
     },
 
     minGap({ value, unit, kinds }) {
@@ -960,6 +1078,23 @@ export const EN: Messages = {
         );
     },
 
+    holidayEquity({ holidays, lookbackYears }) {
+        const across =
+            lookbackYears === 0
+                ? 'this schedule alone'
+                : `this schedule together with ${EN.plural(lookbackYears, 'year', 'years')} of credits ` +
+                  'carried forward';
+
+        return (
+            `${EN.conjoin(holidays as string[])} are spread evenly across the department, counted over ` +
+            `${across}. Working ANY part of a holiday is one credit for that holiday and that year, ` +
+            'however many of its days somebody works, and nobody may end up holding more than one ' +
+            'credit more than whoever holds the fewest. A credit nothing recorded counts as ZERO ' +
+            "rather than as unknown, so the first year spreads on that year's own assignments alone " +
+            '— duty covered on paper before this system existed is invisible here.'
+        );
+    },
+
     minGapViolation({ unit, value, apart, overlapping, partner }) {
         if (overlapping) {
             return (
@@ -1140,6 +1275,103 @@ export const EN: Messages = {
             `${EN.plural(free, 'fully free day', 'fully free days')} in the ${windowDays} days from ` +
             `${from} to ${to}; at least ${required} ${required === 1 ? 'is' : 'are'} required. A day ` +
             `any duty runs into is not free, even when no duty starts on it. ${leave}`
+        );
+    },
+
+    cohortScopeLabel({ unitKeys, levelKeys, personKeys }) {
+        const parts: string[] = [];
+
+        if (levelKeys.length > 0) {
+            parts.push(`at ${EN.conjoin(levelKeys as string[])}`);
+        }
+
+        if (unitKeys.length > 0) {
+            parts.push(`rotating on ${EN.conjoin(unitKeys as string[])}`);
+        }
+
+        if (personKeys.length > 0) {
+            parts.push('named on this rule');
+        }
+
+        return parts.length === 0 ? 'everybody in this schedule' : `people ${EN.conjoin(parts)}`;
+    },
+
+    fairnessDeviationViolation({ quantity, actual, expected, deviation, tolerance, over, cohortSize }) {
+        return (
+            `Holds ${actual} of the ${quantity} in this schedule against an expected share of ` +
+            `${EN.fraction(expected)} — ${EN.fraction(deviation)} ${over ? 'over' : 'under'}, where ` +
+            `this rule allows ${EN.plural(tolerance, 'duty', 'duties')} either side. The share is ` +
+            `pro-rated by the days each of the ${EN.plural(cohortSize, 'person', 'people')} compared ` +
+            'was actually available, so somebody on leave is expected to hold fewer rather than ' +
+            'being reported as under-loaded.'
+        );
+    },
+
+    fairnessSpreadViolation({ quantity, busiest, quietest, gap, allowance, cohortSize }) {
+        return (
+            `"${busiest.personKey}" holds ${busiest.actual} of the ${quantity} against an expected ` +
+            `share of ${EN.fraction(busiest.expected)} and "${quietest.personKey}" holds ` +
+            `${quietest.actual} against ${EN.fraction(quietest.expected)} — a gap of ` +
+            `${EN.fraction(gap)} where ${EN.fraction(allowance)} is allowed between those two. This ` +
+            `rule is set to measure only the widest gap across the ${EN.plural(cohortSize, 'person', 'people')} ` +
+            'compared, so it names the pair to move a duty between rather than everybody who is off.'
+        );
+    },
+
+    holidayEquityViolation({ holidays, holdings, fewest, lookbackCounted, lookbackYears }) {
+        const named = EN.conjoin(
+            holdings.map(({ personKey, credits }) => `"${personKey}" holds ${credits}`),
+        );
+
+        // THREE branches, not two, because "nothing was carried forward" has two causes and a
+        // reader can tell them apart: the rule asked for no lookback, or it asked and no history
+        // reached. One sentence covering both would be false half the time it was shown.
+        const counted = lookbackCounted
+            ? `Credits carried forward from ${EN.plural(lookbackYears, 'earlier year', 'earlier years')} ` +
+              'are included in these totals.'
+            : lookbackYears === 0
+              ? 'This rule looks back no further than the schedule itself, so these totals are this ' +
+                "schedule's alone."
+              : 'No duty history was supplied, so nothing is carried forward and these totals are this ' +
+                "schedule's alone.";
+
+        return (
+            `Holiday credits for ${EN.conjoin(holidays as string[])} are unevenly spread: ${named}, ` +
+            `where whoever holds the fewest holds ${fewest}. One credit per holiday per year, so a ` +
+            'difference of more than one is a credit that could have gone to somebody else. ' +
+            counted
+        );
+    },
+
+    fairnessNoQuantitySkip({ quantity, from, to }) {
+        return (
+            `No duty between ${from} and ${to} is tallied as "${quantity}", so there was nothing to ` +
+            'spread. A quantity nothing tallies and a schedule that is already even produce exactly ' +
+            'the same silence, and only one of them is fine.'
+        );
+    },
+
+    fairnessNoDenominatorSkip({ from, to }) {
+        return (
+            `Nobody in this comparison has a single available day between ${from} and ${to}, so the ` +
+            'expected share cannot be pro-rated at all. Comparing raw counts instead would report ' +
+            'whoever was on leave as under-loaded, which is the reading owner decision Q refuses.'
+        );
+    },
+
+    holidayNotInHorizonSkip({ holidayKey, from, to }) {
+        return (
+            `No date between ${from} and ${to} falls on "${holidayKey}", so this schedule could not ` +
+            'spread it. Only credits carried in from earlier years count toward it here.'
+        );
+    },
+
+    holidayLookbackSkip({ lookbackYears, from, to }) {
+        return (
+            `This rule asks for ${EN.plural(lookbackYears, 'year', 'years')} of history and none was ` +
+            `supplied, so the schedule from ${from} to ${to} was judged on its own assignments. That ` +
+            'is the first year, reported rather than left silent: a lookback that quietly counted ' +
+            'zero would look identical to one that had been read and found nothing.'
         );
     },
 

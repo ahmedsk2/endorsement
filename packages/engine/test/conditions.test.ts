@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { isoWeekday, parseYmd, type Ymd } from '../src/calendar/ymd';
-import type { Condition, EvaluationContext, Fixture, Schedule } from '../src/contract/types';
+import { carriedCredits } from '../src/conditions/holiday_equity';
+import type { Condition, EvaluationContext, Fixture, Person, Schedule } from '../src/contract/types';
 import { validate } from '../src/contract/validate';
 import { coverage } from '../src/coverage';
 import { evaluate, locationIsReportable, sortViolations } from '../src/evaluate';
@@ -107,10 +108,21 @@ describe('the condition corpus', () => {
             'eligibility-mid-window-promotion',
             'eligibility-no-level-and-no-rotation-on-the-date-both-fail-closed',
             'eligibility-wrong-rotation-and-an-unnamed-slot',
+            'fairness-distribution-a-pro-rated-target-of-zero-still-allows-one-duty',
+            'fairness-distribution-a-quantity-nothing-tallies-is-reported-rather-than-passing-quietly',
+            'fairness-distribution-external-people-are-left-out-when-the-rule-says-so',
+            'fairness-distribution-spread-mode-measures-the-widest-gap-and-names-the-pair',
+            'fairness-distribution-the-expected-share-is-pro-rated-by-availability',
+            'fairness-distribution-the-scope-excludes-somebody-their-own-share-would-flag',
             'free-day-min-a-twenty-four-hour-call-on-the-fifth-leaves-the-sixth-occupied',
             'free-day-min-leave-counts-as-a-free-day-unless-the-rule-says-otherwise',
             'free-day-min-the-averaging-multiplies-the-window-and-the-requirement',
             'free-day-min-the-window-that-begins-in-the-published-month',
+            'holiday-equity-a-carried-credit-of-zero-is-what-an-unrecorded-one-counts-as',
+            'holiday-equity-a-named-holiday-the-schedule-never-reaches-is-reported',
+            'holiday-equity-an-unseen-lookback-is-reported-and-the-schedule-judged-on-its-own',
+            'holiday-equity-the-scope-excludes-somebody-their-own-credits-would-flag',
+            'holiday-equity-working-any-part-of-a-holiday-is-one-credit-for-that-holiday-year',
             'max-gap-an-unfinished-gap-is-reported-rather-than-evaluated',
             'max-gap-at-exactly-the-limit-and-a-day-beyond-it',
             'max-gap-leave-stops-the-clock-and-an-off-roster-rotation-does-not',
@@ -844,6 +856,140 @@ describe('the two duty-hours caps of Task 18, and the line between them', () => 
 
         expect(evaluate(world.schedule, joined, conditions)).toHaveLength(1);
         expect(coverage(world.schedule, joined, conditions)[0]?.skipped).toHaveLength(4);
+    });
+});
+
+describe('the two cohort-located types of Task 19, beyond the corpus', () => {
+    const fairWorld = FIXTURES.find(
+        (f) => f.name === 'fairness-distribution-external-people-are-left-out-when-the-rule-says-so',
+    ) as Fixture;
+
+    const holidayWorld = FIXTURES.find(
+        (f) => f.name === 'holiday-equity-a-carried-credit-of-zero-is-what-an-unrecorded-one-counts-as',
+    ) as Fixture;
+
+    const fairness = (params: Record<string, unknown>, scope?: Condition['scope']): Condition => ({
+        id: 'c-fair',
+        typeKey: 'fairness_distribution',
+        class: 'soft',
+        rank: 3,
+        active: true,
+        params,
+        ...(scope === undefined ? {} : { scope }),
+    });
+
+    const DEVIATION = { quantity: 'nights', mode: 'deviation', excludeExternal: true };
+
+    /**
+     * `excludeExternal` MOVES THE DENOMINATOR, so the flip is not a longer list of violations but a
+     * DIFFERENT one — the fixture can only assert one side of that, and a parameter asserted where
+     * flipping it merely adds a row is the shape of a filter nobody would notice going missing.
+     * Counting the external person in spreads six nights over thirty available days instead of
+     * twenty, which drops the expected share from three to two: p-ali becomes clean and p-ext,
+     * holding nothing, becomes a violation in their place.
+     */
+    it('counting external people in changes who is flagged, not merely how many', () => {
+        const excluded = evaluate(fairWorld.schedule, fairWorld.context, [fairness(DEVIATION)]);
+        const included = evaluate(fairWorld.schedule, fairWorld.context, [
+            fairness({ ...DEVIATION, excludeExternal: false }),
+        ]);
+
+        const named = (violations: typeof excluded): string[] =>
+            violations.flatMap((violation) => (violation.location as { personKeys: string[] }).personKeys).sort();
+
+        expect(named(excluded)).toEqual(['p-ali', 'p-noor']);
+        expect(named(included)).toEqual(['p-ext', 'p-noor']);
+    });
+
+    /**
+     * THE TWO MODES MAY NOT CONTRADICT EACH OTHER, and this is the property that makes `spread`'s
+     * derived allowance load-bearing rather than tidy. Spread's threshold is the sum of the two
+     * extremes' OWN tolerances — the widest gap deviation mode would have permitted between them —
+     * so a schedule clean under `deviation` is clean under `spread` by construction. A threshold of
+     * its own would let one mode of one rule call a draft fair while the other calls it unfair,
+     * with nothing on either screen able to adjudicate.
+     *
+     * Asserted over every fairness world in the corpus rather than over one, because the property
+     * is about the arithmetic and not about any particular roster.
+     */
+    it('never reports a spread violation on a schedule deviation mode calls clean', () => {
+        const worlds = FIXTURES.filter((fixture) => fixture.name.startsWith('fairness-distribution-'));
+
+        const disagreements = worlds.filter((world) => {
+            const scope = world.conditions[0]?.scope;
+            const params = (world.conditions[0] as Condition).params as Record<string, unknown>;
+            const clean = evaluate(world.schedule, world.context, [
+                fairness({ ...params, mode: 'deviation' }, scope),
+            ]);
+            const spread = evaluate(world.schedule, world.context, [
+                fairness({ ...params, mode: 'spread' }, scope),
+            ]);
+
+            return clean.length === 0 && spread.length > 0;
+        });
+
+        expect(disagreements.map((world) => world.name)).toEqual([]);
+        expect(worlds.length).toBeGreaterThanOrEqual(6);
+    });
+
+    /**
+     * Owner decision W, ANSWERED, stated in words a reader can grep for rather than only encoded in
+     * a fixture's arithmetic. An explicit `null` and an omitted key are the SAME answer, and both
+     * are zero. The superseded default held a `null` person out of the comparison, which is what
+     * made the lookback silently do nothing in year one — so the check is that the flagged set does
+     * not move when the spelling does.
+     */
+    it('reads an explicit null carried credit exactly as it reads an absent one', () => {
+        const spelled = withPeople(holidayWorld.context, (copy) => {
+            for (const person of copy.people) {
+                if (person.priorCredits?.['eid-al-fitr'] === null) {
+                    delete person.priorCredits;
+                }
+            }
+        });
+
+        expect(evaluate(holidayWorld.schedule, spelled, holidayWorld.conditions)).toEqual(
+            evaluate(holidayWorld.schedule, holidayWorld.context, holidayWorld.conditions),
+        );
+
+        expect(carriedCredits(holidayWorld.context.people[2] as Person, 'eid-al-fitr')).toBe(0);
+        expect(carriedCredits(holidayWorld.context.people[0] as Person, 'eid-al-fitr')).toBe(0);
+        expect(carriedCredits(holidayWorld.context.people[1] as Person, 'eid-al-fitr')).toBe(2);
+    });
+
+    /**
+     * A rule naming no holiday spreads nothing, which on a gate screen is a control that appears to
+     * do nothing. The schema refuses it with its own error rather than admitting a condition whose
+     * every evaluation is silence.
+     */
+    it('refuses a holiday_equity row that names no holiday at all', () => {
+        const empty: Condition = {
+            ...(holidayWorld.conditions[0] as Condition),
+            params: { holidays: [], lookbackYears: 0 },
+        };
+
+        expect(() => evaluate(holidayWorld.schedule, holidayWorld.context, [empty])).toThrow(
+            /fewer than the 1 required/,
+        );
+    });
+
+    /**
+     * A cohort violation has no date and no slot, so the POPULATION is most of its meaning: the same
+     * sentence against the whole department and against the four R1s on PICU are different claims,
+     * and the badge carries nothing else able to tell them apart. It comes from the message table
+     * like every other sentence (AR-07), and it narrows with the scope rather than being a constant.
+     */
+    it('labels the population a cohort violation compared somebody against', () => {
+        const scoped = evaluate(fairWorld.schedule, fairWorld.context, [
+            fairness(DEVIATION, { unitKeys: ['PICU'], levelKeys: ['R1'] }),
+        ]);
+        const unscoped = evaluate(fairWorld.schedule, fairWorld.context, [fairness(DEVIATION)]);
+
+        const label = (violations: typeof scoped): string | undefined =>
+            (violations[0]?.location as { scopeLabel: string } | undefined)?.scopeLabel;
+
+        expect(label(unscoped)).toBe('everybody in this schedule');
+        expect(label(scoped)).toBe('people at R1 and rotating on PICU');
     });
 });
 

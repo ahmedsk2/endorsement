@@ -261,6 +261,9 @@ describe('the matrix — every parameter a type reads is named by its preview', 
             // Task 17 — the two absence-shaped types: owner decision I's unfinished gap, and the
             // occupied-interval reading of "fully free".
             'free_day_min',
+            // Task 19 — owner decision W's ANSWERED reading: a carried credit starts at zero, and
+            // the accepted limitation (a past on paper is invisible) belongs in the sentence.
+            'holiday_equity',
             'max_gap',
             'min_gap',
             'onboarding_grace',
@@ -803,12 +806,13 @@ describe('what the dispatcher refuses, and how loudly', () => {
      */
     it('throws a distinguishable error for an implemented row with no preview yet', () => {
         // The exemplar moves as tasks land, and it has to: it was `count_max` until Task 15 gave
-        // that row a preview, and a probe pointed at a row that has since been written checks
-        // nothing while still passing — it would throw the SCHEMA's refusal instead, which is a
-        // different error class reaching the same `toThrow`. `holiday_equity` is Task 19's.
-        expect(registryEntry('holiday_equity')?.implemented).toBe(true);
-        expect(registryEntry('holiday_equity')?.preview).toBeUndefined();
-        expect(() => preview(condition('holiday_equity', {}), CONTEXT)).toThrow(NoPreviewForConditionTypeError);
+        // that row a preview and `holiday_equity` until Task 19 gave this one's neighbour theirs.
+        // A probe pointed at a row that has since been written checks nothing while still passing —
+        // it would throw the SCHEMA's refusal instead, a different error class reaching the same
+        // `toThrow`. `we_pairing` is Task 20's, and it is the LAST real row in this state.
+        expect(registryEntry('we_pairing')?.implemented).toBe(true);
+        expect(registryEntry('we_pairing')?.preview).toBeUndefined();
+        expect(() => preview(condition('we_pairing', {}), CONTEXT)).toThrow(NoPreviewForConditionTypeError);
     });
 
     it('takes the catalog as an argument, so P3 can preview against a restricted one', () => {

@@ -75,6 +75,13 @@
  * week, which inflates `evaluatedWindows` with pairs nobody may see; the scope label replaced by a
  * constant; the no-occurrence coverage row suppressed; and both sentences replaced by literals.
  *
+ * Green a SECOND time, at the far end: **`candidateStarts` stopping one day early**. No case had a
+ * preferred pair beginning on its LAST horizon date, so the right-hand edge — the seam case's
+ * mirror, where the Saturday arrives in `followingDuties` — was unasserted. Closed by
+ * `we-pairing-the-weekend-that-runs-into-the-month-after-the-horizon`, which is also only the
+ * second corpus case in the package to supply a `followingDuties` the contract says must never be
+ * assumed empty.
+ *
  * Green, and it was NOT a corpus gap: **the explicit `windowTouchesHorizon` check inside the scan**.
  * It could never be taken — see {@link candidateStarts} — so it is deleted rather than fixtured, and
  * the property tying its reason to the bounds lives in `conditions.test.ts`.

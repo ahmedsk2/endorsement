@@ -164,6 +164,7 @@ describe('the condition corpus', () => {
             'we-pairing-a-weekend-with-only-one-of-its-days-covered-is-not-a-split',
             'we-pairing-an-adjacency-the-rule-does-not-name-is-not-a-weekend',
             'we-pairing-the-scope-excludes-a-weekend-split-between-people-it-does-not-cover',
+            'we-pairing-the-weekend-that-runs-into-the-month-after-the-horizon',
             'we-pairing-the-weekend-that-straddles-the-month-boundary-is-one-weekend',
         ]);
 

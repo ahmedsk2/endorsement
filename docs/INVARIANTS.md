@@ -1251,3 +1251,84 @@ place a scheduling rule is allowed to exist.*
   `eligibleDays` over the single range it is given, so **its caller must pass the EVALUABLE range**
   and set `horizon.evaluableFrom`/`evaluableTo` to match. Absence of data and unavailability are
   indistinguishable in a list of dates, and only the caller can tell them apart.
+
+- **CLOSED STRUCTURALLY AT P2 TASK 24, and the corpus carries the pair that proves it fires.**
+  `App\Support\Engine\EvaluationRequest::forPeriod()` is the one place `{schedule, context,
+  conditions}` is assembled, and **the horizon's evaluable bounds are READ OFF the day vector that
+  was actually built** (`days[0].date` and the last entry's) rather than computed alongside it and
+  passed in parallel. There is no expression in that file that could hand the horizon a date the
+  context does not describe, so a caller that widens the horizon has to widen the read that answers
+  it — they are the same statement. The range itself is derived, not configured: the smallest one
+  containing the period and every date a supplied duty OCCUPIES, end date `date + spanDays - 1`, so
+  a weekly slot anchored on a period's last date drags the right edge across the six dates it really
+  covers. `historyAvailableFrom` is NOT folded in — it is the caller's claim about how far back it
+  looked, the engine already declines a window the context cannot cover, and clamping it would answer
+  a question nobody asked. **The proof is a PAIR of corpus fixtures differing in one field**
+  (`call-frequency-max-availability-for-the-horizon-alone-fires-on-a-clean-month` and
+  `…-for-the-whole-evaluable-range-is-clean`): same world, same schedule, same rule, two calls at
+  exactly the allowance — six honest available days permit two and the month is clean; availability
+  for the horizon alone reads as two available days, permits zero, and reports a breach. They are the
+  only cases in that corpus asserting a CALLER's defect rather than a type's, and they run in both
+  runtimes with no PHP involved. `EvaluationRequestTest` asserts the same thing from the PHP side in
+  two halves — the structural one and *"availability reaches the tail"* — and the plant that breaks
+  the binding on the left edge reddens both; the RIGHT edge needed its own assertion that the day
+  vector reaches the last date a duty occupies, because it stayed green under that plant.
+
+- **`php artisan engine:evaluate <period> <document>` is P2's demoable artifact, and it is a local
+  demo in three asserted senses** (P2 Task 24). It refuses when `app()->environment('production')` —
+  the server runtime is P3's `services/engine` (owner decision Y) and a convenience must not make
+  `node` in the app container an undocumented dependency. It writes nothing and audits nothing: there
+  is no clinical or access event here, and a finding's explanation is generated from the schedule, so
+  it must never approach `audit_log.detail`. And its fixtures are synthetic, permanently.
+  **`EngineIsAReaderTest`'s glob gained this file by NAME** rather than the command growing a copy of
+  the writer-needle list — one definition of what a writer looks like, since a second list is two
+  lists agreeing until one is taught a new shape.
+
+- **The command mirrors the entrypoint's exit codes and never prints a verdict on a run that did not
+  happen.** 0 evaluated, 2 not something to evaluate, 3 the engine refused a type key, 1 a bug or
+  `node` would not start. `dist/` is gitignored, so the commonest failure is a missing bundle: the
+  entrypoint answers that in one sentence naming `npm run build:engine` and exits 2, and the command
+  prints that sentence verbatim rather than carrying a second copy of the check — one definition of
+  *"is the engine built"*, on the side that knows. The pass-through is asserted with a FAKED child
+  because the two states this suite can be in cannot both hold in one run, and the assertion pairs
+  *"exit code and message surfaced"* with `doesntExpectOutputToContain('Nothing was flagged')`. The
+  two cases that spawn real `node` SKIP without the bundle, and
+  `test_ci_builds_the_bundle_before_the_php_suite` is what stops that skip becoming permanent: it
+  fails if `.github/workflows/ci.yml` ever runs `php artisan test` before `npm run build:engine`.
+
+- **The report groups by `Condition.class`, never by the violation's `severity`, and that is a
+  measurement rather than a preference.** The two cannot differ — `evaluate()` stamps severity FROM
+  the row (Decision E) — and reading the row additionally lets the report name the type key and the
+  rank a violation deliberately does not carry. It also keeps `RulesLiveOnlyInTheEngineTest`'s
+  `severity` needle live in the one file where a *"quick PHP pre-check so we do not have to spawn
+  node"* would be born. That guard carries **one new entry, per file AND per needle**:
+  `EngineEvaluate.php` is exempt from `violation` alone, because CG-10's array is literally named
+  `violations` and no honest spelling of the read avoids it. **This contradicts P2's acceptance item
+  7** (*"no allow-list entry on any existing guard"*), which cannot hold together with Task 24's own
+  requirement to print violations from PHP. **Order inside a group is `evaluate()`'s own** — by
+  condition, then by location — and the command does not re-sort: CG-02's precedence lives in
+  `comparePrecedence()` and a second definition here would be one that drifts. The rank is printed,
+  not applied.
+
+- **`json_decode($raw, true)` destroys the one thing `Condition.params` needs, and the first real
+  run is what found it.** `{}` and `[]` become the same PHP value and `json_encode` turns both into
+  `[]`, so `"params": {}` — the correct spelling for `vacation_block`, `overlap_block` and
+  `unwanted_day_block`, half of what a department switches on first — is refused by the contract.
+  `EngineEvaluate::withEmptyObjectsKept()` decodes objects as objects and converts them to arrays only
+  when they hold something. STATED RESIDUAL: an object whose keys are all decimal integers becomes a
+  list; no key in the CG-10 contract has that shape, and the alternative is a per-key allow-list that
+  would miss the next object-valued field.
+
+- **The command prints the NF-01 cost on every run, and says what the number is NOT.** It is the
+  whole round trip — node start-up, JSON both ways, `evaluate()` AND `coverage()` — so it is
+  necessarily larger than the 100 ms budget, which is `evaluate()` alone and which P2 Task 23 already
+  measured MISSED. Printing it without that sentence would read as a much worse miss than the
+  measurement supports.
+
+- **The report uses no indentation and no character outside ASCII, and that is forced.** Measured on
+  this machine: every `$this->line()` in this application collapses runs of spaces to one and drops
+  `→`, while `fwrite(STDOUT, …)` on the same pipe preserves both — `InstanceShow`'s own two-space
+  continuation lines have always rendered with one. It is pre-existing and application-wide, not
+  Task 24's, and a report whose hierarchy is built out of leading spaces would arrive flat. Hierarchy
+  is therefore carried by blank lines, `[condition-id]` headers and `- ` items, and ranges are
+  `from..to`. Do not "fix" the alignment without re-measuring.

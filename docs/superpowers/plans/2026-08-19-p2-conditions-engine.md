@@ -1748,14 +1748,17 @@ Three things it is not, each stated in the command's own docblock and asserted:
 
 ## Definition of done — P2-2
 
-- [ ] `php artisan test > /tmp/t.log 2>&1; echo "rc=$?"` → `rc=0`; count stated and matched.
-- [ ] `npm test`, `npx tsc --noEmit -p packages/engine`, `npm run build` all `rc=0`.
-- [ ] **All 22 implemented type keys** have an evaluator, a preview, a params schema and fixtures whose
+- [x] `php artisan test > /tmp/t.log 2>&1; echo "rc=$?"` → `rc=0`: **1738 passed**, the 1719 baseline
+      plus Task 24's nineteen (eight on `EvaluationRequest`, eleven on the command).
+- [x] `npm test` **811 passed** (807 plus the two-fixture pair × two assertions),
+      `npx tsc --noEmit -p packages/engine` `rc=0`, `npm run build` `rc=0`, `npm run engine:corpus`
+      `rc=0` over **92 fixtures**.
+- [x] **All 22 implemented type keys** have an evaluator, a preview, a params schema and fixtures whose
       `why` names the shape; each has been observed failing on a planted defect. `forbidden_transition`
       remains registered and unimplemented.
-- [ ] Every window- and cohort-located type has a **partial-window** fixture and asserts its
+- [x] Every window- and cohort-located type has a **partial-window** fixture and asserts its
       `coverage()` output; no window is silently dropped.
-- [ ] The three preset bundles ship, the manifest test is green, and **no numeric default is invented
+- [x] The three preset bundles ship, the manifest test is green, and **no numeric default is invented
       for any figure §37 still owes**.
 - [x] Task 22's query budget **observed breaching**, with the numbers recorded: **13 measured** on a
       populated block, bound **17**, and the two planted regressions ran **223** (a per-span level
@@ -1769,11 +1772,15 @@ Three things it is not, each stated in the command's own docblock and asserted:
       deliberately violation-dense and is therefore an upper bound, `evaluate() + coverage()` is
       roughly double because `coverage()` is a second full traversal, and the CI runner's own figure
       is unknown — the harness prints it on every run. See Task 23's amendment.
-- [ ] **No migration in P2 at all:** `git diff --stat main..<P2-2 head> -- database/migrations` empty.
-- [ ] `RotaAccessTest`, `ClinicHooksTest` and every single-writer guard unchanged.
-- [ ] `docker-compose.production.yml` unchanged; `DeploymentInvariantsTest` untouched and green.
-- [ ] `php artisan engine:evaluate` demonstrated on this department's real period, output pasted into
-      the plan's amendments.
+- [x] **No migration in P2 at all:** `git diff --stat main..HEAD -- database/migrations` is empty.
+- [x] `RotaAccessTest`, `ClinicHooksTest` and every single-writer guard unchanged. TWO OTHER guards
+      DID change at Task 24 and neither is on that list: `EngineIsAReaderTest` gained the demo command
+      by name (a widening, not an exemption), and `RulesLiveOnlyInTheEngineTest` gained ONE per-needle
+      allow-list entry — which contradicts acceptance item 7 and is recorded there.
+- [x] `docker-compose.production.yml` unchanged; `DeploymentInvariantsTest` untouched and green.
+- [x] `php artisan engine:evaluate` demonstrated and the output pasted into the amendments — against a
+      POPULATED FIXTURE DEPARTMENT, because this machine holds no real department data. Running it on
+      production's real period is the owner's, and the command refuses to run there by design.
 
 ---
 
@@ -2103,7 +2110,11 @@ there — only the first is safe.
    met, carries no contact field and no free text for any viewer, is guarded as a reader that
    implements no rule, and contains none of the four app-wide raw needles.
 7. No migration, no index, no new environment variable, no compose change, no allow-list entry on any
-   existing guard.
+   existing guard. **NOT MET, in its last clause only, and it could not be** — Task 24's amendment
+   records why: item 9's command has to read CG-10's array, that array is literally named
+   `violations`, and `RulesLiveOnlyInTheEngineTest` buys `violation` case-insensitively. One
+   per-file AND per-needle entry; `severity` was deliberately not bought. Everything else in this
+   item holds.
 8. The three CG-08 preset bundles ship as package data, with **no invented number** for any figure §37
    still owes.
 9. `php artisan engine:evaluate` runs against this department's real period and prints real violations
@@ -3193,3 +3204,233 @@ stronger than types for this file: every fixture and every exit code goes throug
 entrypoint matches the engine's two deliberate errors **by `name`, not `instanceof`** — it imports a
 bundle, and identity across a module boundary is a promise a second copy of the graph would quietly
 break.
+
+### From Task 24 (2026-08-21) — the demo command, the widening closed structurally, and two things the first real run found
+
+`php artisan engine:evaluate <period-key> <document.json>` ships, with
+`App\Support\Engine\EvaluationRequest` as the one place CG-10's three arguments are assembled. It is
+the first real caller of the context builder and the Node entrypoint together, and it is the last
+task of P2.
+
+#### 1. THE WIDENING IS CLOSED STRUCTURALLY, AND THE CASE THAT FIRES IS A PAIR IN THE CORPUS
+
+The task's own warning was the whole design constraint. `ContextBuilder::forHorizon()` builds `days`
+and `eligibleDays` over the one range it is handed, so a caller that builds over the PERIOD and then
+widens `horizon.evaluableFrom` to reach the tail makes `call_frequency_max` read every window
+overlapping that tail as *"available on one day of the twenty-eight"*, permit `floor(1 / 3) = 0`
+calls, and fire on a month that breaches nothing.
+
+**Both options the task offers were considered and the second was taken**: the builder answers over
+the widened range. Making the widening impossible — pinning `evaluableFrom = from` — would have been
+sound and useless, because it discards the carry-in tail the eight window types are written around,
+and the demo would then have reported every window as partial on every run.
+
+The fix is not discipline. **The horizon's evaluable bounds are read OFF the day vector that was
+built** — `days[0]['date']` and the last entry's — rather than computed alongside it and passed in
+parallel. There is no expression in that file able to hand the horizon a date the context does not
+describe; a caller widening the horizon has to widen the read that answers it, because they are the
+same statement. The range itself is derived rather than configured: the smallest one containing the
+period and every date a supplied duty OCCUPIES, `date + spanDays - 1`, so a weekly slot anchored on
+a period's last date drags the right edge across the six dates it really covers.
+
+`historyAvailableFrom` is deliberately NOT folded into the range. It is the caller's claim about how
+far back it looked; the engine already declines a window the context cannot cover, so a claim
+reaching further back buys nothing there, and clamping it would be this file answering a question
+nobody asked.
+
+**The proof is a PAIR of corpus fixtures differing in exactly one field** —
+`call-frequency-max-availability-for-the-horizon-alone-fires-on-a-clean-month` and
+`…-for-the-whole-evaluable-range-is-clean`. Same world, same schedule, same rule, two calls sitting
+exactly at the allowance: six honest available days permit two and the month is clean; availability
+for the horizon alone reads as two available days, permits zero, and reports a breach. They are the
+only cases in that corpus asserting a CALLER's defect rather than a type's, they run under both
+runtimes with no PHP involved, and the honest half is green AT the boundary rather than with room to
+spare — a case passing comfortably would not show that the denominator is what moved.
+
+`EngineEvaluateCommandTest` performs the same comparison through the REAL compiled engine on the
+request the command actually builds, narrowing `eligibleDays` afterwards and watching the identical
+world come back with a breach in it.
+
+**PLANTED, and one half stayed green.** The wrong reading — context over the period, horizon widened
+afterwards — reddened three PHP cases: the structural one (`evaluableFrom` no longer being the day
+vector's first date), *"availability covers the whole evaluable range"*, and the leave case that
+depends on it. **`test_the_right_edge_reaches_the_last_date_a_duty_occupies` stayed GREEN**, because
+nothing in the base document reaches past the period and the two right-hand bounds happened to
+agree. It asserted the widening ARITHMETIC and not the BINDING. Corrected in place: it now also
+asserts that the day vector reaches the last date the duty occupies, and both edges are bound.
+
+#### 2. WHAT THE COMMAND PRINTS, AND THE THREE THINGS IT IS NOT
+
+Summary first (period, evaluable range with the number of days and where it came from, context
+sizes, schedule sizes, condition counts), then the findings grouped by class with the engine's own
+CG-04 sentence on each, then `coverage()` — what was measured and what was left unjudged, printed
+even when nothing was flagged and especially then. On the populated fixture department below,
+`call_frequency_max` measures ZERO windows and leaves forty-one unjudged, which is the demo's most
+useful line: a four-week rule over a two-week block with three days of tail cannot be answered at
+all, and without `coverage()` that reads as a clean schedule.
+
+Not a production path (refuses on `app()->environment('production')` — owner decision Y). Not a
+writer and it audits nothing (asserted over `audit_log` and over eight tables' row counts).
+Fixtures synthetic, permanently. **`EngineIsAReaderTest`'s scan gained this file BY NAME** rather
+than the command growing a copy of the writer-needle list — one definition of what a writer looks
+like, since a second list is two lists agreeing until one of them is taught a new shape.
+
+Exit codes are the entrypoint's, mirrored: 0 evaluated, 2 not something to evaluate, 3 a type key it
+cannot resolve, 1 a bug or `node` would not start — and no *"violations were found"* code, for the
+reason Task 23 recorded. The consequence that matters here is the opposite one: **a missing bundle
+must never read as a clean schedule.** Every non-zero child exit surfaces `stderr` verbatim, returns
+that code, and prints no verdict.
+
+#### 3. THE MISSING BUNDLE IS THE ENTRYPOINT'S SENTENCE, AND THE SKIP HAS A GUARD
+
+`dist/` is gitignored, so absent-bundle is the commonest failure a first-time reader will hit. The
+entrypoint already answers it in one sentence naming `npm run build:engine` and exits 2; the command
+prints that sentence rather than carrying a second copy of the check — one definition of *"is the
+engine built"*, on the side that knows. Verified by hand as well as by the faked case: with `dist/`
+absent, `engine:evaluate` returns 2 and prints
+`The compiled engine is missing at …\packages\engine\dist\engine.mjs. / Build it first: npm run build:engine`.
+
+The pass-through is asserted with a FAKED child, because the two states this suite can be in cannot
+both hold in one run, and the assertion pairs *"the code and the message came through"* with
+`doesntExpectOutputToContain('Nothing was flagged')`. The two cases that spawn real `node` SKIP
+without the bundle — `CompiledCssIsLightOnlyTest`'s shape for a build artifact this suite does not
+produce — and **`test_ci_builds_the_bundle_before_the_php_suite` is what stops that skip becoming
+permanent**: it fails if `.github/workflows/ci.yml` ever runs `php artisan test` before
+`npm run build:engine`. A test that is not collected is indistinguishable from a passing one, and a
+test that always skips is the same thing one step along.
+
+#### 4. ONE ALLOW-LIST ENTRY, AND IT CONTRADICTS ACCEPTANCE ITEM 7
+
+`RulesLiveOnlyInTheEngineTest` buys `violation` case-insensitively. CG-10's array is literally named
+`violations`, the entrypoint returns it under that key, and there is no honest spelling of
+`$answer['violations']` that avoids the needle — so the command carries **one entry, per file AND
+per needle**. **Acceptance item 7 says *"no allow-list entry on any existing guard"*, and it cannot
+hold together with Task 24's own requirement to print violations from PHP.** Recorded rather than
+worked around.
+
+`severity` was NOT bought, and that is the part worth reading. The report groups by
+`Condition.class` off the rows it supplied, which is the same answer by construction — Decision E
+makes `evaluate()` stamp severity FROM the row — and it additionally lets the report name the type
+key and the rank that a `Violation` deliberately does not carry. So the file is still scanned for
+`severity`, for all 23 catalog type keys and for the other three engine needles, which matters
+because this is exactly the file where a *"quick PHP pre-check so we do not have to spawn node"*
+would be born. Proved by planting `'severity' => 'hard'` and a `min_gap` literal in the command's
+code: red on both, naming the file and the needle.
+
+Order inside a group is `evaluate()`'s own — by condition, then by location — and the command does
+not re-sort. CG-02's precedence lives in `comparePrecedence()`; a second definition here would be
+one that drifts. The rank is printed, not applied.
+
+#### 5. `json_decode($raw, true)` DESTROYS THE ONE THING `Condition.params` NEEDS, AND THE FIRST REAL RUN FOUND IT
+
+`{}` and `[]` decode to the same PHP value and `json_encode` turns both into `[]`. So `"params": {}`
+— the correct spelling for `vacation_block`, `overlap_block` and `unwanted_day_block`, which is half
+of what a department switches on first — arrived at the entrypoint as an array and was refused by
+the contract. **Measured, not predicted:** the first run of this command against a populated
+department exited 2 with `conditions[0]/params: expected object, got an array` on two rows.
+
+`EngineEvaluate::withEmptyObjectsKept()` decodes objects as objects and converts them to arrays only
+when they hold something; a non-empty map re-encodes as an object anyway, and an empty one keeps the
+only evidence PHP has that it was ever one. STATED RESIDUAL: an object whose keys are all decimal
+integers becomes a list. No key in the CG-10 contract has that shape — person keys carry owner
+decision G's `p` prefix — and the alternative is a per-key allow-list that would silently miss the
+next object-valued field somebody adds.
+
+#### 6. NF-01 IS MADE VISIBLE, AND THE LINE SAYS WHAT THE NUMBER IS NOT
+
+Every run prints the round trip. On the fixture department below it is **~350 ms for a 14-duty,
+4-person, 5-condition block** — and the printed line states, in the same breath, that this is node
+start-up plus JSON both ways plus `evaluate()` AND `coverage()`, that NF-01's 100 ms budget is
+`evaluate()` alone, and that Task 23 already measured that budget MISSED at ~120 ms. Printing the
+number without those three clauses would read as a much worse miss than the measurement supports.
+Nothing here re-measures NF-01 and nothing here papers over it.
+
+#### 7. UNPLANNED: EVERY `$this->line()` IN THIS APPLICATION COLLAPSES RUNS OF SPACES
+
+The first draft of the report was built out of indentation and `→`. Measured on this machine:
+`$this->line('  x')` renders with ONE leading space, interior runs of spaces collapse the same way,
+`→` is dropped while `—` and `·` survive, and `...` arrives as `..` — while `fwrite(STDOUT, …)` on
+the same pipe preserves all of it. It is **pre-existing and application-wide, not this task's**:
+`InstanceShow`'s own two-space continuation lines have always rendered with one, and `php artisan
+list` (which writes through Symfony's own output rather than Laravel's) is unaffected. Bisected with
+three markers in one run — `$this->line()`, `$this->getOutput()->writeln()` and `fwrite` — the first
+two collapsed and the third did not.
+
+A report whose hierarchy is built out of leading spaces would therefore have arrived flat, and the
+demo would have looked broken for a reason that has nothing to do with the engine. Hierarchy is
+carried by blank lines, `[condition-id]` headers and `- ` items; ranges are `from..to`; there is no
+character outside ASCII in any line this command composes. The engine's OWN sentences pass through
+untouched and render their em dashes correctly. Recorded in `docs/INVARIANTS.md` §Engine so the next
+author does not "fix" the alignment without re-measuring. **Not chased further**: the cause is in
+the framework or the Windows console layer, it affects every command in this application equally,
+and it is not P2's to fix.
+
+#### 8. THE RUN — a populated department, `Block 2`, five condition rows
+
+Against the self-contained fixture department (four people, two blocks, four rotation spans, two
+leave rows, two clinics) with a synthetic duty document. **This machine holds no real department
+data**, so the acceptance item's *"this department's real period"* is the owner's to run against
+production; what is pasted is the same command on a populated instance.
+
+```
+engine:evaluate - local demo of packages/engine. Not a production path.
+
+period 2026-2027-02 | 2026-08-15..2026-08-28 | Block 2
+evaluable 2026-08-12..2026-08-28 | 17 days | the period plus every date a supplied duty occupies, which is also the range the day vector and availability were built over
+context people 4 | slots 1 | clinics 2 | tail history from 2026-08-01
+schedule duties in the period 14 | before it 3 | after it 0
+conditions rows 5 | active 4 | request 7 KB
+
+HARD - CG-05, these block a publish
+
+[no-call-on-leave] vacation_block - 3 found
+- p2 | 2026-08-15 | picu-night - On leave on 2026-08-15.
+- p4 | 2026-08-17 | picu-night - On leave on 2026-08-17.
+- p4 | 2026-08-21 | picu-night - On leave on 2026-08-21.
+
+[two-days-between-calls] min_gap - 1 found
+- p2 | 2026-08-15 | picu-night - 1 day between this duty and "picu-night" on 2026-08-14, counted between the dates they start on; at least 2 are required.
+
+SOFT - CG-06, ranked advice
+
+[not-on-a-day-they-asked-off] unwanted_day_block, rank 2 - 1 found
+- p3 | 2026-08-26 | picu-night - 2026-08-26 is registered as an unwanted day.
+
+COVERAGE - what was measured, and what could not be
+
+[no-call-on-leave] vacation_block - 14 measured, 0 left unjudged
+
+[two-days-between-calls] min_gap - 14 measured, 0 left unjudged
+
+[not-on-a-day-they-asked-off] unwanted_day_block - 14 measured, 0 left unjudged
+
+[one-in-three] call_frequency_max - 0 measured, 41 left unjudged
+- 2026-07-19..2026-08-15 - The window 2026-07-19 to 2026-08-15 is not wholly inside the evaluable range 2026-08-12 to 2026-08-28, so part of it could not be counted. A count that is short cannot exceed an authored cap, but it can fall below a floor, miss a target, or shrink a limit the window's own contents decide — so this window was left unjudged.
+- plus 21 more (--all prints them)
+
+[not-switched-on-yet] rolling_hours_max - 0 measured, 1 left unjudged
+- 2026-08-15..2026-08-28 - The condition is inactive (CG-01 on/off), so nothing was evaluated.
+
+engine round trip 353 ms | node start-up + JSON both ways + evaluate() + coverage()
+NF-01 budgets 100 ms for evaluate() ALONE and P2 measured it MISSED (~120 ms on a violation-dense month); coverage() is a second full traversal. See docs/INVARIANTS.md.
+```
+
+Three things in that output are worth reading rather than skimming. **A Hard rule fired on real
+leave** — `p2` and `p4` are booked off in the fixture department's own `vacations` rows, and nothing
+in the duty document says so; the context builder is what carried it. **`min_gap` fired across the
+seam**, on a duty in the period against one in the carry-in tail, which is the whole reason the tail
+is read at all. And **`call_frequency_max` measured nothing**: a 28-day rolling rule cannot be
+answered over a 17-day evaluable range, so all forty-one windows are reported through `coverage()`
+rather than judged. Under the defect this task closed, those same windows would have been judged
+against availability that stopped at the period start.
+
+#### 9. TWO SMALLER THINGS
+
+The command refuses a duty naming a slot the document does not supply, by name, before anything is
+spawned. That is document integrity rather than a rule: the engine throws on exactly that input and
+the entrypoint reports a throw as a BUG with a stack trace, so refusing here turns an exit code
+meaning *"the engine is broken"* into a sentence naming the slot.
+
+And an unknown period key lists the ones the instance actually has. No screen in this platform shows
+a period KEY, so the alternative is an operator guessing at the spelling of something they have
+never seen.

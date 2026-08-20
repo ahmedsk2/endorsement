@@ -1,0 +1,147 @@
+{
+    "name": "min-gap-hours-across-the-carry-in-from-the-published-month",
+    "why": "The gap between the last night of month M and the first duty of M+1 is the case a scheduler hits first and it is measured entirely outside the horizon on one side. The night of 31 July is in the already-published month and ends 1 August at 08:00; the late duty on the 1st starts at 12:00, four hours later, against a 10 h rule. EXACTLY ONE violation is emitted -- on the placement inside the horizon -- because reading the tail is not re-evaluating it (CG-03, never retroactive on published schedules). An implementation ignoring priorDuties reports nothing at all; one emitting on both placements re-reports a published month.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R2",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-08-01",
+                    "2026-08-02",
+                    "2026-08-03"
+                ],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "late",
+                "kind": "clinic-cover",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 720,
+                "endMinute": 1200,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-07-31",
+                "slotKey": "night"
+            }
+        ],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-03",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-06"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "late"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-gap",
+            "typeKey": "min_gap",
+            "class": "hard",
+            "active": true,
+            "params": {
+                "value": 10,
+                "unit": "hours"
+            }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-gap",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "late"
+            },
+            "explanation": "Only 4 h between this duty and \"night\" on 2026-07-31; at least 10 h is required between the end of one duty and the start of the next."
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-gap",
+            "evaluatedWindows": 1,
+            "skipped": []
+        }
+    ]
+}

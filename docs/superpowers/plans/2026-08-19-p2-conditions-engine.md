@@ -522,7 +522,16 @@ department on every single day. Fixtured on the abutting pair.
 
 **2. A duty's occupied interval is absolute minutes on one integer line.**
 `absMinute(date, minute) = daysFromCivil(date) * 1440 + minute`; a crossing-midnight duty ends at
-`end + 1440`; a weekly-cadence duty ends at `daysFromCivil(date) + spanDays` days plus `endMinute`.
+`end + 1440`; a weekly-cadence duty ends at `daysFromCivil(date) + spanDays - 1` days plus
+`endMinute`.
+
+> **CORRECTED 2026-08-20, off by one, found by implementing it.** This sentence read
+> `+ spanDays` and contradicted this task's own acceptance case, which requires `spanDays: 7`
+> to occupy **seven** dates, not eight. The error is not confined to weekly slots: applied to a
+> daily slot (`spanDays: 1`) the old formula ends every duty on the FOLLOWING date, so every
+> abutting split day/night pair overlaps and `overlap_block` fires on a correct rota.
+> `date + spanDays - 1` is one formula for both cadences. Measured, not reasoned: the old
+> formula was planted and produced **16 failures**, the abutting pair among them.
 No `Date`, no instant, no timezone (Decision B).
 
 **3. Duty→date attribution has THREE readings, and each type declares which it uses.** This is the
@@ -1826,7 +1835,20 @@ inventing one from `units.call_target` would be exactly the inference `RotaAcces
 refuse.
 
 **J. `call_frequency_max` — window alignment and denominator.**
-*Default: **rolling**, anchored on the evaluated duty's date, with the window length in **days** and
+> **ANSWERED 2026-08-20 — the default was OVERRIDDEN. Denominator = ELIGIBLE DAYS.** Days on leave,
+> before `joinedAt`, and off the roster are removed from the denominator. This is the alternative this
+> entry itself flagged ("ACGME's intent is arguably the availability denominator"), so the answer
+> follows the standard's intent rather than `MissedDays`' precedent. **Window alignment is unchanged:
+> rolling, anchored on the evaluated duty's date, length in days.**
+>
+> **The consequence, stated once so it is on the record rather than discovered:** the constraint
+> TIGHTENS as somebody takes leave. A person with 14 days' leave in a 28-day window is measured
+> against 14 eligible days, so `one in 4` permits 3 calls rather than 7. That is the intended reading
+> — it protects people from being back-loaded around their own leave — and it is the opposite of what
+> a reader assuming a calendar denominator would expect, so the plain-language preview (CG-04) must
+> say which denominator it used.
+
+*Superseded default: **rolling**, anchored on the evaluated duty's date, with the window length in **days** and
 an explicit unit; denominator = **calendar days**.* A calendar-aligned window lets a person run
 1-in-2 across a block boundary and pass every window. The calendar denominator follows
 `App\Support\MissedDays`' precedent (owner decision 6: every calendar day, `dayType()` deliberately
@@ -1850,6 +1872,15 @@ the absolute reading is the one a department can state on a gate screen. Owner d
 modifier predicate that can express the difference where it matters.
 
 **M. `target_per_period` — the modifier grammar.**
+> **ANSWERED 2026-08-20 — default CONFIRMED. A matching modifier REPLACES the target**, never
+> adjusts it. Ordered list, first match wins.
+>
+> The reason to keep replace over adjust once implementers start finding `-2` more natural to write:
+> a delta grammar lets two modifiers compound to a target below zero silently, and a reader cannot
+> see the resulting number without doing the arithmetic themselves. Replace makes the effective
+> target readable at both branches, which is also what CG-04's preview has to print.
+
+*Confirmed default follows:*
 *Default: an ordered list of `{ when, target }`; **first match wins**; **replace, not adjust**; the
 predicate vocabulary is **closed to two**: `vacationWeeksAtLeast: N` and `periodWeeksAtMost: N`; the
 person's level is read at the **PERIOD START**.* The spec gives one example and no syntax, and an open
@@ -1881,6 +1912,31 @@ so one type would be carrying two contracts. Ordering is WB-04 fitness, P3. *(No
 committed draft's decision F, renumbered, and it is unchanged.)*
 
 **Q. `fairness_distribution` — base, tolerance and mode.**
+> **ANSWERED 2026-08-20 — default OVERRIDDEN. Tolerance is PROPORTIONAL at 10%, WITH A FLOOR OF 1:**
+> `tolerance = max(1, ceil(0.1 * proRatedTarget))`. The pro-rated base is unchanged.
+>
+> **CORRECTED 2026-08-20 — the formula stands, the reason first given for it was wrong.** The
+> original note argued bare 10% is stricter than absolute-1 for targets under ten because "0.4
+> floors to zero". That describes rounding DOWN; the formula rounds UP. `ceil(0.1 * 4) = 1`, so
+> bare 10%-with-ceil already equals the absolute-1 default across the whole small regime and is
+> never stricter than it. **The claim was false and is withdrawn.**
+>
+> **Keep the floor anyway, for the one input where it changes the answer: a pro-rated target of
+> ZERO** — somebody on leave for an entire period. `ceil(0.1 * 0) = 0`, so without the floor the
+> condition admits no deviation at all for a person who could not have worked. Deleting the floor
+> was planted and the suite stayed GREEN, which is why `toleranceFor(0) === 1` is asserted directly
+> rather than left to the catalog matrix.
+>
+> The second reason to keep it is the next reach: `Math.round(0.1 * 4)` is 0, so an implementer who
+> swaps `ceil` for `round` as a tidy-up reintroduces the whole small-regime problem the original
+> note only imagined. The floor makes that swap harmless.
+>
+> Behaviour, unchanged either way: an expected share of 4 allows 1; an expected share of 40 allows 4.
+>
+> CG-04's plain-language preview must state the tolerance it actually applied as a NUMBER, not as
+> `10%` — a reader told `10%` on a 4-duty target will predict 0 and be wrong.
+
+*Superseded default follows:*
 *Default: **pro-rated expected share** from `eligibleDays` (not raw counts); tolerance **absolute,
 default 1**; `mode: 'deviation'` by default with `'spread'` available; `excludeExternal` defaults
 **true**.* Raw counts flag the person on leave as under-loaded and a solver's fix is to overload their
@@ -1890,6 +1946,11 @@ few available days. A proportional tolerance on a base of 3 rounds to either not
 ### The three types the tree cannot resolve
 
 **R. `unwanted_day_block` — where do unwanted days live, and who may see them?**
+> **ANSWERED 2026-08-20 — default CONFIRMED. P2 stores nothing.** Unwanted days arrive in the
+> evaluation context from the caller; the store and its screen land with the requests feature
+> (RQ-01) that owns them. P2 stays an engine rather than a half-built feature, and does not commit
+> to a schema the owning feature would then have to change. **The disclosure half of this question
+> is therefore deferred with the store** — nothing in P2 can leak a preference it never holds.
 *Default: **nowhere in P2**; the days arrive in the engine context. **The store is an approved RQ-01
 request** per §22 and §30's `requests/{reqId} { type:'unwanted'|… }`, which §35 places at Stage 3 =
 **P4** — not P3, and the plan says so rather than leaving it re-openable.* `people.constraints` is not
@@ -1916,7 +1977,12 @@ would block an entire department silently. **N has never been stated by any owne
 preset ships it absent rather than guessed (Decision H).
 
 **U. `same_unit_conflict` — which of three readings, and do exceptions lift or apply?**
-*Default, and it is the weakest default in this plan: reading **(a)** — two people **rotating on the
+> **ANSWERED 2026-08-20 — reading (a) CONFIRMED by the owner**, so it is no longer an inference and
+> the `levels.terminal` precedent no longer applies. Two people **rotating on the same unit** are
+> never on call together; the person's unit on the date comes from the master rota, which `RotaGrid`
+> already answers, so no new store is needed. `day exceptions` LIFT the ban, per the default below.
+
+*Default, and it was the weakest default in this plan until it was answered: reading **(a)** — two people **rotating on the
 same unit** are never on call together — with `day exceptions` being days on which the ban **LIFTS**.*
 `SPEC.md:100` is the type's only occurrence in the entire repository; the key name says *same unit*,
 the Meaning says *"Pairs never together"* (people?), and the parameters say *"unit pairs"*
@@ -1939,6 +2005,15 @@ limited transition time"*, which CG-08 drops entirely — and without it the pre
 legitimate handover overlap or silently permits an unbounded one.
 
 **W. `holiday_equity` — unknown versus zero, and which year.**
+> **ANSWERED 2026-08-20 — default CONFIRMED. `priorCredits` starts at ZERO for everyone**, not
+> `null`/unknown. Year one distributes on that year's own assignments alone.
+>
+> **The limitation is accepted knowingly and belongs in the preview, not just here:** duty covered on
+> paper rotas before this system existed is invisible, so year one spreads evenly on top of a past
+> that may not have been. If that becomes a complaint, the fix is an operator-entered prior-credit
+> field, which is additive and needs no schema change to the condition.
+
+*Confirmed default follows:*
 *Default: `priorCredits[person][holiday]` is **`number | null`** with `null` meaning **UNKNOWN**;
 `historyAvailableFrom` states how far back history reaches; when it does not cover the requested
 lookback the type evaluates the **in-schedule spread only** and reports the years it could not see
@@ -2038,3 +2113,312 @@ gate screen with drag ranking, the workbench with live hints, and `services/engi
 caller. P3 also owes the render-site half of Task 9's CG-04 preview pair (rulings 41/49), and the
 gate's cap-versus-floor warning (Decision E). `forbidden_transition` waits for **P7 / Stage 5**, with
 the shift slots it constrains.
+
+---
+
+## Recommended additions found during execution
+
+*(Appended as tasks land. Not part of the original plan; each is a proposal with its reason.)*
+
+### From Task 5/6 (2026-08-20) — narrowing the drift residual the mirror cannot close
+
+The mirror's stated residual is that it and `App\Support\Calendar` can drift on a **new** `Calendar`
+method added in P3, because `golden.json` only grows when somebody remembers to grow it. The coverage
+manifest closes this for fixture *blocks* and cannot close it for the PHP surface.
+
+**The cheap narrowing, using the same device the manifest already proved:** a PHP-side
+`CalendarSurfaceIsManifestedTest` that reflects `App\Support\Calendar`'s public static methods and
+compares them, **in both directions**, against a classified list of *mirrored* vs *server-side only,
+with the reason*. One reflection call and a roughly thirty-name list. A new public method then fails
+the build until somebody classifies it.
+
+It does not write the assertion for you — it converts **silent drift into a forced decision**, which
+is exactly the property the golden manifest buys on the fixture side. **Recommended for Task 22 or
+early P3**, whichever touches `Calendar` first.
+
+*Two smaller findings from the same tasks, recorded so they are not rediscovered:* the manifest is
+keyed on top-level fixture blocks, so a new **field inside an existing block** is invisible to it
+(the `clipped_starts_on` probe is bought explicitly because that field is the one already identified
+as likely); and a TSDoc line containing `lang/*/calendar.php` closes the block comment and is a parse
+error.
+
+### From Task 7/8 (2026-08-20) — four places the plan and the tree disagreed, and how each was settled
+
+None is a change of scope; each is recorded because the next reader will otherwise take the plan's
+wording as the tree's state.
+
+**1. `contract/schema.json` is `contract/schema.ts`.** Task 7's file list names a `.json` file. The
+tree already refuses that and says why: `packages/engine/src/index.ts` records that a JSON import
+*"would need `resolveJsonModule` and would resolve differently under the bundler, under plain Node
+and under `tsc`, which is three answers to a question worth none."* Reading it from disk instead is
+worse — the package ships to the browser, where `node:fs` is fatal. It is a JSON Schema document by
+value; only the extension differs, and the deviation is stated in the file's own docblock. **If P3
+or P4 needs a `.json` artifact for a non-TypeScript consumer, emit it from Task 23's Node entrypoint
+rather than checking a second copy in.**
+
+**2. `RegistryEntry.evaluate` does not return `Violation[]`.** Decision E types it
+`(…) => Violation[]`. It cannot: Decision D's `coverage()` needs a per-type producer for the windows
+a floor skipped, and two independent functions per type can disagree — a type reporting a window as
+skipped in one and firing on it in the other, invisible on a green suite, which is the exact failure
+`coverage()` exists to surface one level up. So a type answers ONE call returning
+`{ findings, coverage }`, and `evaluate()`/`coverage()` are two projections of it. A `Finding` is
+`{ location, explanation }`: severity, rank and `conditionId` are stamped centrally from the
+condition row, which makes *"the engine never overrides the row"* structural rather than a rule
+twenty-two files each have to remember. **Decision E's field list should be read as amended.**
+
+**3. Task 7 creates `registry.ts`, empty.** It is not in Task 7's file list, but Task 8's own
+sentence — *"It fails on the first run because the registry is empty"* — requires the file to exist
+first. It lands at Task 7 carrying `RegistryEntry` and `CATALOG = []`, and Task 8 fills it.
+
+**4. `catalogDefault` covers THREE rows, not two.** Task 8's prose names `vacation_block` and
+`unwanted_day_block`. CG-07 marks a third — `overlap_block`, *"(Hard, built-in)"* — and Decision E
+itself says *"three of twenty-three rows carry a class"*. All three carry `catalogDefault`;
+`assertedClass` remains on `overlap_block` alone. **This turned out to be worth more than a
+correction:** because the marking is machine-readable in the parameters cell, the parity guard
+derives the marked SET AND THE VALUE from `SPEC.md` and compares both against the registry, so the
+documentation cannot rot away from the thing it documents. That is a third parity beside the key set
+and the `(Stage 5)` marking, and it was free.
+
+*Two smaller findings from the same tasks.* Task 1's footnote under CG-07's table shipped citing §35
+and §36 at lines 252 and 256 — their positions **before the footnote's own two dozen lines were
+inserted**; corrected to 276 and 280, and the guards now anchor on the table's HEADER and on the
+citation TEXT rather than on any line number. And the `timezone` needle for *"read by nothing"* had
+to be narrowed from the bare word to the read shapes (`.timezone`, `{ timezone`), because the bare
+word matched `calendar/index.ts`'s own docblock sentence declaring that there is no timezone here —
+a guard failing on its own explanation. Bracket access is a stated residual: its needle is the quoted
+word, which already appears in `schema.ts`'s `required` array, so buying it would cost the first
+entry in an allow-list whose emptiness is the point.
+
+### From Task 9 (2026-08-20) — the tolerance floor binds at one input, and it is not the one the answer names
+
+Owner decision Q fixes `tolerance = max(1, ceil(0.1 × proRatedTarget))` and argues the floor from
+*"10% of a 4-weekend target is 0.4, which floors to a tolerance of ZERO"*. **That argument describes
+rounding DOWN and the formula rounds UP.** `ceil(0.1 × 4)` is already 1, and so is `ceil(0.1 × n)`
+for every `n` from 1 to 10 — so with `ceil`, `max(1, …)` changes the answer at exactly one input: a
+pro-rated target of **zero**, which is a real one (a person whose eligible days are all leave, or a
+quantity with no duties in the schedule at all).
+
+**Found by planting, not by reading.** The floor was deleted and the whole suite stayed GREEN,
+including the preview's own worked example at an expected share of 4 — the very number the decision
+reasons from. `toleranceFor(0) === 1` is the assertion that catches it, and it is now in
+`preview.test.ts` with the plant recorded beside it.
+
+**The floor stays and the formula is implemented verbatim.** It is one character from becoming
+load-bearing across the whole under-ten range again (`Math.round(0.1 * 4)` is 0, and `round` is the
+more natural reach), so a later author finding it redundant would be deleting a guard whose
+redundancy depends on a rounding mode nobody wrote down. `fairness_distribution.ts`'s docblock says
+so where that author will be standing.
+
+**A second thing this settles, and it is a scope question rather than a defect.** Decision Q also
+requires the preview to *"state the tolerance it actually applied as a NUMBER"*. The applied number
+needs the pro-rated target, which needs the SCHEDULE — and `ConditionPreview` receives the condition
+and the context and, correctly, not the schedule: CG-04 previews a RULE on the gate screen before any
+draft exists, and a preview that moved as a draft was edited would be a different artifact from the
+one CG-01 lists beside a drag handle. So the sentence prints the tolerance FUNCTION as two worked
+points spanning both regimes — *"an expected share of 4 allows 1, an expected share of 40 allows 4"* —
+which removes the mis-prediction the decision names without pretending to a number nothing has
+computed. **The applied number belongs in the VIOLATION's explanation, where the target is known, and
+Task 19 owes it there.**
+
+*Three smaller findings from the same task.* Task 9's file list names `severity.ts` and `preview.ts`
+and no others; the previews needed a params schema to be a preview OF something, and a schema
+belongs beside the predicate that will read it, so `src/conditions/{min_gap,rolling_hours_max,
+fairness_distribution,target_per_period}.ts` land here carrying `PARAMS_SCHEMA`, `readParams` and
+`preview` — and Tasks 14, 16, 18 and 19 add `evaluate` to files that already exist. `messages.ts` is
+a fifth file the list does not name, and it exists because `preview.ts` must import the registry to
+dispatch while the type modules must import the sentences: one file would be a cycle. And
+`ConditionPreview` gained a third parameter, the message table, because AR-07's *"translations are
+future work"* is only true if the table is an ARGUMENT — `preview.test.ts` proves it by handing in a
+second table and watching the sentence change.
+
+### From Task 10 (2026-08-20) — a pruning optimisation made the phase's defining fixture unfalsifiable
+
+`overlap_block`'s pair scan was written with the obvious optimisation: the duties are sorted by
+interval start, so stop scanning once a later duty starts at or after this one's end. The plan's own
+plant for Decision A convention 1 — swap `<` for `<=` inside `intersects()` — was then applied, and
+**the suite stayed GREEN.** The `>=` in the loop's stop condition had already skipped the abutting
+pair before `intersects()` was consulted.
+
+**That is two definitions of the half-open rule, one of them invisible, three lines below the
+docblock sentence explaining the first** — `AuditChain::canonical()`'s defect, in the file whose
+whole purpose is the one comparison operator. The pruning is removed and its absence is stated in
+the module docblock, because it is exactly the change a later reader will propose as an obvious win.
+The scan is per person over one month; there is nothing there worth buying with a second copy of the
+rule. With it gone the plant fires, and so do four more: `overlap_block` keyed per slot rather than
+per person; `priorDuties` dropped; the emission rule disabled; and the vacation bound made exclusive.
+
+**The general lesson, since this is the second green plant in two tasks:** a plant that stays green
+is worth more than one that goes red, and the two tasks found different species of it. Task 9's was a
+guard asserted at an input where the defect cannot appear; Task 10's was a SECOND implementation
+short-circuiting the first. Neither is visible in review, and neither would have been found by
+reading the code — only by planting the defect the fixture claims to catch and watching what happens.
+
+*Three smaller findings from the same task.* A docblock is scanned source, for the SEVENTH time in
+this phase: `eligibility.ts`'s docblock names `autoFillOrder` while explaining why the ordering half
+is absent, so the absence scan failed the build on the documentation of its own rule and now strips
+comments (pinned both directions, `SourceScanner`'s discipline). `src/conditions/support.ts` is a
+file the plan does not name and the three types forced: `spanKeyAt` is the one definition of *"the
+fact this person holds on this date"*, and twenty-two predicates each deciding that for themselves
+would disagree only on the dates a promotion or a rotation change falls — which is to say, on the
+dates it matters. And a **violation's `explanation` does not go through the message table**:
+`ConditionPreview` takes it as an argument (AR-07) and `ConditionEvaluator`, fixed at Task 7, does
+not. **Recommended for early P2-2, before nineteen more types hardcode English** — threading the
+table through `evaluate()`/`coverage()` is a contract change worth making once, and it is cheaper at
+three types than at twenty-two.
+
+### From Task 11 (2026-08-20) — §4.1 was prose, `composition` is affordable, and the needle count is five not two
+
+**The measurement the task asked for, taken.** `app/Support/FakeRules.php` was planted with
+`public static function minGap()`, the literals `'min_gap'`, `'severity' => 'hard'` and
+`'eligibility'`, and a loop building a `$violations` array — two catalog types implemented in PHP.
+`php artisan test` returned **rc=0, 1685 passing**. Design §4.1's *"No PHP implementation of the
+rules exists anywhere"* had nothing behind it, and now does.
+
+**Three needle decisions differ from the task's text, each measured over the tree rather than
+predicted.**
+
+1. **`composition` IS bought.** The task declines it on the ground that it *"collides with ordinary
+   English in docblocks about object composition"*. Over `app/`, `routes/` and `database/` the word
+   appears in no docblock at all — and the scan strips docblocks regardless, which is the same
+   argument that bought `eligibility`. Zero hits, so it costs nothing.
+2. **`severity` IS bought**, though the task's list does not name it. Zero hits, and a PHP rule
+   engine grades violations.
+3. **`violation` is bought CASE-INSENSITIVELY, at the price of one allow-list entry.** Lowercase
+   `violation` measures zero and misses `class Violation`, `$violations` and `ViolationChecker` —
+   every form a PHP implementation would actually take, so a case-sensitive needle would be measuring
+   zero for the wrong reason. Case-insensitively it hits one file:
+   `RosterImport`'s `UniqueConstraintViolationException`, Laravel's own vocabulary in a CSV importer,
+   which is not the file a scheduling rule is born in — the test ruling 42 actually sets.
+
+**So the allow-list does NOT start empty, and that is the better outcome.** It carries one entry, per
+file **and per needle** — `RosterImport` is exempt from `violation` alone and still scanned for the
+other twenty-seven, where a whole-file exemption would have blinded the guard to a `min_gap` landing
+in that file later. And because the list has an entry, the staleness twin iterates something: Task
+6's finding was that a staleness check over an allow-list empty by design passes on a healthy tree, a
+deleted directory and a renamed module alike, and this one does not have that problem.
+
+**Two other departures.** The scope is `app/`, `routes/` and `database/` rather than `app/` alone —
+`CalendarIsTheOnlyConverterTest`'s three roots, for its recorded reason (I1: narrow scope is the
+recurring weakness in these guards), and all three measured zero so the widening is free. And the
+class is **five tests, not the two the task's arithmetic assumes** (`1685 + 2 = 1687`): the guard
+itself, the staleness twin, a non-vacuity floor on the file scan, a non-vacuity floor on the CG-07
+parse, and the stripper pinned in both directions. **1685 + 5 = 1690.**
+
+**Proved in four directions, each by planting.** The rule in code → red, naming the file and four
+needles. The identical text moved entirely inside a docblock → GREEN, which is the stripper proving
+it strips. A changed CG-07 table header → the parse floor red rather than the needle set silently
+collapsing to five. A stale allow-list entry, a stripper returning the empty string, and the scan
+pointed at a missing directory → each twin red.
+
+**A residual worth naming rather than implying:** `resources/js` is not scanned. A rival rule
+implementation there would be in the engine's own language, and a needle set of snake_case type keys
+is the wrong shape to find one. `@engine` resolving through the Vite alias makes the real engine
+reachable; nothing yet makes a rival unreachable.
+
+### ACCEPTED 2026-08-20 — thread `explanation` through the message table, FIRST TASK OF P2-2
+
+`ConditionEvaluator` was fixed at Task 7 without a message table, so every type hardcodes its
+violation English inline. **The owner has accepted threading it through, as the first task of P2-2,
+before the remaining types are written.**
+
+Why the ordering is the whole point: it is a contract change to `evaluate()`/`coverage()`. Done now
+it costs roughly half a task. Done after P2-2 it means unpicking nineteen types that have each
+hardcoded a sentence, and by then the shape is set by whichever type happened to be written first.
+
+It also decides whether **AR-07** — *"strings are externalized from launch so a future locale is
+translation work, not a rewrite"* — holds for violations the way it already holds for weekday names
+(`lang/en/calendar.php`) and Hijri months. Today it does not. `preview` goes through the table for Task 9's four
+types (proved by handing in a second table and watching the sentence change) — **but NOT for Task
+10's three, which carry English inline. That correction is owed here: an earlier note in this file
+said `preview` "already goes through the table" without qualification, and it is only half true.**
+So P2-2's first task threads `explanation` through *and* migrates those three previews; both halves
+of the same omission, and cheaper together than twice.
+
+**The argument for delaying, considered and rejected:** P2-2's types are where one learns what a good
+explanation reads like, so threading a table now fixes the shape before that knowledge exists. It is
+rejected because the table is a *lookup*, not a schema — a key and an interpolation map — and
+learning better wording later changes the values, not the shape. Hardcoded English is the thing that
+would be expensive to revisit.
+
+### From Tasks 12–14 (2026-08-20) — P2-1 complete: what the answers did not cover, and one fixture that could not catch its own parameter
+
+**The eleven placement types are shipped.** Six findings are recorded here because the next reader
+will otherwise take the plan's wording, or an owner decision's wording, as the whole of the answer.
+
+**1. Owner decision T is answered, and on the live instance it is indistinguishable from a broken
+rule.** `joined_at` is written by no seeder, factory or demo path anywhere in this repository
+(Task 1's finding 18) and production holds people without one, so *"a missing join date is NO
+violation"* and *"`onboarding_grace` never fired"* produce identical output. The decision is
+implemented verbatim and the state is made VISIBLE rather than silent: every person whose join date
+is unknown **and who holds a placement the condition would otherwise have judged** is named in
+`coverage()` with the count of placements not evaluated, and the CG-04 preview says the same thing in
+words on the gate screen. A person with no join date and no duty is deliberately NOT reported — a row
+per roster gap would appear on almost every evaluation and train a reader to ignore the field, which
+is `carryInLeftEdge()`'s own recorded reason for refusing that noise. Planting `joinedAt ?? today`
+turns three assertions red, in both halves (violations and coverage).
+
+**2. One step beyond decision T, taken deliberately: a duty BEFORE the join date is a violation.**
+The literal reading of *"the first N days"* is `[joinedAt, joinedAt + N - 1]`, and a rota drafted
+before somebody starts — precisely when the rule earns its keep — puts duties outside it on the early
+side, where a range test reports nothing at all. The grace therefore opens at the start of time, and
+the two shapes carry different explanations because *"day 0"* on a gate screen is a number nobody
+would believe.
+
+**3. `clinic_conflict` does NOT need the carry-in tail, and the registry said it did.** Corrected at
+Task 13 by measurement: every finding this type produces is located at a DUTY, so one derived from a
+tail duty is dropped by the emission rule before anybody sees it — reading the tail changes no output,
+and the seam fixture Task 14's corpus guard would have demanded for the claim could have asserted
+nothing. What the type reaches past the horizon for is a CLINIC, and clinics are a weekly recurrence
+carried in the context for every weekday. **The guard is the reason this was caught**: derive a claim
+from the registry in both directions and it stops being a comment.
+
+**4. `consecutive_max` carries TWO duty→date readings, and Decision A's table did not say so.** Owner
+decision V's `unit: 'hours'` measures a chain joined by the GAP between two duties, which anchor dates
+cannot express, so `DUTY_DATE_READING.consecutive_max` is `['anchor-date', 'occupied-interval']` —
+the second entry to carry two after `min_gap`, and for the same reason: a parameter of its own picks.
+Decision A's table predates the `hours` unit. Declaring one reading for a type that has two is exactly
+the silent divergence that table exists to prevent.
+
+**5. A FIXTURE THAT COULD NOT CATCH ITS OWN PARAMETER, found by planting.** The first version of
+`consecutive-max-hours-joins-a-chain-across-a-short-transition` gave its second person a duty that
+stayed under the 24 h cap whether or not the chain was joined, so deleting the `transitionMinutes`
+comparison entirely left the case GREEN — the parameter owner decision V exists to add was untested by
+the case written to test it. The second person now holds the same evening duty as the first, 9.5 hours
+after their night ends: joined it is 26 h, unjoined it is two clean stretches. This is Task 9's species
+of green plant (an assertion made at an input where the defect cannot appear) in the corpus rather than
+in a guard, and it is the third green plant of the phase.
+
+**6. `src/duty/post-duty-window.ts` landed at Task 13, not Task 14.** Its first consumer is
+`clinic_conflict`, and a shared definition that arrives after its first caller has been written is
+shared in name only. Task 14 added `startsWithin()` to it for `post_duty_exclusion`.
+
+*Smaller things from the same three tasks.* The preview sentences of all seven new types go through
+`messages.ts`, because the accepted P2-2 note asserts *"`preview` already goes through the table"* —
+which is true of Task 9's four and **not** of Task 10's three (`overlap_block`, `vacation_block` and
+`eligibility` carry their English inline). New types follow the table so the residual shrinks rather
+than doubles; migrating those three is a five-line job for P2-2's first task, which is already
+chartered to thread the table through `explanation`. `preview.test.ts`'s probe generator learned
+`$ref` and pattern-constrained strings so that `same_unit_conflict`'s `exceptDates: $ref Ymd` is
+varied by the matrix instead of crashing it — one pattern in the table, throwing for any other, so a
+second is a decision somebody takes. And the quoted-weekday scan over `packages/` bites on the TEST
+that proves a weekday NAME is refused, so the name is assembled from two literals there: the eighth
+*"a docblock is scanned source"* of the phase, and the first where the scanned file is the test
+asserting the rule the scan enforces.
+
+
+### ANSWERED 2026-08-20 (round three) — all three confirmed the stated defaults
+
+- **`clinic_conflict` variant — POST-CALL ONLY.** A clinic the morning after a night on call is
+  refused; a clinic and a call starting that same evening is permitted. The per-clinic-configurable
+  option was offered and declined: it would add a field, a screen control, and a decision per clinic.
+- **`onboarding_grace` with an unknown `joined_at` — NO VIOLATION, REPORTED.** Decision T stands, but
+  the state is made visible rather than silent, which matters because `joined_at` is written by no
+  seeder, factory or demo path and is therefore empty for everybody on the live instance. A silent
+  skip would be indistinguishable from the rule working. Task 12 reports it three ways: a `coverage()`
+  skip row naming the person and the placement count, exclusion from `evaluatedWindows` (so the reader
+  sees "1 evaluated, 1 skipped" rather than "2 evaluated, clean"), and a sentence in the CG-04 preview.
+  A person with no join date **and no duty** is deliberately not reported — that is noise.
+- **`consecutive_max` does NOT reset at a period boundary.** A run of five nights ending on the last
+  day of a block and continuing into the next is a run of five-plus, and the cap sees it. This is what
+  the carry-in tail exists for, and a block boundary is an administrative artefact while the fatigue is
+  not — a scheduler working block-by-block is precisely who would not otherwise notice.

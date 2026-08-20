@@ -1,0 +1,197 @@
+{
+    "name": "consecutive-max-hours-joins-a-chain-across-a-short-transition",
+    "why": "Owner decision V: CG-08's 24 h continuous cap maps onto no catalog row as written, and lands here as unit 'hours' measuring a CONTIGUOUS DUTY CHAIN -- duties joined when the gap between them is at most transitionMinutes, which is SPEC Appendix A's 'limited transition time' that CG-08 drops entirely. p-ali's night, morning and evening duties are 30 minutes apart each, so they are one stretch of 26 h and the third duty is the one that pushes it past 24. p-noor holds the SAME night and the SAME evening duty with nothing in between: 9.5 hours apart, far more than the allowance, so they are two stretches and neither exceeds the cap -- and an implementation that ignored transitionMinutes and joined every duty would report 26 h for p-noor too. That second person is here because the first version of this case could not catch a transition allowance being ignored: the duty p-noor used to hold stayed under the cap whether it was joined or not.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R2",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-08-01",
+                    "2026-08-02"
+                ],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R2",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-08-01",
+                    "2026-08-02"
+                ],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night20",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1200,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "day0830",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 510,
+                "endMinute": 1020,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            },
+            {
+                "key": "evening",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1050,
+                "endMinute": 1320,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-03",
+            "evaluableFrom": "2026-07-25",
+            "evaluableTo": "2026-08-08"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "night20"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "day0830"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "evening"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-01",
+                "slotKey": "night20"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-02",
+                "slotKey": "evening"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-run",
+            "typeKey": "consecutive_max",
+            "class": "hard",
+            "active": true,
+            "params": {
+                "count": 24,
+                "unit": "hours",
+                "transitionMinutes": 60
+            }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-run",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "evening"
+            },
+            "explanation": "This duty extends a continuous stretch to 26 h, counting duties 60 minutes or less apart as one; the cap is 24 h."
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-run",
+            "evaluatedWindows": 5,
+            "skipped": []
+        }
+    ]
+}

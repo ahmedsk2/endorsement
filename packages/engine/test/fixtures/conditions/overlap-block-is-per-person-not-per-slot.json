@@ -1,0 +1,77 @@
+{
+    "name": "overlap-block-is-per-person-not-per-slot",
+    "why": "Two people hold the SAME slot on the SAME date. overlap_block is per PERSON and this must report nothing. A slot filled twice is SL-03 coverage-template territory and lands in P3, so the day this case starts expecting a violation is the day P3's feature was built here by accident — and it would arrive disguised as a Hard rule that blocks publishing.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-01", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-02", "isoWeekday": 7, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-03", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02", "2026-08-03"],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [{ "key": "R3", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02", "2026-08-03"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-03",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-06"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-02", "slotKey": "night" },
+            { "personKey": "p-noor", "date": "2026-08-02", "slotKey": "night" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-overlap",
+            "typeKey": "overlap_block",
+            "class": "hard",
+            "active": true,
+            "params": {}
+        }
+    ],
+    "expected": [],
+    "expectedCoverage": [{ "conditionId": "c-overlap", "evaluatedWindows": 2, "skipped": [] }]
+}

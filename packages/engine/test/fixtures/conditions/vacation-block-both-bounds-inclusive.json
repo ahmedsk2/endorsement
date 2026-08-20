@@ -1,0 +1,94 @@
+{
+    "name": "vacation-block-both-bounds-inclusive",
+    "why": "Leave runs 3 to 5 August. Duties sit on the day BEFORE it starts, on its FIRST day and on its LAST day, and exactly two of the three violate. An exclusive bound at either end is a person working the day they flew out or the day they flew home, and it is invisible in review because the middle of every leave period keeps working. The duty on the 2nd is a night call running past midnight into the first morning of leave and is deliberately NOT a violation: the anchor-date reading says it is one duty, on the day it started.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-01", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-02", "isoWeekday": 7, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-03", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-04", "isoWeekday": 2, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-05", "isoWeekday": 3, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": ["2026-08-03", "2026-08-04", "2026-08-05"],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-05",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-08"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-02", "slotKey": "night" },
+            { "personKey": "p-ali", "date": "2026-08-03", "slotKey": "night" },
+            { "personKey": "p-ali", "date": "2026-08-05", "slotKey": "night" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-vacation",
+            "typeKey": "vacation_block",
+            "class": "hard",
+            "active": true,
+            "params": {}
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-vacation",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            },
+            "explanation": "On leave on 2026-08-03."
+        },
+        {
+            "conditionId": "c-vacation",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-05",
+                "slotKey": "night"
+            },
+            "explanation": "On leave on 2026-08-05."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-vacation", "evaluatedWindows": 3, "skipped": [] }]
+}

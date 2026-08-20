@@ -1,0 +1,176 @@
+{
+    "name": "contract-shapes",
+    "why": "P2-1 authors the window and cohort Location members before P2-2's types consume them, which is exactly the kind of early authoring that turns into an unused field nobody validates. This case is the mitigation: it constructs one violation of EACH of the three members by hand and round-trips them through validate() and the deterministic ordering, so what is asserted is the SERIALISER and the ORDER — both of which exist today — rather than a rule that does not exist yet. The expected list is deliberately NOT in canonical order; sorting it is the assertion.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-01", "isoWeekday": 6, "dayType": "WE", "periodKey": "block-01", "holidays": [] },
+            { "date": "2026-08-02", "isoWeekday": 7, "dayType": "WD", "periodKey": "block-01", "holidays": [] },
+            { "date": "2026-08-03", "isoWeekday": 1, "dayType": "WD", "periodKey": "block-01", "holidays": [] },
+            { "date": "2026-08-04", "isoWeekday": 2, "dayType": "WD", "periodKey": "block-01", "holidays": [] },
+            { "date": "2026-08-05", "isoWeekday": 3, "dayType": "WD", "periodKey": "block-01", "holidays": [] },
+            { "date": "2026-08-06", "isoWeekday": 4, "dayType": "WD", "periodKey": "block-01", "holidays": [] },
+            { "date": "2026-08-07", "isoWeekday": 5, "dayType": "WE", "periodKey": "block-01", "holidays": [] }
+        ],
+        "periods": [
+            {
+                "key": "block-01",
+                "startsOn": "2026-07-26",
+                "endsOn": "2026-08-22",
+                "weeks": [
+                    {
+                        "startsOn": "2026-07-26",
+                        "endsOn": "2026-08-01",
+                        "clippedStartsOn": "2026-07-26",
+                        "clippedEndsOn": "2026-08-01"
+                    },
+                    {
+                        "startsOn": "2026-08-02",
+                        "endsOn": "2026-08-08",
+                        "clippedStartsOn": "2026-08-02",
+                        "clippedEndsOn": "2026-08-08"
+                    }
+                ]
+            }
+        ],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07"],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07"],
+                "external": false,
+                "priorCredits": { "eid-al-fitr": null }
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": null,
+        "priorDuties": [{ "personKey": "p-ali", "date": "2026-07-28", "slotKey": "night" }],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-07",
+            "evaluableFrom": "2026-07-25",
+            "evaluableTo": "2026-08-14"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-03", "slotKey": "night" },
+            { "personKey": "p-noor", "date": "2026-08-05", "slotKey": "night" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-min-gap",
+            "typeKey": "min_gap",
+            "class": "hard",
+            "active": true,
+            "params": { "unit": "hours", "value": 10 }
+        },
+        {
+            "id": "c-count-max",
+            "typeKey": "count_max",
+            "class": "soft",
+            "rank": 2,
+            "active": true,
+            "params": { "window": "week", "count": 2 }
+        },
+        {
+            "id": "c-fairness",
+            "typeKey": "fairness_distribution",
+            "class": "soft",
+            "rank": 5,
+            "active": true,
+            "params": { "quantity": "nights", "tolerance": 1 }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-min-gap",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            },
+            "explanation": "A placement-located violation: one person, one date, one slot. Eleven of the twenty-two types produce this member and nothing else."
+        },
+        {
+            "conditionId": "c-fairness",
+            "severity": "soft",
+            "rank": 5,
+            "location": {
+                "kind": "cohort",
+                "personKeys": ["p-ali", "p-noor"],
+                "scopeLabel": "PICU R2"
+            },
+            "explanation": "A cohort-located violation: no date and no slot at all, because the statement is about people rather than about a placement. contributing is optional here for that reason."
+        },
+        {
+            "conditionId": "c-count-max",
+            "severity": "soft",
+            "rank": 2,
+            "location": {
+                "kind": "window",
+                "personKey": "p-ali",
+                "from": "2026-07-27",
+                "to": "2026-08-02",
+                "contributing": [{ "personKey": "p-ali", "date": "2026-07-28", "slotKey": "night" }]
+            },
+            "explanation": "A window-located violation that BEGINS in the carry-in tail and reaches the horizon. contributing is mandatory: WB-03 badges a cell and WB-04 orders a picker, and neither can act on a range."
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-min-gap",
+            "evaluatedWindows": 7,
+            "skipped": []
+        },
+        {
+            "conditionId": "c-count-max",
+            "evaluatedWindows": 1,
+            "skipped": [
+                {
+                    "from": "2026-08-02",
+                    "to": "2026-08-08",
+                    "reason": "The week runs past evaluableTo, so a cap measured on it would under-count. Reported rather than dropped."
+                }
+            ]
+        },
+        {
+            "conditionId": "c-fairness",
+            "evaluatedWindows": 1,
+            "skipped": []
+        }
+    ]
+}

@@ -1,0 +1,94 @@
+{
+    "name": "overlap-block-abutting-split-day-night",
+    "why": "Under SL-02's configurable split day/night the night window ends EXACTLY when the day window begins. Intervals are half-open, [start, end), so the pair does not overlap. Closed intervals would flag every legal split-call department on every single day it runs, and the difference is one comparison operator. Plant `<=` for `<` in intersects() and this case reports two violations on a correct rota.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-01", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-02", "isoWeekday": 7, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-03", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-04", "isoWeekday": 2, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-05", "isoWeekday": 3, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "day",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 1020,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": null,
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-05",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-08"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-02", "slotKey": "night" },
+            { "personKey": "p-ali", "date": "2026-08-03", "slotKey": "day" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-overlap",
+            "typeKey": "overlap_block",
+            "class": "hard",
+            "active": true,
+            "params": {}
+        }
+    ],
+    "expected": [],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-overlap",
+            "evaluatedWindows": 2,
+            "skipped": [
+                {
+                    "from": "2026-07-29",
+                    "to": "2026-07-31",
+                    "reason": "No duty history was supplied before 2026-08-01 (historyAvailableFrom is null), so a duty running past midnight into the horizon cannot be seen."
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,89 @@
+{
+    "name": "overlap-block-carry-in-at-the-left-edge",
+    "why": "The night of 31 July is in LAST MONTH'S already-published schedule and runs past midnight into the 1st, where an early duty starts at 06:00. This is the case a scheduler hits first and it is measured entirely outside the horizon on one side. Exactly ONE violation is emitted — on the placement inside the horizon — because reading the tail is not re-evaluating it (CG-03, 'never retroactive on published schedules'). An implementation that ignores priorDuties reports nothing; one that emits on both placements re-reports a published month.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-01", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-02", "isoWeekday": 7, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-03", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02", "2026-08-03"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "early",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 360,
+                "endMinute": 840,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [{ "personKey": "p-ali", "date": "2026-07-31", "slotKey": "night" }],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-03",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-06"
+        },
+        "duties": [{ "personKey": "p-ali", "date": "2026-08-01", "slotKey": "early" }]
+    },
+    "conditions": [
+        {
+            "id": "c-overlap",
+            "typeKey": "overlap_block",
+            "class": "hard",
+            "active": true,
+            "params": {}
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-overlap",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "early"
+            },
+            "explanation": "Overlaps \"night\" on 2026-07-31."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-overlap", "evaluatedWindows": 1, "skipped": [] }]
+}

@@ -1,0 +1,124 @@
+{
+    "name": "same-unit-conflict-two-rotators-on-one-unit-and-a-colleague-elsewhere",
+    "why": "Owner decision U's reading (a), and the case that tells it apart from the reading the parameters cell suggests. Three people hold a duty on one date: p-ali and p-noor are both rotating on PICU, p-sara is on NICU. Reading (a) reports the PICU pair and says nothing about p-sara; the rejected 'unit pairs' reading is the opposite predicate over the same input and would report the cross-unit combinations instead. BOTH halves of the pair are reported, on their own placements, because WB-03 badges cells and a scheduler may move either duty — badging one and not the other chooses for them.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-07", "isoWeekday": 5, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-08", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-07", "2026-08-08"],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [{ "key": "R3", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-07", "2026-08-08"],
+                "external": false
+            },
+            {
+                "key": "p-sara",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "NICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-07", "2026-08-08"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "backup",
+                "kind": "home-call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": false,
+                "tallyKey": "backup"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-07",
+            "to": "2026-08-08",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-14"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-07", "slotKey": "night" },
+            { "personKey": "p-noor", "date": "2026-08-07", "slotKey": "backup" },
+            { "personKey": "p-sara", "date": "2026-08-07", "slotKey": "night" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-same-unit",
+            "typeKey": "same_unit_conflict",
+            "class": "soft",
+            "rank": 2,
+            "active": true,
+            "params": {}
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-same-unit",
+            "severity": "soft",
+            "rank": 2,
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-07",
+                "slotKey": "night"
+            },
+            "explanation": "Also on call with \"p-noor\" on 2026-08-07, and both are rotating on PICU."
+        },
+        {
+            "conditionId": "c-same-unit",
+            "severity": "soft",
+            "rank": 2,
+            "location": {
+                "kind": "placement",
+                "personKey": "p-noor",
+                "date": "2026-08-07",
+                "slotKey": "backup"
+            },
+            "explanation": "Also on call with \"p-ali\" on 2026-08-07, and both are rotating on PICU."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-same-unit", "evaluatedWindows": 3, "skipped": [] }]
+}

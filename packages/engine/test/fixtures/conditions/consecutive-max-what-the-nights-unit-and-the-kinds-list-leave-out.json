@@ -1,0 +1,120 @@
+{
+    "name": "consecutive-max-what-the-nights-unit-and-the-kinds-list-leave-out",
+    "why": "Neither of `counted()`'s two narrowing clauses was exercised anywhere: no case used `unit: 'nights'`, so the crossesMidnight test was never consulted, and no case set `kinds`, so that clause was constant. p-ali's run of nights is broken on the 3rd by two duties that must NOT count — a call that does not cross midnight, and a home-call that does but is of an unnamed kind — so each clause fails on its own plant, and each failure is the same one: a person who worked four consecutive dates gets no badge at all when they should get two. p-noor is the control, three genuine nights under a cap of two, without which a predicate counting nothing would pass.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-01", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-02", "isoWeekday": 7, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-03", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-04", "isoWeekday": 2, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04"],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "early",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 360,
+                "endMinute": 840,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            },
+            {
+                "key": "standby",
+                "kind": "home-call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1200,
+                "endMinute": 420,
+                "crossesMidnight": true,
+                "countsHours": false,
+                "tallyKey": "backup"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-04",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-07"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-01", "slotKey": "night" },
+            { "personKey": "p-ali", "date": "2026-08-02", "slotKey": "night" },
+            { "personKey": "p-ali", "date": "2026-08-03", "slotKey": "early" },
+            { "personKey": "p-ali", "date": "2026-08-03", "slotKey": "standby" },
+            { "personKey": "p-ali", "date": "2026-08-04", "slotKey": "night" },
+            { "personKey": "p-noor", "date": "2026-08-01", "slotKey": "night" },
+            { "personKey": "p-noor", "date": "2026-08-02", "slotKey": "night" },
+            { "personKey": "p-noor", "date": "2026-08-03", "slotKey": "night" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-run",
+            "typeKey": "consecutive_max",
+            "class": "hard",
+            "active": true,
+            "params": { "count": 2, "unit": "nights", "kinds": ["call"] }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-run",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-noor",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            },
+            "explanation": "Night 3 of a run of consecutive duty nights; the cap is 2."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-run", "evaluatedWindows": 6, "skipped": [] }]
+}

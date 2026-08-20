@@ -1,0 +1,80 @@
+{
+    "name": "onboarding-grace-day-n-and-day-n-plus-one",
+    "why": "The off-by-one, on both sides of the boundary at once. The join date is day 1 (owner decision T), so a 3-day grace covers 1..3 August and a duty on 3 August is the LAST day it blocks while 4 August is clean. An implementation counting from the day after the join date, or one comparing against joinedAt + N rather than joinedAt + N - 1, is green on one of these two placements and red on the other — which is the only reason both are here rather than one.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-03", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-04", "isoWeekday": 2, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R1", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-03", "2026-08-04"],
+                "external": false,
+                "joinedAt": "2026-08-01"
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-03",
+            "to": "2026-08-04",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-06"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-03", "slotKey": "night" },
+            { "personKey": "p-ali", "date": "2026-08-04", "slotKey": "night" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-onboarding",
+            "typeKey": "onboarding_grace",
+            "class": "hard",
+            "active": true,
+            "params": { "days": 3 }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-onboarding",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            },
+            "explanation": "Day 3 of the 3-day onboarding grace, counting the join date 2026-08-01 as day 1."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-onboarding", "evaluatedWindows": 2, "skipped": [] }]
+}

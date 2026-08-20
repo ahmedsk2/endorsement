@@ -1,0 +1,113 @@
+{
+    "name": "onboarding-grace-an-unknown-join-date-is-reported-not-silent",
+    "why": "THE STATE THE LIVE INSTANCE IS ACTUALLY IN. joined_at is written by no seeder, factory or demo path anywhere in this repository (P2 Task 1, finding 18) and production holds people without one, so owner decision T's 'a missing join date is NO violation' would make this rule silently never fire — indistinguishable, on a green suite and on a gate screen, from a rule that ran and found nothing. p-ali has no join date and p-noor does: exactly one violation is emitted, AND the coverage row names p-ali and the placement it could not judge. An implementation that merely returns no finding passes the violations half of this case and fails the coverage half, which is the whole point of the pair.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-03", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-04", "isoWeekday": 2, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R1", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-03", "2026-08-04"],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [{ "key": "R1", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-03", "2026-08-04"],
+                "external": false,
+                "joinedAt": "2026-08-02"
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "early",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 360,
+                "endMinute": 840,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-03",
+            "to": "2026-08-04",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-06"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-03", "slotKey": "night" },
+            { "personKey": "p-noor", "date": "2026-08-03", "slotKey": "early" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-onboarding",
+            "typeKey": "onboarding_grace",
+            "class": "hard",
+            "active": true,
+            "params": { "days": 3 }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-onboarding",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-noor",
+                "date": "2026-08-03",
+                "slotKey": "early"
+            },
+            "explanation": "Day 2 of the 3-day onboarding grace, counting the join date 2026-08-02 as day 1."
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-onboarding",
+            "evaluatedWindows": 1,
+            "skipped": [
+                {
+                    "from": "2026-08-03",
+                    "to": "2026-08-04",
+                    "reason": "No join date is recorded for \"p-ali\", so 1 placement was not evaluated. An unknown join date is no violation (owner decision T), and this row is what distinguishes that from a rule that ran and found nothing."
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,77 @@
+{
+    "name": "onboarding-grace-a-duty-before-the-join-date",
+    "why": "A rota drafted before somebody starts is exactly when this rule is needed, and it is the case a literal window reading drops: 3 August is not inside [joinedAt, joinedAt + N - 1] when the join date is 5 August, so an implementation testing only that range reports nothing at all for a person who had not yet joined the department. The grace therefore opens at the start of time and closes on the last grace day, and the explanation says which of the two shapes fired — a scheduler seeing 'day 0' or 'day -1' would rightly not believe the tool.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-03", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-04", "isoWeekday": 2, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R1", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-03", "2026-08-04"],
+                "external": false,
+                "joinedAt": "2026-08-05"
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-03",
+            "to": "2026-08-04",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-06"
+        },
+        "duties": [{ "personKey": "p-ali", "date": "2026-08-03", "slotKey": "night" }]
+    },
+    "conditions": [
+        {
+            "id": "c-onboarding",
+            "typeKey": "onboarding_grace",
+            "class": "hard",
+            "active": true,
+            "params": { "days": 3 }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-onboarding",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            },
+            "explanation": "Before the join date 2026-08-05."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-onboarding", "evaluatedWindows": 1, "skipped": [] }]
+}

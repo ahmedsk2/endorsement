@@ -1,0 +1,317 @@
+/**
+ * CG-04's message table: every sentence a preview can produce, in one place, in one language.
+ *
+ * ## Why a table and not string literals in twenty-two predicates
+ *
+ * AR-07 makes translation future work rather than no work. A sentence assembled from literals
+ * inside a condition module is a sentence that can only ever be English, and the cost of finding
+ * that out is discovering it twenty-two times. So the sentences live here, the type modules pass
+ * already-normalised VALUES in, and {@link PreviewMessages} is the interface a second language
+ * would implement. `preview.test.ts` asserts that by handing the dispatcher a second table and
+ * watching the output change — a message table nothing can override is a message table in name
+ * only.
+ *
+ * The arguments are structural rather than imported from the type modules, deliberately: this file
+ * must not import anything that imports it back, and a message table that knows a predicate's
+ * internal shape is a table that changes whenever the predicate does.
+ *
+ * ## Numbers arrive already decided
+ *
+ * No arithmetic happens in this file. `fairness_distribution`'s worked allowances and
+ * `rolling_hours_max`'s multiplication are computed by the types that own those rules and handed
+ * in — because a number computed in the sentence and a number computed in the predicate are two
+ * definitions of one fact, which is the failure `AuditChain::canonical()` already carries a
+ * docblock against. This file decides only how a number is SAID.
+ *
+ * ## The four sentences here are the four whose wording is a decision
+ *
+ * Each of them renders a number a reader would otherwise predict wrongly, and each was settled by
+ * an owner decision rather than by taste: the `min_gap` off-by-one (H), the averaging
+ * multiplication (H/V), the proportional tolerance with its floor (Q, answered 2026-08-20), and
+ * the replace-not-adjust modifier (M, answered 2026-08-20). The remaining eighteen land with their
+ * predicates, and `preview.test.ts`'s coupling check refuses an evaluator that arrives without one.
+ */
+
+/** One base target, already paired with the level it belongs to. */
+export interface LevelTarget {
+    levelKey: string;
+    target: number;
+}
+
+/** One modifier, with its condition already rendered as a clause and its replacement target. */
+export interface TargetModifier {
+    clause: string;
+    target: number;
+}
+
+/** One worked point on a tolerance curve: what an expected share of `share` actually allows. */
+export interface ToleranceExample {
+    share: number;
+    allowance: number;
+}
+
+/** Every sentence CG-04 can produce, and the shared vocabulary they are built from. */
+export interface PreviewMessages {
+    /** `a`, `a and b`, `a, b and c`. Empty gives the empty string; callers decide what that means. */
+    conjoin(items: readonly string[]): string;
+
+    /** `1 duty` / `3 duties`. The count is always rendered; only the noun changes. */
+    plural(count: number, one: string, many: string): string;
+
+    /** Owner decision H: `days` measures between START DATES and `N` means at least N apart. */
+    minGap(args: { value: number; unit: 'days' | 'hours'; kinds: readonly string[] }): string;
+
+    /** The cap at one scale, and — when it is averaged — the same cap multiplied out at the other. */
+    rollingHoursMax(args: {
+        hours: number;
+        windowDays: number;
+        averagingWeeks: number | null;
+        averagedHours: number | null;
+        averagedDays: number | null;
+    }): string;
+
+    /** Owner decision Q: the allowance is stated as a NUMBER at both regimes, never as a percentage. */
+    fairnessDistribution(args: {
+        quantity: string;
+        mode: 'deviation' | 'spread';
+        excludeExternal: boolean;
+        examples: readonly ToleranceExample[];
+    }): string;
+
+    /** Owner decision M: an exception REPLACES the target, and every branch prints its own number. */
+    targetPerPeriod(args: { targets: readonly LevelTarget[]; modifiers: readonly TargetModifier[] }): string;
+
+    /** A modifier's `vacationWeeksAtLeast` predicate, as a clause. */
+    vacationWeeksAtLeast(weeks: number): string;
+
+    /** A modifier's `periodWeeksAtMost` predicate, as a clause. */
+    periodWeeksAtMost(weeks: number): string;
+
+    /** Owner decision R: the days arrive from the caller; P2 stores none of them. No parameters. */
+    unwantedDayBlock(): string;
+
+    /** Owner decision T: day 1 is the join date, and an unknown join date is said OUT LOUD. */
+    onboardingGrace(args: { days: number }): string;
+
+    /** ISO integers only. The day NAMES are the server's (AR-07) and never appear in this package. */
+    dowRestriction(args: { days: readonly number[] }): string;
+
+    /** Owner decision S: post-call always, same-day optionally, and both by CALENDAR DAY. */
+    clinicConflict(args: { variant: 'post_call' | 'post_call_and_same_day' }): string;
+
+    /** Owner decision U: reading (a), and day exceptions LIFT the ban rather than applying it. */
+    sameUnitConflict(args: { units: readonly string[]; exceptDates: readonly string[] }): string;
+
+    /** Owner decision H: anchored on the END of the first duty, the second tested by its START. */
+    postDutyExclusion(args: { from: readonly string[]; to: readonly string[]; hours: number }): string;
+
+    /** Owner decision V: three units, and the transition allowance the hours one actually reads. */
+    consecutiveMax(args: {
+        count: number;
+        unit: 'days' | 'nights' | 'hours';
+        transitionMinutes: number;
+        kinds: readonly string[];
+    }): string;
+}
+
+/**
+ * The English table.
+ *
+ * The wording is plain on purpose: CG-01 shows this text on the gate screen next to a drag handle,
+ * to a scheduler who has not read the spec and never will. Every sentence says what happens, with
+ * the department's own numbers in it, and no sentence asks the reader to do arithmetic to find out
+ * what the rule permits.
+ */
+export const EN: PreviewMessages = {
+    conjoin(items) {
+        if (items.length <= 1) {
+            return items[0] ?? '';
+        }
+
+        return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1] as string}`;
+    },
+
+    plural(count, one, many) {
+        return `${count} ${count === 1 ? one : many}`;
+    },
+
+    minGap({ value, unit, kinds }) {
+        const between = kinds.length === 0 ? 'duties' : `duties of kind ${EN.conjoin(kinds)}`;
+
+        if (unit === 'hours') {
+            return (
+                `At least ${value} h between the end of one duty and the start of the next, ` +
+                `counting ${between}.`
+            );
+        }
+
+        return (
+            `At least ${EN.plural(value, 'day', 'days')} between ${between}, counted between the dates ` +
+            `they start on — 1 Aug then ${1 + value} Aug is allowed, 1 Aug then ${value} Aug is not.`
+        );
+    },
+
+    rollingHoursMax({ hours, windowDays, averagingWeeks, averagedHours, averagedDays }) {
+        const base = `At most ${hours} h of duty in any ${windowDays} consecutive days`;
+
+        if (averagingWeeks === null || averagedHours === null || averagedDays === null) {
+            return `${base}.`;
+        }
+
+        return (
+            `${base}, averaged over ${averagingWeeks} such windows — at most ${averagedHours} h in any ` +
+            `${averagedDays} consecutive days.`
+        );
+    },
+
+    fairnessDistribution({ quantity, mode, excludeExternal, examples }) {
+        const worked = EN.conjoin(
+            examples.map(({ share, allowance }) => `an expected share of ${share} allows ${allowance}`),
+        );
+
+        const compared =
+            mode === 'deviation'
+                ? "each person's count is compared with their own expected share, pro-rated by the days " +
+                  'they are actually available'
+                : 'the gap between the busiest and the quietest person is measured against the same ' +
+                  'expected share, pro-rated by the days each is actually available';
+
+        const external = excludeExternal
+            ? 'External people are excluded from the comparison.'
+            : 'External people are counted in the comparison.';
+
+        return (
+            `Everyone's share of ${quantity} is spread evenly: ${compared}. The allowance is one duty ` +
+            `up to an expected share of ten, and a tenth of the expected share above that — ${worked}. ` +
+            external
+        );
+    },
+
+    targetPerPeriod({ targets, modifiers }) {
+        const base = `Each period: ${EN.conjoin(
+            targets.map(({ levelKey, target }) => `${levelKey} ${EN.plural(target, 'duty', 'duties')}`),
+        )}.`;
+
+        if (modifiers.length === 0) {
+            return base;
+        }
+
+        const exceptions = modifiers
+            .map(({ clause, target }) => `where ${clause}, ${EN.plural(target, 'duty', 'duties')} instead`)
+            .join('; ');
+
+        const replaces = modifiers.length === 1 ? 'One exception replaces' : 'Exceptions replace';
+
+        return `${base} ${replaces} that number outright rather than adjusting it, first match wins: ${exceptions}.`;
+    },
+
+    vacationWeeksAtLeast(weeks) {
+        return `a person has at least ${EN.plural(weeks, 'vacation week', 'vacation weeks')} in the period`;
+    },
+
+    periodWeeksAtMost(weeks) {
+        return `the period is at most ${EN.plural(weeks, 'week', 'weeks')} long`;
+    },
+
+    unwantedDayBlock() {
+        return (
+            'No duty on a day the person has registered as unwanted, counting the day the duty starts ' +
+            'on — a night duty starting the evening before an unwanted day does not count against it. ' +
+            'The days come from the request the person filed; this rule stores none of them itself.'
+        );
+    },
+
+    onboardingGrace({ days }) {
+        return (
+            `No duty in a person's first ${EN.plural(days, 'day', 'days')} on the roster, counting ` +
+            `their join date as day 1 — somebody joining on 1 Aug may first be scheduled on ` +
+            `${days + 1} Aug. A person whose join date is not recorded is NOT blocked by this rule, ` +
+            'and the evaluation reports whom it could not judge rather than passing them silently.'
+        );
+    },
+
+    postDutyExclusion({ from, to, hours }) {
+        const opens = from.length === 0 ? 'any duty' : `a duty of kind ${EN.conjoin(from as string[])}`;
+        const blocked = to.length === 0 ? 'any duty' : `duties of kind ${EN.conjoin(to as string[])}`;
+        const shared = (to as string[]).filter((kind) => (from as string[]).includes(kind));
+
+        const both =
+            shared.length === 0
+                ? ''
+                : ` Because ${EN.conjoin(shared)} is on both sides, this also spaces such duties from ` +
+                  'each other by the same hours.';
+
+        return (
+            `After ${opens} ends, ${blocked} may not START for ${hours} h. The clock runs from the END ` +
+            `of the first duty, so a longer duty pushes the block further out on its own.${both}`
+        );
+    },
+
+    consecutiveMax({ count, unit, transitionMinutes, kinds }) {
+        const over = kinds.length === 0 ? 'duties' : `duties of kind ${EN.conjoin(kinds as string[])}`;
+
+        if (unit === 'hours') {
+            return (
+                `At most ${count} h of duty in one unbroken stretch, counting ${over}. Two duties ` +
+                `${transitionMinutes} minutes or less apart are ONE stretch, so a handover does not ` +
+                'restart the clock; a longer gap does.'
+            );
+        }
+
+        const counted = unit === 'nights' ? ['night on duty', 'nights on duty'] : ['day on duty', 'days on duty'];
+
+        return (
+            `At most ${EN.plural(count, counted[0] as string, counted[1] as string)} in a row, counting ` +
+            `${over} by the date each one starts on — two duties on one date are one date, and a night ` +
+            `running past midnight belongs to the date it started. The ${transitionMinutes}-minute ` +
+            'transition allowance is read only by the hours version of this rule.'
+        );
+    },
+
+    clinicConflict({ variant }) {
+        const postCall =
+            'No clinic on a day a duty runs into: somebody whose night or 24 h call ends on the ' +
+            'morning of a clinic day may not be at that clinic. Who a clinic comes down to is its ' +
+            'own rule — everybody rotating on the unit, only the levels attached to it, or the ' +
+            'people named on it — read on the day the clinic runs.';
+
+        if (variant === 'post_call') {
+            return `${postCall} A clinic on the day a duty STARTS is not a conflict under this setting.`;
+        }
+
+        return (
+            `${postCall} A clinic on the day a duty starts is a conflict too, counted by CALENDAR ` +
+            'DAY rather than by hours — a clinic session is a morning-or-afternoon code with no ' +
+            'times attached, so there are no hours to compare.'
+        );
+    },
+
+    sameUnitConflict({ units, exceptDates }) {
+        const where =
+            units.length === 0
+                ? 'any one unit'
+                : `${EN.conjoin(units as string[])}`;
+
+        const lifted =
+            exceptDates.length === 0
+                ? 'The ban applies on every day of the schedule.'
+                : `It does not apply on ${EN.conjoin(exceptDates as string[])}, where it is lifted.`;
+
+        return (
+            `Two people rotating on ${where} are never on call on the same day, judged by the ` +
+            `rotation each of them is on that day rather than by where they started the year. ${lifted}`
+        );
+    },
+
+    dowRestriction({ days }) {
+        const which = EN.conjoin(days.map((day) => String(day)));
+
+        return (
+            `No duty on ISO ${days.length === 1 ? 'weekday' : 'weekdays'} ${which}, counting the day ` +
+            'the duty starts on. The days are ISO numbers because the day names belong to the ' +
+            "department's own calendar and are rendered by the server, never by this rule. Whom the " +
+            "ban covers — a rotation, a level, named people — is the condition's scope, read on the " +
+            'day of the duty.'
+        );
+    },
+};

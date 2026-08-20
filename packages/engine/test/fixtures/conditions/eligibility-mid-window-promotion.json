@@ -1,0 +1,89 @@
+{
+    "name": "eligibility-mid-window-promotion",
+    "why": "The same person is R1 to 3 August and R2 from the 4th, and the night slot takes R2 only. So the duty on the 3rd violates and the duty on the 4th does not — one person, two dates, two answers. An implementation that resolves the level once per evaluation, at horizon.from, which is the natural place to hoist it to, is green on every month in which nobody is promoted, which is most of them. It also covers the unit half: the slot is limited to PICU and the person is on PICU throughout, so no rotation violation is expected and a predicate that compared the wrong span would produce one.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-01", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-02", "isoWeekday": 7, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-03", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-04", "isoWeekday": 2, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-05", "isoWeekday": 3, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    { "key": "R1", "from": "2026-01-01", "to": "2026-08-03" },
+                    { "key": "R2", "from": "2026-08-04", "to": "2026-12-31" }
+                ],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-05",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-08"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-03", "slotKey": "night" },
+            { "personKey": "p-ali", "date": "2026-08-04", "slotKey": "night" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-eligibility",
+            "typeKey": "eligibility",
+            "class": "hard",
+            "active": true,
+            "params": {
+                "allowed": {
+                    "night": { "levelKeys": ["R2"], "unitKeys": ["PICU"] }
+                }
+            }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-eligibility",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            },
+            "explanation": "Holds level \"R1\" on 2026-08-03; slot \"night\" is limited to R2."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-eligibility", "evaluatedWindows": 2, "skipped": [] }]
+}

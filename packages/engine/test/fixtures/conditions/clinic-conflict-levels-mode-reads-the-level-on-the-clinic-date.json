@@ -1,0 +1,123 @@
+{
+    "name": "clinic-conflict-levels-mode-reads-the-level-on-the-clinic-date",
+    "why": "A `levels` clinic comes down to the rotators whose level ON THAT DATE is in the attached set — `ClinicRoster::atLevels()`'s rule, and 'the level is the cell's, never the row's'. All three people hold the same night on 10 August and rotate on the same unit; p-ali is R1 throughout, p-sara is R3 throughout, and p-noor is promoted to R1 on the 11th — the CLINIC's date, not the duty's. So p-noor is a violation and p-sara is not, and an implementation resolving the level at the duty's date, or once per evaluation, gets p-noor wrong while staying green on the other two.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-10", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-11", "isoWeekday": 2, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R1", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-10", "2026-08-11"],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    { "key": "R3", "from": "2026-01-01", "to": "2026-08-10" },
+                    { "key": "R1", "from": "2026-08-11", "to": "2026-12-31" }
+                ],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-10", "2026-08-11"],
+                "external": false
+            },
+            {
+                "key": "p-sara",
+                "levelSpans": [{ "key": "R3", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-10", "2026-08-11"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [
+            {
+                "key": "cl-picu-tue-am-levels",
+                "unitKey": "PICU",
+                "isoWeekday": 2,
+                "session": "AM",
+                "active": true,
+                "attendeeMode": "levels",
+                "attendeeLevelKeys": ["R1"],
+                "attendeePersonKeys": []
+            }
+        ],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-10",
+            "to": "2026-08-11",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-14"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-10", "slotKey": "night" },
+            { "personKey": "p-noor", "date": "2026-08-10", "slotKey": "night" },
+            { "personKey": "p-sara", "date": "2026-08-10", "slotKey": "night" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-clinic",
+            "typeKey": "clinic_conflict",
+            "class": "hard",
+            "active": true,
+            "params": { "variant": "post_call" }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-clinic",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-10",
+                "slotKey": "night"
+            },
+            "explanation": "Post-call: clinic \"cl-picu-tue-am-levels\" (session AM) runs on 2026-08-11, after this duty ends."
+        },
+        {
+            "conditionId": "c-clinic",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-noor",
+                "date": "2026-08-10",
+                "slotKey": "night"
+            },
+            "explanation": "Post-call: clinic \"cl-picu-tue-am-levels\" (session AM) runs on 2026-08-11, after this duty ends."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-clinic", "evaluatedWindows": 3, "skipped": [] }]
+}

@@ -1,0 +1,42 @@
+{
+    "$schema": "https://json.schemastore.org/tsconfig",
+    "//": [
+        "Shared TypeScript settings for every package under packages/. Added 2026-08-20 (P2 Task 2);",
+        "this is the repository's first TypeScript configuration.",
+        "",
+        "strict, noUncheckedIndexedAccess and exactOptionalPropertyTypes are on together because the",
+        "engine's whole job is arithmetic over sparse, optional, department-supplied data: an",
+        "unchecked index into a day vector and an optional parameter silently read as present are",
+        "both the shape of defect that produces a plausible wrong number rather than a crash.",
+        "",
+        "lib is ES2022 with NO DOM, deliberately. This code ships to the browser, so the temptation",
+        "to reach a browser global is real and the type checker is the only thing that makes reaching",
+        "one a build failure rather than a runtime surprise in one of the two runtimes (D4).",
+        "",
+        "module/moduleResolution are ESNext/bundler: Vite resolves these sources directly and nothing",
+        "consumes types across a package boundary until P3, so there is no declaration emit and no",
+        "build step of its own. noEmit is set here rather than per package so `tsc -p` is a CHECK",
+        "everywhere, never something that writes .js beside the .ts."
+    ],
+    "compilerOptions": {
+        "target": "ES2022",
+        "lib": ["ES2022"],
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "types": ["node"],
+
+        "strict": true,
+        "noUncheckedIndexedAccess": true,
+        "exactOptionalPropertyTypes": true,
+        "noImplicitOverride": true,
+        "noFallthroughCasesInSwitch": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+
+        "isolatedModules": true,
+        "verbatimModuleSyntax": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "noEmit": true
+    }
+}

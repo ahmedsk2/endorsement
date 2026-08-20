@@ -1,0 +1,85 @@
+{
+    "name": "eligibility-a-mid-window-rotation-change",
+    "why": "The level half of 'levels/rotations' is read at the duty's date and the corpus proves it; the ROTATION half was read at the duty's date and nothing proved it, because the only rotation case puts one person on one unit for the whole year — where resolving the unit once, at horizon.from, gives exactly the same answer. p-ali moves from PICU to NICU on the 4th and the night slot takes NICU only, so the duty on the 3rd violates and the duty on the 4th does not. Owner decision G's stable keys make this a string comparison, and a person's rotation moves mid-month far more often than their level does.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-01", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-02", "isoWeekday": 7, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-03", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-04", "isoWeekday": 2, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-05", "isoWeekday": 3, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [
+                    { "key": "PICU", "from": "2026-01-01", "to": "2026-08-03" },
+                    { "key": "NICU", "from": "2026-08-04", "to": "2026-12-31" }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-03", "2026-08-04"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-05",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-08"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-03", "slotKey": "night" },
+            { "personKey": "p-ali", "date": "2026-08-04", "slotKey": "night" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-eligibility",
+            "typeKey": "eligibility",
+            "class": "hard",
+            "active": true,
+            "params": { "allowed": { "night": { "unitKeys": ["NICU"] } } }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-eligibility",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            },
+            "explanation": "Rotating on unit \"PICU\" on 2026-08-03; slot \"night\" is limited to NICU."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-eligibility", "evaluatedWindows": 2, "skipped": [] }]
+}

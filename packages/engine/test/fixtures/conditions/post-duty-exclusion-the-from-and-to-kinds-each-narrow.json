@@ -1,0 +1,138 @@
+{
+    "name": "post-duty-exclusion-the-from-and-to-kinds-each-narrow",
+    "why": "Three people, three slot kinds, and ONE violation. p-sara is the control: a `call` opens the exclusion and a `clinic-cover` starts inside it. p-ali holds the same shape with an `admin` anchor, which `from` does not name, and p-noor holds it with an `admin` subject, which `to` does not name — so replacing EITHER list with the empty list that means 'every kind' turns exactly one of those two clean pairs into a violation. Both were unfalsifiable before this case: the other two post-duty fixtures stay green with the rule blocking every kind after every kind, which is CG-07's defining sentence for this type discarded entirely. The coverage row is the third assertion: only the two `clinic-cover` placements are counted, because a placement of a kind the exclusion cannot block is not one it judged.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-01", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-02", "isoWeekday": 7, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-03", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02"],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02"],
+                "external": false
+            },
+            {
+                "key": "p-sara",
+                "levelSpans": [{ "key": "R3", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "late",
+                "kind": "clinic-cover",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 720,
+                "endMinute": 1200,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            },
+            {
+                "key": "evening",
+                "kind": "clinic-cover",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1080,
+                "endMinute": 1320,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            },
+            {
+                "key": "desk",
+                "kind": "admin",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 960,
+                "crossesMidnight": false,
+                "countsHours": false,
+                "tallyKey": "admin"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-03",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-06"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-01", "slotKey": "desk" },
+            { "personKey": "p-ali", "date": "2026-08-01", "slotKey": "evening" },
+            { "personKey": "p-noor", "date": "2026-08-01", "slotKey": "night" },
+            { "personKey": "p-noor", "date": "2026-08-02", "slotKey": "desk" },
+            { "personKey": "p-sara", "date": "2026-08-01", "slotKey": "night" },
+            { "personKey": "p-sara", "date": "2026-08-02", "slotKey": "late" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-post",
+            "typeKey": "post_duty_exclusion",
+            "class": "hard",
+            "active": true,
+            "params": { "from": ["call"], "to": ["clinic-cover"], "hours": 10 }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-post",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-sara",
+                "date": "2026-08-02",
+                "slotKey": "late"
+            },
+            "explanation": "Starts inside the 10 h exclusion after \"night\" on 2026-08-01, which ends 2026-08-02."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-post", "evaluatedWindows": 2, "skipped": [] }]
+}

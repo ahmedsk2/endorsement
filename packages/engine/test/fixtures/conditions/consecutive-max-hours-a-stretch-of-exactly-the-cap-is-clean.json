@@ -1,0 +1,101 @@
+{
+    "name": "consecutive-max-hours-a-stretch-of-exactly-the-cap-is-clean",
+    "why": "CG-08's cap is a 24 h CONTINUOUS stretch, and the only hours case in the corpus fires on a chain of 26 h — so the comparison could be `<` rather than `<=` and nothing would notice. p-ali holds one 24 h call, exactly the cap, and is clean. p-noor holds the same call joined across a zero-minute handover to an hour of cover, which is 25 h and is not. Both edges move under one plant each: `<=` turned into `<` makes p-ali violate, and a cap of one hour more makes p-noor stop. 24 h is not an arbitrary number here — it is the shape a department that has read the preset builds its rota out of.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-01", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-02", "isoWeekday": 7, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02"],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "full24",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "handover-hour",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 540,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-02",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-05"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-01", "slotKey": "full24" },
+            { "personKey": "p-noor", "date": "2026-08-01", "slotKey": "full24" },
+            { "personKey": "p-noor", "date": "2026-08-02", "slotKey": "handover-hour" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-run",
+            "typeKey": "consecutive_max",
+            "class": "hard",
+            "active": true,
+            "params": { "count": 24, "unit": "hours", "transitionMinutes": 60 }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-run",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-noor",
+                "date": "2026-08-02",
+                "slotKey": "handover-hour"
+            },
+            "explanation": "This duty extends a continuous stretch to 25 h, counting duties 60 minutes or less apart as one; the cap is 24 h."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-run", "evaluatedWindows": 3, "skipped": [] }]
+}

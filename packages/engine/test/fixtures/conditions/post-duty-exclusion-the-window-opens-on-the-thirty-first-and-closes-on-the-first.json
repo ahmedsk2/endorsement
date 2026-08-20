@@ -1,0 +1,152 @@
+{
+    "name": "post-duty-exclusion-the-window-opens-on-the-thirty-first-and-closes-on-the-first",
+    "why": "The exclusion window is opened by a duty in the already-published month and closes inside the horizon: the night of 31 July ends 1 August 08:00 and blocks clinic-cover kinds for ten hours, and the late duty starts at 12:00 on the 1st. The violation is located on the placement INSIDE the horizon, which is the only one a scheduler can act on, and it is the only one this type emits at all -- the anchor duty is not itself wrong, which is why this type reports one placement where overlap_block and min_gap report two. Horizon-local evaluation sees a single duty and reports nothing.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R2",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-08-01",
+                    "2026-08-02",
+                    "2026-08-03"
+                ],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "late",
+                "kind": "clinic-cover",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 720,
+                "endMinute": 1200,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-07-31",
+                "slotKey": "night"
+            }
+        ],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-03",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-06"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "late"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-post",
+            "typeKey": "post_duty_exclusion",
+            "class": "hard",
+            "active": true,
+            "params": {
+                "from": [
+                    "call"
+                ],
+                "to": [
+                    "clinic-cover"
+                ],
+                "hours": 10
+            }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-post",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "late"
+            },
+            "explanation": "Starts inside the 10 h exclusion after \"night\" on 2026-07-31, which ends 2026-08-01."
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-post",
+            "evaluatedWindows": 1,
+            "skipped": []
+        }
+    ]
+}

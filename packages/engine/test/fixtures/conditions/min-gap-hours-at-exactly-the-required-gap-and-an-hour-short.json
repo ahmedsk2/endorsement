@@ -1,0 +1,125 @@
+{
+    "name": "min-gap-hours-at-exactly-the-required-gap-and-an-hour-short",
+    "why": "Owner decision H reads `hours` as 'at LEAST N end-to-start', and the `days` half of that sentence is the only half the corpus pinned. p-ali's second duty starts exactly 600 minutes after the first one ends and is CLEAN; p-noor's starts 540 minutes after and is not. One case fixes both edges of the comparison: turning `>=` into `>` makes p-ali violate, and shrinking the required gap by an hour makes p-noor stop violating. A rota is built out of gaps that land exactly on the rule, because that is what a scheduler aiming at it produces, so the boundary is the value the type is actually asked about.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-01", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-02", "isoWeekday": 7, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02"],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "evening18",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1080,
+                "endMinute": 1320,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            },
+            {
+                "key": "evening17",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 1320,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-02",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-05"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-01", "slotKey": "night" },
+            { "personKey": "p-ali", "date": "2026-08-02", "slotKey": "evening18" },
+            { "personKey": "p-noor", "date": "2026-08-01", "slotKey": "night" },
+            { "personKey": "p-noor", "date": "2026-08-02", "slotKey": "evening17" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-gap",
+            "typeKey": "min_gap",
+            "class": "hard",
+            "active": true,
+            "params": { "value": 10, "unit": "hours" }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-gap",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-noor",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            },
+            "explanation": "Only 9 h between this duty and \"evening17\" on 2026-08-02; at least 10 h is required between the end of one duty and the start of the next."
+        },
+        {
+            "conditionId": "c-gap",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-noor",
+                "date": "2026-08-02",
+                "slotKey": "evening17"
+            },
+            "explanation": "Only 9 h between this duty and \"night\" on 2026-08-01; at least 10 h is required between the end of one duty and the start of the next."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-gap", "evaluatedWindows": 4, "skipped": [] }]
+}

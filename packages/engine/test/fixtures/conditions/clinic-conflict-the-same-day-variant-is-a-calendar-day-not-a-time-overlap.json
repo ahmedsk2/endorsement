@@ -1,0 +1,97 @@
+{
+    "name": "clinic-conflict-the-same-day-variant-is-a-calendar-day-not-a-time-overlap",
+    "why": "clinics.session is string(2) — AM or PM — with no minutes and no session-to-minutes configuration anywhere in the schema (finding 3, open item 32), so the optional same-day variant compares CALENDAR DAYS. The duty here is an early shift ending at 14:00 and the clinic is a PM one on the same Monday: an implementation that invented session times to compare against would find no overlap and report nothing, and it would have invented them. The same world under the frozen post-call-only variant produces NOTHING — asserted in conditions.test.ts against this fixture — because an early duty's post-duty window falls on its own anchor date, which is the same-day question rather than the post-call one.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-10", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-11", "isoWeekday": 2, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-10", "2026-08-11"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "early",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 360,
+                "endMinute": 840,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [
+            {
+                "key": "cl-picu-mon-pm",
+                "unitKey": "PICU",
+                "isoWeekday": 1,
+                "session": "PM",
+                "active": true,
+                "attendeeMode": "rotators",
+                "attendeeLevelKeys": [],
+                "attendeePersonKeys": []
+            },
+            {
+                "key": "cl-picu-tue-am",
+                "unitKey": "PICU",
+                "isoWeekday": 2,
+                "session": "AM",
+                "active": true,
+                "attendeeMode": "rotators",
+                "attendeeLevelKeys": [],
+                "attendeePersonKeys": []
+            }
+        ],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-10",
+            "to": "2026-08-11",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-14"
+        },
+        "duties": [{ "personKey": "p-ali", "date": "2026-08-10", "slotKey": "early" }]
+    },
+    "conditions": [
+        {
+            "id": "c-clinic",
+            "typeKey": "clinic_conflict",
+            "class": "hard",
+            "active": true,
+            "params": { "variant": "post_call_and_same_day" }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-clinic",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-10",
+                "slotKey": "early"
+            },
+            "explanation": "Same day: clinic \"cl-picu-mon-pm\" (session PM) runs on 2026-08-10, the date this duty starts on."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-clinic", "evaluatedWindows": 1, "skipped": [] }]
+}

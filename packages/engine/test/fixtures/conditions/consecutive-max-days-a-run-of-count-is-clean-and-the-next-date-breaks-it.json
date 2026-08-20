@@ -1,0 +1,216 @@
+{
+    "name": "consecutive-max-days-a-run-of-count-is-clean-and-the-next-date-breaks-it",
+    "why": "A run of exactly count is legal and count + 1 is not, and the violation is located at THE DATE THAT BROKE THE CAP rather than at the whole run -- the only location that gives a scheduler a cell to move. p-noor holds three consecutive dates and is clean; p-ali holds four and is not. p-ali's second date carries TWO duties, which count as ONE date: a type counting duties rather than dates would break the cap a day early, on the 3rd, and would still look right on p-noor. The night on the 4th runs past midnight into the 5th and contributes its ANCHOR DATE ONLY (Decision A), so the run ends where the duties do.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": null,
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R2",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-08-01",
+                    "2026-08-02",
+                    "2026-08-03",
+                    "2026-08-04"
+                ],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R2",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-08-01",
+                    "2026-08-02",
+                    "2026-08-03"
+                ],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "late",
+                "kind": "clinic-cover",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 720,
+                "endMinute": 1200,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-05",
+            "evaluableFrom": "2026-07-25",
+            "evaluableTo": "2026-08-08"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "late"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-04",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-run",
+            "typeKey": "consecutive_max",
+            "class": "hard",
+            "active": true,
+            "params": {
+                "count": 3,
+                "unit": "days"
+            }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-run",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-04",
+                "slotKey": "night"
+            },
+            "explanation": "Day 4 of a run of consecutive duty days; the cap is 3."
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-run",
+            "evaluatedWindows": 8,
+            "skipped": []
+        }
+    ]
+}

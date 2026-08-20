@@ -277,6 +277,7 @@ Not optional, just not needed for every task. Read the section matching what you
 | `demo_rows`, `DemoLedger`, `DemoDepartment` | §Demo department |
 | `institutions.code`, provisioning a customer | §Provisioning and institutions |
 | `LegacyImport`, `LegacyReconcile` | §Legacy import |
+| `packages/engine`, `App\Support\Engine`, condition types, the calendar mirror | §Engine |
 
 ## Toolchain (this machine)
 

@@ -763,6 +763,24 @@ export interface ViolationMessages extends Vocabulary {
      * reported here and deliberately does not suppress a floor — see `onRosterThroughout`.
      */
     midWindowJoinSkip(args: { personKey: string; joinedAt: string; from: string; to: string }): string;
+
+    /**
+     * The THIRD left-edge shape, and the one `carryInLeftEdge` cannot speak for (P2-2 review).
+     *
+     * That function owns two: no duty history at all, and history that begins at or after
+     * `horizon.from`. Both make every carry-in window unevaluable for the same reason, so one row
+     * says so for all of them. The third is history that reaches back PAST the horizon but not as
+     * far as this particular window — a caller who supplied last week and a block that opened last
+     * month — and it is per-window by nature, because which window went and how much further back
+     * the history would have to reach are both the window's own answer.
+     *
+     * Until this sentence existed `wholeWindowVerdict` returned no row for it at all, believing
+     * `carryInLeftEdge` was speaking, while `carryInLeftEdge` returned nothing because it had seen
+     * real history before the horizon. The window was measured by nobody and reported by nobody:
+     * `evaluatedWindows` simply fell. A silently dropped window is the state `coverage()` exists to
+     * prevent, and it was one branch away from the state already reported correctly.
+     */
+    historyShortOfWindowSkip(args: { from: string; to: string; historyAvailableFrom: string }): string;
 }
 
 /** The whole table. What `EN` implements and what a second language would. */
@@ -1500,6 +1518,15 @@ export const EN: Messages = {
             `"${personKey}" joined on ${joinedAt}, part way through the window ${from} to ${to}, so ` +
             'they did not have the whole of it. The number is absolute rather than scaled, so judging ' +
             'them against it here would report a shortfall they could not have made up.'
+        );
+    },
+
+    historyShortOfWindowSkip({ from, to, historyAvailableFrom }) {
+        return (
+            `The window ${from} to ${to} begins before the supplied duty history, which reaches back ` +
+            `only to ${historyAvailableFrom}, so its first days were never supplied. A window that is ` +
+            'merely shorter is a correct answer to a smaller question; one whose first days are ' +
+            'unknown is a wrong answer to the right one, so this window was left unjudged.'
         );
     },
 };

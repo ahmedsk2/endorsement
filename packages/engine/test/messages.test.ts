@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { parseYmd } from '../src/calendar/ymd';
 import type { Condition, Fixture, Messages, Violation } from '../src/contract/types';
 import { coverage } from '../src/coverage';
 import { evaluate } from '../src/evaluate';
@@ -198,6 +199,31 @@ describe('the violation half of the message table', () => {
                 (skipped) => skipped.reason,
             ),
         ).toEqual(['«inactiveConditionSkip»']);
+    });
+
+    /**
+     * The FOURTH coverage reason no corpus case produces, and the reason it is not in one.
+     *
+     * `historyShortOfWindowSkip` (P2-2 review) fires when the supplied duty history reaches back
+     * past the horizon but not as far as a window opening before it. Every corpus case supplies
+     * history from well before its own block, which is what a caller should do — so the state is
+     * reachable only by moving `historyAvailableFrom` forward, and a fixture built to be
+     * mis-supplied would be corpus data nobody should copy. It is exercised here for the same
+     * reason `inactiveConditionSkip` is: a sentence no check reaches is a sentence that can quietly
+     * stop coming from the table.
+     */
+    it('renders the short-history window reason through the table too', () => {
+        const fixture = FIXTURES.find(
+            (row: Fixture) => row.name === 'count-min-the-floor-counts-the-week-that-begins-in-the-published-month',
+        ) as Fixture;
+
+        const context = { ...fixture.context, historyAvailableFrom: parseYmd('2026-07-28') };
+
+        expect(
+            coverage(fixture.schedule, context, fixture.conditions, SHOUTING)[0]?.skipped.map(
+                (skipped) => skipped.reason,
+            ),
+        ).toEqual(['«historyShortOfWindowSkip»']);
     });
 
     /**

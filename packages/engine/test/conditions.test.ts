@@ -1274,6 +1274,71 @@ describe('no condition module assembles a sentence of its own', () => {
     });
 });
 
+describe('a window whose left part no history reaches is never DROPPED, only reported', () => {
+    /**
+     * `wholeWindowVerdict` answers `{measure: false, skip: null}` for a window reaching back before
+     * the horizon with no history behind it, on the stated ground that {@link carryInLeftEdge}'s
+     * single row already speaks for every such window. That is true of the shape it was written
+     * against — no history at all, or history starting at or after `horizon.from` — and FALSE of a
+     * third: history that reaches back past the horizon but not as far as this window.
+     *
+     * In that third shape `carryInLeftEdge` is silent (it has seen real history before the 1st) and
+     * the verdict is silent (it believes somebody else is speaking), so the window is measured by
+     * nobody and reported by nobody. `evaluatedWindows` simply falls. That is the exact state
+     * `coverage()` exists to prevent, and it is one row's difference from the state it already
+     * reports correctly.
+     *
+     * The world is the corpus's own carry-in case with `historyAvailableFrom` moved forward two
+     * days: block 13 opens on 26 July, the horizon on 1 August, and the caller can only speak for
+     * 28 July onwards.
+     */
+    const world = FIXTURES.find(
+        (fixture) => fixture.name === 'count-min-the-floor-counts-the-week-that-begins-in-the-published-month',
+    ) as Fixture;
+
+    const historyFrom = (date: string): EvaluationContext =>
+        withPeople(world.context, (copy) => {
+            copy.historyAvailableFrom = d(date);
+        });
+
+    it('reports the window the supplied history stops short of, rather than losing it', () => {
+        const reaching = coverage(world.schedule, historyFrom('2026-07-01'), world.conditions)[0];
+        const short = coverage(world.schedule, historyFrom('2026-07-28'), world.conditions)[0];
+
+        // The healthy case measures both weeks of the block and has nothing to report.
+        expect(reaching?.evaluatedWindows).toBe(2);
+        expect(reaching?.skipped).toEqual([]);
+
+        // The short one measures one, and the one it did not measure is NAMED. Its bounds are the
+        // window's own, which is what tells a reader which week went and how much history would
+        // have to be supplied to get it back.
+        expect(short?.evaluatedWindows).toBe(1);
+        expect(short?.skipped).toHaveLength(1);
+        expect(short?.skipped[0]?.from).toBe(d('2026-07-26'));
+        expect(short?.skipped[0]?.to).toBe(d('2026-08-01'));
+        expect(short?.skipped[0]?.reason).toContain('2026-07-28');
+    });
+
+    /**
+     * And the shape `carryInLeftEdge` DOES own still gets exactly one row for all of its windows,
+     * rather than one apiece. The two are one branch apart and the whole point of the branch is
+     * that the answers are reported differently — a window that is individually nameable versus a
+     * fact that is identical for every window and would train a reader to skip the list.
+     */
+    it('leaves the no-history-at-all shape to carryInLeftEdge’s single row', () => {
+        const rows = coverage(
+            world.schedule,
+            withPeople(world.context, (copy) => {
+                copy.historyAvailableFrom = null;
+            }),
+            world.conditions,
+        )[0];
+
+        expect(rows?.skipped).toHaveLength(1);
+        expect(rows?.skipped[0]?.reason).toContain('No duty history was supplied');
+    });
+});
+
 describe('max_gap — the two edges of owner decision I, and who the rows are about', () => {
     const world = FIXTURES.find(
         (fixture) => fixture.name === 'max-gap-at-exactly-the-limit-and-a-day-beyond-it',

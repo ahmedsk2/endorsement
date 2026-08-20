@@ -523,10 +523,29 @@ export type WindowVerdict = { measure: true } | { measure: false; skip: SkippedW
  *    {@link carryInLeftEdge}'s single row instead, because the answer is identical for every such
  *    window and one row apiece would repeat one fact until a reader stopped reading them. The
  *    `skip: null` is that decision, spelled as a value rather than left as a missing branch.
+ *  - **Reaching back further than the history that WAS supplied** — named individually, and added
+ *    by the P2-2 review because it was silently a THIRD shape wearing the second's answer. See
+ *    below.
  *
  * A CAP does not call this at all: an under-count cannot exceed a limit, so it evaluates both
  * shapes. That asymmetry is the whole of decision L and it is why this returns a verdict rather
  * than a boolean — a boolean would have made the two skip shapes one, which is the distinction.
+ *
+ * ## The third shape, and why `skip: null` was silently wrong for it
+ *
+ * {@link carryInLeftEdge} speaks for exactly two states: `historyAvailableFrom` is `null`, or it is
+ * real and begins at or after `horizon.from`. It is SILENT when history reaches back past the
+ * horizon — a caller who supplied last week — and that is precisely when a window opening before
+ * the horizon can still reach back further than the history does. A block that opened on 26 July,
+ * a horizon opening on 1 August, and history from 28 July: `carryInLeftEdge` returns nothing
+ * because it saw real history before the 1st, and this function returned `skip: null` because it
+ * believed `carryInLeftEdge` was speaking. The window was measured by nobody and reported by
+ * nobody; `evaluatedWindows` simply fell.
+ *
+ * That is the state `coverage()` exists to prevent, one branch away from the state it already
+ * reported correctly. The row is per-window rather than pooled because which window went, and how
+ * much further back the history would have to reach, are both the window's own answer — the same
+ * line as the clipped shape above, for the same reason.
  */
 export function wholeWindowVerdict(
     window: Window,
@@ -551,7 +570,26 @@ export function wholeWindowVerdict(
     }
 
     if (!historyReaches(context, horizon, window.from)) {
-        return { measure: false, skip: null };
+        const available = context.historyAvailableFrom;
+
+        // The two shapes `carryInLeftEdge` owns. One row already speaks for every window they
+        // affect, so a row apiece here would repeat one fact until a reader stopped reading.
+        if (available === null || compareYmd(available, horizon.from) >= 0) {
+            return { measure: false, skip: null };
+        }
+
+        return {
+            measure: false,
+            skip: {
+                from: window.from,
+                to: window.to,
+                reason: messages.historyShortOfWindowSkip({
+                    from: window.from,
+                    to: window.to,
+                    historyAvailableFrom: available,
+                }),
+            },
+        };
     }
 
     return { measure: true };

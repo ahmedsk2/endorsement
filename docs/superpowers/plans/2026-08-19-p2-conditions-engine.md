@@ -1753,7 +1753,11 @@ Three things it is not, each stated in the command's own docblock and asserted:
       `coverage()` output; no window is silently dropped.
 - [ ] The three preset bundles ship, the manifest test is green, and **no numeric default is invented
       for any figure §37 still owes**.
-- [ ] Task 22's query budget **observed breaching** before it was fixed, with the number recorded.
+- [x] Task 22's query budget **observed breaching**, with the numbers recorded: **13 measured** on a
+      populated block, bound **17**, and the two planted regressions ran **223** (a per-span level
+      lookup) and **113** (`$assignment->unit` per span). A third planted trap — a narrowed
+      `select()` on the person query — is CHEAPER than the correct code and no budget can see it;
+      a behavioural assertion on the join date is what caught it.
 - [ ] NF-01 measured with **all 22 types active** and the number recorded, met or not.
 - [ ] **No migration in P2 at all:** `git diff --stat main..<P2-2 head> -- database/migrations` empty.
 - [ ] `RotaAccessTest`, `ClinicHooksTest` and every single-writer guard unchanged.
@@ -2648,3 +2652,127 @@ empty and never ASSUMED empty"* and nothing asserted the second half;
 `max-gap-the-gap-that-begins-in-the-published-month` supplies one, and needs to — it is what closes
 the trailing gap so the seam guard's single expected coverage row is not competing with an open-edge
 row.
+
+### From Task 22 (2026-08-20) — the context builder, one duplicate removed from `Calendar`, and a green plant that split the two guards
+
+`App\Support\Engine\ContextBuilder::forHorizon()` is shipped. **Reused rather than restated**, which
+was the task's binding constraint: `Person::levelSpansBetween()` for level history,
+`Vacation::scopeIntersecting()` for the leave read, `Calendar::weeksIn()` for the clipped week
+windows owner decision O keeps server-side, `Calendar::dayFacts()` for the day vector. `RotaGrid`'s
+stale-row union is the one structure copied rather than called, and for a sharper reason than the
+grid has: a duty naming a person the context does not describe THROWS, so a departed colleague still
+holding a rotation must be described or one stale row kills a whole evaluation.
+
+**THE BUDGET: 13, bound 17, watched breaching at 223 and 113.** The populated fixture is thirteen
+periods, seventy people, 1170 spans, sixty leave rows, thirty mid-year promotions, four clinics and a
+multi-year holiday set. A per-span level lookup ran **223**; `$assignment->unit` per span ran **113**.
+Both planted, both red, both reverted. A second measurement — one person versus thirty-one, same
+count — had to be taken **cold both times**: `Calendar`'s settings and holiday reads are memoized per
+process, so a warm second call is two queries cheaper for a reason that has nothing to do with the
+roster, and the first version of that test failed reporting a saving the cache had made.
+
+**1. THE THIRD N+1 TRAP IS CHEAPER THAN THE CORRECT CODE, SO NO BUDGET COULD EVER HAVE FOUND IT.**
+The task names a narrowed `select()` on a person query as the one that bites hardest. It bites
+differently here: `full_name`/`position`'s read-through-accessor symptom (P0c) is ABSENT, because
+this context reads neither attribute. Planted as `select(['id', 'external'])`, the JOIN DATE silently
+vanished for everybody — which on the far side of the contract is `onboarding_grace` reporting every
+person as unknown and firing on nobody, the exact state owner decision T's coverage row exists to
+make visible. The query count went **down**. What caught it was a behavioural assertion on the join
+date. A budget is not a defence against a projection.
+
+**2. A GREEN PLANT SPLIT THE TWO GUARDS ALONG A LINE NEITHER WAS DESIGNED FOR.** `where('external',
+false)` was planted on the roster query: the source half named the column, and the BEHAVIOURAL half
+stayed GREEN — because the stranded-span union re-adds anybody still holding a rotation, and the
+fixture's external person holds one. The second shape, a `filter()` over the loaded collection
+keeping only people with a rotation, reversed it exactly: source half green, behavioural half red,
+naming the one person no union can rescue. **Neither half is redundant and neither is sufficient**,
+and reading the two lists would never have shown it. Fourth green plant of the phase.
+
+**3. `Calendar` gained three members and LOST a duplicate that was already in the tree.**
+`label()` carried its own copy of *"holiday wins over weekend"*, three methods away from
+`dayType()`'s — two definitions of one three-branch decision, unnoticed. `dayFacts()` is now the one
+definition and both project it. Added: `holidayOccurrencesOn()`, `dayFacts()`, and the public
+`isoWeekday()` finding 21 asked for. This is where finding 21's rule lands in practice — a new
+per-date date function belongs on the one converter, never on the engine's namespace.
+
+**4. THE HOLIDAY YEAR IS THE ANCHOR'S, NOT THE QUERIED DATE'S, AND NO DOCUMENT SAYS SO.** Owner
+decision W fixes `yearBasis: 'ruleCalendar'` and the contract carries `{ key, year }` per holiday. It
+does not say which year a multi-day span's later days carry. A four-day Gregorian rule anchored 30
+December covers 2 January: that day belongs to the **2026** occurrence, and `holiday_equity` keying
+it to 2027 would split one holiday's credits across two years for the people who worked its tail.
+The walk that finds the anchor already computed it and threw it away, so the year is returned from
+inside that loop rather than re-derived — a caller re-deriving it would be a second definition
+disagreeing only on the spans that cross a year end, which is to say only where it matters.
+
+**5. THE PLAN IS WRONG AGAINST THE TREE IN ONE PLACE, AND THE TREE IS RIGHT.** Finding 4 says
+*"flattening spans into a per-date unit vector is the bridge, it must be built exactly once, and it
+belongs in the context builder"*. The shipped contract does not have that shape: `Person.unitSpans`
+is `Span[]`, and `support.ts`'s `spanKeyAt` — authored at Task 10 as *"the one definition of the fact
+this person holds on this date"* — is where the per-date resolution lives. Finding 4 predates the
+contract. The builder therefore emits SPANS with their real bounds and flattens nothing, and the
+"exactly once" property is honoured on the engine's side rather than this one. Leave is different and
+genuinely is flattened here (`leaveDays`, `eligibleDays`), which is finding 5's fourth shape of the
+leave predicate — a fourth SHAPE, not a fourth copy: nobody had *"vacation versus a single date"*
+because no screen ever needed one.
+
+**6. `Span.to` IS NOT NULLABLE, AND CLIPPING AN OPEN LEVEL SPAN WOULD LIE.** `spanKeyAt` reads a date
+outside every span as *"holds nothing"*, which is a real state — a person between rotations. A level
+span with no `effective_to` is the COMMON case (that is what `LevelAssignment::assign()` writes), and
+clipping it to the horizon would tell the engine that everybody holds no level on the day after the
+last horizon date, which is precisely where `clinic_conflict`'s post-duty window looks. It is carried
+open at `ContextBuilder::NO_KNOWN_END`.
+
+**7. THERE IS NO STABLE PERSON CODE IN THIS SCHEMA AND P2 MAY NOT ADD ONE.** Owner decision G asks
+for *"a person key that is not `people.id`"*, on the ground that ids are instance-local and that
+`people.id`/`users.id` are independent sequences. The second hazard is real and is removed
+structurally by a prefixed derived key (`p{id}`), which cannot be moved between the two tables by
+accident; the first is a non-question for a payload that never leaves the instance, and the only
+alternative — a real code column — is a migration P2 is forbidden to ship. Units and levels use their
+genuine codes; periods use `academic_year` + `position`, which is the table's own UNIQUE key.
+
+**8. `PersonPresenter` IS DELIBERATELY NOT USED, AND THAT IS NOT A BREACH OF "THE ONLY PATH".** It is
+the one path from a person to a SCREEN's props, and its entire output — a name, a short name, a
+position — is what an engine context must not acquire. Routing through it would ADD the disclosure
+this file exists without. The context names nobody at all, carries no contact field and no free text,
+takes no viewer, and is asserted over the SERIALISED payload by key name on the most permissive
+institution setting the system can produce. Proved both ways: planting an address read made
+`ContactFieldsAreProjectedOnceTest` name the file and both needle spellings, and made the payload
+assertion name the key path it had appeared under.
+
+**9. STATED RESIDUAL — `holidays.equity_tracked` HAS NO FIELD IN THE CG-10 `Day.holidays` SHAPE.**
+The contract carries `{ key, year }`. So the engine cannot tell a tracked holiday from an untracked
+one, and `holiday_equity` will count every holiday the day vector names. The loader carries every
+resolved holiday rather than pre-filtering on the flag, because filtering would be the loader taking
+that type's decision away silently — which is the defect its own guard exists for. Closing it needs a
+contract field and belongs to whoever finishes `holiday_equity`, not to a P2 workaround. Task 1's
+finding that the column *"has no consumer anywhere"* remains true after this task.
+
+**10. THE AVAILABILITY DENOMINATOR IMPLEMENTS TWO OF OWNER DECISION J'S THREE CLAUSES.** Leave and
+the dates before a join date come out. The third — days somebody is away from the department on a
+rotation elsewhere — has no per-person column anywhere (MR-04), and the only thing resembling one is
+the presence or absence of a rotation span. Inferring it there would make the rota decide who may
+take call, which is what `RotaAccessTest` exists to refuse and what owner decision I already refuses
+in those words for `max_gap`'s clock. A person with no rotation counts as available, and the file
+says so where the next implementer will be standing.
+
+**11. THE RECOMMENDED `CalendarSurfaceIsManifestedTest` IS BUILT, AND THIS TASK IS WHY IT WAS DUE.**
+The Task 5/6 note proposed it *"for Task 22 or early P3, whichever touches `Calendar` first"*. This
+task touched it — three new public methods, which is exactly the drift shape the mirror's stated
+residual describes. Every public static is now classified MIRRORED or SERVER_SIDE_ONLY with the
+reason, compared in both directions so a stale entry fails as loudly as an unclassified method, and
+the MIRRORED half carries the name the package exports for it, checked against the package's own
+source — without that, *"this one is mirrored"* is a claim nobody verifies and the mirror could drop
+`weekOf` tomorrow with the list still asserting it. Planted twice: a new unclassified method → red;
+a counterpart renamed to one the package does not export → red. **Nine mirrored names against
+twenty-four server-side ones**, which is worth reading as a measurement rather than a gap: it is how
+small Decisions B and C succeeded in making the second implementation.
+
+*Two smaller things.* The no-rule guard's column needles had to be a `where`-family REGEX rather than
+substrings — `InstitutionProvenanceTest`'s idiom — because the loader legitimately writes an
+`external` projection key, and a bare literal would have fired on the file's own correct output. And
+the reader guard's needles are VERB-ONLY rather than model-qualified, which is affordable here in a
+way it is not in a single-writer guard: those must name a model because they scan the whole
+application, this one scans one namespace whose entire job is to read, so the widest needle costs
+nothing and reaches a writer of a table nobody has invented yet. Both known blind spots — ruling 66's
+`query()->create(` and ruling 50's `->update([` — are needled explicitly anyway, and both were named
+by the plant.

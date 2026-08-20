@@ -176,10 +176,23 @@ describe('the coverage manifest names every block of the fixture', () => {
 });
 
 describe('a block claimed as asserted is named by the suite that claims it', () => {
+    /**
+     * THE NEEDLE IS ROOTED AT THE FIXTURE, and `.${key}` was not — which made one block's claim
+     * satisfiable by a DIFFERENT block's key. `cases` is the collision that exists today:
+     * `golden.weekday_columns.cases` ends in `.cases`, so the top-level `cases` block reported
+     * itself asserted with every reference to it deleted from `golden.test.ts`. A manifest whose
+     * entries can be satisfied by each other is the self-deception this file exists to make
+     * impossible, one level in. Measured at no cost — every entry names `golden.<key>` already.
+     *
+     * STATED RESIDUAL, and it is the same limit the reverse direction was refused for below: this
+     * still cannot tell an ASSERTION from a MENTION, so a key named only by a non-vacuity floor
+     * counts as named. What it now tells apart is one block from another, which is the failure
+     * that was actually present.
+     */
     it.each(ASSERTED)('$key, in $assertedIn', (entry) => {
         const source = readFileSync(join(import.meta.dirname, entry.assertedIn), 'utf8');
 
-        expect(source).toContain(`.${entry.key}`);
+        expect(source).toContain(`golden.${entry.key}`);
     });
 
     // The reverse check — that an out-of-scope key is named NOWHERE in the mirror suites — was

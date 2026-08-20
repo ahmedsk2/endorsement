@@ -29,7 +29,7 @@
  * additions rather than done here, because it is a change to Task 7's shape and not to Task 10's.
  */
 
-import { addDays, compareYmd, type Ymd } from '../calendar/ymd';
+import { addDays, compareYmd, isoWeekday, type Ymd } from '../calendar/ymd';
 import type {
     ConditionScope,
     CoverageDetail,
@@ -207,6 +207,28 @@ export function dayIndex(context: EvaluationContext): DayIndex {
             return day;
         },
     };
+}
+
+/**
+ * The ISO weekday of a date, from the day vector where it reaches and from arithmetic where it does
+ * not — and this is the ONE place that fallback is allowed to exist.
+ *
+ * The vector covers the horizon. One question legitimately reaches past it: `clinic_conflict`'s
+ * post-duty window opens on the last date of the month and closes on the 1st of the next, where a
+ * clinic runs and the violation is located on a placement INSIDE the horizon. Refusing to answer
+ * would drop a real collision at the edge a scheduler hits first; asking for the day vector to be
+ * extended is a contract change for one field.
+ *
+ * **This is not AR-08's second definition, and the distinction is the whole justification.** What
+ * AR-08 forbids re-deriving are the DEPARTMENT's facts — `dayType` (holiday wins over weekend), the
+ * week start, the weekend days — because those are configuration and a mirror would disagree with
+ * the server about them. The ISO weekday of a civil date is universal arithmetic, `ymd.ts` owns it,
+ * and `golden.test.ts` asserts it against `golden.json`'s own `iso_weekday` for every date in the
+ * corpus. `conditions.test.ts` pins the other half: for every date the day vector DOES describe,
+ * the two answers agree, in every fixture — so the fallback cannot become a second answer.
+ */
+export function isoWeekdayAt(days: DayIndex, date: Ymd): number {
+    return days.find(date)?.isoWeekday ?? isoWeekday(date);
 }
 
 /**

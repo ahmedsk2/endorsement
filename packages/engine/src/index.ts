@@ -45,6 +45,7 @@ export * from './calendar';
  */
 export * from './duty/interval';
 export * from './duty/order';
+export * from './duty/post-duty-window';
 export * from './duty/windows';
 
 /**

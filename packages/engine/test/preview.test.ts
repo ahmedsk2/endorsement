@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { datesBetween, isoWeekday, parseYmd, type Ymd } from '../src/calendar/ymd';
 import type { Condition, Day, EvaluationContext } from '../src/contract/types';
-import type { JsonSchema } from '../src/contract/schema';
+import { CONTRACT_SCHEMA, type JsonSchema } from '../src/contract/schema';
 import { ASSERTION_KEYWORDS, keywordsUsedBy } from '../src/contract/validate';
 import { toleranceFor } from '../src/conditions/fairness_distribution';
 import { UnimplementedConditionTypeError, UnknownConditionTypeError } from '../src/evaluate';
@@ -77,6 +77,11 @@ const previewed = CATALOG.filter((entry) => entry.preview !== undefined && entry
 // The probe generator, and the matrix it feeds.
 // ---------------------------------------------------------------------------------------------
 
+/** Two values satisfying each pattern a params schema may constrain a string with. One entry. */
+const PATTERN_PROBES: Record<string, [string, string]> = {
+    '^[0-9]{4}-[0-9]{2}-[0-9]{2}$': ['2026-08-03', '2026-08-04'],
+};
+
 /**
  * Two distinct, schema-valid values for one parameter — the probe pair the matrix varies.
  *
@@ -86,6 +91,20 @@ const previewed = CATALOG.filter((entry) => entry.preview !== undefined && entry
  * shape of a guard that has quietly stopped guarding.
  */
 function probePair(schema: JsonSchema, at: string): [unknown, unknown] {
+    // A params schema may reference the contract's own definitions rather than restating them —
+    // `same_unit_conflict`'s exception dates are `$ref: Ymd`, which is the difference between a
+    // date a department could have produced and any string at all. Resolving it here is what lets
+    // the matrix vary such a parameter instead of quietly declining to.
+    if (schema.$ref !== undefined) {
+        const target = CONTRACT_SCHEMA.$defs[schema.$ref.replace('#/$defs/', '')];
+
+        if (target === undefined) {
+            throw new Error(`${at}: ${schema.$ref} resolves to no contract definition.`);
+        }
+
+        return probePair(target, at);
+    }
+
     if (schema.enum !== undefined) {
         if (schema.enum.length < 2) {
             throw new Error(`${at}: an enum needs two members for the matrix to vary it.`);
@@ -103,8 +122,23 @@ function probePair(schema: JsonSchema, at: string): [unknown, unknown] {
 
             return [low, low + 4];
         }
-        case 'string':
-            return ['alpha', 'beta'];
+        case 'string': {
+            if (schema.pattern === undefined) {
+                return ['alpha', 'beta'];
+            }
+
+            // A pattern-constrained string needs two values that SATISFY it, or the probe is
+            // refused by the very schema it is probing and the matrix reports a crash instead of an
+            // ignored parameter. The table has one entry and throws for anything else, so a second
+            // pattern is a decision somebody takes rather than a silent skip.
+            const probes = PATTERN_PROBES[schema.pattern];
+
+            if (probes === undefined) {
+                throw new Error(`${at}: no probe pair is defined for the pattern ${schema.pattern}.`);
+            }
+
+            return probes;
+        }
         case 'array': {
             if (schema.items === undefined) {
                 throw new Error(`${at}: an array parameter must declare its items.`);
@@ -200,6 +234,9 @@ describe('the matrix — every parameter a type reads is named by its preview', 
      */
     it('runs over every type that has a preview today, named one by one', () => {
         expect(previewed.map((entry) => entry.typeKey).sort()).toEqual([
+            // Task 13 — the two the tree could not resolve without the owner: decision S's three
+            // attendee modes, and decision U's confirmed reading (a).
+            'clinic_conflict',
             // Task 12 — the three placement types owner decisions R, T and the ISO-integer half of
             // the day-of-week ban settle. Their sentences live in the message table (AR-07).
             'dow_restriction',
@@ -212,6 +249,7 @@ describe('the matrix — every parameter a type reads is named by its preview', 
             'onboarding_grace',
             'overlap_block',
             'rolling_hours_max',
+            'same_unit_conflict',
             'target_per_period',
             'unwanted_day_block',
             'vacation_block',
@@ -549,6 +587,62 @@ describe('unwanted_day_block — owner decision R, a rule that stores nothing', 
 
         expect(sentence).toMatch(/day the duty starts on/i);
         expect(sentence).toMatch(/stores none of them/i);
+    });
+});
+
+describe('clinic_conflict — owner decision S, the variant and who a clinic comes down to', () => {
+    const render = (params: Record<string, unknown>): string => preview(condition('clinic_conflict', params), CONTEXT);
+
+    /**
+     * The two variants are a real behavioural difference on the same rota and the sentence must
+     * make it visible: under the frozen default a clinic on the day a duty STARTS is fine, and
+     * under the other it is not. A reader who cannot tell which they have configured has a rule
+     * whose effect they will discover from a warning they did not expect.
+     */
+    it('says what the same-day half does under each variant', () => {
+        expect(render({ variant: 'post_call' })).toMatch(/day a duty STARTS is not a conflict/);
+        expect(render({ variant: 'post_call_and_same_day' })).toMatch(/CALENDAR DAY/);
+        expect(render({ variant: 'post_call_and_same_day' })).toMatch(/no hours to compare/);
+    });
+
+    /**
+     * The attendee mode is the half design item 22 leaves out, and the half that decides whether a
+     * named attendee who rotates nowhere is caught at all (finding 17). A preview that describes
+     * only the unit reading would describe a rule this engine does not implement.
+     */
+    it('names all three ways a clinic comes down to people, and when they are read', () => {
+        const sentence = render({ variant: 'post_call' });
+
+        expect(sentence).toMatch(/rotating on the unit/i);
+        expect(sentence).toMatch(/levels attached/i);
+        expect(sentence).toMatch(/named on it/i);
+        expect(sentence).toMatch(/day the clinic runs/i);
+    });
+});
+
+describe('same_unit_conflict — owner decision U, and the exception that LIFTS', () => {
+    const render = (params: Record<string, unknown>): string =>
+        preview(condition('same_unit_conflict', params), CONTEXT);
+
+    /**
+     * The parameters cell reads as the opposite predicate ("unit pairs") and the Meaning cell reads
+     * as a third one ("pairs never together"), so this sentence has to state which of the three the
+     * engine implements — in words, on the gate screen, where the department reading it never saw
+     * owner decision U.
+     */
+    it('states reading (a) in words rather than leaving the key name to carry it', () => {
+        const sentence = render({ units: ['PICU'] });
+
+        expect(sentence).toContain('PICU');
+        expect(sentence).toMatch(/same day/i);
+        expect(sentence).toMatch(/rotation each of them is on that day/i);
+    });
+
+    it('says the exception lifts the ban, and on which dates', () => {
+        expect(render({ exceptDates: ['2026-08-07'] })).toMatch(/2026-08-07/);
+        expect(render({ exceptDates: ['2026-08-07'] })).toMatch(/lifted/i);
+        expect(render({})).toMatch(/every day of the schedule/i);
+        expect(render({})).toMatch(/any one unit/i);
     });
 });
 

@@ -95,6 +95,12 @@ export interface PreviewMessages {
 
     /** ISO integers only. The day NAMES are the server's (AR-07) and never appear in this package. */
     dowRestriction(args: { days: readonly number[] }): string;
+
+    /** Owner decision S: post-call always, same-day optionally, and both by CALENDAR DAY. */
+    clinicConflict(args: { variant: 'post_call' | 'post_call_and_same_day' }): string;
+
+    /** Owner decision U: reading (a), and day exceptions LIFT the ban rather than applying it. */
+    sameUnitConflict(args: { units: readonly string[]; exceptDates: readonly string[] }): string;
 }
 
 /**
@@ -210,6 +216,41 @@ export const EN: PreviewMessages = {
             `their join date as day 1 — somebody joining on 1 Aug may first be scheduled on ` +
             `${days + 1} Aug. A person whose join date is not recorded is NOT blocked by this rule, ` +
             'and the evaluation reports whom it could not judge rather than passing them silently.'
+        );
+    },
+
+    clinicConflict({ variant }) {
+        const postCall =
+            'No clinic on a day a duty runs into: somebody whose night or 24 h call ends on the ' +
+            'morning of a clinic day may not be at that clinic. Who a clinic comes down to is its ' +
+            'own rule — everybody rotating on the unit, only the levels attached to it, or the ' +
+            'people named on it — read on the day the clinic runs.';
+
+        if (variant === 'post_call') {
+            return `${postCall} A clinic on the day a duty STARTS is not a conflict under this setting.`;
+        }
+
+        return (
+            `${postCall} A clinic on the day a duty starts is a conflict too, counted by CALENDAR ` +
+            'DAY rather than by hours — a clinic session is a morning-or-afternoon code with no ' +
+            'times attached, so there are no hours to compare.'
+        );
+    },
+
+    sameUnitConflict({ units, exceptDates }) {
+        const where =
+            units.length === 0
+                ? 'any one unit'
+                : `${EN.conjoin(units as string[])}`;
+
+        const lifted =
+            exceptDates.length === 0
+                ? 'The ban applies on every day of the schedule.'
+                : `It does not apply on ${EN.conjoin(exceptDates as string[])}, where it is lifted.`;
+
+        return (
+            `Two people rotating on ${where} are never on call on the same day, judged by the ` +
+            `rotation each of them is on that day rather than by where they started the year. ${lifted}`
         );
     },
 

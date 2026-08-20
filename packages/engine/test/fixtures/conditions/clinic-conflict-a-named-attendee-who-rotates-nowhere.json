@@ -1,0 +1,97 @@
+{
+    "name": "clinic-conflict-a-named-attendee-who-rotates-nowhere",
+    "why": "Design §14 item 22's formulation is unit-only — the person's rotation on the date against the clinic's unit — and this is the case it is wrong on in BOTH directions at once (P2 finding 17, owner decision S). p-zain rotates on no unit at all and is NAMED on the Tuesday clinic, so the unit-only reading reports nothing where the collision is real; the rotators-mode clinic on the same unit, the same weekday and the same session must NOT match them, so a reading that treats every mode as 'anybody on the unit' reports two collisions where there is one. `ClinicRoster::forDate()` resolves named attendees without consulting the rota at all, and this mirrors that rather than re-deciding it.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-10", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-11", "isoWeekday": 2, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-zain",
+                "levelSpans": [{ "key": "R3", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-10", "2026-08-11"],
+                "external": true
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [
+            {
+                "key": "cl-picu-tue-am-named",
+                "unitKey": "PICU",
+                "isoWeekday": 2,
+                "session": "AM",
+                "active": true,
+                "attendeeMode": "named",
+                "attendeeLevelKeys": [],
+                "attendeePersonKeys": ["p-zain"]
+            },
+            {
+                "key": "cl-picu-tue-am-rotators",
+                "unitKey": "PICU",
+                "isoWeekday": 2,
+                "session": "AM",
+                "active": true,
+                "attendeeMode": "rotators",
+                "attendeeLevelKeys": [],
+                "attendeePersonKeys": []
+            }
+        ],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-10",
+            "to": "2026-08-11",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-14"
+        },
+        "duties": [{ "personKey": "p-zain", "date": "2026-08-10", "slotKey": "night" }]
+    },
+    "conditions": [
+        {
+            "id": "c-clinic",
+            "typeKey": "clinic_conflict",
+            "class": "hard",
+            "active": true,
+            "params": { "variant": "post_call" }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-clinic",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-zain",
+                "date": "2026-08-10",
+                "slotKey": "night"
+            },
+            "explanation": "Post-call: clinic \"cl-picu-tue-am-named\" (session AM) runs on 2026-08-11, after this duty ends."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-clinic", "evaluatedWindows": 1, "skipped": [] }]
+}

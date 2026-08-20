@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { parseYmd, type Ymd } from '../src/calendar/ymd';
+import { isoWeekday, parseYmd, type Ymd } from '../src/calendar/ymd';
 import type { Condition, EvaluationContext, Fixture, Schedule } from '../src/contract/types';
 import { validate } from '../src/contract/validate';
 import { coverage } from '../src/coverage';
@@ -73,6 +73,10 @@ describe('the condition corpus', () => {
      */
     it('found the cases it claims to, and each states why it exists', () => {
         expect(FIXTURES.map((fixture) => fixture.name)).toEqual([
+            'clinic-conflict-a-named-attendee-who-rotates-nowhere',
+            'clinic-conflict-levels-mode-reads-the-level-on-the-clinic-date',
+            'clinic-conflict-post-call-reaches-the-day-after-the-last-horizon-date',
+            'clinic-conflict-the-same-day-variant-is-a-calendar-day-not-a-time-overlap',
             'dow-restriction-a-ban-on-one-iso-weekday',
             'dow-restriction-a-rotation-scoped-ban-follows-the-unit-on-the-date',
             'eligibility-mid-window-promotion',
@@ -84,6 +88,8 @@ describe('the condition corpus', () => {
             'overlap-block-carry-in-at-the-left-edge',
             'overlap-block-is-per-person-not-per-slot',
             'overlap-block-night-crosses-into-the-next-date',
+            'same-unit-conflict-a-day-exception-lifts-the-ban-on-that-date-alone',
+            'same-unit-conflict-two-rotators-on-one-unit-and-a-colleague-elsewhere',
             'unwanted-day-block-a-registered-day-and-a-colleague-with-none',
             'vacation-block-both-bounds-inclusive',
         ]);
@@ -386,7 +392,100 @@ describe('onboarding_grace — an unknown join date is VISIBLE, not silent', () 
     });
 });
 
-describe('the six types are registered as implemented, with a preview and a schema', () => {
+describe('clinic_conflict — the variant switch, and the fallback the day vector cannot reach', () => {
+    const sameDayWorld = FIXTURES.find(
+        (f) => f.name === 'clinic-conflict-the-same-day-variant-is-a-calendar-day-not-a-time-overlap',
+    ) as Fixture;
+
+    /**
+     * The frozen default (SPEC §4, owner decision S) is post-call ON and same-day OFF, and the two
+     * variants must genuinely differ on the same world — a fixture proving the same-day variant
+     * fires proves nothing about the setting a department actually ships with. An early duty's
+     * post-duty window falls on its own anchor date, so under `post_call` there is nothing to
+     * report here at all.
+     */
+    it('reports nothing on the same world under the frozen post-call-only variant', () => {
+        const postCallOnly: Condition = {
+            ...(sameDayWorld.conditions[0] as Condition),
+            params: { variant: 'post_call' },
+        };
+
+        expect(evaluate(sameDayWorld.schedule, sameDayWorld.context, [postCallOnly])).toEqual([]);
+        expect(coverage(sameDayWorld.schedule, sameDayWorld.context, [postCallOnly])[0]?.evaluatedWindows).toBe(1);
+    });
+
+    it('refuses a variant the spec does not name, and a row that omits it', () => {
+        const row = (params: Record<string, unknown>): Condition => ({
+            ...(sameDayWorld.conditions[0] as Condition),
+            params,
+        });
+
+        expect(() => evaluate(sameDayWorld.schedule, sameDayWorld.context, [row({ variant: 'same_day' })])).toThrow(
+            /is not one of/,
+        );
+        expect(() => evaluate(sameDayWorld.schedule, sameDayWorld.context, [row({})])).toThrow(/variant/);
+    });
+
+    /**
+     * THE FALLBACK, PINNED. `isoWeekdayAt()` prefers the precomputed day vector and computes the ISO
+     * weekday for a date the vector does not reach — which `clinic_conflict` needs, because a
+     * post-duty window opened on the last date of the horizon closes on the day after it. That is
+     * only safe if the two answers cannot disagree WHERE THEY OVERLAP, so this asserts exactly that,
+     * over every day row of every case in the corpus rather than over a constructed date.
+     *
+     * It is deliberately not an argument about AR-08: the department's facts — `dayType`, the week
+     * start, the weekend days — are never re-derived anywhere in this package. The ISO weekday of a
+     * civil date is universal arithmetic that `golden.test.ts` already asserts against
+     * `golden.json`'s own `iso_weekday`.
+     */
+    it('agrees with the day vector on every date the day vector describes', () => {
+        const disagreements = FIXTURES.flatMap((fixture) =>
+            fixture.context.days
+                .filter((day) => day.isoWeekday !== isoWeekday(day.date))
+                .map((day) => `${fixture.name}: ${day.date} is ${day.isoWeekday} in the vector`),
+        );
+
+        expect(disagreements).toEqual([]);
+        expect(FIXTURES.flatMap((fixture) => fixture.context.days).length).toBeGreaterThan(20);
+    });
+});
+
+describe('same_unit_conflict — the params the schema will not take on trust', () => {
+    const world = FIXTURES.find(
+        (f) => f.name === 'same-unit-conflict-two-rotators-on-one-unit-and-a-colleague-elsewhere',
+    ) as Fixture;
+
+    /**
+     * `exceptDates` is `$ref: Ymd`, so a date this system could not have produced is refused rather
+     * than silently never matching. An exception that lifts nothing is a control that appears to do
+     * nothing — and the person who wrote it would have every reason to believe the ban was lifted.
+     */
+    it('refuses an exception date that is not a plain Y-m-d', () => {
+        const row: Condition = {
+            ...(world.conditions[0] as Condition),
+            params: { exceptDates: ['7 Aug 2026'] },
+        };
+
+        expect(() => evaluate(world.schedule, world.context, [row])).toThrow(/does not match/);
+    });
+
+    /**
+     * A person between rotations holds no unit, and `null` is not a unit two people can share.
+     * Answering "they match" for want of data would put a collision on every pair whose spans have
+     * a gap — the roster state a mid-year transfer produces routinely.
+     */
+    it('says nothing about two people who are rotating nowhere on the date', () => {
+        const context = withPeople(world.context, (copy) => {
+            for (const person of copy.people) {
+                person.unitSpans = [];
+            }
+        });
+
+        expect(evaluate(world.schedule, context, world.conditions)).toEqual([]);
+    });
+});
+
+describe('the eight types are registered as implemented, with a preview and a schema', () => {
     it.each([
         'overlap_block',
         'vacation_block',
@@ -394,6 +493,8 @@ describe('the six types are registered as implemented, with a preview and a sche
         'unwanted_day_block',
         'onboarding_grace',
         'dow_restriction',
+        'clinic_conflict',
+        'same_unit_conflict',
     ])('%s', (typeKey) => {
         const entry = registryEntry(typeKey);
 

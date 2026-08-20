@@ -1,0 +1,107 @@
+{
+    "name": "clinic-conflict-post-call-reaches-the-day-after-the-last-horizon-date",
+    "why": "THE RIGHT EDGE, which is the edge this type actually reaches over. The night of 10 August is the last date of the horizon and it ends on the 11th, where a Tuesday clinic runs — the violation is located on the 10th, INSIDE the horizon, so it must be reported, and the 11th is a date the day vector does not describe at all. A type reading the weekday only off the day vector cannot answer here; one that stops at horizon.to reports nothing. The Monday clinic on the duty's own date is the second half: under the frozen post-call variant a same-day clinic is NOT a conflict, so a type that folds the anchor date into the post-duty set fires twice. The retired Tuesday clinic is the third: a clinic that is not running cannot be attended, and warning about it is a warning nobody can act on.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-09", "isoWeekday": 7, "dayType": "WD", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-10", "isoWeekday": 1, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-09", "2026-08-10"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [
+            {
+                "key": "cl-picu-tue-am",
+                "unitKey": "PICU",
+                "isoWeekday": 2,
+                "session": "AM",
+                "active": true,
+                "attendeeMode": "rotators",
+                "attendeeLevelKeys": [],
+                "attendeePersonKeys": []
+            },
+            {
+                "key": "cl-picu-mon-pm",
+                "unitKey": "PICU",
+                "isoWeekday": 1,
+                "session": "PM",
+                "active": true,
+                "attendeeMode": "rotators",
+                "attendeeLevelKeys": [],
+                "attendeePersonKeys": []
+            },
+            {
+                "key": "cl-picu-tue-pm-retired",
+                "unitKey": "PICU",
+                "isoWeekday": 2,
+                "session": "PM",
+                "active": false,
+                "attendeeMode": "rotators",
+                "attendeeLevelKeys": [],
+                "attendeePersonKeys": []
+            }
+        ],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-09",
+            "to": "2026-08-10",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-14"
+        },
+        "duties": [{ "personKey": "p-ali", "date": "2026-08-10", "slotKey": "night" }]
+    },
+    "conditions": [
+        {
+            "id": "c-clinic",
+            "typeKey": "clinic_conflict",
+            "class": "hard",
+            "active": true,
+            "params": { "variant": "post_call" }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-clinic",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-ali",
+                "date": "2026-08-10",
+                "slotKey": "night"
+            },
+            "explanation": "Post-call: clinic \"cl-picu-tue-am\" (session AM) runs on 2026-08-11, after this duty ends."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-clinic", "evaluatedWindows": 1, "skipped": [] }]
+}

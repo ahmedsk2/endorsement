@@ -24,6 +24,7 @@ import type {
     LocationKind,
 } from './contract/types';
 import type { JsonSchema } from './contract/schema';
+import * as clinicConflict from './conditions/clinic_conflict';
 import * as dowRestriction from './conditions/dow_restriction';
 import * as eligibility from './conditions/eligibility';
 import * as fairnessDistribution from './conditions/fairness_distribution';
@@ -31,6 +32,7 @@ import * as minGap from './conditions/min_gap';
 import * as onboardingGrace from './conditions/onboarding_grace';
 import * as overlapBlock from './conditions/overlap_block';
 import * as rollingHoursMax from './conditions/rolling_hours_max';
+import * as sameUnitConflict from './conditions/same_unit_conflict';
 import * as targetPerPeriod from './conditions/target_per_period';
 import * as unwantedDayBlock from './conditions/unwanted_day_block';
 import * as vacationBlock from './conditions/vacation_block';
@@ -220,11 +222,21 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'clinic_conflict',
         implemented: true,
+        evaluate: clinicConflict.evaluate,
+        preview: clinicConflict.preview,
+        paramsSchema: clinicConflict.PARAMS_SCHEMA,
         direction: 'block',
         locationKind: 'placement',
-        // The post-call variant reads the PREVIOUS day's duty, so a clinic on the 1st is judged
-        // against a duty in the already-published month before it.
-        needsCarryIn: true,
+        // CORRECTED AT TASK 13, BY MEASUREMENT. This entry read `true`, on the ground that a clinic
+        // on the 1st is judged against a duty in the already-published month before it. That
+        // judgement cannot be REPORTED: every finding this type produces is located at a DUTY, so
+        // one derived from a duty in the carry-in tail is dropped by evaluate()'s emission rule
+        // before anybody sees it (CG-03, never retroactive on published schedules). Reading the
+        // tail therefore changes no output at all, and a fixture asserting it would be asserting
+        // nothing — which is exactly what Task 14's seam-corpus guard would have required. What
+        // this type does reach past the horizon for is a CLINIC, and clinics are a weekly
+        // recurrence carried in the context for every weekday, so they are always available.
+        needsCarryIn: false,
     },
     {
         typeKey: 'eligibility',
@@ -239,6 +251,9 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'same_unit_conflict',
         implemented: true,
+        evaluate: sameUnitConflict.evaluate,
+        preview: sameUnitConflict.preview,
+        paramsSchema: sameUnitConflict.PARAMS_SCHEMA,
         direction: 'block',
         locationKind: 'placement',
         // Same-date pairs only. Nothing outside the horizon can make two people share a date in it.

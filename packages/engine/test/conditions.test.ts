@@ -248,6 +248,40 @@ describe('a duty naming somebody the context does not describe', () => {
 
         expect(() => evaluate(schedule, WORLD.context, WORLD.conditions)).toThrow(/p-ghost/);
     });
+
+    /**
+     * A WINDOW-located type has to be told the same thing, IN ALL THREE STREAMS, and the two tail
+     * ones were unasserted: narrowing `rosterFor` to the schedule's own duties left the whole suite
+     * green, because no case in the corpus puts a stranger in `priorDuties` or `followingDuties`.
+     *
+     * `rosterFor` exists at all because a window type iterates PEOPLE — a floor's whole purpose is
+     * the person who holds nothing — so `personIndex().get()` is never reached by the ordinary path
+     * and the stranger check every placement type gets for free would simply not happen. The tail
+     * is where a stranger is likeliest to arrive, which is why the unasserted half matters more
+     * than the asserted one: `ContextBuilder` reads the published months either side of the horizon
+     * and unions in anybody still holding a rotation, precisely because a departed colleague can
+     * still be named in last month's rota.
+     */
+    const windowWorld = FIXTURES.find(
+        (fixture) => fixture.name === 'count-min-a-person-who-joined-part-way-through-the-window',
+    ) as Fixture;
+
+    const strangerIn = (stream: 'priorDuties' | 'followingDuties', date: string): EvaluationContext =>
+        withPeople(windowWorld.context, (copy) => {
+            copy[stream] = [...copy[stream], { personKey: 'p-ghost', date: d(date), slotKey: 'night' }];
+        });
+
+    it('throws for a stranger in the carry-in tail on either side', () => {
+        expect(() => evaluate(windowWorld.schedule, windowWorld.context, windowWorld.conditions)).not.toThrow();
+
+        expect(() =>
+            evaluate(windowWorld.schedule, strangerIn('priorDuties', '2026-07-28'), windowWorld.conditions),
+        ).toThrow(/p-ghost/);
+
+        expect(() =>
+            evaluate(windowWorld.schedule, strangerIn('followingDuties', '2026-08-18'), windowWorld.conditions),
+        ).toThrow(/p-ghost/);
+    });
 });
 
 describe('overlap_block, beyond the corpus', () => {
@@ -1271,6 +1305,168 @@ describe('no condition module assembles a sentence of its own', () => {
                 ].join('\n'),
             ),
         ).toEqual(['`On leave on ${duty.date}.` });', 'sameDay ? `A.` : `B.` });']);
+    });
+});
+
+describe('five smaller readings the P2-2 review found unasserted', () => {
+    /**
+     * 1. A COVERAGE ROW NEVER ENDS BEFORE IT STARTS, and `carryInLeftEdge`'s guard against that was
+     * unasserted: deleting it left the suite green, because every carry-in case in the corpus has a
+     * real tail and the guard only bites when there is none. A schedule with `evaluableFrom` equal
+     * to `horizon.from` — the first draft of a fresh instance, and what `ContextBuilder` produces
+     * when asked for exactly one month — makes the reported window run from the 1st back to the
+     * 31st. A range a reader cannot parse is a row they stop reading.
+     *
+     * Asserted as a property over the whole corpus AND on the no-tail world, because the corpus
+     * cannot reach the state and the property alone would be vacuous for it.
+     */
+    it('reports no coverage window that ends before it starts', () => {
+        const backwards = FIXTURES.flatMap((fixture) =>
+            coverage(fixture.schedule, fixture.context, fixture.conditions).flatMap((row) =>
+                row.skipped.filter((skip) => compareYmd(skip.from, skip.to) > 0),
+            ),
+        );
+
+        expect(backwards).toEqual([]);
+    });
+
+    it('reports no carry-in window at all when the horizon has no tail', () => {
+        const world = FIXTURES.find(
+            (fixture) => fixture.name === 'count-min-the-floor-counts-the-week-that-begins-in-the-published-month',
+        ) as Fixture;
+
+        const schedule: Schedule = {
+            ...world.schedule,
+            horizon: { ...world.schedule.horizon, evaluableFrom: world.schedule.horizon.from },
+        };
+
+        const context = withPeople(world.context, (copy) => {
+            copy.historyAvailableFrom = null;
+        });
+
+        const rows = coverage(schedule, context, world.conditions)[0]?.skipped ?? [];
+
+        expect(rows.filter((row) => compareYmd(row.from, row.to) > 0)).toEqual([]);
+        expect(rows.filter((row) => row.reason.includes('duty history'))).toEqual([]);
+    });
+
+    /**
+     * 2. A CREDIT IS KEYED ON THE HOLIDAY AND ITS YEAR (owner decision W), and dropping the year
+     * left the suite green: no corpus case reaches two occurrences of one holiday, because a
+     * month-long horizon cannot hold two and every case is a month. The year is what makes a
+     * multi-day holiday one credit AND two years of it two, and only the first half was fixtured.
+     *
+     * The day vector here is deliberately SPARSE — the fixture's own August, plus one day a Hijri
+     * year later. Nothing in this type reads a date it was not given, and a contiguous year of day
+     * rows would be four hundred lines of fixture asserting the same one fact.
+     */
+    it('counts two occurrences of one holiday as two credits, not one', () => {
+        const world = FIXTURES.find(
+            (fixture) =>
+                fixture.name === 'holiday-equity-working-any-part-of-a-holiday-is-one-credit-for-that-holiday-year',
+        ) as Fixture;
+
+        const nextEid = d('2027-07-24');
+
+        const context = withPeople(world.context, (copy) => {
+            copy.days = [
+                ...copy.days,
+                {
+                    date: nextEid,
+                    isoWeekday: 6,
+                    dayType: 'HOL',
+                    periodKey: null,
+                    holidays: [{ key: 'eid-al-fitr', year: 1448 }],
+                },
+            ];
+        });
+
+        const schedule: Schedule = {
+            horizon: { ...world.schedule.horizon, to: nextEid, evaluableTo: nextEid },
+            duties: [...world.schedule.duties, { personKey: 'p-noor', date: nextEid, slotKey: 'night' }],
+        };
+
+        // p-ali holds eid 1447 and national day; p-noor now holds eid 1447 AND eid 1448. Both are
+        // two credits clear of p-zaid's none. Keyed on the holiday alone, p-noor's two eids collapse
+        // into one and they drop out of the finding entirely.
+        const found = evaluate(schedule, context, world.conditions);
+
+        expect(found).toHaveLength(1);
+        expect((found[0]?.location as { personKeys: string[] }).personKeys).toEqual(['p-ali', 'p-noor']);
+    });
+
+    /**
+     * 3. `we_pairing` DE-DUPLICATES the people holding a slot on a day, and dropping the de-dup left
+     * the suite green because no case gives one person two duties in one slot on one date. That is
+     * a schedule `overlap_block` would refuse, but conditions are independent and a department may
+     * run one without the other — and with a duplicated row the two days' holder lists compare
+     * unequal (`["p-ali", "p-ali"]` against `["p-ali"]`) and the type reports a split between a
+     * person and themselves.
+     */
+    it('does not report a weekend split between one person and themselves', () => {
+        const world = FIXTURES.find(
+            (fixture) => fixture.name === 'we-pairing-an-adjacency-the-rule-does-not-name-is-not-a-weekend',
+        ) as Fixture;
+
+        // p-ali covers the WHOLE weekend, which is the arrangement this rule prefers and reports
+        // nothing about. Their Friday row is then written twice.
+        const friday = { personKey: 'p-ali', date: d('2026-08-07'), slotKey: 'night' };
+        const whole: Schedule = {
+            ...world.schedule,
+            duties: [friday, { personKey: 'p-ali', date: d('2026-08-08'), slotKey: 'night' }],
+        };
+
+        expect(evaluate(whole, world.context, world.conditions)).toEqual([]);
+        expect(evaluate({ ...whole, duties: [friday, ...whole.duties] }, world.context, world.conditions)).toEqual(
+            [],
+        );
+    });
+
+    /**
+     * 4. A GAP IS NOT A SPLIT IN EITHER DIRECTION. The corpus asserts the first day covered and the
+     * second not; the mirror was unasserted, and it is the direction the enumeration does not
+     * naturally reach — `slotKeys` is the union of both days precisely so the answer does not
+     * depend on which day the scan started from.
+     */
+    it('is silent for a slot covered on the second day of a weekend and not the first', () => {
+        const world = FIXTURES.find(
+            (fixture) => fixture.name === 'we-pairing-a-weekend-with-only-one-of-its-days-covered-is-not-a-split',
+        ) as Fixture;
+
+        const secondDayOnly: Schedule = {
+            ...world.schedule,
+            duties: world.schedule.duties.filter((duty) => duty.date === d('2026-08-08')),
+        };
+
+        expect(evaluate(secondDayOnly, world.context, world.conditions)).toEqual([]);
+    });
+
+    /**
+     * 5. `target_per_period` CALLS owner decision L's per-person half and nothing asserted it —
+     * replacing `midWindowJoinSkip` with `null` left the suite green, because no case of this type
+     * carries a join date at all. `count_min` has the fixture; the two types share the decision and
+     * shared one case between them, which is Task 15-17's finding 2 in a different clause.
+     */
+    it('leaves a period unjudged for somebody who joined part way through it, and names them', () => {
+        const world = FIXTURES.find(
+            (fixture) => fixture.name === 'target-per-period-a-level-with-no-entry-in-the-map-has-no-target',
+        ) as Fixture;
+
+        const context = withPeople(world.context, (copy) => {
+            for (const person of copy.people) {
+                person.joinedAt = d('2026-08-10');
+            }
+        });
+
+        expect(evaluate(world.schedule, context, world.conditions)).toEqual([]);
+
+        // Two rows, not three: the world's third person rotates on NICU and the condition's scope
+        // names PICU, so they never reach the per-person gate at all.
+        expect(
+            (coverage(world.schedule, context, world.conditions)[0]?.skipped ?? []).map((row) =>
+                row.reason.includes('joined on 2026-08-10'),
+            ),
+        ).toEqual([true, true]);
     });
 });
 

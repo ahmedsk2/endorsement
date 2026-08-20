@@ -63,3 +63,20 @@ export * from './contract/validate';
 export * from './registry';
 export * from './evaluate';
 export * from './coverage';
+
+/**
+ * CG-05/CG-06's severity model and CG-04's plain-language previews (P2 Task 9).
+ *
+ * `severity.ts` holds the ONE stamp — a type reports where and why, and `Condition.class` is the
+ * only input to how severe — and CG-02's order over it. `messages.ts` is the English sentence table
+ * a second language would replace; `preview.ts` routes a condition to its type's sentence and
+ * refuses, loudly and in three distinguishable ways, when it cannot.
+ *
+ * The per-type modules under `conditions/` are deliberately NOT re-exported: they each export
+ * `PARAMS_SCHEMA`, `readParams` and `preview` under those same names, and a star re-export would
+ * collide. The registry is how a caller reaches one, which is also the only way a caller should —
+ * a type resolved by import path is a type resolved without the catalog knowing.
+ */
+export * from './severity';
+export * from './messages';
+export * from './preview';

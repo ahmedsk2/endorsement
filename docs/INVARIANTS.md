@@ -547,6 +547,42 @@ place a scheduling rule is allowed to exist.*
   `UnimplementedConditionTypeError` — **even when the condition is switched off**, and an inactive
   condition is reported through `coverage()` with nothing evaluated and the reason stated.
 
+- **Severity is `Condition.class` and nothing else; grading is rank ORDER and no weight** (P2 Task
+  9, `packages/engine/src/severity.ts`). `stampViolation()` is the one expression in the package
+  that may set `severity`, `rank` and `conditionId`, and `evaluate()` calls it — so *"the engine
+  never overrides the row"* is structural rather than a rule twenty-two files each remember.
+  `comparePrecedence()` puts hard above all soft, grades soft ascending by CG-02's drag rank, sorts
+  an UNRANKED soft row LAST (an unset drag position is not position zero), ignores rank between two
+  hard rows (CG-02 offers no gesture that ranks one hard row against another), and **returns only
+  `-1`, `0` or `1`** — asserted, because AU-02's *"weighted monotonically by rank"* penalty curve is
+  the solver's fact and writing one here would make this its first definition. A `rank` on a hard
+  row is carried verbatim and not acted on.
+
+- **CG-04's preview is generated from parameters, through a message TABLE, and refuses in three
+  distinguishable ways.** `preview.ts` throws `UnknownConditionTypeError`, `UnimplementedConditionTypeError`
+  or `NoPreviewForConditionTypeError` — never a blank or the raw type key, which on a gate screen is
+  a rule that appears to do nothing (rulings 41/49, one layer inside the engine). The property that
+  holds for the whole catalog is a MATRIX, `PickerParityTest`'s shape: **changing any one parameter
+  must change the sentence**, so a parameter added without its preview fails the build. A
+  containment check ("the sentence names the value") was tried and rejected — it cannot express a
+  boolean, and `excludeExternal` is the parameter a preview is likeliest to drop. **`evaluate`
+  implies `preview` and `paramsSchema`, one way**: a preview may land ahead of its predicate, never
+  behind it. Three wordings are owner decisions rather than taste and each renders a number a reader
+  would otherwise predict wrongly: `min_gap` in `days` carries a worked example on dates (decision
+  H's off-by-one), `rolling_hours_max` prints the averaging multiplied out at both scales, and
+  `fairness_distribution` prints its tolerance as a NUMBER at both regimes and never as `10%`
+  (decision Q). `target_per_period`'s modifier REPLACES and the sentence says so in words (decision
+  M) — a delta grammar lets two modifiers compound below zero silently.
+
+- **`fairness_distribution`'s tolerance floor stays, and the reason is measured.** Owner decision Q
+  fixes `max(1, ceil(0.1 × proRatedTarget))`, and `toleranceFor()` is its only definition. The
+  decision's own justification (*"0.4 floors to a tolerance of zero"*) describes rounding DOWN while
+  the formula rounds UP, so with `ceil` the floor changes the answer at exactly one input — a
+  pro-rated target of **zero**, which is what a person on leave for a whole period has. Proved by
+  PLANTING the floor's removal and watching the suite stay GREEN at an expected share of 4; the
+  assertion that catches it is `toleranceFor(0) === 1`. Do not delete the floor as redundant:
+  `Math.round(0.1 * 4)` is 0, and `round` is what the next author reaches for.
+
 - **The TS calendar mirror is the ONE deliberate second implementation, and
   `tests/fixtures/calendar/golden.json` is its contract in BOTH directions.** §7 Decision A of P1a
   overruled the design doc's own "PHP plus a mirrored package" wording with *"ONE implementation, not

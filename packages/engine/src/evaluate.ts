@@ -29,13 +29,18 @@
  * whether or not somebody has ticked the row's on/off box, and the moment it is ticked back on is
  * the worst moment to discover it.
  *
- * ## Severity is stamped HERE, once, from the condition row
+ * ## Severity is stamped ONCE, by `severity.ts`, from the condition row
  *
- * A type reports WHERE and WHY (a {@link Finding}); this function stamps `conditionId`, `severity`
- * and `rank` from `Condition`. That makes Decision E's *"the engine still never overrides the
- * row"* structural rather than a rule twenty-two separate files each have to remember — and
- * twenty-two chances to override authored data is not a risk worth taking for the sake of a
- * shorter function.
+ * A type reports WHERE and WHY (a `Finding`); `stampViolation()` turns that into a `Violation` by
+ * reading `conditionId`, `severity` and `rank` off the `Condition`. That makes Decision E's *"the
+ * engine still never overrides the row"* structural rather than a rule twenty-two separate files
+ * each have to remember — and twenty-two chances to override authored data is not a risk worth
+ * taking for the sake of a shorter function.
+ *
+ * The expression lived HERE until P2 Task 9 moved it beside CG-05/CG-06's ordering model, which is
+ * the other half of the same fact. It is called from here and defined once; `severity.test.ts`
+ * asserts that the violation this pipeline produces is byte-identical to the stamp applied alone,
+ * so the two cannot become two.
  *
  * PLANTED: `severity: condition.class` was replaced with the literal `'hard'` — which is what a
  * type asserting its own class amounts to — and the stamping case went red. Reverted.
@@ -59,7 +64,8 @@ import type {
     Schedule,
     Violation,
 } from './contract/types';
-import { CATALOG, type RegistryEntry } from './registry';
+import { CATALOG, indexCatalog, type RegistryEntry } from './registry';
+import { stampViolation } from './severity';
 
 /** No catalog row carries this key. */
 export class UnknownConditionTypeError extends Error {
@@ -111,18 +117,7 @@ export function runConditions(
     context: EvaluationContext,
     conditions: readonly Condition[],
 ): ConditionRun[] {
-    const byTypeKey = new Map<string, RegistryEntry>();
-
-    for (const entry of catalog) {
-        if (byTypeKey.has(entry.typeKey)) {
-            throw new RangeError(
-                `Two registry entries share the type key "${entry.typeKey}"; every lookup would be ` +
-                    'arbitrary, and the arbitrary answer would differ between this package two runtimes.',
-            );
-        }
-
-        byTypeKey.set(entry.typeKey, entry);
-    }
+    const byTypeKey = indexCatalog(catalog);
 
     return conditions.map((condition) => {
         const entry = byTypeKey.get(condition.typeKey);
@@ -189,13 +184,7 @@ export function evaluateWith(
 
     for (const { condition, outcome } of runConditions(catalog, schedule, context, conditions)) {
         for (const finding of outcome.findings) {
-            violations.push({
-                conditionId: condition.id,
-                severity: condition.class,
-                ...(condition.rank === undefined ? {} : { rank: condition.rank }),
-                location: finding.location,
-                explanation: finding.explanation,
-            });
+            violations.push(stampViolation(condition, finding));
         }
     }
 

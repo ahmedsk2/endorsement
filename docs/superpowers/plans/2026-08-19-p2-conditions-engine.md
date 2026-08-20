@@ -2177,3 +2177,45 @@ word matched `calendar/index.ts`'s own docblock sentence declaring that there is
 a guard failing on its own explanation. Bracket access is a stated residual: its needle is the quoted
 word, which already appears in `schema.ts`'s `required` array, so buying it would cost the first
 entry in an allow-list whose emptiness is the point.
+
+### From Task 9 (2026-08-20) — the tolerance floor binds at one input, and it is not the one the answer names
+
+Owner decision Q fixes `tolerance = max(1, ceil(0.1 × proRatedTarget))` and argues the floor from
+*"10% of a 4-weekend target is 0.4, which floors to a tolerance of ZERO"*. **That argument describes
+rounding DOWN and the formula rounds UP.** `ceil(0.1 × 4)` is already 1, and so is `ceil(0.1 × n)`
+for every `n` from 1 to 10 — so with `ceil`, `max(1, …)` changes the answer at exactly one input: a
+pro-rated target of **zero**, which is a real one (a person whose eligible days are all leave, or a
+quantity with no duties in the schedule at all).
+
+**Found by planting, not by reading.** The floor was deleted and the whole suite stayed GREEN,
+including the preview's own worked example at an expected share of 4 — the very number the decision
+reasons from. `toleranceFor(0) === 1` is the assertion that catches it, and it is now in
+`preview.test.ts` with the plant recorded beside it.
+
+**The floor stays and the formula is implemented verbatim.** It is one character from becoming
+load-bearing across the whole under-ten range again (`Math.round(0.1 * 4)` is 0, and `round` is the
+more natural reach), so a later author finding it redundant would be deleting a guard whose
+redundancy depends on a rounding mode nobody wrote down. `fairness_distribution.ts`'s docblock says
+so where that author will be standing.
+
+**A second thing this settles, and it is a scope question rather than a defect.** Decision Q also
+requires the preview to *"state the tolerance it actually applied as a NUMBER"*. The applied number
+needs the pro-rated target, which needs the SCHEDULE — and `ConditionPreview` receives the condition
+and the context and, correctly, not the schedule: CG-04 previews a RULE on the gate screen before any
+draft exists, and a preview that moved as a draft was edited would be a different artifact from the
+one CG-01 lists beside a drag handle. So the sentence prints the tolerance FUNCTION as two worked
+points spanning both regimes — *"an expected share of 4 allows 1, an expected share of 40 allows 4"* —
+which removes the mis-prediction the decision names without pretending to a number nothing has
+computed. **The applied number belongs in the VIOLATION's explanation, where the target is known, and
+Task 19 owes it there.**
+
+*Three smaller findings from the same task.* Task 9's file list names `severity.ts` and `preview.ts`
+and no others; the previews needed a params schema to be a preview OF something, and a schema
+belongs beside the predicate that will read it, so `src/conditions/{min_gap,rolling_hours_max,
+fairness_distribution,target_per_period}.ts` land here carrying `PARAMS_SCHEMA`, `readParams` and
+`preview` — and Tasks 14, 16, 18 and 19 add `evaluate` to files that already exist. `messages.ts` is
+a fifth file the list does not name, and it exists because `preview.ts` must import the registry to
+dispatch while the type modules must import the sentences: one file would be a cycle. And
+`ConditionPreview` gained a third parameter, the message table, because AR-07's *"translations are
+future work"* is only true if the table is an ARGUMENT — `preview.test.ts` proves it by handing in a
+second table and watching the sentence change.

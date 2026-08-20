@@ -24,6 +24,10 @@ import type {
     LocationKind,
 } from './contract/types';
 import type { JsonSchema } from './contract/schema';
+import * as fairnessDistribution from './conditions/fairness_distribution';
+import * as minGap from './conditions/min_gap';
+import * as rollingHoursMax from './conditions/rolling_hours_max';
+import * as targetPerPeriod from './conditions/target_per_period';
 
 /**
  * Which way a type pushes, and it exists for a product hazard rather than for tidiness.
@@ -109,6 +113,8 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'min_gap',
         implemented: true,
+        paramsSchema: minGap.PARAMS_SCHEMA,
+        preview: minGap.preview,
         direction: 'spacing',
         locationKind: 'placement',
         // The gap between the last night of month M and the first duty of M+1 is the case a
@@ -144,6 +150,8 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'target_per_period',
         implemented: true,
+        paramsSchema: targetPerPeriod.PARAMS_SCHEMA,
+        preview: targetPerPeriod.preview,
         direction: 'target',
         locationKind: 'window',
         needsCarryIn: true,
@@ -167,6 +175,8 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'fairness_distribution',
         implemented: true,
+        paramsSchema: fairnessDistribution.PARAMS_SCHEMA,
+        preview: fairnessDistribution.preview,
         direction: 'equity',
         locationKind: 'cohort',
         // Measured over the schedule under evaluation against its own eligible-day denominator.
@@ -252,6 +262,8 @@ export const CATALOG: readonly RegistryEntry[] = [
     {
         typeKey: 'rolling_hours_max',
         implemented: true,
+        paramsSchema: rollingHoursMax.PARAMS_SCHEMA,
+        preview: rollingHoursMax.preview,
         direction: 'cap',
         locationKind: 'window',
         needsCarryIn: true,
@@ -311,4 +323,30 @@ export const CATALOG: readonly RegistryEntry[] = [
 /** The one entry for a type key, or `undefined`. Callers decide what an absence means. */
 export function registryEntry(typeKey: string, catalog: readonly RegistryEntry[] = CATALOG): RegistryEntry | undefined {
     return catalog.find((entry) => entry.typeKey === typeKey);
+}
+
+/**
+ * A catalog by type key, refusing a duplicate key.
+ *
+ * ONE definition of that refusal, shared by `evaluate()`'s resolution and `preview()`'s. Two
+ * entries under one key make every lookup arbitrary, and the arbitrary answer is free to differ
+ * between this package's two runtimes (D4) and between its two dispatchers — so a condition could
+ * be previewed by one entry and evaluated by another, which reads on a gate screen as a rule that
+ * does not do what it says.
+ */
+export function indexCatalog(catalog: readonly RegistryEntry[]): Map<string, RegistryEntry> {
+    const byTypeKey = new Map<string, RegistryEntry>();
+
+    for (const entry of catalog) {
+        if (byTypeKey.has(entry.typeKey)) {
+            throw new RangeError(
+                `Two registry entries share the type key "${entry.typeKey}"; every lookup would be ` +
+                    "arbitrary, and the arbitrary answer would differ between this package's two runtimes.",
+            );
+        }
+
+        byTypeKey.set(entry.typeKey, entry);
+    }
+
+    return byTypeKey;
 }

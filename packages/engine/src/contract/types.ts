@@ -55,6 +55,9 @@ import type { Duty, Slot } from '../duty/interval';
 import type { Horizon } from '../duty/windows';
 import type { DayType } from '../calendar';
 import type { Ymd } from '../calendar/ymd';
+import type { PreviewMessages } from '../messages';
+
+export type { PreviewMessages };
 
 /**
  * One date of the horizon, PRECOMPUTED server-side by the one converter.
@@ -318,8 +321,22 @@ export interface ConditionOutcome {
     coverage: CoverageDetail;
 }
 
-/** CG-04's plain-language preview of one condition's parameters. Task 9 fills these in. */
-export type ConditionPreview = (condition: Condition, context: EvaluationContext) => string;
+/**
+ * CG-04's plain-language preview of one condition's parameters (P2 Task 9).
+ *
+ * The MESSAGE TABLE is an argument rather than something the type reaches for. AR-07 makes
+ * translation future work, not no work, and a sentence assembled from literals inside a predicate
+ * is a sentence that can only ever be English — twenty-two times over, discovered twenty-two times.
+ *
+ * It receives the CONTEXT and deliberately not the schedule: CG-04 previews a RULE on the gate
+ * screen, before any draft exists, and a preview that changed as a draft was edited would be a
+ * different artifact from the one CG-01 lists beside a drag handle.
+ */
+export type ConditionPreview = (
+    condition: Condition,
+    context: EvaluationContext,
+    messages: PreviewMessages,
+) => string;
 
 /**
  * One case of the golden corpus: the inputs, the expected outputs, and why the case exists.

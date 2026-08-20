@@ -119,6 +119,41 @@ export function validate(defName: string, value: unknown): ValidationError[] {
     return errors;
 }
 
+/**
+ * The same validator against a schema supplied by the caller — what a condition type's
+ * `paramsSchema` needs (P2 Task 9).
+ *
+ * A params schema is not a `$defs` entry of the contract document and must not become one: the
+ * contract is CG-10's shape, which every consumer shares, while a type's parameters are that
+ * type's own and arrive one department at a time. `$ref` inside a params schema still resolves
+ * against the contract document, so a parameter may reuse `Ymd` without copying its pattern.
+ */
+export function validateAgainst(schema: JsonSchema, value: unknown): ValidationError[] {
+    const errors: ValidationError[] = [];
+
+    checkAgainst(schema, value, '#', errors);
+
+    return errors;
+}
+
+/**
+ * {@link validateAgainst}, but a failure throws — the boundary a department's own numbers cross.
+ *
+ * Loud rather than lenient, for the reason `strict` and `noUncheckedIndexedAccess` are on: a
+ * parameter read as the wrong shape produces a plausible wrong NUMBER rather than a crash, and a
+ * plausible wrong number on a rota is a person working a night they should not have.
+ */
+export function assertValidAgainst(schema: JsonSchema, value: unknown, label: string): void {
+    const errors = validateAgainst(schema, value);
+
+    if (errors.length > 0) {
+        throw new TypeError(
+            `${label} does not satisfy its parameter schema:\n` +
+                errors.map((error) => `  ${error.path}: ${error.message}`).join('\n'),
+        );
+    }
+}
+
 /** {@link validate}, but a failure throws — for a boundary where carrying on is not an option. */
 export function assertValid(defName: string, value: unknown): void {
     const errors = validate(defName, value);

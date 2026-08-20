@@ -172,7 +172,21 @@ export function hoursText(minutes: number): string {
     return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
 }
 
-/** Whether a slot's kind is one this condition names. An EMPTY list names every kind. */
+/**
+ * Whether a slot's kind is one this condition names. An EMPTY list names every kind.
+ *
+ * Three types narrow through this one function — `min_gap`, `post_duty_exclusion` and
+ * `consecutive_max` — and until P2-1's review not one of them had a case in which it narrowed
+ * anything: no corpus entry set `kinds`, `from` or `to` to a list that excluded a duty actually
+ * present, so `return true` here was green across the whole suite. The empty-list half was
+ * exercised by every case and the NAMED half by none, which is the same green as an unwritten
+ * filter.
+ *
+ * PLANTED, after the three cases below were added: `return true` fails 7 tests across all three
+ * types. Reverted. The cases are `min-gap-kinds-names-both-sides-of-the-pair`,
+ * `consecutive-max-what-the-nights-unit-and-the-kinds-list-leave-out` and
+ * `post-duty-exclusion-the-from-and-to-kinds-each-narrow`.
+ */
 export function kindMatches(kind: string, kinds: readonly string[]): boolean {
     return kinds.length === 0 || kinds.includes(kind);
 }

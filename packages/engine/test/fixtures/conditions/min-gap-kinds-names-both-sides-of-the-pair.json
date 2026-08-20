@@ -1,0 +1,124 @@
+{
+    "name": "min-gap-kinds-names-both-sides-of-the-pair",
+    "why": "A rule spacing calls apart says nothing about the admin block that happens to sit a day after one of them, and no case in the corpus set `kinds` at all — so the whole filter could be deleted with the suite green. p-ali holds an unnamed kind as the LATER duty of the pair and p-noor holds it as the EARLIER one, which are two different tests in the implementation and would be one if only a single side were fixtured. p-sara is the control, a genuine call-to-call pair a day apart under a three-day rule, without which a predicate that reports nothing at all would pass. The coverage row is the third assertion: a duty of an unnamed kind is not a placement this condition judged, so four of the six are counted.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [5, 6],
+        "today": "2026-08-01",
+        "days": [
+            { "date": "2026-08-01", "isoWeekday": 6, "dayType": "WE", "periodKey": null, "holidays": [] },
+            { "date": "2026-08-02", "isoWeekday": 7, "dayType": "WD", "periodKey": null, "holidays": [] }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02"],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [{ "key": "R2", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02"],
+                "external": false
+            },
+            {
+                "key": "p-sara",
+                "levelSpans": [{ "key": "R3", "from": "2026-01-01", "to": "2026-12-31" }],
+                "unitSpans": [{ "key": "PICU", "from": "2026-01-01", "to": "2026-12-31" }],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": ["2026-08-01", "2026-08-02"],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "desk",
+                "kind": "admin",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 960,
+                "crossesMidnight": false,
+                "countsHours": false,
+                "tallyKey": "admin"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-02",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-05"
+        },
+        "duties": [
+            { "personKey": "p-ali", "date": "2026-08-01", "slotKey": "night" },
+            { "personKey": "p-ali", "date": "2026-08-02", "slotKey": "desk" },
+            { "personKey": "p-noor", "date": "2026-08-01", "slotKey": "desk" },
+            { "personKey": "p-noor", "date": "2026-08-02", "slotKey": "night" },
+            { "personKey": "p-sara", "date": "2026-08-01", "slotKey": "night" },
+            { "personKey": "p-sara", "date": "2026-08-02", "slotKey": "night" }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-gap",
+            "typeKey": "min_gap",
+            "class": "hard",
+            "active": true,
+            "params": { "value": 3, "unit": "days", "kinds": ["call"] }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-gap",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-sara",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            },
+            "explanation": "1 day between this duty and \"night\" on 2026-08-02, counted between the dates they start on; at least 3 are required."
+        },
+        {
+            "conditionId": "c-gap",
+            "severity": "hard",
+            "location": {
+                "kind": "placement",
+                "personKey": "p-sara",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            "explanation": "1 day between this duty and \"night\" on 2026-08-01, counted between the dates they start on; at least 3 are required."
+        }
+    ],
+    "expectedCoverage": [{ "conditionId": "c-gap", "evaluatedWindows": 4, "skipped": [] }]
+}

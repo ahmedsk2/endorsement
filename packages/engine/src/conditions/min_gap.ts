@@ -122,6 +122,16 @@ function shortfall(earlier: PositionedDuty, later: PositionedDuty, params: MinGa
  * *"Minimum spacing between duties [of these kinds]"* is a statement about a PAIR, so a pair is
  * measured only when both of its duties are of a named kind. A rule spacing nights apart says
  * nothing about the day shift that happens to sit between two of them.
+ *
+ * It is read ONCE per duty and used twice — by the pair scan and by the count — because a duty of
+ * an unnamed kind can never appear in a finding this condition produces, so it is not a placement
+ * this condition judged. `eligibility` already counts that way for a slot absent from its map, and
+ * `consecutive_max` for a duty outside its own `kinds`. The hoist is not pruning: every pair is
+ * still visited, and the `continue` states the same rule the inner test states.
+ *
+ * The parameter narrowed NOTHING in the corpus until P2-1's review — no case set it, so the whole
+ * filter could be deleted with 587/587 green. `min-gap-kinds-names-both-sides-of-the-pair` is what
+ * fails now, on each side separately and in the coverage row.
  */
 export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
     const params = readParams(condition);
@@ -144,15 +154,17 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
 
         for (let index = 0; index < ordered.length; index += 1) {
             const here = ordered[index] as PositionedDuty;
+            // ONE reading of `kinds` on this side of the pair, used by the count and by the scan.
+            const spaced = kindMatches(here.slot.kind, params.kinds);
 
-            if (here.origin === 'horizon' && personInScope(person, here.duty.date, condition.scope)) {
+            if (spaced && here.origin === 'horizon' && personInScope(person, here.duty.date, condition.scope)) {
                 evaluated += 1;
             }
 
             for (let other = index + 1; other < ordered.length; other += 1) {
                 const there = ordered[other] as PositionedDuty;
 
-                if (!kindMatches(here.slot.kind, params.kinds) || !kindMatches(there.slot.kind, params.kinds)) {
+                if (!spaced || !kindMatches(there.slot.kind, params.kinds)) {
                     continue;
                 }
 

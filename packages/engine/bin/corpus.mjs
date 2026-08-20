@@ -271,7 +271,27 @@ function checkRefusals(sample) {
     // The positive half of the last case, stated separately so a silent success cannot pass for
     // one that reported something: this fixture expects violations and the process must have
     // written them while exiting 0.
-    const answer = JSON.parse(raw(JSON.stringify(request)).stdout);
+    //
+    // Parsed defensively. An unguarded parse here THREW on the first plant of this harness — the
+    // public surface was broken, every fixture had already failed, and the stack trace replaced
+    // the report of all ninety of them. A harness that crashes instead of reporting is a harness
+    // whose failure tells you less than its success did.
+    const success = raw(JSON.stringify(request));
+
+    let answer;
+
+    try {
+        answer = JSON.parse(success.stdout);
+    } catch (error) {
+        fail(
+            'the entrypoint given a well-formed request did not write parseable JSON',
+            `${error.message}\nstdout: ${success.stdout.slice(0, 200) || '(empty)'}\nstderr: ${
+                success.stderr.slice(0, 400) || '(empty)'
+            }`,
+        );
+
+        return;
+    }
 
     if (answer.violations.length === 0) {
         fail('the refusal sample produces no violations', `${sample.name} was chosen because it does`);
@@ -557,29 +577,44 @@ function measure() {
 }
 
 // -------------------------------------------------------------------------------------------
+// The run. Everything is inside one try so that an exception ANYWHERE still reports the failures
+// already collected.
+//
+// Measured, on this harness's own first plant: the public surface was broken, all ninety fixtures
+// had already failed and been recorded — and a later `TypeError` from the benchmark replaced the
+// whole report with one stack trace. The reader learnt that the harness broke and nothing about
+// what broke it. Collected failures are printed unconditionally below; a throw is one more entry
+// in the list rather than a substitute for it.
+// -------------------------------------------------------------------------------------------
 
-const loaded = loadFixtures();
+let measured = null;
 
-for (const entry of loaded) {
-    checkFixture(entry);
+try {
+    const loaded = loadFixtures();
+
+    for (const entry of loaded) {
+        checkFixture(entry);
+    }
+
+    checkEveryImplementedTypeIsExercised(loaded);
+
+    const refusalSample = loaded.find(({ fixture }) => fixture.expected.length > 0);
+
+    if (refusalSample === undefined) {
+        fail('no fixture in the corpus expects a violation', 'the refusal checks need one that does');
+    } else {
+        checkRefusals(refusalSample.fixture);
+    }
+
+    process.stdout.write(
+        `corpus: ${loaded.length} fixtures through ${ENTRYPOINT.replace(/\\/g, '/')}, one process each\n` +
+            'entrypoint: eight refusal and success cases asserted by exit code and message\n',
+    );
+
+    measured = measure();
+} catch (error) {
+    fail('the harness itself threw', `${error?.stack ?? error}`);
 }
-
-checkEveryImplementedTypeIsExercised(loaded);
-
-const refusalSample = loaded.find(({ fixture }) => fixture.expected.length > 0);
-
-if (refusalSample === undefined) {
-    fail('no fixture in the corpus expects a violation', 'the refusal checks need one that does');
-} else {
-    checkRefusals(refusalSample.fixture);
-}
-
-process.stdout.write(
-    `corpus: ${loaded.length} fixtures through ${ENTRYPOINT.replace(/\\/g, '/')}, one process each\n` +
-        'entrypoint: eight refusal and success cases asserted by exit code and message\n',
-);
-
-const measured = measure();
 
 if (measured !== null) {
     const ms = (value) => `${value.toFixed(1)} ms`;

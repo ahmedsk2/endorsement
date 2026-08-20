@@ -2327,9 +2327,12 @@ hardcoded a sentence, and by then the shape is set by whichever type happened to
 
 It also decides whether **AR-07** — *"strings are externalized from launch so a future locale is
 translation work, not a rewrite"* — holds for violations the way it already holds for weekday names
-(`lang/en/calendar.php`) and Hijri months. Today it does not. `preview` already goes through the
-table (Task 9, proved by handing in a second table and watching the sentence change); `explanation`
-is the half that was missed, and the two should not diverge.
+(`lang/en/calendar.php`) and Hijri months. Today it does not. `preview` goes through the table for Task 9's four
+types (proved by handing in a second table and watching the sentence change) — **but NOT for Task
+10's three, which carry English inline. That correction is owed here: an earlier note in this file
+said `preview` "already goes through the table" without qualification, and it is only half true.**
+So P2-2's first task threads `explanation` through *and* migrates those three previews; both halves
+of the same omission, and cheaper together than twice.
 
 **The argument for delaying, considered and rejected:** P2-2's types are where one learns what a good
 explanation reads like, so threading a table now fixes the shape before that knowledge exists. It is
@@ -2401,3 +2404,21 @@ second is a decision somebody takes. And the quoted-weekday scan over `packages/
 that proves a weekday NAME is refused, so the name is assembled from two literals there: the eighth
 *"a docblock is scanned source"* of the phase, and the first where the scanned file is the test
 asserting the rule the scan enforces.
+
+
+### ANSWERED 2026-08-20 (round three) — all three confirmed the stated defaults
+
+- **`clinic_conflict` variant — POST-CALL ONLY.** A clinic the morning after a night on call is
+  refused; a clinic and a call starting that same evening is permitted. The per-clinic-configurable
+  option was offered and declined: it would add a field, a screen control, and a decision per clinic.
+- **`onboarding_grace` with an unknown `joined_at` — NO VIOLATION, REPORTED.** Decision T stands, but
+  the state is made visible rather than silent, which matters because `joined_at` is written by no
+  seeder, factory or demo path and is therefore empty for everybody on the live instance. A silent
+  skip would be indistinguishable from the rule working. Task 12 reports it three ways: a `coverage()`
+  skip row naming the person and the placement count, exclusion from `evaluatedWindows` (so the reader
+  sees "1 evaluated, 1 skipped" rather than "2 evaluated, clean"), and a sentence in the CG-04 preview.
+  A person with no join date **and no duty** is deliberately not reported — that is noise.
+- **`consecutive_max` does NOT reset at a period boundary.** A run of five nights ending on the last
+  day of a block and continuing into the next is a run of five-plus, and the cap sees it. This is what
+  the carry-in tail exists for, and a block boundary is an administrative artefact while the fatigue is
+  not — a scheduler working block-by-block is precisely who would not otherwise notice.

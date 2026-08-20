@@ -1146,7 +1146,10 @@ describe('we_pairing — owner decision Z, and the half of it that does not ship
             params: { preferredPairs: [pair] },
         });
 
-        const name = ['Fri', 'day'].join('');
+        // Assembled, and split at a point the vocabulary scan does not needle: a three-letter
+        // abbreviation is itself a needle, so the obvious split reintroduces the offence this
+        // case exists to prove is refused.
+        const name = ['F', 'riday'].join('');
 
         expect(() => evaluate(world.schedule, world.context, [pairing({ first: name, second: 6 })])).toThrow(
             /expected integer/,

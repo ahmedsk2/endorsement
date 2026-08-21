@@ -127,6 +127,15 @@
  *  3. **`<=` relaxed to `<`** — not a hole at all. See {@link COMPARISON_EPSILON}: the epsilon makes
  *     the two spellings indistinguishable on any input, so the boundary is pinned by the numbers
  *     either side of it and the operator is not the control.
+ *  4. **The horizon filter deleted from the DENOMINATOR** (P2-2 review) — the SAME clip one term
+ *     along, and green for a different reason than item 2. Item 2 was closed by a tail DUTY, and a
+ *     tail duty adds no tail ELIGIBLE DAY: `ContextBuilder` builds `eligibleDays` over the whole
+ *     evaluable range while this rule compares over the horizon alone, so the numerator's clip was
+ *     asserted and the denominator's was not. A fixture CAN express this one, unlike item 2 — an
+ *     eligible day in the already-published week is ordinary carry-in rather than confusing corpus
+ *     data — so `fairness-distribution-the-expected-share-is-pro-rated-by-availability` carries a
+ *     genuine tail and the clipped shares stay 3.3 and 0.7 where the unclipped ones are 3.1 and 0.9.
+ *     Two clips, two terms, two separate cases: closing one said nothing about the other.
  */
 
 import type { JsonSchema } from '../contract/schema';
@@ -256,7 +265,15 @@ function cohortFor(
     );
 }
 
-/** How many days of the horizon this person could actually have been scheduled on. */
+/**
+ * How many days of the horizon this person could actually have been scheduled on.
+ *
+ * The clip is LOAD-BEARING and is not the same statement as the numerator's. `eligibleDays` arrives
+ * over the whole evaluable range — `ContextBuilder` builds it from the dates it was asked for, tail
+ * included — while this rule compares over `[horizon.from, horizon.to]` alone. Without the filter
+ * the denominator counts days in a month somebody else already published and every printed share
+ * moves with it, silently and only where a tail was supplied.
+ */
 function availableDaysIn(person: Person, horizon: Horizon): number {
     return person.eligibleDays.filter((date) => withinHorizon(horizon, date)).length;
 }

@@ -252,9 +252,26 @@ export function occupiedDates(duty: Duty, slot: Slot): Ymd[] {
  * ties readings 2 and 3 together and is asserted for every fixture in the matrix.
  */
 export function onDutyMinutesOn(duty: Duty, slot: Slot, date: Ymd): number {
-    const { start, end } = dutyInterval(duty, slot);
+    return minutesOfIntervalOn(dutyInterval(duty, slot), date);
+}
+
+/**
+ * The same reading, over an interval the caller has ALREADY resolved — and the one definition of it.
+ *
+ * {@link onDutyMinutesOn} delegates here rather than repeating the arithmetic, so there is exactly
+ * one expression in the package deciding how many minutes of a span fall on a civil date. Two
+ * copies would be `AuditChain::canonical()`'s defect in the function whose whole content is a
+ * clamp.
+ *
+ * It exists because `dutyInterval` re-runs `assertSlot` on every call, and `rolling_hours_max` asks
+ * this question `windows x people x duties x days` times over one evaluation — the interval was
+ * already computed and already validated by `orderedDutiesFor`, which is what `PositionedDuty`
+ * carries it for. This is a REUSE, not a shortcut: nothing here decides anything the slower path
+ * decides differently, which is the line Task 10's pruning defect crossed and this does not.
+ */
+export function minutesOfIntervalOn(interval: AbsInterval, date: Ymd): number {
     const dayStart = absMinute(date, 0);
     const dayEnd = dayStart + MINUTES_PER_DAY;
 
-    return Math.max(0, Math.min(end, dayEnd) - Math.max(start, dayStart));
+    return Math.max(0, Math.min(interval.end, dayEnd) - Math.max(interval.start, dayStart));
 }

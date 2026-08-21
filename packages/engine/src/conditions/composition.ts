@@ -58,10 +58,31 @@
  * `free_day_min`, `composition` and `target_per_period` together, one task after `count_max` was
  * caught by exactly the same probe. Each is now closed by a third person in its own defining
  * fixture who would be flagged on their own figures and is excluded by the scope alone.
+ *
+ * ## THE DAY VECTOR MAY NOT REACH THE WHOLE WINDOW, and this used to be a crash
+ *
+ * Found by the P2-2 review. `Day` is documented as *"one date of the horizon"* and this type's
+ * window is the PERIOD, which routinely opens before the horizon does — the seam case in the corpus
+ * exists for exactly that. Every duty in the window went through `dayIndex().get()`, which THROWS
+ * on a date the vector does not describe, so a context carrying precisely what the contract
+ * promises produced a `RangeError` on the commonest shape this type meets. The corpus never saw it
+ * because its own seam case supplies day rows across the whole tail, which is generous rather than
+ * required.
+ *
+ * There is no honest local answer — `dayType` is never re-derived from `weekendDays` (AR-08), since
+ * holiday beats weekend deliberately and a mirror would disagree on exactly the days that matter
+ * most — so the window goes to `coverage()` instead. That is the same device `clinic_conflict`
+ * already uses for the one question that legitimately reaches past the vector, and `find()` versus
+ * `get()` is the line between them.
+ *
+ * PER PERSON rather than per window, because the buckets are per person: a colleague every one of
+ * whose duties the vector describes still gets a real answer, and one person's missing day would
+ * otherwise suppress the whole block for everybody.
  */
 
 import type { JsonSchema } from '../contract/schema';
 import type { DayType } from '../calendar';
+import type { Ymd } from '../calendar/ymd';
 import type {
     Condition,
     ConditionEvaluator,
@@ -225,12 +246,44 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context, messa
 
             const positioned = positionedIn(person.key, window, streams, slots);
             const held: Record<Bucket, number> = { WD: 0, WE: 0, HOL: 0 };
+            const undescribed: Ymd[] = [];
 
             // NO EARLY EXIT: every duty is bucketed even once one bucket is already over, because
             // the sentence names every bucket that is off and a scan that stopped at the first
-            // would report a shape of the problem rather than the problem.
+            // would report a shape of the problem rather than the problem. The undescribed dates
+            // are COLLECTED for the same reason rather than breaking on the first — the count is
+            // what tells a reader how much of the vector is missing.
             for (const entry of positioned) {
-                held[bucketFor(days.get(entry.duty.date).dayType, target)] += 1;
+                const day = days.find(entry.duty.date);
+
+                if (day === null) {
+                    undescribed.push(entry.duty.date);
+
+                    continue;
+                }
+
+                held[bucketFor(day.dayType, target)] += 1;
+            }
+
+            // `Day` promises the HORIZON and this window is the PERIOD, which routinely opens
+            // before it — so a context carrying exactly what the contract promises can hold a duty
+            // whose day type is genuinely unknown. `dayType` is never re-derived (AR-08), so there
+            // is no honest local answer and this used to throw on ordinary input. Per person,
+            // because the buckets are: a colleague the vector fully describes still gets judged.
+            if (undescribed.length > 0) {
+                skipped.push({
+                    from: window.from,
+                    to: window.to,
+                    reason: messages.unknownDayTypeSkip({
+                        personKey: person.key,
+                        first: undescribed[0] as Ymd,
+                        dates: undescribed.length,
+                        from: window.from,
+                        to: window.to,
+                    }),
+                });
+
+                continue;
             }
 
             const off = bucketsOf(target)

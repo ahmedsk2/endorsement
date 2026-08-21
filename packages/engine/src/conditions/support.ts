@@ -484,11 +484,52 @@ export function positionedIn(
     streams: DutyStreams,
     slots: SlotIndex,
 ): PositionedDuty[] {
-    return orderedDutiesFor(personKey, streams, slots).filter(
+    return positionedWithin(orderedDutiesFor(personKey, streams, slots), window);
+}
+
+/**
+ * The anchor-date filter ALONE, over a line somebody has already resolved.
+ *
+ * {@link positionedIn} resolves and filters in one call, which is right for a type measuring a
+ * handful of period or week windows. It is wrong for one enumerating a rolling window per day:
+ * `orderedDutiesFor` scans all three streams and SORTS, so resolving inside the window loop is
+ * `windows x people` sorts of the same list. Measured on the NF-01 case (P2-2 review): 34.6 ms of
+ * a 58 ms budget in `rolling_hours_max` alone, on a schedule of ninety-three duties.
+ *
+ * The split keeps ONE definition of the filter while letting the caller decide when to resolve.
+ * Two copies of *"whose anchor date falls in this window"* would disagree at a week boundary, which
+ * is where a scheduler is least able to check it by eye — this function's own recorded reason.
+ */
+export function positionedWithin(ordered: readonly PositionedDuty[], window: Window): PositionedDuty[] {
+    return ordered.filter(
         (positioned) =>
             compareYmd(positioned.duty.date, window.from) >= 0 &&
             compareYmd(positioned.duty.date, window.to) <= 0,
     );
+}
+
+/**
+ * One person's ordered duty line, resolved at most ONCE per evaluation.
+ *
+ * LAZY rather than precomputed over the roster, and that is a correctness choice rather than a
+ * performance one: `orderedDutiesFor` throws on a duty naming an unsupplied slot, so resolving
+ * everybody up front would raise on a person the condition's scope was about to exclude — a
+ * different answer for the same input, which is the one thing a pure function may not do. Asking on
+ * demand makes exactly the same set of calls as before, just not repeatedly.
+ */
+export function orderedByPerson(streams: DutyStreams, slots: SlotIndex): (personKey: string) => PositionedDuty[] {
+    const resolved = new Map<string, PositionedDuty[]>();
+
+    return (personKey: string): PositionedDuty[] => {
+        let found = resolved.get(personKey);
+
+        if (found === undefined) {
+            found = orderedDutiesFor(personKey, streams, slots);
+            resolved.set(personKey, found);
+        }
+
+        return found;
+    };
 }
 
 /**
@@ -523,10 +564,29 @@ export type WindowVerdict = { measure: true } | { measure: false; skip: SkippedW
  *    {@link carryInLeftEdge}'s single row instead, because the answer is identical for every such
  *    window and one row apiece would repeat one fact until a reader stopped reading them. The
  *    `skip: null` is that decision, spelled as a value rather than left as a missing branch.
+ *  - **Reaching back further than the history that WAS supplied** — named individually, and added
+ *    by the P2-2 review because it was silently a THIRD shape wearing the second's answer. See
+ *    below.
  *
  * A CAP does not call this at all: an under-count cannot exceed a limit, so it evaluates both
  * shapes. That asymmetry is the whole of decision L and it is why this returns a verdict rather
  * than a boolean — a boolean would have made the two skip shapes one, which is the distinction.
+ *
+ * ## The third shape, and why `skip: null` was silently wrong for it
+ *
+ * {@link carryInLeftEdge} speaks for exactly two states: `historyAvailableFrom` is `null`, or it is
+ * real and begins at or after `horizon.from`. It is SILENT when history reaches back past the
+ * horizon — a caller who supplied last week — and that is precisely when a window opening before
+ * the horizon can still reach back further than the history does. A block that opened on 26 July,
+ * a horizon opening on 1 August, and history from 28 July: `carryInLeftEdge` returns nothing
+ * because it saw real history before the 1st, and this function returned `skip: null` because it
+ * believed `carryInLeftEdge` was speaking. The window was measured by nobody and reported by
+ * nobody; `evaluatedWindows` simply fell.
+ *
+ * That is the state `coverage()` exists to prevent, one branch away from the state it already
+ * reported correctly. The row is per-window rather than pooled because which window went, and how
+ * much further back the history would have to reach, are both the window's own answer — the same
+ * line as the clipped shape above, for the same reason.
  */
 export function wholeWindowVerdict(
     window: Window,
@@ -551,7 +611,26 @@ export function wholeWindowVerdict(
     }
 
     if (!historyReaches(context, horizon, window.from)) {
-        return { measure: false, skip: null };
+        const available = context.historyAvailableFrom;
+
+        // The two shapes `carryInLeftEdge` owns. One row already speaks for every window they
+        // affect, so a row apiece here would repeat one fact until a reader stopped reading.
+        if (available === null || compareYmd(available, horizon.from) >= 0) {
+            return { measure: false, skip: null };
+        }
+
+        return {
+            measure: false,
+            skip: {
+                from: window.from,
+                to: window.to,
+                reason: messages.historyShortOfWindowSkip({
+                    from: window.from,
+                    to: window.to,
+                    historyAvailableFrom: available,
+                }),
+            },
+        };
     }
 
     return { measure: true };

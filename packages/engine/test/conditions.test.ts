@@ -3,8 +3,9 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { addDays, isoWeekday, parseYmd, type Ymd } from '../src/calendar/ymd';
+import { addDays, compareYmd, isoWeekday, parseYmd, type Ymd } from '../src/calendar/ymd';
 import { carriedCredits } from '../src/conditions/holiday_equity';
+import { measuredGap } from '../src/conditions/max_gap';
 import { candidateStarts } from '../src/conditions/we_pairing';
 import type { Condition, EvaluationContext, Fixture, Person, Schedule } from '../src/contract/types';
 import { validate } from '../src/contract/validate';
@@ -246,6 +247,40 @@ describe('a duty naming somebody the context does not describe', () => {
         };
 
         expect(() => evaluate(schedule, WORLD.context, WORLD.conditions)).toThrow(/p-ghost/);
+    });
+
+    /**
+     * A WINDOW-located type has to be told the same thing, IN ALL THREE STREAMS, and the two tail
+     * ones were unasserted: narrowing `rosterFor` to the schedule's own duties left the whole suite
+     * green, because no case in the corpus puts a stranger in `priorDuties` or `followingDuties`.
+     *
+     * `rosterFor` exists at all because a window type iterates PEOPLE — a floor's whole purpose is
+     * the person who holds nothing — so `personIndex().get()` is never reached by the ordinary path
+     * and the stranger check every placement type gets for free would simply not happen. The tail
+     * is where a stranger is likeliest to arrive, which is why the unasserted half matters more
+     * than the asserted one: `ContextBuilder` reads the published months either side of the horizon
+     * and unions in anybody still holding a rotation, precisely because a departed colleague can
+     * still be named in last month's rota.
+     */
+    const windowWorld = FIXTURES.find(
+        (fixture) => fixture.name === 'count-min-a-person-who-joined-part-way-through-the-window',
+    ) as Fixture;
+
+    const strangerIn = (stream: 'priorDuties' | 'followingDuties', date: string): EvaluationContext =>
+        withPeople(windowWorld.context, (copy) => {
+            copy[stream] = [...copy[stream], { personKey: 'p-ghost', date: d(date), slotKey: 'night' }];
+        });
+
+    it('throws for a stranger in the carry-in tail on either side', () => {
+        expect(() => evaluate(windowWorld.schedule, windowWorld.context, windowWorld.conditions)).not.toThrow();
+
+        expect(() =>
+            evaluate(windowWorld.schedule, strangerIn('priorDuties', '2026-07-28'), windowWorld.conditions),
+        ).toThrow(/p-ghost/);
+
+        expect(() =>
+            evaluate(windowWorld.schedule, strangerIn('followingDuties', '2026-08-18'), windowWorld.conditions),
+        ).toThrow(/p-ghost/);
     });
 });
 
@@ -1271,4 +1306,801 @@ describe('no condition module assembles a sentence of its own', () => {
             ),
         ).toEqual(['`On leave on ${duty.date}.` });', 'sameDay ? `A.` : `B.` });']);
     });
+});
+
+describe('five smaller readings the P2-2 review found unasserted', () => {
+    /**
+     * 1. A COVERAGE ROW NEVER ENDS BEFORE IT STARTS, and `carryInLeftEdge`'s guard against that was
+     * unasserted: deleting it left the suite green, because every carry-in case in the corpus has a
+     * real tail and the guard only bites when there is none. A schedule with `evaluableFrom` equal
+     * to `horizon.from` — the first draft of a fresh instance, and what `ContextBuilder` produces
+     * when asked for exactly one month — makes the reported window run from the 1st back to the
+     * 31st. A range a reader cannot parse is a row they stop reading.
+     *
+     * Asserted as a property over the whole corpus AND on the no-tail world, because the corpus
+     * cannot reach the state and the property alone would be vacuous for it.
+     */
+    it('reports no coverage window that ends before it starts', () => {
+        const backwards = FIXTURES.flatMap((fixture) =>
+            coverage(fixture.schedule, fixture.context, fixture.conditions).flatMap((row) =>
+                row.skipped.filter((skip) => compareYmd(skip.from, skip.to) > 0),
+            ),
+        );
+
+        expect(backwards).toEqual([]);
+    });
+
+    it('reports no carry-in window at all when the horizon has no tail', () => {
+        const world = FIXTURES.find(
+            (fixture) => fixture.name === 'count-min-the-floor-counts-the-week-that-begins-in-the-published-month',
+        ) as Fixture;
+
+        const schedule: Schedule = {
+            ...world.schedule,
+            horizon: { ...world.schedule.horizon, evaluableFrom: world.schedule.horizon.from },
+        };
+
+        const context = withPeople(world.context, (copy) => {
+            copy.historyAvailableFrom = null;
+        });
+
+        const rows = coverage(schedule, context, world.conditions)[0]?.skipped ?? [];
+
+        expect(rows.filter((row) => compareYmd(row.from, row.to) > 0)).toEqual([]);
+        expect(rows.filter((row) => row.reason.includes('duty history'))).toEqual([]);
+    });
+
+    /**
+     * 2. A CREDIT IS KEYED ON THE HOLIDAY AND ITS YEAR (owner decision W), and dropping the year
+     * left the suite green: no corpus case reaches two occurrences of one holiday, because a
+     * month-long horizon cannot hold two and every case is a month. The year is what makes a
+     * multi-day holiday one credit AND two years of it two, and only the first half was fixtured.
+     *
+     * The day vector here is deliberately SPARSE — the fixture's own August, plus one day a Hijri
+     * year later. Nothing in this type reads a date it was not given, and a contiguous year of day
+     * rows would be four hundred lines of fixture asserting the same one fact.
+     */
+    it('counts two occurrences of one holiday as two credits, not one', () => {
+        const world = FIXTURES.find(
+            (fixture) =>
+                fixture.name === 'holiday-equity-working-any-part-of-a-holiday-is-one-credit-for-that-holiday-year',
+        ) as Fixture;
+
+        const nextEid = d('2027-07-24');
+
+        const context = withPeople(world.context, (copy) => {
+            copy.days = [
+                ...copy.days,
+                {
+                    date: nextEid,
+                    isoWeekday: 6,
+                    dayType: 'HOL',
+                    periodKey: null,
+                    holidays: [{ key: 'eid-al-fitr', year: 1448 }],
+                },
+            ];
+        });
+
+        const schedule: Schedule = {
+            horizon: { ...world.schedule.horizon, to: nextEid, evaluableTo: nextEid },
+            duties: [...world.schedule.duties, { personKey: 'p-noor', date: nextEid, slotKey: 'night' }],
+        };
+
+        // p-ali holds eid 1447 and national day; p-noor now holds eid 1447 AND eid 1448. Both are
+        // two credits clear of p-zaid's none. Keyed on the holiday alone, p-noor's two eids collapse
+        // into one and they drop out of the finding entirely.
+        const found = evaluate(schedule, context, world.conditions);
+
+        expect(found).toHaveLength(1);
+        expect((found[0]?.location as { personKeys: string[] }).personKeys).toEqual(['p-ali', 'p-noor']);
+    });
+
+    /**
+     * 2b. THE "NEVER REACHED" CHECK IS CLIPPED TO THE HORIZON, and pointing it at the whole day
+     * vector left the suite green — no case carried a named holiday in its carry-in tail.
+     *
+     * It is the most consequential shape this row has, because it fails SILENTLY IN BOTH HALVES at
+     * once. Credits are counted over the horizon alone (a cohort location has no date, so CG-03 is
+     * the type's own to keep), so a holiday sitting only in the tail credits nobody — and if the
+     * reached check consulted the unfiltered vector it would ALSO conclude the holiday was reached
+     * and print no coverage row. The rule would do nothing for that holiday and say nothing about
+     * it, which is exactly the state this row's skip sentence exists to prevent.
+     *
+     * The first two probes here went red and hid it: `reached` answering `false` and `true`
+     * unconditionally are both caught by the corpus. Only the third axis — WHICH days it looks at —
+     * was open, and it is the axis the P2-2 review names.
+     */
+    it('reports a named holiday that falls only in the carry-in tail as never reached', () => {
+        const world = FIXTURES.find(
+            (fixture) => fixture.name === 'holiday-equity-a-named-holiday-the-schedule-never-reaches-is-reported',
+        ) as Fixture;
+
+        const context = withPeople(world.context, (copy) => {
+            copy.days = [
+                {
+                    date: d('2026-07-30'),
+                    isoWeekday: 4,
+                    dayType: 'HOL',
+                    periodKey: null,
+                    holidays: [{ key: 'national-day', year: 2026 }],
+                },
+                ...copy.days,
+            ];
+        });
+
+        const schedule: Schedule = {
+            ...world.schedule,
+            horizon: { ...world.schedule.horizon, evaluableFrom: d('2026-07-30') },
+        };
+
+        expect(coverage(schedule, context, world.conditions)[0]?.skipped).toEqual(
+            (world.expectedCoverage as NonNullable<Fixture['expectedCoverage']>)[0]?.skipped,
+        );
+    });
+
+    /**
+     * 3. `we_pairing` DE-DUPLICATES the people holding a slot on a day, and dropping the de-dup left
+     * the suite green because no case gives one person two duties in one slot on one date. That is
+     * a schedule `overlap_block` would refuse, but conditions are independent and a department may
+     * run one without the other — and with a duplicated row the two days' holder lists compare
+     * unequal (`["p-ali", "p-ali"]` against `["p-ali"]`) and the type reports a split between a
+     * person and themselves.
+     */
+    it('does not report a weekend split between one person and themselves', () => {
+        const world = FIXTURES.find(
+            (fixture) => fixture.name === 'we-pairing-an-adjacency-the-rule-does-not-name-is-not-a-weekend',
+        ) as Fixture;
+
+        // p-ali covers the WHOLE weekend, which is the arrangement this rule prefers and reports
+        // nothing about. Their Friday row is then written twice.
+        const friday = { personKey: 'p-ali', date: d('2026-08-07'), slotKey: 'night' };
+        const whole: Schedule = {
+            ...world.schedule,
+            duties: [friday, { personKey: 'p-ali', date: d('2026-08-08'), slotKey: 'night' }],
+        };
+
+        expect(evaluate(whole, world.context, world.conditions)).toEqual([]);
+        expect(evaluate({ ...whole, duties: [friday, ...whole.duties] }, world.context, world.conditions)).toEqual(
+            [],
+        );
+    });
+
+    /**
+     * 4. A GAP IS NOT A SPLIT IN EITHER DIRECTION. The corpus asserts the first day covered and the
+     * second not; the mirror was unasserted, and it is the direction the enumeration does not
+     * naturally reach — `slotKeys` is the union of both days precisely so the answer does not
+     * depend on which day the scan started from.
+     */
+    it('is silent for a slot covered on the second day of a weekend and not the first', () => {
+        const world = FIXTURES.find(
+            (fixture) => fixture.name === 'we-pairing-a-weekend-with-only-one-of-its-days-covered-is-not-a-split',
+        ) as Fixture;
+
+        const secondDayOnly: Schedule = {
+            ...world.schedule,
+            duties: world.schedule.duties.filter((duty) => duty.date === d('2026-08-08')),
+        };
+
+        expect(evaluate(secondDayOnly, world.context, world.conditions)).toEqual([]);
+    });
+
+    /**
+     * 5. `target_per_period` CALLS owner decision L's per-person half and nothing asserted it —
+     * replacing `midWindowJoinSkip` with `null` left the suite green, because no case of this type
+     * carries a join date at all. `count_min` has the fixture; the two types share the decision and
+     * shared one case between them, which is Task 15-17's finding 2 in a different clause.
+     */
+    it('leaves a period unjudged for somebody who joined part way through it, and names them', () => {
+        const world = FIXTURES.find(
+            (fixture) => fixture.name === 'target-per-period-a-level-with-no-entry-in-the-map-has-no-target',
+        ) as Fixture;
+
+        const context = withPeople(world.context, (copy) => {
+            for (const person of copy.people) {
+                person.joinedAt = d('2026-08-10');
+            }
+        });
+
+        expect(evaluate(world.schedule, context, world.conditions)).toEqual([]);
+
+        // Two rows, not three: the world's third person rotates on NICU and the condition's scope
+        // names PICU, so they never reach the per-person gate at all.
+        expect(
+            (coverage(world.schedule, context, world.conditions)[0]?.skipped ?? []).map((row) =>
+                row.reason.includes('joined on 2026-08-10'),
+            ),
+        ).toEqual([true, true]);
+    });
+});
+
+describe('composition, on a context whose day vector stops at the horizon', () => {
+    /**
+     * `Day` is documented as *"one date of the horizon"* and `ContextBuilder` builds the vector over
+     * whatever range its caller asked for, so a context describing the horizon and no more is
+     * ordinary rather than malformed. `composition`'s window is the PERIOD, which routinely opens
+     * before the horizon does — that is what the seam case in the corpus is for — and it bucketed
+     * every duty in that window through `days.get()`, which THROWS on a date the vector does not
+     * describe.
+     *
+     * So the type crashed on a contract-valid context, and only on the shape it is most likely to
+     * meet: a block that began in the already-published month. The corpus never saw it because its
+     * seam case supplies day rows across the whole tail, which is generous rather than required.
+     *
+     * A crash is the wrong answer twice over. `dayIndex().get()` throws to stop a HARD rule passing
+     * for want of data, and this is a target rather than a bar; the package already has the honest
+     * answer for a legitimate reach past the vector — `find()` and a coverage row, which is what
+     * `clinic_conflict` does for its post-duty window on the last date of a month.
+     */
+    const world = FIXTURES.find(
+        (fixture) => fixture.name === 'composition-the-period-that-begins-in-the-published-month',
+    ) as Fixture;
+
+    /** The same world with the day vector trimmed to the horizon, which is all `Day` promises. */
+    const horizonDaysOnly = (): EvaluationContext =>
+        withPeople(world.context, (copy) => {
+            copy.days = copy.days.filter(
+                (day) =>
+                    compareYmd(day.date, world.schedule.horizon.from) >= 0 &&
+                    compareYmd(day.date, world.schedule.horizon.to) <= 0,
+            );
+        });
+
+    it('reports the person whose duties it cannot bucket, rather than throwing', () => {
+        const context = horizonDaysOnly();
+        const rows = coverage(world.schedule, context, world.conditions)[0];
+
+        // p-ali holds two duties on 27 and 28 July, inside the block and outside the vector. Their
+        // period is unjudged and NAMED; nothing about p-noor, whose duties are all described.
+        expect(rows?.skipped.map((row) => row.reason.includes('p-ali'))).toEqual([true]);
+        expect(rows?.skipped[0]?.reason).toContain('2026-07-27');
+        expect(rows?.skipped[0]?.from).toBe(d('2026-07-26'));
+
+        expect(evaluate(world.schedule, context, world.conditions)).toEqual([]);
+    });
+
+    /**
+     * And the vector reaching across the whole window still answers in full, so the row above is a
+     * report of missing input rather than a rule that quietly stopped working. Same world, same
+     * conditions, the corpus's own generous day vector: no skip at all.
+     */
+    it('says nothing when the vector reaches across the whole period', () => {
+        expect(coverage(world.schedule, world.context, world.conditions)).toEqual(world.expectedCoverage);
+    });
+});
+
+describe('a window whose left part no history reaches is never DROPPED, only reported', () => {
+    /**
+     * `wholeWindowVerdict` answers `{measure: false, skip: null}` for a window reaching back before
+     * the horizon with no history behind it, on the stated ground that {@link carryInLeftEdge}'s
+     * single row already speaks for every such window. That is true of the shape it was written
+     * against — no history at all, or history starting at or after `horizon.from` — and FALSE of a
+     * third: history that reaches back past the horizon but not as far as this window.
+     *
+     * In that third shape `carryInLeftEdge` is silent (it has seen real history before the 1st) and
+     * the verdict is silent (it believes somebody else is speaking), so the window is measured by
+     * nobody and reported by nobody. `evaluatedWindows` simply falls. That is the exact state
+     * `coverage()` exists to prevent, and it is one row's difference from the state it already
+     * reports correctly.
+     *
+     * The world is the corpus's own carry-in case with `historyAvailableFrom` moved forward two
+     * days: block 13 opens on 26 July, the horizon on 1 August, and the caller can only speak for
+     * 28 July onwards.
+     */
+    const world = FIXTURES.find(
+        (fixture) => fixture.name === 'count-min-the-floor-counts-the-week-that-begins-in-the-published-month',
+    ) as Fixture;
+
+    const historyFrom = (date: string): EvaluationContext =>
+        withPeople(world.context, (copy) => {
+            copy.historyAvailableFrom = d(date);
+        });
+
+    it('reports the window the supplied history stops short of, rather than losing it', () => {
+        const reaching = coverage(world.schedule, historyFrom('2026-07-01'), world.conditions)[0];
+        const short = coverage(world.schedule, historyFrom('2026-07-28'), world.conditions)[0];
+
+        // The healthy case measures both weeks of the block and has nothing to report.
+        expect(reaching?.evaluatedWindows).toBe(2);
+        expect(reaching?.skipped).toEqual([]);
+
+        // The short one measures one, and the one it did not measure is NAMED. Its bounds are the
+        // window's own, which is what tells a reader which week went and how much history would
+        // have to be supplied to get it back.
+        expect(short?.evaluatedWindows).toBe(1);
+        expect(short?.skipped).toHaveLength(1);
+        expect(short?.skipped[0]?.from).toBe(d('2026-07-26'));
+        expect(short?.skipped[0]?.to).toBe(d('2026-08-01'));
+        expect(short?.skipped[0]?.reason).toContain('2026-07-28');
+    });
+
+    /**
+     * And the shape `carryInLeftEdge` DOES own still gets exactly one row for all of its windows,
+     * rather than one apiece. The two are one branch apart and the whole point of the branch is
+     * that the answers are reported differently — a window that is individually nameable versus a
+     * fact that is identical for every window and would train a reader to skip the list.
+     */
+    it('leaves the no-history-at-all shape to carryInLeftEdge’s single row', () => {
+        const rows = coverage(
+            world.schedule,
+            withPeople(world.context, (copy) => {
+                copy.historyAvailableFrom = null;
+            }),
+            world.conditions,
+        )[0];
+
+        expect(rows?.skipped).toHaveLength(1);
+        expect(rows?.skipped[0]?.reason).toContain('No duty history was supplied');
+    });
+});
+
+describe('max_gap — the two edges of owner decision I, and who the rows are about', () => {
+    const world = FIXTURES.find(
+        (fixture) => fixture.name === 'max-gap-at-exactly-the-limit-and-a-day-beyond-it',
+    ) as Fixture;
+
+    /**
+     * The trailing open gap is reported when the last counted duty falls at or BEFORE the last
+     * horizon date, and `<=` relaxed to `<` left the suite green: no case put a duty on the very
+     * last day of its own horizon, so the boundary was asserted everywhere except at itself.
+     *
+     * It is the one date where the answer is least obvious and most consequential. A duty on the
+     * 31st has a gap after it that is exactly as unfinished as a duty on the 30th — nothing here
+     * knows when the next one is — and dropping the row for it makes the rule silently complete on
+     * the schedule's own edge, which is the edge a scheduler is drafting.
+     */
+    it('reports the open gap after a duty on the LAST horizon date', () => {
+        const schedule: Schedule = {
+            ...world.schedule,
+            duties: [...world.schedule.duties, { personKey: 'p-ali', date: d('2026-08-15'), slotKey: 'day' }],
+        };
+
+        const trailing = (coverage(schedule, world.context, world.conditions)[0]?.skipped ?? []).filter(
+            (row) => row.from === d('2026-08-15'),
+        );
+
+        expect(trailing).toHaveLength(1);
+        expect(trailing[0]?.to).toBe(d('2026-08-15'));
+        expect(trailing[0]?.reason).toContain('p-ali');
+    });
+
+    /**
+     * The measured gap counts the days STRICTLY BETWEEN two duties, and the filter that says so was
+     * unasserted: removing it left the suite green, because it changes the answer only when the
+     * LATER duty's own date is a day the clock is stopped on — leave, or a date before the join
+     * date. A duty on a leave day is `vacation_block`'s violation and is not this type's business,
+     * but the two are independent conditions and a department may run one without the other.
+     *
+     * Called directly, because the quantity is the rule: a gap of thirteen days with nine stopped
+     * days strictly inside it is four apart. Counting the closing date as a tenth makes it three,
+     * and the difference is a whole day at exactly the limit.
+     */
+    it('measures the days strictly between two duties, never the closing one', () => {
+        const person: Person = {
+            key: 'p-probe',
+            levelSpans: [],
+            unitSpans: [],
+            leaveDays: [
+                d('2026-08-05'),
+                d('2026-08-06'),
+                d('2026-08-07'),
+                d('2026-08-08'),
+                d('2026-08-09'),
+                d('2026-08-10'),
+                d('2026-08-11'),
+                d('2026-08-12'),
+                d('2026-08-13'),
+                d('2026-08-14'),
+            ],
+            unwantedDays: [],
+            eligibleDays: [],
+            external: false,
+        };
+
+        expect(measuredGap(person, d('2026-08-01'), d('2026-08-14'))).toEqual({ apart: 4, stopped: 9 });
+    });
+});
+
+describe('three window-located readings that were asserted only where they MATCH', () => {
+    /**
+     * `composition` reads the LEVEL at the period start (owner decision M's unchanged half) and
+     * nothing asserted the date. The sibling rule in `target_per_period` IS fixtured
+     * (`target-per-period-the-level-is-read-at-the-period-start`), which is why this one looks
+     * covered: two types, one decision, one case between them. Moving `composition`'s read to
+     * `window.to` left the whole suite green.
+     *
+     * Both directions, because a promotion is only half the input. A person promoted INSIDE the
+     * block is still judged against the level they started it at; a person promoted BEFORE it holds
+     * a level with no entry in the map and is not judged at all. The second is what a date read at
+     * either end would agree about, and it is here so the first is not carrying the case alone.
+     */
+    const mixWorld = FIXTURES.find(
+        (fixture) => fixture.name === 'composition-a-holiday-that-falls-on-a-weekend-is-its-own-bucket',
+    ) as Fixture;
+
+    const promotedOn = (from: string): EvaluationContext =>
+        withPeople(mixWorld.context, (copy) => {
+            for (const person of copy.people) {
+                if (person.key !== 'p-noor') {
+                    continue;
+                }
+
+                person.levelSpans = [
+                    { key: 'R1', from: d('2026-01-01'), to: addDays(d(from), -1) },
+                    { key: 'R2', from: d(from), to: d('2026-12-31') },
+                ];
+            }
+        });
+
+    it('composition judges a mid-block promotion against the level the block STARTED at', () => {
+        expect(evaluate(mixWorld.schedule, promotedOn('2026-08-09'), mixWorld.conditions)).toEqual(
+            sortViolations(mixWorld.expected),
+        );
+
+        expect(evaluate(mixWorld.schedule, promotedOn('2026-08-02'), mixWorld.conditions)).toEqual([]);
+    });
+
+    /**
+     * `onRosterThroughout`'s boundary is INCLUSIVE — somebody whose first day is the window's first
+     * day had the whole window — and `<=` relaxed to `<` left the suite green, because no case in
+     * the corpus put a join date exactly on a window bound. The reviewer's own copy of that
+     * mutation was left in the tree and reverted; this is what would have caught it.
+     *
+     * It matters in one direction only, and that is the expensive one: a `<` reading suppresses a
+     * floor for a person who genuinely had the window, so the rule goes quiet on somebody it should
+     * judge and says so in a coverage row that reads like a considered decision.
+     */
+    const joinWorld = FIXTURES.find(
+        (fixture) => fixture.name === 'count-min-a-person-who-joined-part-way-through-the-window',
+    ) as Fixture;
+
+    it('a join date ON the window’s first day is a whole window, not a partial one', () => {
+        const context = withPeople(joinWorld.context, (copy) => {
+            for (const person of copy.people) {
+                if (person.key === 'p-noor') {
+                    person.joinedAt = d('2026-08-02');
+                }
+            }
+        });
+
+        const found = evaluate(joinWorld.schedule, context, joinWorld.conditions);
+        const rows = coverage(joinWorld.schedule, context, joinWorld.conditions);
+
+        // p-noor holds one duty in the week beginning on the 2nd against a floor of two, so being
+        // judged and being skipped are two visibly different answers rather than the same silence.
+        expect(
+            found.map((violation) => [
+                (violation.location as { personKey: string }).personKey,
+                (violation.location as { from: Ymd }).from,
+            ]),
+        ).toEqual([
+            ['p-ali', d('2026-08-09')],
+            ['p-noor', d('2026-08-02')],
+        ]);
+
+        expect(rows[0]?.skipped).toEqual([]);
+    });
+
+    /**
+     * Owner decision N's vacation week is measured on a week's CLIPPED bounds, and swapping them
+     * for the raw pair left the suite green — every week in every corpus case is unclipped, because
+     * every block in the corpus starts on the department's own week start. That is a fixture
+     * convenience, not a property of a real calendar: `institutions.block_weeks` gives block 13
+     * five weeks and a year does not divide evenly, so a block edge lands mid-week eventually.
+     *
+     * Leave in the days a block does not own belongs to the NEIGHBOURING block's count. Here it
+     * moves p-noor from one vacation week to two, which under the raw reading fires
+     * `vacationWeeksAtLeast: 2` and replaces their target of four with two — exactly the number
+     * they hold. The rule would go quiet on them, on leave the block never contained.
+     */
+    const targetWorld = FIXTURES.find(
+        (fixture) =>
+            fixture.name === 'target-per-period-a-modifier-replaces-the-target-and-a-vacation-week-is-any-overlap',
+    ) as Fixture;
+
+    it('counts a vacation week over the clipped bounds, not the department’s whole week', () => {
+        const context = withPeople(targetWorld.context, (copy) => {
+            const block = copy.periods[0] as (typeof copy.periods)[number];
+
+            block.startsOn = d('2026-08-04');
+            (block.weeks[0] as (typeof block.weeks)[number]).clippedStartsOn = d('2026-08-04');
+
+            for (const person of copy.people) {
+                if (person.key === 'p-noor') {
+                    person.leaveDays = [d('2026-08-02'), d('2026-08-03'), ...person.leaveDays];
+                }
+            }
+        });
+
+        const found = evaluate(targetWorld.schedule, context, targetWorld.conditions);
+
+        expect(found.map((violation) => (violation.location as { personKey: string }).personKey)).toEqual(['p-noor']);
+    });
+});
+
+describe('periodWindows enumerates only the windows that TOUCH the horizon', () => {
+    /**
+     * The filter that says so is one line per branch and neither was asserted: replacing the period
+     * branch's test with `true`, and deleting the week branch's `continue`, each left 571/571 green
+     * and the corpus green. No case in the corpus carried a period or a week that misses the
+     * horizon entirely, which is exactly the shape the filter exists for — a department's blocks
+     * run all year and an evaluation asks about one month of them.
+     *
+     * What it costs when it goes is not a wrong violation: `evaluate()`'s emission rule drops a
+     * window location that does not touch `[from, to]`, so the findings are identical either way.
+     * It is `coverage()` that moves, and in the direction that reads as MORE work having been done
+     * — a count of windows measured, whose results were then thrown away. A coverage number a
+     * reader cannot act on is `carryInSkip`'s lesson one file along, and it is the half a
+     * violations-only assertion is structurally unable to see.
+     */
+    const world = FIXTURES.find(
+        (fixture) => fixture.name === 'count-max-the-window-parameter-picks-the-period-or-the-week',
+    ) as Fixture;
+
+    /**
+     * The same world with a whole block on each side of the horizon, neither of them touching it —
+     * and each one's edge week deliberately RAW-overlapping it while its CLIPPED bounds do not.
+     *
+     * That second half is bought for one line of fixture data and closes a residual the first half
+     * cannot: measuring `windowTouchesHorizon` against `startsOn`/`endsOn` instead of the clipped
+     * pair admits exactly these two weeks, and the raw bounds are a superset of the clipped ones,
+     * so no world without a genuinely clipped edge week can tell the two spellings apart.
+     */
+    const withNeighbouringBlocks = (): EvaluationContext =>
+        withPeople(world.context, (copy) => {
+            copy.periods = [
+                {
+                    key: 'block-00',
+                    startsOn: d('2026-07-27'),
+                    endsOn: d('2026-08-01'),
+                    weeks: [
+                        {
+                            startsOn: d('2026-07-27'),
+                            endsOn: d('2026-08-02'),
+                            clippedStartsOn: d('2026-07-27'),
+                            clippedEndsOn: d('2026-08-01'),
+                        },
+                    ],
+                },
+                ...copy.periods,
+                {
+                    key: 'block-02',
+                    startsOn: d('2026-08-16'),
+                    endsOn: d('2026-08-21'),
+                    weeks: [
+                        {
+                            startsOn: d('2026-08-15'),
+                            endsOn: d('2026-08-21'),
+                            clippedStartsOn: d('2026-08-16'),
+                            clippedEndsOn: d('2026-08-21'),
+                        },
+                    ],
+                },
+            ];
+        });
+
+    it('counts neither the block before the horizon nor the block after it', () => {
+        const context = withNeighbouringBlocks();
+
+        expect(coverage(world.schedule, context, world.conditions)).toEqual(world.expectedCoverage);
+        expect(evaluate(world.schedule, context, world.conditions)).toEqual(
+            evaluate(world.schedule, world.context, world.conditions),
+        );
+    });
+
+    /**
+     * And the two branches are asserted APART. One check over a world carrying both a stray period
+     * and a stray week passes while either branch alone is healthy, which is the pooled-check
+     * mistake `contract.test.ts` had to unpick for `contributing` at Task 15. The period-windowed
+     * row and the week-windowed row are two conditions in this world, so the two answers are
+     * already separate — this names which is which so a failure says which branch went.
+     */
+    it('reports one period window and two week windows, whatever the neighbours look like', () => {
+        const rows = coverage(world.schedule, withNeighbouringBlocks(), world.conditions);
+
+        expect(rows.find((row) => row.conditionId === 'c-period')?.evaluatedWindows).toBe(1);
+        expect(rows.find((row) => row.conditionId === 'c-week')?.evaluatedWindows).toBe(2);
+    });
+});
+
+describe('the DATE a window- or cohort-located type resolves CG-01 scope at', () => {
+    /**
+     * WHEN the scope is read, which is one axis along from WHETHER it is read.
+     *
+     * P2-2's standing first plant — `personInScope` answering `true` — is now habitual and goes red
+     * on every one of these types. It says nothing about the date handed to it. Moving `window.from`
+     * to `window.to` at all nine sites left 571/571 green and the corpus green, because no case held
+     * a person whose SCOPED fact moved inside a window: the level-FILTER half of the same question
+     * is fixtured (`count-max-the-level-filter-is-read-at-the-window-start`,
+     * `target-per-period-the-level-is-read-at-the-period-start`) and CG-01's SCOPE half was not — on
+     * the very sites those two fixtures already cover for `levels`.
+     *
+     * It matters because the two filters answer different questions. `levels` is the type's own
+     * parameter and a department reads it beside the number; `scope` is the gate screen's own column
+     * and decides which rows apply to whom at all. A scope read at the wrong end of a block applies
+     * a rule to a window the person spent most of outside it — silently, and only where somebody
+     * rotates mid-block, which is to say only where it matters.
+     *
+     * ## TWO devices, and the second one is not decoration — it is what the first could not catch
+     *
+     * **`bounded`**, for a type whose windows all start at or before one nameable date: the last
+     * window START for a period- or week-windowed type, and `horizon.from` for a cohort type, whose
+     * window is the whole schedule. Two directions on one world:
+     *
+     *  - **Rotating only up to and including `readAt`** must leave the answer BYTE-IDENTICAL. Any
+     *    reader later than that date finds nobody on PICU and the type goes quiet.
+     *  - **Rotating only from the day AFTER it** must leave NO violation at all. This is the half
+     *    the review's species names — a filter asserted where it MATCHES and never where it must
+     *    not — since under any later reading somebody is back in scope and the rule fires again.
+     *
+     * **`rolling`**, for the three types whose windows are enumerated rather than supplied. The
+     * bounded device was WRITTEN FOR THESE FIRST AND STAYED GREEN on all three: `readAt` there is
+     * `horizon.to`, so the mutation's only surviving windows are the ones running past the horizon,
+     * and none of the three fixtures happens to carry a violation in one. That is this review's own
+     * species reappearing inside the case written to close it, so the probe is sharper here: the
+     * rotation is clipped to ONE date that IS a violating window's start, and every violation must
+     * then be located at a window starting on exactly that date. A reader `windowDays - 1` days out
+     * lands on the window ENDING there instead, which is a different window with a different answer.
+     *
+     * Only `unitSpans` is moved. `levelSpans` is left alone deliberately, so a type that reads a
+     * LEVEL for its own purposes — `composition` and `target_per_period` both do, at the period
+     * start — measures the same thing before and after, and the only thing that moved is the date
+     * the scope was asked about.
+     */
+    const SITES: {
+        typeKey: string;
+        fixture: string;
+        probe: 'bounded' | 'rolling';
+        readAt: string;
+        window: string;
+    }[] = [
+        {
+            typeKey: 'count_max',
+            fixture: 'count-max-the-scope-and-the-levels-list-intersect',
+            probe: 'bounded',
+            readAt: '2026-08-02',
+            window: 'its one week starts on the 2nd',
+        },
+        {
+            typeKey: 'count_min',
+            fixture: 'count-min-a-person-who-joined-part-way-through-the-window',
+            probe: 'bounded',
+            readAt: '2026-08-09',
+            window: 'the later of its two weeks starts on the 9th',
+        },
+        {
+            typeKey: 'target_per_period',
+            fixture: 'target-per-period-a-level-with-no-entry-in-the-map-has-no-target',
+            probe: 'bounded',
+            readAt: '2026-08-02',
+            window: 'its one period starts on the 2nd',
+        },
+        {
+            typeKey: 'composition',
+            fixture: 'composition-a-holiday-that-falls-on-a-weekend-is-its-own-bucket',
+            probe: 'bounded',
+            readAt: '2026-08-02',
+            window: 'its one period starts on the 2nd',
+        },
+        {
+            typeKey: 'free_day_min',
+            fixture: 'free-day-min-a-twenty-four-hour-call-on-the-fifth-leaves-the-sixth-occupied',
+            probe: 'rolling',
+            readAt: '2026-08-05',
+            window: 'the two-day window it fires on starts on the 5th',
+        },
+        {
+            typeKey: 'rolling_hours_max',
+            fixture: 'rolling-hours-max-the-scope-excludes-somebody-their-own-hours-would-flag',
+            probe: 'rolling',
+            readAt: '2026-08-01',
+            window: 'the averaged two-day window it fires on starts on the 1st',
+        },
+        {
+            typeKey: 'call_frequency_max',
+            fixture: 'call-frequency-max-the-scope-excludes-somebody-their-own-calls-would-flag',
+            probe: 'rolling',
+            readAt: '2026-08-01',
+            window: 'the two-day window it fires on starts on the 1st',
+        },
+        {
+            typeKey: 'fairness_distribution',
+            fixture: 'fairness-distribution-the-scope-excludes-somebody-their-own-share-would-flag',
+            probe: 'bounded',
+            readAt: '2026-08-01',
+            window: 'a cohort window is the whole schedule, so it starts at the horizon',
+        },
+        {
+            typeKey: 'holiday_equity',
+            fixture: 'holiday-equity-the-scope-excludes-somebody-their-own-credits-would-flag',
+            probe: 'bounded',
+            readAt: '2026-08-01',
+            window: 'a cohort window is the whole schedule, so it starts at the horizon',
+        },
+        {
+            typeKey: 'we_pairing',
+            fixture: 'we-pairing-the-scope-excludes-a-weekend-split-between-people-it-does-not-cover',
+            probe: 'bounded',
+            readAt: '2026-08-07',
+            window: 'a cohort window is the whole schedule, so it starts at the horizon',
+        },
+    ];
+
+    /** The fixture's own rows, with the unit half of the scope pinned so the device has a lever. */
+    const scopedToPicu = (fixture: Fixture): Condition[] =>
+        fixture.conditions.map((condition) => ({
+            ...condition,
+            scope: { ...(condition.scope ?? {}), unitKeys: ['PICU'] },
+        }));
+
+    const rotatingUntil = (context: EvaluationContext, through: Ymd): EvaluationContext =>
+        withPeople(context, (copy) => {
+            for (const person of copy.people) {
+                person.unitSpans = person.unitSpans
+                    .filter((span) => compareYmd(span.from, through) <= 0)
+                    .map((span) => ({ ...span, to: compareYmd(span.to, through) <= 0 ? span.to : through }));
+            }
+        });
+
+    const rotatingFrom = (context: EvaluationContext, notBefore: Ymd): EvaluationContext =>
+        withPeople(context, (copy) => {
+            for (const person of copy.people) {
+                person.unitSpans = person.unitSpans
+                    .filter((span) => compareYmd(span.to, notBefore) >= 0)
+                    .map((span) => ({ ...span, from: compareYmd(span.from, notBefore) >= 0 ? span.from : notBefore }));
+            }
+        });
+
+    /**
+     * A NAMED list rather than a derived one, with a floor under it. Deriving the sites from the
+     * registry would keep them in step with the catalog and would carry no `latestRead`, which is
+     * the whole assertion — a derived list would have to guess the date and would then be asserting
+     * its own guess. This is what fails when a tenth site is written and not listed.
+     */
+    it('covers every type that resolves the scope at a window rather than at a duty', () => {
+        expect(SITES.map((site) => site.typeKey).sort()).toEqual([
+            'call_frequency_max',
+            'composition',
+            'count_max',
+            'count_min',
+            'fairness_distribution',
+            'free_day_min',
+            'holiday_equity',
+            'rolling_hours_max',
+            'target_per_period',
+            'we_pairing',
+        ]);
+    });
+
+    for (const site of SITES) {
+        const fixture = FIXTURES.find((entry) => entry.name === site.fixture) as Fixture;
+
+        it(`${site.typeKey} reads it at ${site.readAt} — ${site.window}`, () => {
+            const conditions = scopedToPicu(fixture);
+            const asIs = evaluate(fixture.schedule, fixture.context, conditions);
+            const readAt = d(site.readAt);
+
+            // A world producing nothing makes every direction the same empty answer, which is the
+            // shape this whole describe exists to refuse.
+            expect(asIs.length, `${site.fixture} produces no violation under a PICU scope`).toBeGreaterThan(0);
+
+            if (site.probe === 'bounded') {
+                expect(evaluate(fixture.schedule, rotatingUntil(fixture.context, readAt), conditions)).toEqual(asIs);
+                expect(
+                    evaluate(fixture.schedule, rotatingFrom(fixture.context, addDays(readAt, 1)), conditions),
+                ).toEqual([]);
+
+                return;
+            }
+
+            const onlyThatDay = rotatingFrom(rotatingUntil(fixture.context, readAt), readAt);
+            const found = evaluate(fixture.schedule, onlyThatDay, conditions);
+
+            expect(found.length, 'rotating on the violating window’s own start day found nothing').toBeGreaterThan(
+                0,
+            );
+            expect([...new Set(found.map((violation) => (violation.location as { from: Ymd }).from))]).toEqual([
+                readAt,
+            ]);
+        });
+    }
 });

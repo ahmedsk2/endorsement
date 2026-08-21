@@ -1,6 +1,6 @@
 {
     "name": "fairness-distribution-the-expected-share-is-pro-rated-by-availability",
-    "why": "OWNER DECISION Q'S UNCHANGED HALF, AND THE CASE RAW COUNTS GET BACKWARDS. p-ali is available on all ten days and holds one night; p-noor is on leave for eight of them, is available on two, and holds three. Against raw counts (two each) neither is off and the solver is told nothing; pro-rated by availability p-ali is expected to hold 3.3 and p-noor 0.7, so each is 2.3 out and both are named — the person on leave as OVER-loaded, which is the answer a raw comparison inverts. The fix a raw reading would push a solver toward is piling duties onto the few days somebody is available, which is the precise opposite of fair.",
+    "why": "OWNER DECISION Q'S UNCHANGED HALF, AND THE CASE RAW COUNTS GET BACKWARDS — plus the CLIP that makes the denominator the horizon's rather than the roster's. p-ali is available on all ten horizon days and holds one night; p-noor is on leave for eight of them, is available on two, and holds three. Against raw counts (two each) neither is off and the solver is told nothing; pro-rated by availability p-ali is expected to hold 3.3 and p-noor 0.7, so each is 2.3 out and both are named — the person on leave as OVER-loaded, which is the answer a raw comparison inverts. The fix a raw reading would push a solver toward is piling duties onto the few days somebody is available, which is the precise opposite of fair. THE CARRY-IN TAIL IS WHY THE NUMBERS ARE 3.3 AND 0.7 RATHER THAN 3.1 AND 0.9: both people carry eligible days in the already-published week before the horizon, which `ContextBuilder` supplies over the whole evaluable range while this rule compares over the horizon alone. Drop the horizon filter from the denominator and the tail's seven and three days join it, moving every printed share. No other fairness case can catch that, because none of them has an eligible day outside its own horizon at all.",
     "context": {
         "timezone": "Asia/Riyadh",
         "weekStartIsoDay": 7,
@@ -102,6 +102,13 @@
                 "leaveDays": [],
                 "unwantedDays": [],
                 "eligibleDays": [
+                    "2026-07-25",
+                    "2026-07-26",
+                    "2026-07-27",
+                    "2026-07-28",
+                    "2026-07-29",
+                    "2026-07-30",
+                    "2026-07-31",
                     "2026-08-01",
                     "2026-08-02",
                     "2026-08-03",
@@ -143,6 +150,9 @@
                 ],
                 "unwantedDays": [],
                 "eligibleDays": [
+                    "2026-07-25",
+                    "2026-07-26",
+                    "2026-07-27",
                     "2026-08-05",
                     "2026-08-06"
                 ],
@@ -172,8 +182,8 @@
         "horizon": {
             "from": "2026-08-01",
             "to": "2026-08-10",
-            "evaluableFrom": "2026-08-01",
-            "evaluableTo": "2026-08-10"
+            "evaluableFrom": "2026-07-25",
+            "evaluableTo": "2026-08-15"
         },
         "duties": [
             {

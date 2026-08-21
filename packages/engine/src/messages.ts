@@ -763,6 +763,45 @@ export interface ViolationMessages extends Vocabulary {
      * reported here and deliberately does not suppress a floor — see `onRosterThroughout`.
      */
     midWindowJoinSkip(args: { personKey: string; joinedAt: string; from: string; to: string }): string;
+
+    /**
+     * The THIRD left-edge shape, and the one `carryInLeftEdge` cannot speak for (P2-2 review).
+     *
+     * That function owns two: no duty history at all, and history that begins at or after
+     * `horizon.from`. Both make every carry-in window unevaluable for the same reason, so one row
+     * says so for all of them. The third is history that reaches back PAST the horizon but not as
+     * far as this particular window — a caller who supplied last week and a block that opened last
+     * month — and it is per-window by nature, because which window went and how much further back
+     * the history would have to reach are both the window's own answer.
+     *
+     * Until this sentence existed `wholeWindowVerdict` returned no row for it at all, believing
+     * `carryInLeftEdge` was speaking, while `carryInLeftEdge` returned nothing because it had seen
+     * real history before the horizon. The window was measured by nobody and reported by nobody:
+     * `evaluatedWindows` simply fell. A silently dropped window is the state `coverage()` exists to
+     * prevent, and it was one branch away from the state already reported correctly.
+     */
+    historyShortOfWindowSkip(args: { from: string; to: string; historyAvailableFrom: string }): string;
+
+    /**
+     * `composition` met a duty on a date the day vector does not describe (P2-2 review).
+     *
+     * `Day` is *"one date of the horizon"* and this type's window is the PERIOD, which routinely
+     * opens before the horizon does — so a context carrying exactly what the contract promises can
+     * hold a duty whose day type is genuinely unknown here. `dayType` is never re-derived from
+     * `weekendDays` (AR-08, and holiday beats weekend deliberately), so there is no honest local
+     * answer; before this sentence existed the type threw a `RangeError` on that ordinary input.
+     *
+     * Reported PER PERSON, because the buckets are per person: a colleague whose every duty the
+     * vector describes still gets a real answer, and suppressing the whole window for everybody
+     * would hide it. The date is named so the reader knows how far the vector has to reach.
+     */
+    unknownDayTypeSkip(args: {
+        personKey: string;
+        first: string;
+        dates: number;
+        from: string;
+        to: string;
+    }): string;
 }
 
 /** The whole table. What `EN` implements and what a second language would. */
@@ -1500,6 +1539,24 @@ export const EN: Messages = {
             `"${personKey}" joined on ${joinedAt}, part way through the window ${from} to ${to}, so ` +
             'they did not have the whole of it. The number is absolute rather than scaled, so judging ' +
             'them against it here would report a shortfall they could not have made up.'
+        );
+    },
+
+    historyShortOfWindowSkip({ from, to, historyAvailableFrom }) {
+        return (
+            `The window ${from} to ${to} begins before the supplied duty history, which reaches back ` +
+            `only to ${historyAvailableFrom}, so its first days were never supplied. A window that is ` +
+            'merely shorter is a correct answer to a smaller question; one whose first days are ' +
+            'unknown is a wrong answer to the right one, so this window was left unjudged.'
+        );
+    },
+
+    unknownDayTypeSkip({ personKey, first, dates, from, to }) {
+        return (
+            `The period ${from} to ${to} was not judged for "${personKey}": ` +
+            `${EN.plural(dates, 'duty falls', 'duties fall')} on a date the day vector does not ` +
+            `describe, starting at ${first}. Whether a date is a weekday, a weekend or a holiday is ` +
+            'the department’s own answer and is never re-derived here, so the mix could not be counted.'
         );
     },
 };

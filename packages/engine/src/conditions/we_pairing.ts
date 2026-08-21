@@ -85,6 +85,21 @@
  * Green, and it was NOT a corpus gap: **the explicit `windowTouchesHorizon` check inside the scan**.
  * It could never be taken — see {@link candidateStarts} — so it is deleted rather than fixtured, and
  * the property tying its reason to the bounds lives in `conditions.test.ts`.
+ *
+ * ## The P2-2 review's second green plant here, EXAMINED AND KEPT
+ *
+ * Narrowing `slotKeys` from the union of both days to the first day alone stays green, and it is a
+ * true observation with a false conclusion. The scan is not carrying one dead line; it is carrying
+ * a symmetric PAIR — the union, and the `first.length === 0` half of the gap guard — and removing
+ * either one alone is harmless while removing both changes nothing at all. Planted in every
+ * direction: dropping `first.length === 0` goes RED, dropping `second.length === 0` goes RED, and
+ * dropping the union's second day is the only one that survives, because a slot filled on Saturday
+ * alone then never enters the loop instead of entering it and being refused as a GAP.
+ *
+ * It is kept BECAUSE it is symmetric. The answer must not depend on which of a pair's two days the
+ * enumeration happens to start from, and a reader checking that reads one expression rather than
+ * reconstructing it from which branch is unreachable. `conditions.test.ts` now asserts a gap on
+ * each side, so the symmetry is a measured property rather than a spelling.
  */
 
 import { addDays, datesBetween, type Ymd } from '../calendar/ymd';

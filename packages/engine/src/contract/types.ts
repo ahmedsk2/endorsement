@@ -55,9 +55,9 @@ import type { Duty, Slot } from '../duty/interval';
 import type { Horizon } from '../duty/windows';
 import type { DayType } from '../calendar';
 import type { Ymd } from '../calendar/ymd';
-import type { PreviewMessages } from '../messages';
+import type { Messages, PreviewMessages, ViolationMessages, Vocabulary } from '../messages';
 
-export type { PreviewMessages };
+export type { Messages, PreviewMessages, ViolationMessages, Vocabulary };
 
 /**
  * One date of the horizon, PRECOMPUTED server-side by the one converter.
@@ -121,9 +121,15 @@ export interface Span {
  * `joinedAt` and off the roster are removed, so the constraint TIGHTENS around somebody's leave
  * rather than back-loading them into it.
  *
- * `priorCredits` is `number | null` per holiday key, and `null` means UNKNOWN — distinct from a
- * known zero (owner decision W). Encoding year-one absence as zero makes `holiday_equity`'s
- * lookback silently do nothing in year one and actively mis-schedule in year two.
+ * `priorCredits` is `number | null` per holiday key. **CORRECTED AT P2-2 TASK 19: `null` and an
+ * absent key both read as ZERO.** This docblock shipped stating the opposite — that `null` means
+ * UNKNOWN, distinct from a known zero — which was owner decision W's SUPERSEDED default; the
+ * answer (2026-08-20) is that carried credits start at zero for everybody and year one distributes
+ * on that year's own assignments alone. The shape is left as it is rather than narrowed, so
+ * `App\Support\Engine` may serialise either spelling and P2-2 adds predicates and no shared shape;
+ * `conditions/holiday_equity.ts`'s `carriedCredits()` is the one definition of the reading, and the
+ * limitation the answer accepts — a past covered on paper is invisible — is stated in that type's
+ * CG-04 preview rather than only here.
  */
 export interface Person {
     key: string;
@@ -308,11 +314,28 @@ export interface CoverageReport {
  * type reporting a window as skipped in `coverage()` while still firing on it in `evaluate()` — and
  * that disagreement is invisible on a green suite. Returning both from one call makes the two
  * consistent by construction rather than by twenty-two authors remembering.
+ *
+ * ## `messages` is the fourth argument, and it arrived one task late on purpose-defeating terms
+ *
+ * This type was fixed at P2 Task 7 without one, so the eleven types P2-1 shipped each assembled
+ * their violation English at the call site and AR-07 held for the preview beside them and not for
+ * them. P2-2's first task threaded it, before the remaining eleven types were written: eleven call
+ * sites then, twenty-two later, with the shape set by whichever type happened to be written first.
+ *
+ * It is {@link ViolationMessages} and not the whole table, so a predicate cannot render a preview
+ * sentence — the two are read in different places at different moments — and it is REQUIRED rather
+ * than defaulted, because a type that could forget it would fall back to English silently, which is
+ * the one failure mode a message table exists to make impossible.
+ *
+ * The predicate is handed the table on the SAME call that measures, which is what lets a sentence
+ * print a number the schedule decided rather than one the condition row authored — owner decision
+ * Q's applied tolerance at Task 19, and `min_gap`'s measured shortfall today.
  */
 export type ConditionEvaluator = (
     condition: Condition,
     schedule: Schedule,
     context: EvaluationContext,
+    messages: ViolationMessages,
 ) => ConditionOutcome;
 
 /** What {@link ConditionEvaluator} returns. */

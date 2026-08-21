@@ -1,0 +1,247 @@
+{
+    "name": "count-max-the-kinds-list-names-which-duties-are-counted",
+    "why": "`kinds` is the third narrowing on this type and, like the other two, an implementation that ignored it is green on every case where every duty happens to be the same kind. p-ali holds two calls and a backup in the week against a cap of two counting calls alone: exactly at the cap, and three over it the moment the kind filter is dropped. p-noor's three calls are the half that proves the cap itself still fires, so a green run cannot mean the condition did nothing at all.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-06",
+                "isoWeekday": 4,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-07",
+                "isoWeekday": 5,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-08",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [
+            {
+                "key": "block-01",
+                "startsOn": "2026-08-02",
+                "endsOn": "2026-08-08",
+                "weeks": [
+                    {
+                        "startsOn": "2026-08-02",
+                        "endsOn": "2026-08-08",
+                        "clippedStartsOn": "2026-08-02",
+                        "clippedEndsOn": "2026-08-08"
+                    }
+                ]
+            }
+        ],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1020,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            },
+            {
+                "key": "backup",
+                "kind": "backup",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 1020,
+                "crossesMidnight": false,
+                "countsHours": false,
+                "tallyKey": "backup"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-02",
+            "to": "2026-08-08",
+            "evaluableFrom": "2026-07-26",
+            "evaluableTo": "2026-08-15"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-04",
+                "slotKey": "backup"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-05",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-06",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-07",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-count-max",
+            "typeKey": "count_max",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "count": 2,
+                "window": "week",
+                "kinds": [
+                    "call"
+                ]
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-count-max",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-noor",
+                "from": "2026-08-02",
+                "to": "2026-08-08",
+                "contributing": [
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-05",
+                        "slotKey": "night"
+                    },
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-06",
+                        "slotKey": "night"
+                    },
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-07",
+                        "slotKey": "night"
+                    }
+                ]
+            },
+            "explanation": "3 duties in the week 2026-08-02 to 2026-08-08, counting duties of kind call; at most 2 are allowed.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-count-max",
+            "evaluatedWindows": 1,
+            "skipped": []
+        }
+    ]
+}

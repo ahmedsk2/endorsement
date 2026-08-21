@@ -1,0 +1,272 @@
+{
+    "name": "free-day-min-leave-counts-as-a-free-day-unless-the-rule-says-otherwise",
+    "why": "The leave parameter, on one world under both readings at once — the only construction that can prove a boolean actually reaches the predicate, since a fixture setting it one way is green under an implementation that ignores it. p-ali works the 1st to the 4th and is on leave on the 5th. The window covering the four worked days holds no free day under either reading and is flagged twice. The window from the 2nd to the 5th is the one that separates them: with leave counting as free it holds exactly one and passes, and with leave not counting it holds none and fails. Ignoring the parameter in either direction changes exactly one of the two rows.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-06",
+                "isoWeekday": 4,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-07",
+                "isoWeekday": 5,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [
+                    "2026-08-05"
+                ],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "day",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 1020,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-04",
+            "evaluableFrom": "2026-07-29",
+            "evaluableTo": "2026-08-10"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-03",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-04",
+                "slotKey": "day"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-lenient",
+            "typeKey": "free_day_min",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "n": 4
+            },
+            "rank": 3
+        },
+        {
+            "id": "c-strict",
+            "typeKey": "free_day_min",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "n": 4,
+                "leaveCountsAsFree": false
+            },
+            "rank": 4
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-lenient",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-ali",
+                "from": "2026-08-01",
+                "to": "2026-08-04",
+                "contributing": [
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-01",
+                        "slotKey": "day"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-02",
+                        "slotKey": "day"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-03",
+                        "slotKey": "day"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-04",
+                        "slotKey": "day"
+                    }
+                ]
+            },
+            "explanation": "0 fully free days in the 4 days from 2026-08-01 to 2026-08-04; at least 1 is required. A day any duty runs into is not free, even when no duty starts on it. Days on leave are counted as free here.",
+            "rank": 3
+        },
+        {
+            "conditionId": "c-strict",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-ali",
+                "from": "2026-08-01",
+                "to": "2026-08-04",
+                "contributing": [
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-01",
+                        "slotKey": "day"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-02",
+                        "slotKey": "day"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-03",
+                        "slotKey": "day"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-04",
+                        "slotKey": "day"
+                    }
+                ]
+            },
+            "explanation": "0 fully free days in the 4 days from 2026-08-01 to 2026-08-04; at least 1 is required. A day any duty runs into is not free, even when no duty starts on it. Days on leave are NOT counted as free here.",
+            "rank": 4
+        },
+        {
+            "conditionId": "c-strict",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-ali",
+                "from": "2026-08-02",
+                "to": "2026-08-05",
+                "contributing": [
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-02",
+                        "slotKey": "day"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-03",
+                        "slotKey": "day"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-04",
+                        "slotKey": "day"
+                    }
+                ]
+            },
+            "explanation": "0 fully free days in the 4 days from 2026-08-02 to 2026-08-05; at least 1 is required. A day any duty runs into is not free, even when no duty starts on it. Days on leave are NOT counted as free here.",
+            "rank": 4
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-lenient",
+            "evaluatedWindows": 7,
+            "skipped": []
+        },
+        {
+            "conditionId": "c-strict",
+            "evaluatedWindows": 7,
+            "skipped": []
+        }
+    ]
+}

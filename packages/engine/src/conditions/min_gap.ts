@@ -31,7 +31,6 @@ import { orderedDutiesFor, slotIndex, type PositionedDuty } from '../duty/order'
 import {
     carryInLeftEdge,
     dutyStreams,
-    hoursText,
     kindMatches,
     personInScope,
     personIndex,
@@ -87,17 +86,25 @@ export const preview: ConditionPreview = (condition, _context, messages) => mess
  * `DUTY_DATE_READING.min_gap` is the only entry in that table carrying two readings, and this is
  * where they part. `hours` subtracts the earlier duty's END from the later one's START on the
  * absolute-minute line; `days` subtracts the dates they START on, which is the anchor-date reading.
+ *
+ * It returns a NUMBER — days under the one reading, minutes under the other — and not a rendered
+ * fragment. It used to return `"1 day"` and `"9 h"`, which put two English words and a decimal
+ * separator inside the predicate, and is why P2-2's first task had to touch this function at all.
+ * The unit the number is in is `params.unit`, which the sentence is handed too.
+ *
+ * `null` and `0` are different answers and both are reachable: two duties on one date are `0` days
+ * apart, which is a shortfall, while `null` means the gap is satisfied.
  */
-function shortfall(earlier: PositionedDuty, later: PositionedDuty, params: MinGapParams): string | null {
+function shortfall(earlier: PositionedDuty, later: PositionedDuty, params: MinGapParams): number | null {
     if (params.unit === 'days') {
         const apart = diffDays(earlier.duty.date, later.duty.date);
 
-        return apart >= params.value ? null : `${apart} ${apart === 1 ? 'day' : 'days'}`;
+        return apart >= params.value ? null : apart;
     }
 
     const gap = later.interval.start - earlier.interval.end;
 
-    return gap >= params.value * 60 ? null : `${hoursText(gap)} h`;
+    return gap >= params.value * 60 ? null : gap;
 }
 
 /**
@@ -133,7 +140,7 @@ function shortfall(earlier: PositionedDuty, later: PositionedDuty, params: MinGa
  * filter could be deleted with 587/587 green. `min-gap-kinds-names-both-sides-of-the-pair` is what
  * fails now, on each side separately and in the coverage row.
  */
-export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
+export const evaluate: ConditionEvaluator = (condition, schedule, context, messages) => {
     const params = readParams(condition);
     const slots = slotIndex(context.slots);
     const people = personIndex(context);
@@ -191,16 +198,13 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
                             date: subject.duty.date,
                             slotKey: subject.duty.slotKey,
                         },
-                        explanation: overlapping
-                            ? `This duty overlaps "${partner.duty.slotKey}" on ${partner.duty.date}, so the ` +
-                              `required ${params.value} h gap between them is not there at all.`
-                            : params.unit === 'hours'
-                              ? `Only ${short} between this duty and "${partner.duty.slotKey}" on ` +
-                                `${partner.duty.date}; at least ${params.value} h is required between the ` +
-                                'end of one duty and the start of the next.'
-                              : `${short} between this duty and "${partner.duty.slotKey}" on ` +
-                                `${partner.duty.date}, counted between the dates they start on; at least ` +
-                                `${params.value} are required.`,
+                        explanation: messages.minGapViolation({
+                            unit: params.unit,
+                            value: params.value,
+                            apart: short,
+                            overlapping,
+                            partner: { slotKey: partner.duty.slotKey, date: partner.duty.date },
+                        }),
                     });
                 }
             }
@@ -209,6 +213,6 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
 
     return {
         findings,
-        coverage: placementsCovered(evaluated, carryInLeftEdge(context, schedule.horizon)),
+        coverage: placementsCovered(evaluated, carryInLeftEdge(context, schedule.horizon, messages)),
     };
 };

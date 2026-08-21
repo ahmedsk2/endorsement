@@ -185,7 +185,11 @@ export const CONTRACT_SCHEMA: JsonSchemaDocument = {
         },
 
         Person: {
-            description: 'priorCredits is number|null per holiday key; null means UNKNOWN, not zero.',
+            description:
+                'priorCredits is number|null per holiday key. CORRECTED AT P2-2 TASK 19: null and ' +
+                'an absent key both read as ZERO (owner decision W, answered). The null spelling ' +
+                'stays admissible so a caller may serialise either; holiday_equity reads both the ' +
+                'same way.',
             type: 'object',
             required: ['key', 'levelSpans', 'unitSpans', 'leaveDays', 'unwantedDays', 'eligibleDays', 'external'],
             additionalProperties: false,
@@ -306,7 +310,9 @@ export const CONTRACT_SCHEMA: JsonSchemaDocument = {
         Location: {
             description:
                 'The three shapes this catalog violates at. contributing is MANDATORY on a window ' +
-                'violation: WB-03 badges a cell and WB-04 orders a picker, and neither can act on a range.',
+                'violation — WB-03 badges a cell and WB-04 orders a picker, and neither can act on a ' +
+                'range — but it MAY BE EMPTY, which is a floor answering the question rather than ' +
+                'failing to. See the window member below.',
             oneOf: [
                 {
                     type: 'object',
@@ -328,7 +334,18 @@ export const CONTRACT_SCHEMA: JsonSchemaDocument = {
                         personKey: { type: 'string' },
                         from: ref('Ymd'),
                         to: ref('Ymd'),
-                        contributing: { type: 'array', minItems: 1, items: ref('Duty') },
+                        // CORRECTED AT P2-2 TASK 15, BY THE FIRST FLOOR THAT FIRED. This carried
+                        // `minItems: 1`, authored at Task 7 on the argument that a duty-hours
+                        // violation naming no duty is unactionable. That argument is right for a
+                        // CAP and exactly inverted for a FLOOR: `count_min` fires hardest on the
+                        // person who holds NOTHING, and an empty list is that person's whole
+                        // answer rather than a missing field. The KEY stays mandatory, which is
+                        // the half Task 7 was protecting — `contributing` absent means a type
+                        // forgot to say, `contributing: []` means a type said none — and
+                        // `contract.test.ts` now asserts both halves separately so the
+                        // distinction cannot collapse back into one check. The union, the five
+                        // fields of `Violation` and `evaluate()`'s return type are untouched.
+                        contributing: { type: 'array', items: ref('Duty') },
                     },
                 },
                 {

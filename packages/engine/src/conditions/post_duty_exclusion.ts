@@ -120,7 +120,7 @@ export const preview: ConditionPreview = (condition, _context, messages) =>
     messages.postDutyExclusion(readParams(condition));
 
 /** The predicate. See the module docblock for every decision in it. */
-export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
+export const evaluate: ConditionEvaluator = (condition, schedule, context, messages) => {
     const params = readParams(condition);
     const slots = slotIndex(context.slots);
     const people = personIndex(context);
@@ -177,9 +177,11 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
                         date: subject.duty.date,
                         slotKey: subject.duty.slotKey,
                     },
-                    explanation:
-                        `Starts inside the ${params.hours} h exclusion after "${anchor.duty.slotKey}" on ` +
-                        `${anchor.duty.date}, which ends ${endsOn(anchor)}.`,
+                    explanation: messages.postDutyExclusionViolation({
+                        hours: params.hours,
+                        anchor: { slotKey: anchor.duty.slotKey, date: anchor.duty.date },
+                        anchorEndsOn: endsOn(anchor),
+                    }),
                 });
             }
         }
@@ -187,7 +189,7 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
 
     return {
         findings,
-        coverage: placementsCovered(evaluated, carryInLeftEdge(context, schedule.horizon)),
+        coverage: placementsCovered(evaluated, carryInLeftEdge(context, schedule.horizon, messages)),
     };
 };
 

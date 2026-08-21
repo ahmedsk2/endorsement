@@ -1,0 +1,205 @@
+{
+    "name": "rolling-hours-max-a-night-call-counts-its-hours-on-both-dates-it-runs-on",
+    "why": "THE SPLIT-AT-MIDNIGHT READING, AND THE ONE CASE THAT INVERTS UNDER THE ANCHOR-DATE ONE. p-ali holds a single 20:00-08:00 night on the 2nd, which is four hours on the 2nd and eight on the 3rd. Against a cap of six hours in one day the 3rd is over and the 2nd is not — and under the anchor-date reading every neighbouring type uses, the whole twelve hours would land on the 2nd and the two answers would swap. p-noor holds a 08:00-20:00 day duty that crosses no midnight, so its hours stay on their own date, which is what stops the case being read as \"this type ignores the anchor date\".",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "day",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 1200,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            },
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1200,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-05",
+            "evaluableFrom": "2026-07-25",
+            "evaluableTo": "2026-08-10"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-01",
+                "slotKey": "day"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-rolling",
+            "typeKey": "rolling_hours_max",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "hours": 6,
+                "windowDays": 1
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-rolling",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-ali",
+                "from": "2026-08-03",
+                "to": "2026-08-03",
+                "contributing": [
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-02",
+                        "slotKey": "night"
+                    }
+                ]
+            },
+            "explanation": "8 h of duty in the 1 day from 2026-08-03 to 2026-08-03; at most 6 h are allowed. Hours are split at midnight, so a duty running overnight counts on both of the dates it occupies, and slots that do not count toward duty hours are left out.",
+            "rank": 3
+        },
+        {
+            "conditionId": "c-rolling",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-noor",
+                "from": "2026-08-01",
+                "to": "2026-08-01",
+                "contributing": [
+                    {
+                        "personKey": "p-noor",
+                        "date": "2026-08-01",
+                        "slotKey": "day"
+                    }
+                ]
+            },
+            "explanation": "12 h of duty in the 1 day from 2026-08-01 to 2026-08-01; at most 6 h are allowed. Hours are split at midnight, so a duty running overnight counts on both of the dates it occupies, and slots that do not count toward duty hours are left out.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-rolling",
+            "evaluatedWindows": 5,
+            "skipped": []
+        }
+    ]
+}

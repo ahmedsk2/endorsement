@@ -1,8 +1,48 @@
 /**
  * `fairness_distribution` — CG-07: *"Even spread across colleagues | quantity; tolerance"*.
  *
- * **P2 Task 9 lands the parameters, the tolerance rule and the preview; Task 19 lands the
+ * **P2 Task 9 landed the parameters, the tolerance rule and the preview; Task 19 lands the
  * predicate.**
+ *
+ * ## The FIRST cohort-located type, and what that member costs
+ *
+ * `Location`'s third member carries `personKeys`, a `scopeLabel` and no date at all, which is the
+ * honest shape for *"this population is unevenly loaded"*. Two consequences follow and neither is
+ * visible in the union:
+ *
+ *  - **`evaluate()`'s emission rule cannot help.** A cohort location is ALWAYS reportable, because
+ *    it has no date to test. Every duty this type counts is therefore filtered to the horizon here,
+ *    in the predicate, rather than being left to the rule that catches a placement in the tail.
+ *  - **`scopeLabel` is text a scheduler reads**, so it comes from the message table like every
+ *    other sentence. It is most of a cohort violation's meaning: *"unevenly loaded"* against the
+ *    whole department and against the four R1s on PICU are different statements and the badge has
+ *    nothing else on it to tell them apart.
+ *
+ * `contributing` is OPTIONAL on this member and is supplied on every finding regardless, empty
+ * included — Task 15's distinction one member along: absent means a type forgot to say, `[]` means
+ * it said none.
+ *
+ * ## The comparison is over the SCHEDULE, and no carry-in tail enters it
+ *
+ * `needsCarryIn: false`, and the registry records why: last month's load is a different period's
+ * fairness question, answered against that period's own eligible-day denominator. So only
+ * `schedule.duties` are counted. `priorDuties` is still resolved for the STRANGER check, because a
+ * duty naming somebody the context does not describe cannot be judged by anything.
+ *
+ * ## The quantity keys on `Slot.tallyKey`, which this package treats as opaque
+ *
+ * SL-01 owns the vocabulary and P3 stores it; nothing here validates the string. A slot with no
+ * `tallyKey` matches no quantity. That makes a mistyped quantity the likeliest way this rule ever
+ * goes quiet, and a quiet rule is indistinguishable from an even schedule — so a quantity nothing
+ * tallies is REPORTED through `coverage()` rather than answered with silence.
+ *
+ * ## A float comparison, with the epsilon stated rather than discovered
+ *
+ * A pro-rated share is a division, so a schedule sitting exactly on its tolerance can land either
+ * side of it on a floating-point remainder — and D4 gives this package two runtimes, where "the
+ * same input answered differently" is the one thing a pure function may not do. The comparison is
+ * therefore against `tolerance + `{@link COMPARISON_EPSILON}, which is far below any difference a
+ * real roster can produce and far above the error a division of small integers can accumulate.
  *
  * ## Owner decision Q, answered 2026-08-20, and the floor that is not decoration
  *
@@ -51,11 +91,69 @@
  *
  * From `eligibleDays` (owner decision Q's unchanged half). Raw counts flag the person on leave as
  * under-loaded, and a solver's fix for that is to overload the few days they were available.
+ *
+ * ## The two modes answer different questions and may not contradict each other
+ *
+ * `deviation` names every person outside their own allowance, one finding each. `spread` measures
+ * only the distance between the busiest and the quietest and produces ONE finding naming that pair
+ * — decision Q's own note is that it *"says nothing about WHO to fix"*, which is why `deviation` is
+ * the default; it does say which TWO, and that is what makes the badge actionable at all.
+ *
+ * **`spread`'s allowance is DERIVED from `deviation`'s and is not a second number.** It is the
+ * widest gap deviation mode would have permitted between those two people — each one's own
+ * tolerance, added — so a schedule clean under `deviation` is clean under `spread` by construction.
+ * The alternative, a threshold of its own, lets one mode of one rule call a draft fair while the
+ * other calls it unfair, with nothing on either screen able to adjudicate. Recorded as an INFERENCE
+ * rather than a citation: no document states it, and the alternative was rejected on that argument.
+ *
+ * ## PLANTED, AND THREE OF THEM STAYED GREEN THE FIRST TIME
+ *
+ * Red on the first pass: `personInScope` answering `true` — the standing FIRST plant, and it bites
+ * harder on a cohort type than on a window one because the scope decides the DENOMINATOR as well as
+ * who is judged; the expected share replaced by a raw `total / cohortSize`; `excludeExternal`
+ * ignored; {@link toleranceFor}'s floor removed; `spread`'s allowance replaced by a single person's
+ * tolerance; the `quantity` filter dropped; and the no-quantity coverage row suppressed.
+ *
+ * Green, and each is now closed:
+ *
+ *  1. **`spread` never updating `quietest`** — the corpus world had two people in it, so the array
+ *     head WAS the quietest and never moving the marker changed nothing. Closed by a third person,
+ *     `p-mid`, listed FIRST and neither extreme, in
+ *     `fairness-distribution-spread-mode-measures-the-widest-gap-and-names-the-pair`.
+ *  2. **The horizon filter deleted from the counted duties** — no case had a duty dated outside its
+ *     own horizon, which is not something a fixture can express without becoming confusing corpus
+ *     data. Closed in `conditions.test.ts`, byte-identically rather than by length: counting one
+ *     would move the total, the denominator and every printed share.
+ *  3. **`<=` relaxed to `<`** — not a hole at all. See {@link COMPARISON_EPSILON}: the epsilon makes
+ *     the two spellings indistinguishable on any input, so the boundary is pinned by the numbers
+ *     either side of it and the operator is not the control.
+ *  4. **The horizon filter deleted from the DENOMINATOR** (P2-2 review) — the SAME clip one term
+ *     along, and green for a different reason than item 2. Item 2 was closed by a tail DUTY, and a
+ *     tail duty adds no tail ELIGIBLE DAY: `ContextBuilder` builds `eligibleDays` over the whole
+ *     evaluable range while this rule compares over the horizon alone, so the numerator's clip was
+ *     asserted and the denominator's was not. A fixture CAN express this one, unlike item 2 — an
+ *     eligible day in the already-published week is ordinary carry-in rather than confusing corpus
+ *     data — so `fairness-distribution-the-expected-share-is-pro-rated-by-availability` carries a
+ *     genuine tail and the clipped shares stay 3.3 and 0.7 where the unclipped ones are 3.1 and 0.9.
+ *     Two clips, two terms, two separate cases: closing one said nothing about the other.
  */
 
 import type { JsonSchema } from '../contract/schema';
-import type { Condition, ConditionPreview } from '../contract/types';
+import type {
+    Condition,
+    ConditionEvaluator,
+    ConditionPreview,
+    ConditionScope,
+    Finding,
+    Person,
+    SkippedWindow,
+    ViolationMessages,
+} from '../contract/types';
 import { assertValidAgainst } from '../contract/validate';
+import type { Duty } from '../duty/interval';
+import { slotIndex } from '../duty/order';
+import { withinHorizon, type Horizon } from '../duty/windows';
+import { dutyStreams, personInScope, rosterFor } from './support';
 
 /** `fairness_distribution`'s parameters. */
 export interface FairnessDistributionParams {
@@ -125,3 +223,248 @@ export const preview: ConditionPreview = (condition, _context, messages) => {
         examples: PREVIEW_EXAMPLE_SHARES.map((share) => ({ share, allowance: toleranceFor(share) })),
     });
 };
+
+/**
+ * The slack a float comparison is given, and it is stated rather than discovered.
+ *
+ * An expected share is `total × eligible / E`, so a schedule sitting EXACTLY on its tolerance can
+ * fall either side of the comparison on a remainder in the last bits. D4 gives this package two
+ * runtimes and the same input answered differently in each is the one thing a pure function may not
+ * do. A billionth of a duty is below anything a roster can express and far above what a division of
+ * small integers accumulates.
+ */
+export const COMPARISON_EPSILON = 1e-9;
+
+/** One person's standing in the comparison: what they hold, what was expected, and by how much. */
+export interface Standing {
+    person: Person;
+    actual: number;
+    expected: number;
+    deviation: number;
+    tolerance: number;
+    duties: Duty[];
+}
+
+/**
+ * Who this rule compares: CG-01's scope, then owner decision Q's `excludeExternal`.
+ *
+ * The scope is read at the horizon's START, which is `count_max`'s *"at the window's start"* one
+ * type along — a cohort type's window is the whole schedule, so its start is the horizon's. The
+ * alternative, resolving per date and asking whether any date matched, makes a promotion part-way
+ * through the month move somebody in or out of a comparison they were mostly not part of.
+ */
+function cohortFor(
+    roster: readonly Person[],
+    horizon: Horizon,
+    scope: ConditionScope | undefined,
+    excludeExternal: boolean,
+): Person[] {
+    return roster.filter(
+        (person) =>
+            personInScope(person, horizon.from, scope) && !(excludeExternal && person.external),
+    );
+}
+
+/**
+ * How many days of the horizon this person could actually have been scheduled on.
+ *
+ * The clip is LOAD-BEARING and is not the same statement as the numerator's. `eligibleDays` arrives
+ * over the whole evaluable range — `ContextBuilder` builds it from the dates it was asked for, tail
+ * included — while this rule compares over `[horizon.from, horizon.to]` alone. Without the filter
+ * the denominator counts days in a month somebody else already published and every printed share
+ * moves with it, silently and only where a tail was supplied.
+ */
+function availableDaysIn(person: Person, horizon: Horizon): number {
+    return person.eligibleDays.filter((date) => withinHorizon(horizon, date)).length;
+}
+
+/** The one label a cohort violation carries, built from the condition's own scope. */
+function scopeLabelFor(scope: ConditionScope | undefined, messages: ViolationMessages): string {
+    return messages.cohortScopeLabel({
+        unitKeys: scope?.unitKeys ?? [],
+        levelKeys: scope?.levelKeys ?? [],
+        personKeys: scope?.personKeys ?? [],
+    });
+}
+
+/** The predicate. See the module docblock for every decision in it. */
+export const evaluate: ConditionEvaluator = (condition, schedule, context, messages) => {
+    const params = readParams(condition);
+    const slots = slotIndex(context.slots);
+    const streams = dutyStreams(schedule, context);
+    const roster = rosterFor(context, streams);
+    const horizon = schedule.horizon;
+    const cohort = cohortFor(roster, horizon, condition.scope, params.excludeExternal);
+    const scopeLabel = scopeLabelFor(condition.scope, messages);
+    const skipped: SkippedWindow[] = [];
+
+    // The horizon ONLY, and by the ANCHOR date. A cohort location has no date for `evaluate()`'s
+    // emission rule to test, so a duty in the carry-in tail would otherwise be counted into a
+    // finding nothing could drop — CG-03 enforced by the type, because it cannot be enforced for it.
+    const countedFor = (person: Person): Duty[] =>
+        schedule.duties.filter(
+            (duty) =>
+                duty.personKey === person.key &&
+                withinHorizon(horizon, duty.date) &&
+                slots.get(duty.slotKey).tallyKey === params.quantity,
+        );
+
+    const holdings = cohort.map((person) => ({ person, duties: countedFor(person) }));
+    const total = holdings.reduce((sum, held) => sum + held.duties.length, 0);
+    const available = new Map(cohort.map((person) => [person.key, availableDaysIn(person, horizon)]));
+    const denominator = [...available.values()].reduce((sum, count) => sum + count, 0);
+
+    if (total === 0) {
+        skipped.push({
+            from: horizon.from,
+            to: horizon.to,
+            reason: messages.fairnessNoQuantitySkip({
+                quantity: params.quantity,
+                from: horizon.from,
+                to: horizon.to,
+            }),
+        });
+
+        return { findings: [], coverage: { evaluatedWindows: 0, skipped } };
+    }
+
+    if (denominator === 0) {
+        skipped.push({
+            from: horizon.from,
+            to: horizon.to,
+            reason: messages.fairnessNoDenominatorSkip({ from: horizon.from, to: horizon.to }),
+        });
+
+        return { findings: [], coverage: { evaluatedWindows: 0, skipped } };
+    }
+
+    const standings: Standing[] = holdings.map(({ person, duties }) => {
+        const expected = (total * (available.get(person.key) as number)) / denominator;
+
+        return {
+            person,
+            duties,
+            actual: duties.length,
+            expected,
+            deviation: duties.length - expected,
+            tolerance: toleranceFor(expected),
+        };
+    });
+
+    const findings =
+        params.mode === 'deviation'
+            ? deviationFindings(standings, params.quantity, scopeLabel, messages)
+            : spreadFindings(standings, params.quantity, scopeLabel, messages);
+
+    return { findings, coverage: { evaluatedWindows: 1, skipped } };
+};
+
+/**
+ * `deviation`: one finding per person outside their OWN allowance.
+ *
+ * No early exit and no aggregation into a single finding. WB-04's reason chips order a picker by
+ * who is over and who is under, and one finding naming five people is one chip a scheduler cannot
+ * act on — which is the same objection decision Q raises against `spread` being the default.
+ */
+function deviationFindings(
+    standings: readonly Standing[],
+    quantity: string,
+    scopeLabel: string,
+    messages: ViolationMessages,
+): Finding[] {
+    const findings: Finding[] = [];
+
+    for (const standing of standings) {
+        if (Math.abs(standing.deviation) <= standing.tolerance + COMPARISON_EPSILON) {
+            continue;
+        }
+
+        findings.push({
+            location: {
+                kind: 'cohort',
+                personKeys: [standing.person.key],
+                scopeLabel,
+                contributing: standing.duties,
+            },
+            explanation: messages.fairnessDeviationViolation({
+                quantity,
+                actual: standing.actual,
+                expected: standing.expected,
+                deviation: Math.abs(standing.deviation),
+                tolerance: standing.tolerance,
+                over: standing.deviation > 0,
+                cohortSize: standings.length,
+            }),
+        });
+    }
+
+    return findings;
+}
+
+/**
+ * `spread`: ONE finding, naming the busiest and the quietest, when the gap between them is too wide.
+ *
+ * The allowance is the sum of those two people's OWN tolerances, which is exactly the widest gap
+ * `deviation` would have permitted between them — see the module docblock for why a threshold of
+ * its own was rejected. A cohort of one has a gap of zero and never fires.
+ */
+function spreadFindings(
+    standings: readonly Standing[],
+    quantity: string,
+    scopeLabel: string,
+    messages: ViolationMessages,
+): Finding[] {
+    if (standings.length === 0) {
+        return [];
+    }
+
+    let busiest = standings[0] as Standing;
+    let quietest = standings[0] as Standing;
+
+    // NO EARLY EXIT: both extremes are found by a full pass, because the pair is the finding and a
+    // scan that stopped at the first person over their own tolerance would be `deviation` wearing
+    // this mode's name.
+    for (const standing of standings) {
+        if (standing.deviation > busiest.deviation) {
+            busiest = standing;
+        }
+
+        if (standing.deviation < quietest.deviation) {
+            quietest = standing;
+        }
+    }
+
+    const gap = busiest.deviation - quietest.deviation;
+    const allowance = busiest.tolerance + quietest.tolerance;
+
+    if (gap <= allowance + COMPARISON_EPSILON) {
+        return [];
+    }
+
+    return [
+        {
+            location: {
+                kind: 'cohort',
+                personKeys: [busiest.person.key, quietest.person.key],
+                scopeLabel,
+                contributing: [...busiest.duties, ...quietest.duties],
+            },
+            explanation: messages.fairnessSpreadViolation({
+                quantity,
+                busiest: {
+                    personKey: busiest.person.key,
+                    actual: busiest.actual,
+                    expected: busiest.expected,
+                },
+                quietest: {
+                    personKey: quietest.person.key,
+                    actual: quietest.actual,
+                    expected: quietest.expected,
+                },
+                gap,
+                allowance,
+                cohortSize: standings.length,
+            }),
+        },
+    ];
+}

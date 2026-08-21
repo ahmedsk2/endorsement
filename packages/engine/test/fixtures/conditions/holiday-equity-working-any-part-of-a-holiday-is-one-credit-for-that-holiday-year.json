@@ -1,0 +1,265 @@
+{
+    "name": "holiday-equity-working-any-part-of-a-holiday-is-one-credit-for-that-holiday-year",
+    "why": "THE COUNTING RULE, AND THE READING THAT LOOKS IDENTICAL UNTIL SOMEBODY WORKS TWO DAYS OF ONE HOLIDAY. Eid runs for three dates here and National Day for one. p-ali works two of the Eid dates and the National Day, which is TWO credits and not three; p-noor works one Eid date for one; p-zaid works a plain weekday for none. A per-DAY reading gives p-ali three and prints a number nobody could reconcile with a calendar. Two against a fewest of nought is more than one apart, so p-ali is named — which is also what makes the case assert something rather than merely fail to fire.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "HOL",
+                "periodKey": "block-01",
+                "holidays": [
+                    {
+                        "key": "eid-al-fitr",
+                        "year": 1447
+                    }
+                ]
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "HOL",
+                "periodKey": "block-01",
+                "holidays": [
+                    {
+                        "key": "eid-al-fitr",
+                        "year": 1447
+                    }
+                ]
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "HOL",
+                "periodKey": "block-01",
+                "holidays": [
+                    {
+                        "key": "eid-al-fitr",
+                        "year": 1447
+                    }
+                ]
+            },
+            {
+                "date": "2026-08-06",
+                "isoWeekday": 4,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-07",
+                "isoWeekday": 5,
+                "dayType": "HOL",
+                "periodKey": "block-01",
+                "holidays": [
+                    {
+                        "key": "national-day",
+                        "year": 2026
+                    }
+                ]
+            },
+            {
+                "date": "2026-08-08",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-zaid",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1200,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-08",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-08"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-03",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-04",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-07",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-05",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-zaid",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-holiday",
+            "typeKey": "holiday_equity",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "holidays": [
+                    "eid-al-fitr",
+                    "national-day"
+                ],
+                "lookbackYears": 0
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-holiday",
+            "severity": "soft",
+            "location": {
+                "kind": "cohort",
+                "personKeys": [
+                    "p-ali"
+                ],
+                "scopeLabel": "everybody in this schedule",
+                "contributing": [
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-03",
+                        "slotKey": "night"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-04",
+                        "slotKey": "night"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-07",
+                        "slotKey": "night"
+                    }
+                ]
+            },
+            "explanation": "Holiday credits for eid-al-fitr and national-day are unevenly spread: \"p-ali\" holds 2, where whoever holds the fewest holds 0. One credit per holiday per year, so a difference of more than one is a credit that could have gone to somebody else. This rule looks back no further than the schedule itself, so these totals are this schedule's alone.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-holiday",
+            "evaluatedWindows": 1,
+            "skipped": []
+        }
+    ]
+}

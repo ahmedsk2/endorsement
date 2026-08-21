@@ -46,13 +46,18 @@
 
 import { compareYmd, diffDays, type Ymd } from '../calendar/ymd';
 import type { JsonSchema } from '../contract/schema';
-import type { Condition, ConditionEvaluator, ConditionPreview, Finding } from '../contract/types';
+import type {
+    Condition,
+    ConditionEvaluator,
+    ConditionPreview,
+    Finding,
+    ViolationMessages,
+} from '../contract/types';
 import { assertValidAgainst } from '../contract/validate';
 import { orderedDutiesFor, slotIndex, type PositionedDuty } from '../duty/order';
 import {
     carryInLeftEdge,
     dutyStreams,
-    hoursText,
     kindMatches,
     personInScope,
     personIndex,
@@ -134,11 +139,13 @@ function counted(
 }
 
 /** The `days`/`nights` reading: consecutive DATES, however many duties sit on each. */
-function runsOfDates(matching: readonly PositionedDuty[], params: ConsecutiveMaxParams): Finding[] {
+function runsOfDates(
+    matching: readonly PositionedDuty[],
+    params: ConsecutiveMaxParams,
+    messages: ViolationMessages,
+): Finding[] {
     const dates = [...new Set(matching.map((positioned) => positioned.duty.date))].sort(compareYmd);
     const findings: Finding[] = [];
-    const noun = params.unit === 'nights' ? 'Night' : 'Day';
-    const nouns = params.unit === 'nights' ? 'duty nights' : 'duty days';
 
     let run = 0;
     let previous: Ymd | null = null;
@@ -159,7 +166,13 @@ function runsOfDates(matching: readonly PositionedDuty[], params: ConsecutiveMax
                     date: positioned.duty.date,
                     slotKey: positioned.duty.slotKey,
                 },
-                explanation: `${noun} ${run} of a run of consecutive ${nouns}; the cap is ${params.count}.`,
+                explanation: messages.consecutiveMaxDatesViolation({
+                    // `nights` and `days` differ only in the noun; the run and the cap are the same
+                    // measurement, and `hours` is a different function entirely.
+                    unit: params.unit === 'nights' ? 'nights' : 'days',
+                    run,
+                    count: params.count,
+                }),
             });
         }
     }
@@ -168,7 +181,11 @@ function runsOfDates(matching: readonly PositionedDuty[], params: ConsecutiveMax
 }
 
 /** The `hours` reading: one contiguous stretch, joined across gaps of at most `transitionMinutes`. */
-function runsOfHours(matching: readonly PositionedDuty[], params: ConsecutiveMaxParams): Finding[] {
+function runsOfHours(
+    matching: readonly PositionedDuty[],
+    params: ConsecutiveMaxParams,
+    messages: ViolationMessages,
+): Finding[] {
     const findings: Finding[] = [];
     const cap = params.count * 60;
 
@@ -194,9 +211,11 @@ function runsOfHours(matching: readonly PositionedDuty[], params: ConsecutiveMax
                 date: positioned.duty.date,
                 slotKey: positioned.duty.slotKey,
             },
-            explanation:
-                `This duty extends a continuous stretch to ${hoursText(end - start)} h, counting duties ` +
-                `${params.transitionMinutes} minutes or less apart as one; the cap is ${params.count} h.`,
+            explanation: messages.consecutiveMaxHoursViolation({
+                minutes: end - start,
+                transitionMinutes: params.transitionMinutes,
+                count: params.count,
+            }),
         });
     }
 
@@ -204,7 +223,7 @@ function runsOfHours(matching: readonly PositionedDuty[], params: ConsecutiveMax
 }
 
 /** The predicate. See the module docblock for every decision in it. */
-export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
+export const evaluate: ConditionEvaluator = (condition, schedule, context, messages) => {
     const params = readParams(condition);
     const slots = slotIndex(context.slots);
     const people = personIndex(context);
@@ -226,11 +245,15 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
 
         evaluated += matching.filter((positioned) => positioned.origin === 'horizon').length;
 
-        findings.push(...(params.unit === 'hours' ? runsOfHours(matching, params) : runsOfDates(matching, params)));
+        findings.push(
+            ...(params.unit === 'hours'
+                ? runsOfHours(matching, params, messages)
+                : runsOfDates(matching, params, messages)),
+        );
     }
 
     return {
         findings,
-        coverage: placementsCovered(evaluated, carryInLeftEdge(context, schedule.horizon)),
+        coverage: placementsCovered(evaluated, carryInLeftEdge(context, schedule.horizon, messages)),
     };
 };

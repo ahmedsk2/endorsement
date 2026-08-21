@@ -65,13 +65,10 @@ export const PARAMS_SCHEMA: JsonSchema = {
 };
 
 /** CG-04's sentence. It says what abutting means, because that is the half people get wrong. */
-export const preview: ConditionPreview = () =>
-    'Nobody may hold two duties whose hours overlap, counting a night duty as running past midnight ' +
-    'into the following day. Two duties that abut — one ending exactly when the next begins — do not ' +
-    'overlap.';
+export const preview: ConditionPreview = (_condition, _context, messages) => messages.overlapBlock();
 
 /** The predicate. See the module docblock for every decision in it. */
-export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
+export const evaluate: ConditionEvaluator = (condition, schedule, context, messages) => {
     assertValidAgainst(PARAMS_SCHEMA, condition.params, `overlap_block on condition "${condition.id}"`);
 
     const slots = slotIndex(context.slots);
@@ -122,7 +119,9 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
                             date: subject.duty.date,
                             slotKey: subject.duty.slotKey,
                         },
-                        explanation: `Overlaps "${partner.duty.slotKey}" on ${partner.duty.date}.`,
+                        explanation: messages.overlapBlockViolation({
+                            partner: { slotKey: partner.duty.slotKey, date: partner.duty.date },
+                        }),
                     });
                 }
             }
@@ -131,6 +130,6 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
 
     return {
         findings,
-        coverage: placementsCovered(evaluated, carryInLeftEdge(context, schedule.horizon)),
+        coverage: placementsCovered(evaluated, carryInLeftEdge(context, schedule.horizon, messages)),
     };
 };

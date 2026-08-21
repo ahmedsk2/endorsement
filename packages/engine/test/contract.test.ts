@@ -493,14 +493,35 @@ describe('the JSON Schema, and the validator that runs it', () => {
         expect(validate('Location', mixed)).not.toEqual([]);
     });
 
-    it('refuses a window location with no contributing duties — WB-03 cannot act on a range', () => {
+    /**
+     * The half Task 7 was actually protecting: a window violation that does not SAY which duties
+     * it measured is unactionable — WB-03 badges a cell and WB-04 orders a picker, and neither can
+     * act on a range. An absent key is a type that forgot.
+     */
+    it('refuses a window location that omits contributing altogether', () => {
         const { contributing: _dropped, ...withoutDuties } = window('2026-08-01', '2026-08-07') as Extract<
             Location,
             { kind: 'window' }
         >;
 
         expect(validate('Location', withoutDuties)).not.toEqual([]);
-        expect(validate('Location', { ...withoutDuties, contributing: [] })).not.toEqual([]);
+    });
+
+    /**
+     * AND THE HALF THE FIRST FLOOR FALSIFIED (P2-2 Task 15). The window member shipped with
+     * `minItems: 1`, which reads as the same statement and is not: a FLOOR fires hardest on the
+     * person who holds NOTHING in the window, so `count_min`'s most important violation carries an
+     * empty list. Refusing it would have forced the type to suppress exactly the person a floor
+     * exists to find.
+     *
+     * The two are asserted apart rather than together for that reason — `contributing` absent means
+     * a type forgot to say, `contributing: []` means a type said *none*, and one check covering
+     * both is what made the difference invisible until a floor existed to expose it.
+     */
+    it('admits an EMPTY contributing list, because that is a floor answering rather than failing', () => {
+        const empty = { ...(window('2026-08-01', '2026-08-07') as object), contributing: [] };
+
+        expect(validate('Location', empty)).toEqual([]);
     });
 
     it('refuses a date that is not a civil Y-m-d', () => {

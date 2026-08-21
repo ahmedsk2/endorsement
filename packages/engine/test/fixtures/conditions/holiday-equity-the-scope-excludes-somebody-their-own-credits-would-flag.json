@@ -1,0 +1,237 @@
+{
+    "name": "holiday-equity-the-scope-excludes-somebody-their-own-credits-would-flag",
+    "why": "CG-01's scope, asserted rather than merely carried — the standing first plant for a new type. Four people carry Eid credits: p-ali two, p-noor none, p-out1 five and p-out2 one. The scope names R1 on PICU, so the comparison is p-ali against p-noor and p-ali alone is named. Delete the scope and p-out1 joins the comparison and is named beside them, so the finding changes shape rather than merely growing. p-out1 is an R1 on NICU and p-out2 an R2 on PICU, so each filter is the only thing excluding its own person.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "HOL",
+                "periodKey": "block-01",
+                "holidays": [
+                    {
+                        "key": "eid-al-fitr",
+                        "year": 1447
+                    }
+                ]
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "HOL",
+                "periodKey": "block-01",
+                "holidays": [
+                    {
+                        "key": "eid-al-fitr",
+                        "year": 1447
+                    }
+                ]
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false,
+                "priorCredits": {
+                    "eid-al-fitr": 2
+                }
+            },
+            {
+                "key": "p-noor",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            },
+            {
+                "key": "p-out1",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "NICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false,
+                "priorCredits": {
+                    "eid-al-fitr": 5
+                }
+            },
+            {
+                "key": "p-out2",
+                "levelSpans": [
+                    {
+                        "key": "R2",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1200,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-05",
+            "evaluableFrom": "2026-08-01",
+            "evaluableTo": "2026-08-05"
+        },
+        "duties": [
+            {
+                "personKey": "p-noor",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            },
+            {
+                "personKey": "p-out2",
+                "date": "2026-08-02",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-holiday",
+            "typeKey": "holiday_equity",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "holidays": [
+                    "eid-al-fitr"
+                ],
+                "lookbackYears": 2
+            },
+            "rank": 3,
+            "scope": {
+                "unitKeys": [
+                    "PICU"
+                ],
+                "levelKeys": [
+                    "R1"
+                ]
+            }
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-holiday",
+            "severity": "soft",
+            "location": {
+                "kind": "cohort",
+                "personKeys": [
+                    "p-ali"
+                ],
+                "scopeLabel": "people at R1 and rotating on PICU",
+                "contributing": []
+            },
+            "explanation": "Holiday credits for eid-al-fitr are unevenly spread: \"p-ali\" holds 2, where whoever holds the fewest holds 0. One credit per holiday per year, so a difference of more than one is a credit that could have gone to somebody else. Credits carried forward from 2 earlier years are included in these totals.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-holiday",
+            "evaluatedWindows": 1,
+            "skipped": []
+        }
+    ]
+}

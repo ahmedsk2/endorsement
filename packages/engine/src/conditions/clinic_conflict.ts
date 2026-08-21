@@ -137,7 +137,7 @@ function attends(person: Person, clinic: Clinic, date: Ymd): boolean {
 }
 
 /** The predicate. See the module docblock for every decision in it. */
-export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
+export const evaluate: ConditionEvaluator = (condition, schedule, context, messages) => {
     const { variant } = readParams(condition);
     const people = personIndex(context);
     const slots = slotIndex(context.slots);
@@ -180,11 +180,12 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
                         date: duty.date,
                         slotKey: duty.slotKey,
                     },
-                    explanation: sameDay
-                        ? `Same day: clinic "${clinic.key}" (session ${clinic.session}) runs on ${date}, ` +
-                          'the date this duty starts on.'
-                        : `Post-call: clinic "${clinic.key}" (session ${clinic.session}) runs on ${date}, ` +
-                          'after this duty ends.',
+                    explanation: messages.clinicConflictViolation({
+                        variant: sameDay ? 'same_day' : 'post_call',
+                        clinicKey: clinic.key,
+                        session: clinic.session,
+                        date,
+                    }),
                 });
             }
         }

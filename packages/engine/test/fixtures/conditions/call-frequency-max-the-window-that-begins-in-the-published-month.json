@@ -1,0 +1,151 @@
+{
+    "name": "call-frequency-max-the-window-that-begins-in-the-published-month",
+    "why": "THE SEAM. A call on the last night of the already-published month and a call on the 1st are two calls in one rolling window, and the window is what says the 1st is too soon. The tail duty is read and never re-reported: the violation is located at the window, which touches the horizon, so the emission rule keeps it. Strip the history and the same call goes quiet, which is correct and on its own is indistinguishable from a type that never looked — the coverage row naming the unexaminable left edge is what tells the two apart.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [
+                    "2026-07-31",
+                    "2026-08-01",
+                    "2026-08-02",
+                    "2026-08-03",
+                    "2026-08-04"
+                ],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "night",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 1200,
+                "endMinute": 480,
+                "crossesMidnight": true,
+                "countsHours": true,
+                "tallyKey": "nights"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-07-31",
+                "slotKey": "night"
+            }
+        ],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-03",
+            "evaluableFrom": "2026-07-20",
+            "evaluableTo": "2026-08-12"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "night"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-frequency",
+            "typeKey": "call_frequency_max",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "n": 2,
+                "windowDays": 2
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-frequency",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-ali",
+                "from": "2026-07-31",
+                "to": "2026-08-01",
+                "contributing": [
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-07-31",
+                        "slotKey": "night"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-01",
+                        "slotKey": "night"
+                    }
+                ]
+            },
+            "explanation": "2 calls in the 2 days from 2026-07-31 to 2026-08-01; at most 1 is permitted. The person was available on 2 days of that window and the rule allows one call in every 2: leave, days before the join date and days off the roster are not counted, so the allowance falls around them rather than rising.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-frequency",
+            "evaluatedWindows": 4,
+            "skipped": []
+        }
+    ]
+}

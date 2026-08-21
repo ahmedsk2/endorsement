@@ -53,7 +53,7 @@
 import type { JsonSchema } from '../contract/schema';
 import type { Condition, ConditionEvaluator, ConditionPreview, Finding } from '../contract/types';
 import { assertValidAgainst } from '../contract/validate';
-import { levelKeyAt, list, personInScope, personIndex, placementsCovered, unitKeyAt } from './support';
+import { levelKeyAt, personInScope, personIndex, placementsCovered, unitKeyAt } from './support';
 
 /** What one slot admits. Both members are optional; an empty list restricts nothing. */
 export interface SlotAllowance {
@@ -101,39 +101,29 @@ export function readParams(condition: Condition): EligibilityParams {
     return condition.params as unknown as EligibilityParams;
 }
 
-/** CG-04's sentence: which slots are restricted, to what, and when the answer is read. */
+/**
+ * CG-04's sentence: which slots are restricted, to what, and when the answer is read.
+ *
+ * The SORT and the two absent-list defaults happen here; the sentence happens in the table. That
+ * split is the rule the whole table is built on — a type hands in already-normalised values, and
+ * `Object.keys()` order is not a wording decision any language would take differently.
+ */
 export const preview: ConditionPreview = (condition, _context, messages) => {
     const { allowed } = readParams(condition);
-    const slotKeys = Object.keys(allowed).sort();
 
-    if (slotKeys.length === 0) {
-        return 'No slot is restricted: anybody rostered may fill any slot.';
-    }
-
-    const clauses = slotKeys.map((slotKey) => {
-        const allowance = allowed[slotKey] as SlotAllowance;
-        const parts: string[] = [];
-
-        if ((allowance.levelKeys ?? []).length > 0) {
-            parts.push(`levels ${messages.conjoin(allowance.levelKeys as string[])}`);
-        }
-
-        if ((allowance.unitKeys ?? []).length > 0) {
-            parts.push(`rotations ${messages.conjoin(allowance.unitKeys as string[])}`);
-        }
-
-        return `${slotKey} takes ${parts.length === 0 ? 'anybody' : messages.conjoin(parts)}`;
+    return messages.eligibility({
+        slots: Object.keys(allowed)
+            .sort()
+            .map((slotKey) => ({
+                slotKey,
+                levelKeys: (allowed[slotKey] as SlotAllowance).levelKeys ?? [],
+                unitKeys: (allowed[slotKey] as SlotAllowance).unitKeys ?? [],
+            })),
     });
-
-    return (
-        `Who may fill which slot: ${clauses.join('; ')}. A person is judged by the level and the ` +
-        'rotation they hold on the day of the duty, so a promotion part-way through changes the ' +
-        'answer from that day on. Slots not named here are unrestricted.'
-    );
 };
 
 /** The predicate. See the module docblock for every decision in it. */
-export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
+export const evaluate: ConditionEvaluator = (condition, schedule, context, messages) => {
     const { allowed } = readParams(condition);
     const people = personIndex(context);
     const findings: Finding[] = [];
@@ -170,9 +160,13 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
             if (level === null || !levelKeys.includes(level)) {
                 findings.push({
                     location,
-                    explanation:
-                        `${level === null ? 'Holds no level' : `Holds level "${level}"`} on ${duty.date}; ` +
-                        `slot "${duty.slotKey}" is limited to ${list(levelKeys)}.`,
+                    explanation: messages.eligibilityViolation({
+                        facet: 'level',
+                        held: level,
+                        date: duty.date,
+                        slotKey: duty.slotKey,
+                        allowed: levelKeys,
+                    }),
                 });
             }
         }
@@ -185,9 +179,13 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
             if (unit === null || !unitKeys.includes(unit)) {
                 findings.push({
                     location,
-                    explanation:
-                        `${unit === null ? 'Rotating on no unit' : `Rotating on unit "${unit}"`} on ${duty.date}; ` +
-                        `slot "${duty.slotKey}" is limited to ${list(unitKeys)}.`,
+                    explanation: messages.eligibilityViolation({
+                        facet: 'rotation',
+                        held: unit,
+                        date: duty.date,
+                        slotKey: duty.slotKey,
+                        allowed: unitKeys,
+                    }),
                 });
             }
         }

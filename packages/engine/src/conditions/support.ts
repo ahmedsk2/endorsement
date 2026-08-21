@@ -20,37 +20,40 @@
  *    so rather than treat the 1st as the start of time. A silently dropped window is a guard that
  *    looks green.
  *
- * ## Explanations are English literals here, and that is a STATED residual
+ * ## NO ENGLISH LIVES IN THIS FILE ANY MORE, and it used to
  *
- * CG-04's preview text goes through `messages.ts` because `ConditionPreview` takes the table as an
- * argument (AR-07). A violation's `explanation` does not: `ConditionEvaluator` was fixed at Task 7
- * without one. Threading the table through `evaluate()`/`coverage()` is a contract change worth
- * making ONCE, before nineteen more types hardcode English — recorded in the plan's recommended
- * additions rather than done here, because it is a change to Task 7's shape and not to Task 10's.
+ * Until P2-2's first task, `ConditionPreview` took the message table as an argument and
+ * `ConditionEvaluator` did not, so every violation `explanation` and every `coverage()` reason was
+ * assembled from literals at the call site — AR-07 holding for the preview beside them and not for
+ * them. Threading the table through `evaluate()`/`coverage()` was a contract change worth making
+ * ONCE, before eleven more types hardcoded English, and this file lost two things to it:
+ *
+ *  - **`list()`**, a second `conjoin`, deleted rather than kept. It existed because a predicate had
+ *    no table to reach for, and a second definition of *"a, b and c"* is a second thing to translate.
+ *  - **`hoursText()`**, moved to the table's `Vocabulary.hours`, because a decimal SEPARATOR is a
+ *    locale's decision and a formatter outside the table can never honour one.
+ *
+ * {@link carryInLeftEdge} still decides WHICH of the two left-edge shapes happened; it no longer
+ * decides how either is said.
  */
 
-import { addDays, compareYmd, isoWeekday, type Ymd } from '../calendar/ymd';
+import { addDays, compareYmd, datesBetween, isoWeekday, type Ymd } from '../calendar/ymd';
 import type {
     ConditionScope,
     CoverageDetail,
     Day,
     EvaluationContext,
+    Period,
     Person,
     Schedule,
     SkippedWindow,
+    ViolationMessages,
+    Week,
 } from '../contract/types';
 import type { Duty } from '../duty/interval';
-import type { Horizon } from '../duty/windows';
+import { orderedDutiesFor, type DutyStreams, type PositionedDuty, type SlotIndex } from '../duty/order';
+import { windowFor, windowTouchesHorizon, type Horizon, type Window } from '../duty/windows';
 import type { Span } from '../contract/types';
-
-/** `a`, `a and b`, `a, b and c` — for an explanation. Not the message table; see the docblock. */
-export function list(items: readonly string[]): string {
-    if (items.length <= 1) {
-        return items[0] ?? '';
-    }
-
-    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1] as string}`;
-}
 
 /**
  * The key of the span covering `date`, or `null` when none does.
@@ -157,19 +160,6 @@ export function personIndex(context: EvaluationContext): { get(key: string): Per
             return person;
         },
     };
-}
-
-/**
- * Minutes as hours, for an explanation: `4 h`, `26 h`, `10.5 h`.
- *
- * ONE definition, because `min_gap` and `consecutive_max` both render a duration and two
- * formatters would eventually disagree about the same number on two badges of the same cell.
- * Whole hours print whole — a scheduler reading `4.0 h` wonders what the missing precision was.
- */
-export function hoursText(minutes: number): string {
-    const hours = minutes / 60;
-
-    return Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
 }
 
 /**
@@ -290,7 +280,11 @@ export function isoWeekdayAt(days: DayIndex, date: Ymd): number {
  * emptiness would report a skip on almost every evaluation, which is the noise this function's own
  * second paragraph refuses.
  */
-export function carryInLeftEdge(context: EvaluationContext, horizon: Horizon): SkippedWindow[] {
+export function carryInLeftEdge(
+    context: EvaluationContext,
+    horizon: Horizon,
+    messages: ViolationMessages,
+): SkippedWindow[] {
     const available = context.historyAvailableFrom;
 
     if (available !== null && compareYmd(available, horizon.from) < 0) {
@@ -307,11 +301,8 @@ export function carryInLeftEdge(context: EvaluationContext, horizon: Horizon): S
         {
             from: horizon.evaluableFrom,
             to,
-            reason:
-                (available === null
-                    ? `No duty history was supplied before ${horizon.from} (historyAvailableFrom is null)`
-                    : `Duty history begins at ${available}, which is not before ${horizon.from}`) +
-                ', so a duty running past midnight into the horizon cannot be seen.',
+            // WHICH shape happened is this function's decision; how it is SAID is the table's.
+            reason: messages.carryInSkip({ horizonFrom: horizon.from, historyAvailableFrom: available }),
         },
     ];
 }
@@ -331,4 +322,385 @@ export function dutyStreams(
 /** A placement type measured this many placements. See {@link CoverageDetail}'s own docblock. */
 export function placementsCovered(evaluatedWindows: number, skipped: SkippedWindow[]): CoverageDetail {
     return { evaluatedWindows, skipped };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The window-located half (P2-2, Tasks 15–17). Everything below is consumed by a type whose
+// violation is a `{kind: 'window'}` location, and by nothing that produces a placement.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * One measurable range, with the period — and, for a week window, the week — it came from.
+ *
+ * The department's own weeks arrive in the context as `periods[].weeks` with CLIPPED bounds,
+ * computed server-side by `Calendar::weeksIn()` (owner decision O). They are never recomputed here
+ * and never derived from `weekStartIsoDay`: `golden.json` has zero coverage of the clipped bounds,
+ * so a mirror implementation would be an unasserted second definition of a per-department fact.
+ * The period is carried because `target_per_period`'s modifiers read `weeks.length`.
+ */
+export interface PeriodWindow {
+    window: Window;
+    period: Period;
+    week: Week | null;
+}
+
+/**
+ * The period or week windows that can hold a reportable violation, earliest first.
+ *
+ * ## The CLIPPED bounds are the window, and that is the whole point of carrying them
+ *
+ * A week at a period edge is shorter than seven days, and its real extent is the department's
+ * answer rather than this package's. Measuring the raw `startsOn..endsOn` instead counts duties
+ * belonging to the neighbouring block — silently, and only at a block boundary, which is where a
+ * scheduler is least able to check the arithmetic by eye.
+ *
+ * ## Only windows that TOUCH the horizon are enumerated
+ *
+ * A window entirely inside the carry-in tail can hold no violation anybody may see: `evaluate()`'s
+ * emission rule drops it (CG-03, never retroactive on published schedules). Enumerating it anyway
+ * would inflate `evaluatedWindows` with measurements whose results are discarded, which reads on a
+ * coverage row as work that was done and was not. {@link windowTouchesHorizon} is the SAME
+ * predicate the emission rule applies, imported rather than restated, so what is measured and what
+ * may be reported cannot disagree at the left edge.
+ */
+export function periodWindows(
+    context: EvaluationContext,
+    horizon: Horizon,
+    kind: 'period' | 'week',
+): PeriodWindow[] {
+    const found: PeriodWindow[] = [];
+
+    for (const period of context.periods) {
+        if (kind === 'period') {
+            if (windowTouchesHorizon(period.startsOn, period.endsOn, horizon)) {
+                found.push({ window: windowFor(period.startsOn, period.endsOn, horizon), period, week: null });
+            }
+
+            continue;
+        }
+
+        for (const week of period.weeks) {
+            if (!windowTouchesHorizon(week.clippedStartsOn, week.clippedEndsOn, horizon)) {
+                continue;
+            }
+
+            found.push({
+                window: windowFor(week.clippedStartsOn, week.clippedEndsOn, horizon),
+                period,
+                week,
+            });
+        }
+    }
+
+    return found.sort(
+        (a, b) => compareYmd(a.window.from, b.window.from) || compareYmd(a.window.to, b.window.to),
+    );
+}
+
+/**
+ * Does the supplied duty history reach back far enough to know what happened at `from`?
+ *
+ * A window that begins inside the horizon needs no history at all — the schedule under evaluation
+ * IS the answer. A window reaching back before `horizon.from` is asking about a month somebody else
+ * published, and `historyAvailableFrom` is the caller's statement of how far back that reaches.
+ *
+ * The distinction this exists to keep is between a window that is SHORTER and a window whose left
+ * part is UNKNOWN. A clipped week at a period edge is a genuinely smaller window and counting over
+ * it is a correct answer to a smaller question; a window whose first four days were never supplied
+ * is a wrong answer to the right one. Owner decision L lets a CAP evaluate the first (an
+ * under-count produces no false positive); nothing may treat the second as an answer, which is why
+ * {@link carryInLeftEdge} reports it rather than any type quietly counting zero.
+ */
+export function historyReaches(context: EvaluationContext, horizon: Horizon, from: Ymd): boolean {
+    if (compareYmd(from, horizon.from) >= 0) {
+        return true;
+    }
+
+    const available = context.historyAvailableFrom;
+
+    return available !== null && compareYmd(available, from) <= 0;
+}
+
+/**
+ * `levels` inside a type's own parameters, as owner decision K defines it: a SCOPE FILTER.
+ *
+ * It names which people the rule applies to, and it INTERSECTS CG-01's `scope` rather than
+ * replacing it — decision K's own words, *"a bare `levels` list documented as intersecting
+ * `scope`"*. An empty or absent list names everybody the scope already selected.
+ *
+ * The level is read AT THE DATE, through `spanKeyAt`, exactly as `personInScope` reads it. A person
+ * holding no level on that date matches no named level and is excluded: an absent level is not a
+ * wildcard, and treating it as one would apply a per-level cap to somebody the department has not
+ * placed on the ladder at all.
+ */
+export function levelFilterMatches(person: Person, date: Ymd, levels: readonly string[]): boolean {
+    if (levels.length === 0) {
+        return true;
+    }
+
+    const level = levelKeyAt(person, date);
+
+    return level !== null && levels.includes(level);
+}
+
+/**
+ * Was this person on the roster for the WHOLE of this window?
+ *
+ * Owner decision L applied one axis along: *"floors and targets evaluate only on whole windows"*.
+ * A person who joined half way through a period did not have the window the floor is measuring, and
+ * judging them against the absolute number produces a false positive on their very first block —
+ * which is the shape decision L exists to refuse, differing only in whether the window was clipped
+ * by the DATA or by the PERSON.
+ *
+ * **It is not the same statement as leave, and leave deliberately does NOT suppress a floor.** A
+ * person on leave for three weeks of a block has the whole window; they were simply unavailable in
+ * it, and pro-rating the number for that is exactly the scaling decision L refuses (*"period-windowed
+ * numbers are ABSOLUTE, not scaled by period length"*). A person who has not joined has no window
+ * yet, which is a different fact. The two are one line apart in an implementation and a month of
+ * different behaviour on a rota, so both halves are stated here and both are fixtured.
+ *
+ * A person with no `joinedAt` at all is treated as having always been on the roster — the same
+ * reading owner decision T gives `onboarding_grace`, and for the same measured reason: the column
+ * is written by no seeder, factory or demo path in this repository, so the opposite reading would
+ * suppress every window for everybody on the live instance.
+ */
+export function onRosterThroughout(person: Person, from: Ymd): boolean {
+    return person.joinedAt === undefined || compareYmd(person.joinedAt, from) <= 0;
+}
+
+/**
+ * One person's duties whose ANCHOR DATE falls inside a window, chronologically — with their slots.
+ *
+ * Decision A's anchor-date reading, in one place for the four window-located types that take it: a
+ * Friday-night call running to Saturday morning is ONE Friday call, in the window Friday falls in
+ * and in no other. Four copies of that filter would disagree only at a week boundary, which is
+ * where a scheduler is least able to check it by eye.
+ *
+ * It reads all three streams, so a window reaching into the carry-in tail counts what is there.
+ */
+export function positionedIn(
+    personKey: string,
+    window: Window,
+    streams: DutyStreams,
+    slots: SlotIndex,
+): PositionedDuty[] {
+    return positionedWithin(orderedDutiesFor(personKey, streams, slots), window);
+}
+
+/**
+ * The anchor-date filter ALONE, over a line somebody has already resolved.
+ *
+ * {@link positionedIn} resolves and filters in one call, which is right for a type measuring a
+ * handful of period or week windows. It is wrong for one enumerating a rolling window per day:
+ * `orderedDutiesFor` scans all three streams and SORTS, so resolving inside the window loop is
+ * `windows x people` sorts of the same list. Measured on the NF-01 case (P2-2 review): 34.6 ms of
+ * a 58 ms budget in `rolling_hours_max` alone, on a schedule of ninety-three duties.
+ *
+ * The split keeps ONE definition of the filter while letting the caller decide when to resolve.
+ * Two copies of *"whose anchor date falls in this window"* would disagree at a week boundary, which
+ * is where a scheduler is least able to check it by eye — this function's own recorded reason.
+ */
+export function positionedWithin(ordered: readonly PositionedDuty[], window: Window): PositionedDuty[] {
+    return ordered.filter(
+        (positioned) =>
+            compareYmd(positioned.duty.date, window.from) >= 0 &&
+            compareYmd(positioned.duty.date, window.to) <= 0,
+    );
+}
+
+/**
+ * One person's ordered duty line, resolved at most ONCE per evaluation.
+ *
+ * LAZY rather than precomputed over the roster, and that is a correctness choice rather than a
+ * performance one: `orderedDutiesFor` throws on a duty naming an unsupplied slot, so resolving
+ * everybody up front would raise on a person the condition's scope was about to exclude — a
+ * different answer for the same input, which is the one thing a pure function may not do. Asking on
+ * demand makes exactly the same set of calls as before, just not repeatedly.
+ */
+export function orderedByPerson(streams: DutyStreams, slots: SlotIndex): (personKey: string) => PositionedDuty[] {
+    const resolved = new Map<string, PositionedDuty[]>();
+
+    return (personKey: string): PositionedDuty[] => {
+        let found = resolved.get(personKey);
+
+        if (found === undefined) {
+            found = orderedDutiesFor(personKey, streams, slots);
+            resolved.set(personKey, found);
+        }
+
+        return found;
+    };
+}
+
+/**
+ * The same list as bare duties — a window violation's `contributing`.
+ *
+ * `contributing` is MANDATORY on a window location for exactly this reason: a scheduler told a
+ * period is off target and not which placement to move has been told nothing they can act on. It
+ * MAY be empty, and that is a floor or a target answering rather than failing to — the person who
+ * holds nothing is precisely whom a floor exists to find.
+ */
+export function dutiesIn(
+    personKey: string,
+    window: Window,
+    streams: DutyStreams,
+    slots: SlotIndex,
+): Duty[] {
+    return positionedIn(personKey, window, streams, slots).map((positioned) => positioned.duty);
+}
+
+/** May this window be measured, and if not, is there a row to show for it? */
+export type WindowVerdict = { measure: true } | { measure: false; skip: SkippedWindow | null };
+
+/**
+ * Owner decision L's gate, in ONE place for the three types that need it.
+ *
+ * A floor and a target may measure only a WHOLE window, and a window can fail to be whole in two
+ * different ways that deserve two different reports:
+ *
+ *  - **Clipped by the evaluable range** — named individually, because *which* window it was is the
+ *    actionable half and the answer differs per window.
+ *  - **Reaching back before the horizon with no history behind it** — reported by
+ *    {@link carryInLeftEdge}'s single row instead, because the answer is identical for every such
+ *    window and one row apiece would repeat one fact until a reader stopped reading them. The
+ *    `skip: null` is that decision, spelled as a value rather than left as a missing branch.
+ *  - **Reaching back further than the history that WAS supplied** — named individually, and added
+ *    by the P2-2 review because it was silently a THIRD shape wearing the second's answer. See
+ *    below.
+ *
+ * A CAP does not call this at all: an under-count cannot exceed a limit, so it evaluates both
+ * shapes. That asymmetry is the whole of decision L and it is why this returns a verdict rather
+ * than a boolean — a boolean would have made the two skip shapes one, which is the distinction.
+ *
+ * ## The third shape, and why `skip: null` was silently wrong for it
+ *
+ * {@link carryInLeftEdge} speaks for exactly two states: `historyAvailableFrom` is `null`, or it is
+ * real and begins at or after `horizon.from`. It is SILENT when history reaches back past the
+ * horizon — a caller who supplied last week — and that is precisely when a window opening before
+ * the horizon can still reach back further than the history does. A block that opened on 26 July,
+ * a horizon opening on 1 August, and history from 28 July: `carryInLeftEdge` returns nothing
+ * because it saw real history before the 1st, and this function returned `skip: null` because it
+ * believed `carryInLeftEdge` was speaking. The window was measured by nobody and reported by
+ * nobody; `evaluatedWindows` simply fell.
+ *
+ * That is the state `coverage()` exists to prevent, one branch away from the state it already
+ * reported correctly. The row is per-window rather than pooled because which window went, and how
+ * much further back the history would have to reach, are both the window's own answer — the same
+ * line as the clipped shape above, for the same reason.
+ */
+export function wholeWindowVerdict(
+    window: Window,
+    context: EvaluationContext,
+    horizon: Horizon,
+    messages: ViolationMessages,
+): WindowVerdict {
+    if (!window.fullyEvaluable) {
+        return {
+            measure: false,
+            skip: {
+                from: window.from,
+                to: window.to,
+                reason: messages.partialWindowSkip({
+                    from: window.from,
+                    to: window.to,
+                    evaluableFrom: horizon.evaluableFrom,
+                    evaluableTo: horizon.evaluableTo,
+                }),
+            },
+        };
+    }
+
+    if (!historyReaches(context, horizon, window.from)) {
+        const available = context.historyAvailableFrom;
+
+        // The two shapes `carryInLeftEdge` owns. One row already speaks for every window they
+        // affect, so a row apiece here would repeat one fact until a reader stopped reading.
+        if (available === null || compareYmd(available, horizon.from) >= 0) {
+            return { measure: false, skip: null };
+        }
+
+        return {
+            measure: false,
+            skip: {
+                from: window.from,
+                to: window.to,
+                reason: messages.historyShortOfWindowSkip({
+                    from: window.from,
+                    to: window.to,
+                    historyAvailableFrom: available,
+                }),
+            },
+        };
+    }
+
+    return { measure: true };
+}
+
+/**
+ * The per-PERSON half of the same gate: did they have the whole of this window? (Owner decision L.)
+ *
+ * Returns the row when they did not, so the caller both skips and says so in one place — the pair
+ * that P2-1's carry-in types learned to assert together, because a rule going quiet and a rule
+ * reporting nothing look identical on a green suite.
+ */
+export function midWindowJoinSkip(
+    person: Person,
+    window: Window,
+    messages: ViolationMessages,
+): SkippedWindow | null {
+    if (onRosterThroughout(person, window.from)) {
+        return null;
+    }
+
+    return {
+        from: window.from,
+        to: window.to,
+        reason: messages.midWindowJoinSkip({
+            personKey: person.key,
+            joinedAt: person.joinedAt as string,
+            from: window.from,
+            to: window.to,
+        }),
+    };
+}
+
+/**
+ * `AvailabilitySummary`'s vacation-week rule, VERBATIM: any overlap with a week's CLIPPED bounds
+ * counts as a whole vacation week (owner decision N).
+ *
+ * So a Thursday-to-Monday leave is TWO vacation weeks and a Sunday-to-Thursday leave is one, and
+ * the count moves with where the leave falls rather than with how long it is. That is deliberately
+ * not the intuitive reading, which is exactly why it is carried from one definition: the engine and
+ * the rota screen reporting different counts for the same person in the same period is a
+ * disagreement nobody could adjudicate from either screen.
+ *
+ * It reads the CLIPPED bounds for the same reason `periodWindows` does — at a block edge the
+ * department's week is shorter, and leave in the days the block does not own belongs to the
+ * neighbouring block's count.
+ */
+export function vacationWeeksIn(person: Person, period: Period): number {
+    const leave = new Set<string>(person.leaveDays);
+
+    return period.weeks.filter((week) =>
+        datesBetween(week.clippedStartsOn, week.clippedEndsOn).some((date) => leave.has(date)),
+    ).length;
+}
+
+/**
+ * The roster, having refused any duty naming somebody the context does not describe.
+ *
+ * A window-located type iterates PEOPLE rather than duties — a floor's whole purpose is the person
+ * who holds none — so `personIndex().get()` is never reached by the ordinary path and the stranger
+ * check every placement type gets for free would simply not happen. Resolving every duty's person
+ * up front restores it: a duty for somebody whose leave, level and rotation are all unknown cannot
+ * be judged, and answering "no violation" for want of data is strictly worse than a crash.
+ */
+export function rosterFor(context: EvaluationContext, streams: DutyStreams): readonly Person[] {
+    const people = personIndex(context);
+
+    for (const duty of [...streams.priorDuties, ...streams.duties, ...streams.followingDuties]) {
+        people.get(duty.personKey);
+    }
+
+    return context.people;
 }

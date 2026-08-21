@@ -4,11 +4,13 @@ import { datesBetween, isoWeekday, parseYmd, type Ymd } from '../src/calendar/ym
 import type { Condition, Day, EvaluationContext } from '../src/contract/types';
 import { CONTRACT_SCHEMA, type JsonSchema } from '../src/contract/schema';
 import { ASSERTION_KEYWORDS, keywordsUsedBy } from '../src/contract/validate';
+import { permittedFor } from '../src/conditions/call_frequency_max';
 import { toleranceFor } from '../src/conditions/fairness_distribution';
+import { clauseFor } from '../src/conditions/target_per_period';
 import { UnimplementedConditionTypeError, UnknownConditionTypeError } from '../src/evaluate';
 import { EN } from '../src/messages';
 import { NoPreviewForConditionTypeError, preview, previewWith } from '../src/preview';
-import { CATALOG, registryEntry, type RegistryEntry } from '../src/registry';
+import { CATALOG, type RegistryEntry } from '../src/registry';
 
 /**
  * CG-04's plain-language previews (P2 Task 9): *"preview text auto-generated from parameters"*.
@@ -234,11 +236,20 @@ describe('the matrix — every parameter a type reads is named by its preview', 
      */
     it('runs over every type that has a preview today, named one by one', () => {
         expect(previewed.map((entry) => entry.typeKey).sort()).toEqual([
+            // Task 18 — owner decision J's AVAILABLE-day denominator, which the sentence has to name
+            // because the rule tightens around leave rather than loosening.
+            'call_frequency_max',
             // Task 13 — the two the tree could not resolve without the owner: decision S's three
             // attendee modes, and decision U's confirmed reading (a).
             'clinic_conflict',
+            // Task 16 — owner decision N's optional HOL bucket, folded into WE when absent.
+            'composition',
             // Task 14 — owner decision V's third unit, and the transition allowance CG-08 drops.
             'consecutive_max',
+            // Task 15 — owner decisions K and L: two keys sharing one schema, the count per PERSON,
+            // `levels` a scope filter, and the floor saying out loud which windows it will decline.
+            'count_max',
+            'count_min',
             // Task 12 — the three placement types owner decisions R, T and the ISO-integer half of
             // the day-of-week ban settle. Their sentences live in the message table (AR-07).
             'dow_restriction',
@@ -247,6 +258,13 @@ describe('the matrix — every parameter a type reads is named by its preview', 
             // Task 9 — the four whose WORDING an answered owner decision settles. Their predicates
             // land at Tasks 14, 16, 18 and 19 against the schema that is already here.
             'fairness_distribution',
+            // Task 17 — the two absence-shaped types: owner decision I's unfinished gap, and the
+            // occupied-interval reading of "fully free".
+            'free_day_min',
+            // Task 19 — owner decision W's ANSWERED reading: a carried credit starts at zero, and
+            // the accepted limitation (a past on paper is invisible) belongs in the sentence.
+            'holiday_equity',
+            'max_gap',
             'min_gap',
             'onboarding_grace',
             'overlap_block',
@@ -256,6 +274,9 @@ describe('the matrix — every parameter a type reads is named by its preview', 
             'target_per_period',
             'unwanted_day_block',
             'vacation_block',
+            // Task 20 — owner decision Z's pairs of DAYS, and the two absences the sentence has
+            // to carry: `fallbacks` does not ship, and a half-covered weekend is not a split.
+            'we_pairing',
         ]);
 
         const parameters = previewed.flatMap((entry) =>
@@ -416,6 +437,56 @@ describe('rolling_hours_max — the averaging multiplication, in words', () => {
         expect(sentence).toContain('7 consecutive days');
         expect(sentence).not.toContain('320');
         expect(sentence).not.toMatch(/averaged/i);
+    });
+});
+
+describe('call_frequency_max — owner decision J, the denominator said out loud', () => {
+    const render = (params: Record<string, unknown>): string =>
+        preview(condition('call_frequency_max', params), CONTEXT);
+
+    /**
+     * THE FIFTH SENTENCE WHOSE WORDING IS AN OWNER DECISION RATHER THAN TASTE, and the decision
+     * says so itself: *"the plain-language preview must say which denominator it used."*
+     *
+     * It has to, because the answer runs the opposite way to the reading a gate screen invites. A
+     * calendar denominator loosens as somebody takes leave; this one tightens, so *"one in 4"* over
+     * a 28-day window in which somebody was available on 14 days permits three calls and not seven.
+     * A reader who assumes calendar days will predict double the real allowance for exactly the
+     * person the rule exists to protect.
+     */
+    it('names AVAILABLE days as the denominator, and says the allowance falls rather than rises', () => {
+        const sentence = render({ n: 4, windowDays: 28 });
+
+        expect(sentence).toMatch(/available/i);
+        expect(sentence).toMatch(/not calendar days/i);
+        expect(sentence).toMatch(/leave/i);
+        expect(sentence).toMatch(/FALLS/);
+    });
+
+    /**
+     * The worked points, for `fairness_distribution`'s reason one type along: an allowance stated
+     * as a rule rather than as a number leaves the reader to divide, and the number they arrive at
+     * is the wrong one under half the inputs. Both points are printed, and the halved one is the
+     * one a calendar-denominator reader gets wrong.
+     */
+    it('works the allowance out at a full window and at one halved by leave', () => {
+        const sentence = render({ n: 4, windowDays: 28 });
+
+        expect(sentence).toContain('28 available days allow 7 calls');
+        expect(sentence).toContain('14 available days allow 3 calls');
+    });
+
+    it('rounds the allowance DOWN, which is what makes a short window permit nothing', () => {
+        expect(permittedFor(3, 4)).toBe(0);
+        expect(permittedFor(4, 4)).toBe(1);
+        expect(permittedFor(27, 4)).toBe(6);
+    });
+
+    it('measures the window in days, and never names a week', () => {
+        const sentence = render({ n: 4, windowDays: 28 });
+
+        expect(sentence).toContain('28 consecutive days');
+        expect(sentence).not.toMatch(/\bweek/i);
     });
 });
 
@@ -736,9 +807,40 @@ describe('what the dispatcher refuses, and how loudly', () => {
      * rendering a blank cell where a rule should be described is a control that appears to do
      * nothing, one layer along from rulings 41 and 49.
      */
+    /**
+     * THE EXEMPLAR RAN OUT OF REAL ROWS AT TASK 20, WHICH IS THE CATALOG BEING FINISHED.
+     *
+     * It was `count_max` until Task 15 wrote that row's preview, `holiday_equity` until Task 19 and
+     * `we_pairing` until Task 20 — a probe pointed at a row that has since been written checks
+     * nothing while still passing, because it throws the SCHEMA's refusal instead: a different
+     * error class reaching the same `toThrow`. Every implemented entry now carries a preview.
+     *
+     * So the state is CONSTRUCTED rather than borrowed, exactly as the coupling check's own plant
+     * and the restricted-catalog probe below already are. The floor under it is the second
+     * assertion: no SHIPPED entry is in this state either, because a constructed probe alone would
+     * stay green over a real row that lost its preview tomorrow.
+     */
     it('throws a distinguishable error for an implemented row with no preview yet', () => {
-        expect(registryEntry('count_max')?.implemented).toBe(true);
-        expect(() => preview(condition('count_max', {}), CONTEXT)).toThrow(NoPreviewForConditionTypeError);
+        const unwritten: RegistryEntry[] = [
+            {
+                typeKey: 'probe',
+                implemented: true,
+                direction: 'equity',
+                locationKind: 'cohort',
+                needsCarryIn: false,
+                evaluate: () => ({ findings: [], coverage: { evaluatedWindows: 0, skipped: [] } }),
+            },
+        ];
+
+        expect(() => previewWith(unwritten, condition('probe', {}), CONTEXT, EN)).toThrow(
+            NoPreviewForConditionTypeError,
+        );
+
+        expect(
+            CATALOG.filter((entry) => entry.implemented && entry.preview === undefined).map(
+                (entry) => entry.typeKey,
+            ),
+        ).toEqual([]);
     });
 
     it('takes the catalog as an argument, so P3 can preview against a restricted one', () => {
@@ -770,6 +872,85 @@ describe('the message table — English today, and a second one is possible tomo
 
         expect(previewWith(CATALOG, condition('min_gap', { value: 3, unit: 'days' }), CONTEXT, shouting)).toBe(
             'TRANSLATED',
+        );
+    });
+
+    /**
+     * THE SAME PROPERTY OVER EVERY PREVIEWABLE TYPE, AND IT DID NOT HOLD UNTIL P2-2's FIRST TASK.
+     *
+     * The check above proved it on `min_gap` — one type of fourteen — and the plan's own note said
+     * *"`preview` already goes through the table"* without qualification. That was half true:
+     * `overlap_block`, `vacation_block` and `eligibility` (Task 10) each carried English inline and
+     * would have passed every check in this file, because the matrix only asks that a sentence REACT
+     * to a parameter and two of those three have no parameters at all. A property asserted at the
+     * one input where the defect cannot appear is P2-1's recurring green plant, four times over.
+     *
+     * The second table is derived from `EN`'s own keys rather than written out, so a method added
+     * tomorrow is covered without anybody remembering — and the whole table shouts, vocabulary
+     * included, so a preview that called `conjoin` and wrapped a literal around it returns a tag
+     * with text around it rather than a tag.
+     *
+     * Every previewable entry is parameterised through the SAME probe generator the matrix uses, so
+     * a type whose sentence branches on its parameters is exercised on a real branch rather than on
+     * an empty object it would have refused anyway.
+     */
+    it('renders every previewable type through the table, not just the one that proved the device', () => {
+        const shouting = Object.fromEntries(
+            Object.keys(EN).map((key) => [key, () => `«${key}»`]),
+        ) as unknown as typeof EN;
+
+        const notFromTheTable = previewed
+            .map((entry) => ({
+                typeKey: entry.typeKey,
+                sentence: previewWith(
+                    CATALOG,
+                    condition(entry.typeKey, fullParams(entry.paramsSchema as JsonSchema)),
+                    CONTEXT,
+                    shouting,
+                ),
+            }))
+            .filter(({ sentence }) => !/^«[a-zA-Z]+»$/.test(sentence));
+
+        expect(notFromTheTable).toEqual([]);
+        expect(previewed.length).toBeGreaterThanOrEqual(14);
+    });
+
+    /**
+     * THE ONE THING THE CHECK ABOVE STRUCTURALLY CANNOT SEE, and it had a real occupant.
+     *
+     * A type may assemble a FRAGMENT and pass it into a table sentence, and the outer tag then
+     * swallows the fragment whole — the shouting table returns `«targetPerPeriod»` whatever its
+     * `modifiers[].clause` says. `clauseFor()` was exactly that: it routed its two predicate clauses
+     * through the table and kept `'the period is any period at all'` and a `' and '` joiner inline,
+     * green under every check in this file. Found by surveying the package's string literals rather
+     * than by a guard, which is the honest way to record how it was found.
+     *
+     * So the fragment builder is asserted at ITS OWN boundary, which is the only place the fragment
+     * is visible. The joiner is now `conjoin` — a modifier has exactly two possible members, so this
+     * is `conjoin`'s two-item case and a local `' and '` was a second definition of one connective.
+     */
+    it('renders a modifier CLAUSE through the table too, including the one that names no predicate', () => {
+        const shouting = Object.fromEntries(
+            Object.keys(EN).map((key) => [key, () => `«${key}»`]),
+        ) as unknown as typeof EN;
+
+        // `conjoin` stays REAL so the composition is visible: a fully shouting table would return
+        // `«conjoin»` for the two-member case and hide which fragments went into it.
+        const leaves = { ...shouting, conjoin: EN.conjoin };
+
+        expect(clauseFor({}, leaves)).toBe('«anyPeriodClause»');
+        expect(clauseFor({ vacationWeeksAtLeast: 2 }, leaves)).toBe('«vacationWeeksAtLeast»');
+        expect(clauseFor({ vacationWeeksAtLeast: 2, periodWeeksAtMost: 4 }, leaves)).toBe(
+            '«vacationWeeksAtLeast» and «periodWeeksAtMost»',
+        );
+
+        // And the JOINER is the table's too, not a local `' and '`.
+        expect(clauseFor({ vacationWeeksAtLeast: 2, periodWeeksAtMost: 4 }, shouting)).toBe('«conjoin»');
+
+        // The English did not move with it: both fragments still read as they did.
+        expect(clauseFor({}, EN)).toBe('the period is any period at all');
+        expect(clauseFor({ vacationWeeksAtLeast: 2, periodWeeksAtMost: 4 }, EN)).toBe(
+            'a person has at least 2 vacation weeks in the period and the period is at most 4 weeks long',
         );
     });
 });

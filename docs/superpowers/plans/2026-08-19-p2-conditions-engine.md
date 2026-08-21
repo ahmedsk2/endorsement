@@ -1631,9 +1631,13 @@ fail another, and that case is in the corpus. `countsHours: false` slots are exc
 on consecutive days while a `min_gap` of three days forbids them; both ship and the corpus contains a
 case where they disagree. Its window is **rolling and expressed in days** with an explicit unit, never
 "4 weeks", so a department changing `weekend_days` cannot silently move a duty-hours rule
-(`weekStartIsoDay()` is derived from that list). Its denominator is **calendar days**, following
+(`weekStartIsoDay()` is derived from that list). ~~Its denominator is **calendar days**, following
 `App\Support\MissedDays`' own precedent, and owner decision J flags that ACGME's intent is arguably
-the availability reading.
+the availability reading.~~ **SUPERSEDED BY THE ANSWER TO OWNER DECISION J (2026-08-20): the
+denominator is ELIGIBLE DAYS.** The sentence above was written before J was answered and was never
+updated, so it stated the opposite of the shipped rule for two days — recorded here rather than
+silently rewritten, because a task brief contradicting an answered decision is exactly the trap the
+answer's own "stated once so it is on the record" paragraph exists to prevent.
 
 ### Task 19: `fairness_distribution` and `holiday_equity`
 
@@ -1744,22 +1748,39 @@ Three things it is not, each stated in the command's own docblock and asserted:
 
 ## Definition of done — P2-2
 
-- [ ] `php artisan test > /tmp/t.log 2>&1; echo "rc=$?"` → `rc=0`; count stated and matched.
-- [ ] `npm test`, `npx tsc --noEmit -p packages/engine`, `npm run build` all `rc=0`.
-- [ ] **All 22 implemented type keys** have an evaluator, a preview, a params schema and fixtures whose
+- [x] `php artisan test > /tmp/t.log 2>&1; echo "rc=$?"` → `rc=0`: **1738 passed**, the 1719 baseline
+      plus Task 24's nineteen (eight on `EvaluationRequest`, eleven on the command).
+- [x] `npm test` **811 passed** (807 plus the two-fixture pair × two assertions),
+      `npx tsc --noEmit -p packages/engine` `rc=0`, `npm run build` `rc=0`, `npm run engine:corpus`
+      `rc=0` over **92 fixtures**.
+- [x] **All 22 implemented type keys** have an evaluator, a preview, a params schema and fixtures whose
       `why` names the shape; each has been observed failing on a planted defect. `forbidden_transition`
       remains registered and unimplemented.
-- [ ] Every window- and cohort-located type has a **partial-window** fixture and asserts its
+- [x] Every window- and cohort-located type has a **partial-window** fixture and asserts its
       `coverage()` output; no window is silently dropped.
-- [ ] The three preset bundles ship, the manifest test is green, and **no numeric default is invented
+- [x] The three preset bundles ship, the manifest test is green, and **no numeric default is invented
       for any figure §37 still owes**.
-- [ ] Task 22's query budget **observed breaching** before it was fixed, with the number recorded.
-- [ ] NF-01 measured with **all 22 types active** and the number recorded, met or not.
-- [ ] **No migration in P2 at all:** `git diff --stat main..<P2-2 head> -- database/migrations` empty.
-- [ ] `RotaAccessTest`, `ClinicHooksTest` and every single-writer guard unchanged.
-- [ ] `docker-compose.production.yml` unchanged; `DeploymentInvariantsTest` untouched and green.
-- [ ] `php artisan engine:evaluate` demonstrated on this department's real period, output pasted into
-      the plan's amendments.
+- [x] Task 22's query budget **observed breaching**, with the numbers recorded: **13 measured** on a
+      populated block, bound **17**, and the two planted regressions ran **223** (a per-span level
+      lookup) and **113** (`$assignment->unit` per span). A third planted trap — a narrowed
+      `select()` on the person query — is CHEAPER than the correct code and no budget can see it;
+      a behavioural assertion on the join date is what caught it.
+- [x] NF-01 measured with **all 22 types active** and the number recorded, met or not — **NOT MET**:
+      93 duties (20 people × 3 slots × 31 days), 998 findings from 14 conditions, `evaluate()` median
+      **~120 ms** on this machine against the 100 ms budget (76/94/104/112/122/123 across six runs;
+      the two consecutive quiet-machine runs both read ~122, so 76 was an early outlier). The case is
+      deliberately violation-dense and is therefore an upper bound, `evaluate() + coverage()` is
+      roughly double because `coverage()` is a second full traversal, and the CI runner's own figure
+      is unknown — the harness prints it on every run. See Task 23's amendment.
+- [x] **No migration in P2 at all:** `git diff --stat main..HEAD -- database/migrations` is empty.
+- [x] `RotaAccessTest`, `ClinicHooksTest` and every single-writer guard unchanged. TWO OTHER guards
+      DID change at Task 24 and neither is on that list: `EngineIsAReaderTest` gained the demo command
+      by name (a widening, not an exemption), and `RulesLiveOnlyInTheEngineTest` gained ONE per-needle
+      allow-list entry — which contradicts acceptance item 7 and is recorded there.
+- [x] `docker-compose.production.yml` unchanged; `DeploymentInvariantsTest` untouched and green.
+- [x] `php artisan engine:evaluate` demonstrated and the output pasted into the amendments — against a
+      POPULATED FIXTURE DEPARTMENT, because this machine holds no real department data. Running it on
+      production's real period is the owner's, and the command refuses to run there by design.
 
 ---
 
@@ -2005,15 +2026,21 @@ limited transition time"*, which CG-08 drops entirely — and without it the pre
 legitimate handover overlap or silently permits an unbounded one.
 
 **W. `holiday_equity` — unknown versus zero, and which year.**
-> **ANSWERED 2026-08-20 — default CONFIRMED. `priorCredits` starts at ZERO for everyone**, not
+> **ANSWERED 2026-08-20 — default OVERRIDDEN. `priorCredits` starts at ZERO for everyone**, not
 > `null`/unknown. Year one distributes on that year's own assignments alone.
+>
+> **LABEL CORRECTED AT TASK 19.** This block shipped saying *"default CONFIRMED"* while the
+> default printed beneath it says `null` means **UNKNOWN** — the two are opposite readings of the
+> same field, and the entry contradicted itself. The ANSWER was never in doubt (zero); only the
+> word was wrong, and an entry a reader can catch out is one they stop trusting. The default
+> below is therefore marked SUPERSEDED rather than confirmed.
 >
 > **The limitation is accepted knowingly and belongs in the preview, not just here:** duty covered on
 > paper rotas before this system existed is invisible, so year one spreads evenly on top of a past
 > that may not have been. If that becomes a complaint, the fix is an operator-entered prior-credit
 > field, which is additive and needs no schema change to the condition.
 
-*Confirmed default follows:*
+*Superseded default follows:*
 *Default: `priorCredits[person][holiday]` is **`number | null`** with `null` meaning **UNKNOWN**;
 `historyAvailableFrom` states how far back history reaches; when it does not cover the requested
 lookback the type evaluates the **in-schedule spread only** and reports the years it could not see
@@ -2083,7 +2110,11 @@ there — only the first is safe.
    met, carries no contact field and no free text for any viewer, is guarded as a reader that
    implements no rule, and contains none of the four app-wide raw needles.
 7. No migration, no index, no new environment variable, no compose change, no allow-list entry on any
-   existing guard.
+   existing guard. **NOT MET, in its last clause only, and it could not be** — Task 24's amendment
+   records why: item 9's command has to read CG-10's array, that array is literally named
+   `violations`, and `RulesLiveOnlyInTheEngineTest` buys `violation` case-insensitively. One
+   per-file AND per-needle entry; `severity` was deliberately not bought. Everything else in this
+   item holds.
 8. The three CG-08 preset bundles ship as package data, with **no invented number** for any figure §37
    still owes.
 9. `php artisan engine:evaluate` runs against this department's real period and prints real violations
@@ -2422,3 +2453,1251 @@ asserting the rule the scan enforces.
   day of a block and continuing into the next is a run of five-plus, and the cap sees it. This is what
   the carry-in tail exists for, and a block boundary is an administrative artefact while the fatigue is
   not — a scheduler working block-by-block is precisely who would not otherwise notice.
+
+### DONE 2026-08-20 (P2-2 Task 1) — `explanation` threaded, and the "already goes through the table" note corrected in code
+
+**Both halves of the chartered task shipped.** `ConditionEvaluator` takes a fourth argument,
+`ViolationMessages`; the eleven placement types render every `explanation` and every `coverage()`
+reason through it; and `overlap_block`, `vacation_block` and `eligibility` render their previews
+through it too. The English is byte-identical — the 34-case corpus compares `explanation` verbatim
+and was untouched, which is the migration's own regression gate.
+
+**The shape, and the two alternatives it was chosen over.**
+
+- *Keys and an interpolation map on the `Finding`, rendered later.* Refused by CG-10: `Violation` is
+  exactly five fields and `explanation` is a `string`, PU-03's publish dialog consumes it unchanged,
+  so a deferred render would have widened the one shape this phase exists to keep still. Rendering
+  therefore happens inside the type, which is also where `ConditionPreview` already does it — one
+  mechanism, not two.
+- *One `Messages` interface for both halves.* Refused for a smaller reason but a real one: a preview
+  describes a RULE before a draft exists and a violation describes a PLACEMENT in one that does, and
+  they are read on different screens. `Vocabulary` is shared; `PreviewMessages` and
+  `ViolationMessages` are separate; `EN` implements `Messages`, which is both. A P2-2 type adding a
+  violation sentence does not widen the type every preview is written against.
+
+**`messages` is REQUIRED on `ConditionEvaluator` and on `runConditions()`, and defaulted only on
+`evaluate()`/`coverage()`.** A default one layer down would let a caller thread a second table into
+one projection while the other silently kept English — the two disagreeing about one evaluation is
+precisely what a single shared producer exists to prevent.
+
+**Two second definitions died with it.** `support.ts`'s `list()` was a second `conjoin`, and its
+`hoursText()` decided a decimal separator outside the table that a locale would have to change.
+`min_gap`'s `shortfall()` returned `"1 day"` / `"9 h"` and now returns a NUMBER — which is the
+concrete reason the ordering mattered: **owner decision Q's applied tolerance is now reachable.** A
+proportional allowance must print the number actually applied, a preview cannot know it (it has the
+parameters, not the schedule), and the predicate is handed the table on the same call that measures
+it. Task 19 owes the sentence; it no longer owes the plumbing. Decision M's effective target reaches
+`targetPerPeriod` the same way and always did.
+
+**Proved in three directions, because one was demonstrably not enough.** The second table is DERIVED
+from `EN`'s own keys — every method returning its own name, vocabulary included — so a method added
+tomorrow is covered without anybody remembering, and a preview that called `conjoin` and wrapped a
+literal around it returns a tag with text around it rather than a tag. `messages.test.ts` asserts the
+tag per TYPE over the whole corpus (eleven types, fourteen sentence shapes); `preview.test.ts`'s
+equivalent was widened from `min_gap` alone to all fourteen previewable entries; and
+`conditions.test.ts` scans `src/conditions/` for an `explanation:`/`reason:` not beginning
+`messages.`, comments stripped, planted against a bare literal AND a ternary of two.
+
+*Why the source scan as well.* The behavioural check sees only the sentence shapes the CORPUS
+produces, and several types carry a branch no case reaches — `min_gap`'s overlapping pair,
+`consecutive_max` under a unit its fixtures do not use. A type routing one branch through the table
+and keeping a literal in the other would have been green. **STATED RESIDUAL:** a module calling a
+local helper that itself built English still passes; the needle for that would be *"no long string
+literal in this directory"*, which matches every parameter's schema `description` and would need nine
+allow-list entries — blinding the guard exactly where a real offender is born (ruling 42).
+
+*Why the ternary is in the plant.* Ten of the eleven migrated sites were ternaries of literals, so a
+needle anchored on a quote would have matched only the first branch and passed the rest.
+
+**The correction this section owes, made in code rather than in prose.** The accepted note said
+`preview` goes through the table for Task 9's four and not Task 10's three. That was right, and the
+reason the gap survived review is worth recording: `preview.test.ts`'s parameter MATRIX only asks
+that a sentence react to a parameter, and two of those three types have no parameters at all, so
+they passed every check in the file while carrying English inline. A property asserted at the one
+input where the defect cannot appear is P2-1's recurring green plant, and this was its fifth
+instance — caught by widening an existing assertion rather than by reading the modules.
+
+**Nothing else under `packages/` still hardcodes English that a user reads.** What remains is
+`Error`/`RangeError` message text — the two dispatcher throws, `NoPreviewForConditionTypeError`,
+`personIndex`/`slotIndex`/`dayIndex`'s refusals and the schema validator's — and it stays, stated
+rather than implied: a throw is a defect report to a developer about input the engine could not be
+given honestly, not a sentence on a gate screen, and routing it through a locale table would put a
+translator between a crash and the person debugging it. Schema `description` strings are the one
+genuinely borderline set: they are authored documentation of a parameter, they are not rendered by
+anything today, and P3's gate screen is where that decision is owed.
+
+**One residual found AFTER the three proofs were green, by surveying the package's string literals
+rather than by a guard — and it is the residual named two paragraphs up, with an occupant.**
+`target_per_period`'s `clauseFor()` routed both of its predicate clauses through the table and kept
+`'the period is any period at all'` and a `' and '` joiner inline. It was green under every check in
+`preview.test.ts`, and STRUCTURALLY so: a type may assemble a FRAGMENT and pass it into a table
+sentence, and the outer tag swallows the fragment whole — the shouting table returns
+`«targetPerPeriod»` whatever `modifiers[].clause` says. Fixed (`anyPeriodClause()`, and the joiner is
+now `conjoin`, since a modifier has exactly two possible members and a local `' and '` was a second
+definition of one connective), and asserted at the FRAGMENT's own boundary, which is the only place
+it is visible: `clauseFor()` is called with a table whose leaves shout and whose `conjoin` is real, so
+the composition shows rather than collapsing to one tag. Planted by restoring the inline literal —
+red on the new check, green on the whole-catalog one and on the parameter matrix, which is the
+measurement that says the new check earns its place rather than duplicating one.
+
+*And the mechanical lesson, paid for once more.* The plant script's `git checkout --` restored
+`target_per_period.ts` from HEAD and took an UNCOMMITTED fix with it. The plan's own warning names
+this; it costs a re-application every time it is ignored.
+
+### From Tasks 15–17 (2026-08-20) — the first six window-located types, and seven plants that stayed green
+
+**The seam held.** `count_max`/`count_min`, `target_per_period`/`composition` and
+`max_gap`/`free_day_min` are six predicates behind an unchanged contract: `Violation` is still five
+fields, `evaluate()` still returns `Violation[]`, `Location` is still a three-member union, and
+skipped windows still leave through `coverage()`. CG-10's *"new types are additive"* is now
+measured rather than asserted. **One thing inside the contract did have to be corrected, and it was
+the first floor that found it — see below.**
+
+#### 1. `contributing` carried `minItems: 1`, and a floor's most important violation has none
+
+`Location`'s window member shipped at Task 7 with `contributing: { minItems: 1 }`, on the stated
+argument that a duty-hours violation naming no duty is unactionable in the workbench. **That is
+right for a CAP and exactly inverted for a FLOOR:** `count_min` fires hardest on the person who
+holds NOTHING in the window, and an empty list is that person's whole answer rather than a missing
+field. The constraint would have forced the type to suppress precisely the person a floor exists to
+find.
+
+The KEY stays mandatory, which is the half Task 7 was protecting — `contributing` **absent** means a
+type forgot to say, `contributing: []` means a type said *none* — and `contract.test.ts` now asserts
+the two apart rather than together, because one check covering both is what made the difference
+invisible until a floor existed to expose it. The union, `Violation`'s five fields and
+`evaluate()`'s return type are untouched.
+
+#### 2. Owner decision M's clauses were in the wrong interface, and decision M's own argument says so
+
+Decision M keeps *replace* over *adjust* because *"replace makes the effective target readable at
+both branches"*. That was only half true in the tree: the modifier clauses lived in
+`PreviewMessages` and `ConditionEvaluator` is handed `ViolationMessages`, so a violation could print
+the effective target and had no way to say which branch produced it — a figure with the reason for
+it withheld, one screen along from the defect decision M rejects *adjust* to avoid. They are now in
+`Vocabulary`, in the strict sense that interface means: a FRAGMENT both halves compose into their
+own sentence, like `conjoin` and `hours`. Duplicating them would have been two renderings of one
+predicate, disagreeing the moment somebody reworded one.
+
+#### 3. Owner decision L has a per-PERSON half the decision does not state, and it is a decision
+
+The plan requires `count_min`'s corpus to include *"a person who joined mid-period"* and does not
+say what happens to them. **Answered as decision L applied one axis along: a floor and a target
+evaluate only a WHOLE window, and a window can be partial because of the person as well as because
+of the data.** Somebody who joined on the 5th did not have the block that began on the 2nd, and
+judging their single duty against an absolute number reports a shortfall they could not have made
+up, on their first block. The window is left unjudged and the row NAMES them.
+
+**Leave deliberately does NOT work this way, and the two are one line apart.** A person on leave for
+three weeks of a block HAD the whole window and was simply unavailable in it; suppressing or
+pro-rating for that is exactly the scaling decision L refuses (*"period-windowed numbers are
+ABSOLUTE"*). Both halves are stated in `onRosterThroughout`'s docblock and both are fixtured.
+
+#### 4. Two skip shapes, deliberately different, and the reason is readability rather than tidiness
+
+A window clipped by the evaluable range is named INDIVIDUALLY, because which window it was is the
+actionable half and the answer differs per window. A window whose left part no supplied history
+reaches is covered by `carryInLeftEdge`'s SINGLE row, because the answer is identical for every one
+of them and one row apiece would print one fact until a reader stopped reading them —
+`carryInLeftEdge`'s own recorded reason for refusing noise, applied to the shape it already owns.
+`evaluatedWindows` falling is the other half of that statement, which is why the pair is read
+together.
+
+The distinction underneath is between a window that is SHORTER and a window whose left part is
+UNKNOWN. A clipped week at a period edge is a genuinely smaller window and counting over it is a
+correct answer to a smaller question; a window whose first four days were never supplied is a wrong
+answer to the right one. `historyReaches()` is that line, and it is why a CAP — which owner decision
+L lets evaluate a clipped window — still declines the second shape.
+
+#### 5. `max_gap`'s `days` is derived from owner decision H by symmetry, and no document states it
+
+CG-07 gives `min_gap` *"days or hours; value"* and `max_gap` *"days"*, and decision H settles the
+first as *"the difference between START DATES, and N means at least N apart"*. The second is the
+same word reversed, so `days` measures the same quantity and N means **at most N apart**. Recorded
+here because it is an inference rather than a citation — a small one, and the alternative is two
+types measuring one quantity two ways with nothing saying which. The preview renders the boundary on
+dates, which is decision H's own device for the same hazard.
+
+#### 6. Owner decision I names the trailing gap; its MIRROR IMAGE goes the same way
+
+Decision I makes an unfinished TRAILING gap reported rather than evaluated. The gap BEFORE somebody's
+first duty is unfinished for identical reasons and the decision does not mention it — because the
+trailing one is the one a scheduler notices. Both are now reported, in one shape, and a person with
+no counted duty at all is one open gap over the horizon. The single exception is the shape
+`carryInLeftEdge` already reports, where one row speaks for everybody (finding 4).
+
+#### 7. `target_per_period` and `composition` have NO `kinds` parameter, and that is CG-07's doing
+
+Their cells are *"level→target; modifiers"* and *"level→{WD,WE}"* and name none, so every duty in
+the period counts. Adding one would invent a parameter no document states; a department wanting a
+per-kind target has `count_max`/`count_min`, whose cell does name `kinds`. Stated because the
+absence otherwise reads as an oversight beside three neighbours that have it.
+
+#### 8. SEVEN PLANTS STAYED GREEN out of forty-seven, and five of them were one defect
+
+**The count.** Forty-seven mutations were planted across the three tasks; forty went red naming
+their own cases. The seven that did not:
+
+1. **`personInScope` deleted from `count_max`/`count_min`** — no count case set CG-01's scope.
+2. **Both filters moved from the window's START to its END** — no case held a person whose level
+   moved inside a window. A window-located type must CHOOSE that date where a placement-located one
+   uses the duty's, and owner decision M fixes the choice at the period start.
+3. **`periodWeeksAtMost` answering `true` unconditionally** — the only case exercising it had a
+   five-week block against a limit of five, so the predicate was asserted where it MATCHES and
+   nowhere where it must not.
+4–7. **`personInScope` deleted from `max_gap`, `free_day_min`, `composition` and
+   `target_per_period`** — all four at once, one task after the identical probe caught `count_max`.
+
+**Five of the seven are one defect: a scope carried and never asserted.** That is P2-1 review's
+thirteen-instance finding, and it reappeared on every window-located type written before the probe
+became a habit. **So it is now a standing item rather than something to rediscover: a new type's
+first plant is `personInScope` → `true`, before the type's own narrowings.** Each of the five is
+closed by a person in the type's own defining fixture who would be flagged on their own figures and
+is excluded by the scope alone; two of them need a THIRD person, because owner decision K's sentence
+is that a bare `levels` list INTERSECTS the scope rather than replacing it, and an intersection
+cannot be pinned with two.
+
+Findings 2 and 3 are Task 9's species — *a property asserted at the one input where the defect
+cannot appear* — bringing that count to five instances in the phase.
+
+#### 9. Three smaller things
+
+**The message-table source guard bit on a ternary of two TABLE calls**, at `count_max`/`count_min`'s
+shared `explanation:`. It is a true positive by the guard's letter: it cannot tell that shape from
+the ternary of two LITERALS it is planted against, and relaxing it to admit the one would admit the
+other. The two directions now push at their own sites, which is also where their own comparison
+lives. Recorded because the next type with two directions will meet it.
+
+**`preview.test.ts`'s *"an implemented row with no preview yet"* exemplar had to move**, from
+`count_max` to `holiday_equity`. A probe pointed at a row that has since been implemented does not
+fail — it throws the SCHEMA's refusal instead, a different error class reaching the same `toThrow`.
+The exemplar moves as tasks land and the assertion now pins `preview` as undefined first, so the
+next move is forced rather than optional.
+
+**`followingDuties` had no corpus case at all until Task 17.** The contract says it is *"usually
+empty and never ASSUMED empty"* and nothing asserted the second half;
+`max-gap-the-gap-that-begins-in-the-published-month` supplies one, and needs to — it is what closes
+the trailing gap so the seam guard's single expected coverage row is not competing with an open-edge
+row.
+
+### From Tasks 18–20 (2026-08-20) — the catalog is complete, and owner decision L's line was in the wrong place
+
+**The last five predicates.** `rolling_hours_max`/`call_frequency_max`,
+`fairness_distribution`/`holiday_equity` and `we_pairing` ship, so **all 22 implemented registry
+entries now carry an evaluator, a preview and a params schema.** `implemented: true` was a
+DECLARATION for most of this phase — an entry could say so while carrying no predicate at all — and
+`registry.test.ts` now asserts the declaration and the reality as one named set. `Violation` is
+still five fields, `evaluate()` still returns `Violation[]`, `Location` is still a three-member
+union: **P2-2 added eleven predicates and no shared shape.**
+
+#### 1. Owner decision L's dividing line is NOT cap-versus-floor. It is AUTHORED versus DERIVED limit
+
+The decision lets a **cap** evaluate a window the engine can only see part of, on the stated ground
+that *"a count that is too low never exceeds a limit"*. That argument silently assumes the limit is
+a number a department wrote down.
+
+`call_frequency_max`'s is not. Owner decision J's answer makes the allowance
+`floor(availableDays / n)` — computed from the window's OWN contents — so a partial window shrinks
+the allowance alongside the count and false-positives **exactly as a floor does**. One measured
+example is in the corpus: the window reaching two days outside the evaluable range shows one call
+against an allowance of zero. It therefore calls `wholeWindowVerdict`, and `rolling_hours_max` — a
+cap with an authored figure, landed in the same task — does not. Both are asserted on ONE world so
+the pair cannot drift into looking like two unrelated choices.
+
+`partialWindowSkip`'s stated reason was widened with it. It shipped saying *"a count that is short
+cannot exceed a cap, but it can fall below a floor every time"*, which is FALSE for this type, and a
+coverage row a reader can catch out is one they stop reading — `carryInSkip`'s own recorded lesson,
+in the sentence beside it.
+
+**Decision J's per-PERSON half goes the other way too.** Decision L suppresses a floor for somebody
+who joined mid-window, because an absolute number they could not have reached is a false positive.
+This rule's number is not absolute — the days before they joined are already out of their
+denominator — so `midWindowJoinSkip` is deliberately NOT called, and suppressing anyway would delete
+the rule for every new starter's first window, which is when a department is likeliest to over-call
+them.
+
+#### 2. Owner decision W's entry contradicted itself, and the plan said the opposite of the shipped rule twice
+
+Two documentation defects found by implementing against them, both corrected above rather than
+silently rewritten:
+
+- **W was labelled *"default CONFIRMED"*** while the default printed beneath it says `null` means
+  UNKNOWN — the opposite of the answer's own sentence (*"starts at ZERO for everyone"*). The answer
+  was never in doubt; the word was wrong, and the default is now marked superseded.
+- **Task 18's own brief still said the denominator is *"calendar days, following `MissedDays`'
+  precedent"***, written before J was answered and never updated. It stated the opposite of the
+  shipped rule.
+
+The contract carried the same defect in code: `contract/types.ts` and `contract/schema.ts` both
+asserted `null` means UNKNOWN. Both now record the answer. **The SHAPE is deliberately unchanged** —
+`Record<holidayKey, number | null>` stays, so `App\Support\Engine` may serialise either spelling and
+`holiday_equity`'s `carriedCredits()` is the one definition of the reading.
+
+#### 3. `holiday_equity` per-holiday is structurally incapable of firing, and the threshold is a definition
+
+Written per holiday key first, and unfalsifiable: a one-month horizon holds at most one YEAR of any
+one holiday, so every person holds nought or one of it and `max − min` can never exceed one. The
+rule would have been unable to produce a finding in the very year decision W says it must distribute
+in. **The comparison is over the NAMED SET**, which is also what CG-07's cell says — *"spread named
+holidays across people & years"*, plural on both axes.
+
+`max − min <= 1` is a DEFINITION rather than an invented number: a credit is indivisible, so the
+fairest reachable allocation of `k` credits over `n` people has a spread of at most one, and
+anything wider contains a credit that could have gone to somebody holding fewer. CG-07 gives this
+row no tolerance parameter and none was invented. **STATED RESIDUAL: availability does not enter** —
+somebody on leave across a whole holiday cannot take it, and `fairness_distribution` is the type
+that owns pro-rating.
+
+**`lookbackYears` cannot be verified for DEPTH inside the engine.** `priorCredits` arrives already
+aggregated, and turning `historyAvailableFrom` into a count of rule-calendar years needs the Hijri
+conversion decision AA keeps out of this package. What it can prove is the case where the caller had
+nothing to aggregate, and that is reported through `coverage()`.
+
+#### 4. `fairness_distribution`'s `spread` threshold is DERIVED from `deviation`'s
+
+The sum of the two extremes' own tolerances — the widest gap `deviation` would have permitted
+between them — so a schedule clean under one mode is clean under the other **by construction**. A
+threshold of its own lets one mode of one rule call a draft fair while the other calls it unfair,
+with nothing on either screen able to adjudicate. Recorded as an inference; no document states it.
+
+#### 5. `we_pairing`: the parameter shape was chosen by the PROBE GENERATOR, and one branch was dead
+
+A pair is a `{first, second}` OBJECT rather than a two-element array because `preview.test.ts`'s
+probe generator builds an array's low probe as a ONE-element list: an inner `minItems: 2` would be
+refused by the very schema the matrix is probing, and the matrix would report a crash instead of an
+ignored parameter. Worth knowing before the next type reaches for a tuple.
+
+A **SPLIT** is a violation and a **GAP** is not — one day covered and the other held by nobody is a
+coverage requirement (SL-03, P3) rather than a pairing preference. Both readings are in the corpus
+on one world.
+
+And the emission-rule check inside its scan was **DEAD CODE**: for a two-day pair,
+`windowTouchesHorizon` holds for every start in `[from − 1, to]`, which is exactly what
+`candidateStarts` returns. It is deleted, the rule is stated once in the bounds that do the work,
+and a property in `conditions.test.ts` ties the two together in both directions.
+
+#### 6. FORTY-THREE PLANTS, and the ranking is what is worth keeping
+
+Red, naming their own case: 38. Green: 3, plus 2 more found in the same sweeps and closed with them.
+**The standing `personInScope` → `true` first plant went RED on all five types** — the habit works,
+and this is the first phase task in which no type shipped with an unasserted scope.
+
+The three that stayed green, and their species:
+
+1. **`spread` never updating `quietest`** — the world had TWO people, so the array head already WAS
+   the quietest. Closed by a third person listed FIRST and neither extreme.
+2. **`holiday_equity`'s `holidays` filter deleted** — no case carried a holiday in its day vector
+   that the rule did not name. *A filter asserted only where it MATCHES*, which is Tasks 15–17's
+   finding 3 and Task 9's species, now at seven instances in the phase.
+3. **`we_pairing`'s explicit `windowTouchesHorizon` check** — not a corpus gap at all. See item 5.
+
+Two more, closed in the same passes: **`fairness_distribution`'s and `holiday_equity`'s horizon
+filters** (no case had a duty, or a holiday day, outside its own horizon — and for the first, a
+fixture cannot express one without becoming confusing corpus data, so it is asserted in
+`conditions.test.ts` byte-identically rather than by length). And a sixth, at `we_pairing`'s far
+edge: **`candidateStarts` stopping one day early**, because no case had a preferred pair beginning
+on its LAST horizon date. That case is only the second in the whole package to supply a
+`followingDuties` the contract says must never be assumed empty.
+
+**One plant is green BY CONSTRUCTION and is not a hole.** Relaxing `<=` to `<` in either fairness
+comparison changes nothing on any input: `1 <= 1 + 1e-9` and `1 < 1 + 1e-9` are both true, so
+`COMPARISON_EPSILON` — not the operator — is the control, and the corpus pins the BOUNDARY either
+side of it. Recorded on the constant rather than left for the next author to rediscover.
+
+**One process note, paid for once.** The plant runner reverts with `git checkout --`, so an
+uncommitted fix made between two sweeps is destroyed and the next sweep reports RED for an import
+error rather than for the defect. *"Commit before planting"* is not advice about hygiene; it is what
+makes the sweep's own result readable.
+
+#### 7. Two smaller things
+
+**`preview.test.ts`'s *"an implemented row with no preview yet"* exemplar has run out of real rows.**
+It moved from `count_max` to `holiday_equity` to `we_pairing` as each was written, and at Task 20
+the catalog is complete — so it is a CONSTRUCTED entry now, with a floor asserting that no shipped
+row is in that state either. A probe pointed at a row that has since been written passes while
+checking nothing.
+
+**A cohort location has no date, so CG-03 is the TYPE's to keep.** `evaluate()`'s emission rule is
+unconditionally true for one, so all three cohort-located types filter their own inputs to the
+horizon. That is not visible in the union and it cost two green plants to establish.
+
+### From Task 22 (2026-08-20) — the context builder, one duplicate removed from `Calendar`, and a green plant that split the two guards
+
+`App\Support\Engine\ContextBuilder::forHorizon()` is shipped. **Reused rather than restated**, which
+was the task's binding constraint: `Person::levelSpansBetween()` for level history,
+`Vacation::scopeIntersecting()` for the leave read, `Calendar::weeksIn()` for the clipped week
+windows owner decision O keeps server-side, `Calendar::dayFacts()` for the day vector. `RotaGrid`'s
+stale-row union is the one structure copied rather than called, and for a sharper reason than the
+grid has: a duty naming a person the context does not describe THROWS, so a departed colleague still
+holding a rotation must be described or one stale row kills a whole evaluation.
+
+**THE BUDGET: 13, bound 17, watched breaching at 223 and 113.** The populated fixture is thirteen
+periods, seventy people, 1170 spans, sixty leave rows, thirty mid-year promotions, four clinics and a
+multi-year holiday set. A per-span level lookup ran **223**; `$assignment->unit` per span ran **113**.
+Both planted, both red, both reverted. A second measurement — one person versus thirty-one, same
+count — had to be taken **cold both times**: `Calendar`'s settings and holiday reads are memoized per
+process, so a warm second call is two queries cheaper for a reason that has nothing to do with the
+roster, and the first version of that test failed reporting a saving the cache had made.
+
+**1. THE THIRD N+1 TRAP IS CHEAPER THAN THE CORRECT CODE, SO NO BUDGET COULD EVER HAVE FOUND IT.**
+The task names a narrowed `select()` on a person query as the one that bites hardest. It bites
+differently here: `full_name`/`position`'s read-through-accessor symptom (P0c) is ABSENT, because
+this context reads neither attribute. Planted as `select(['id', 'external'])`, the JOIN DATE silently
+vanished for everybody — which on the far side of the contract is `onboarding_grace` reporting every
+person as unknown and firing on nobody, the exact state owner decision T's coverage row exists to
+make visible. The query count went **down**. What caught it was a behavioural assertion on the join
+date. A budget is not a defence against a projection.
+
+**2. A GREEN PLANT SPLIT THE TWO GUARDS ALONG A LINE NEITHER WAS DESIGNED FOR.** `where('external',
+false)` was planted on the roster query: the source half named the column, and the BEHAVIOURAL half
+stayed GREEN — because the stranded-span union re-adds anybody still holding a rotation, and the
+fixture's external person holds one. The second shape, a `filter()` over the loaded collection
+keeping only people with a rotation, reversed it exactly: source half green, behavioural half red,
+naming the one person no union can rescue. **Neither half is redundant and neither is sufficient**,
+and reading the two lists would never have shown it. Fourth green plant of the phase.
+
+**3. `Calendar` gained three members and LOST a duplicate that was already in the tree.**
+`label()` carried its own copy of *"holiday wins over weekend"*, three methods away from
+`dayType()`'s — two definitions of one three-branch decision, unnoticed. `dayFacts()` is now the one
+definition and both project it. Added: `holidayOccurrencesOn()`, `dayFacts()`, and the public
+`isoWeekday()` finding 21 asked for. This is where finding 21's rule lands in practice — a new
+per-date date function belongs on the one converter, never on the engine's namespace.
+
+**4. THE HOLIDAY YEAR IS THE ANCHOR'S, NOT THE QUERIED DATE'S, AND NO DOCUMENT SAYS SO.** Owner
+decision W fixes `yearBasis: 'ruleCalendar'` and the contract carries `{ key, year }` per holiday. It
+does not say which year a multi-day span's later days carry. A four-day Gregorian rule anchored 30
+December covers 2 January: that day belongs to the **2026** occurrence, and `holiday_equity` keying
+it to 2027 would split one holiday's credits across two years for the people who worked its tail.
+The walk that finds the anchor already computed it and threw it away, so the year is returned from
+inside that loop rather than re-derived — a caller re-deriving it would be a second definition
+disagreeing only on the spans that cross a year end, which is to say only where it matters.
+
+**5. THE PLAN IS WRONG AGAINST THE TREE IN ONE PLACE, AND THE TREE IS RIGHT.** Finding 4 says
+*"flattening spans into a per-date unit vector is the bridge, it must be built exactly once, and it
+belongs in the context builder"*. The shipped contract does not have that shape: `Person.unitSpans`
+is `Span[]`, and `support.ts`'s `spanKeyAt` — authored at Task 10 as *"the one definition of the fact
+this person holds on this date"* — is where the per-date resolution lives. Finding 4 predates the
+contract. The builder therefore emits SPANS with their real bounds and flattens nothing, and the
+"exactly once" property is honoured on the engine's side rather than this one. Leave is different and
+genuinely is flattened here (`leaveDays`, `eligibleDays`), which is finding 5's fourth shape of the
+leave predicate — a fourth SHAPE, not a fourth copy: nobody had *"vacation versus a single date"*
+because no screen ever needed one.
+
+**6. `Span.to` IS NOT NULLABLE, AND CLIPPING AN OPEN LEVEL SPAN WOULD LIE.** `spanKeyAt` reads a date
+outside every span as *"holds nothing"*, which is a real state — a person between rotations. A level
+span with no `effective_to` is the COMMON case (that is what `LevelAssignment::assign()` writes), and
+clipping it to the horizon would tell the engine that everybody holds no level on the day after the
+last horizon date, which is precisely where `clinic_conflict`'s post-duty window looks. It is carried
+open at `ContextBuilder::NO_KNOWN_END`.
+
+**7. THERE IS NO STABLE PERSON CODE IN THIS SCHEMA AND P2 MAY NOT ADD ONE.** Owner decision G asks
+for *"a person key that is not `people.id`"*, on the ground that ids are instance-local and that
+`people.id`/`users.id` are independent sequences. The second hazard is real and is removed
+structurally by a prefixed derived key (`p{id}`), which cannot be moved between the two tables by
+accident; the first is a non-question for a payload that never leaves the instance, and the only
+alternative — a real code column — is a migration P2 is forbidden to ship. Units and levels use their
+genuine codes; periods use `academic_year` + `position`, which is the table's own UNIQUE key.
+
+**8. `PersonPresenter` IS DELIBERATELY NOT USED, AND THAT IS NOT A BREACH OF "THE ONLY PATH".** It is
+the one path from a person to a SCREEN's props, and its entire output — a name, a short name, a
+position — is what an engine context must not acquire. Routing through it would ADD the disclosure
+this file exists without. The context names nobody at all, carries no contact field and no free text,
+takes no viewer, and is asserted over the SERIALISED payload by key name on the most permissive
+institution setting the system can produce. Proved both ways: planting an address read made
+`ContactFieldsAreProjectedOnceTest` name the file and both needle spellings, and made the payload
+assertion name the key path it had appeared under.
+
+**9. STATED RESIDUAL — `holidays.equity_tracked` HAS NO FIELD IN THE CG-10 `Day.holidays` SHAPE.**
+The contract carries `{ key, year }`. So the engine cannot tell a tracked holiday from an untracked
+one, and `holiday_equity` will count every holiday the day vector names. The loader carries every
+resolved holiday rather than pre-filtering on the flag, because filtering would be the loader taking
+that type's decision away silently — which is the defect its own guard exists for. Closing it needs a
+contract field and belongs to whoever finishes `holiday_equity`, not to a P2 workaround. Task 1's
+finding that the column *"has no consumer anywhere"* remains true after this task.
+
+**10. THE AVAILABILITY DENOMINATOR IMPLEMENTS TWO OF OWNER DECISION J'S THREE CLAUSES.** Leave and
+the dates before a join date come out. The third — days somebody is away from the department on a
+rotation elsewhere — has no per-person column anywhere (MR-04), and the only thing resembling one is
+the presence or absence of a rotation span. Inferring it there would make the rota decide who may
+take call, which is what `RotaAccessTest` exists to refuse and what owner decision I already refuses
+in those words for `max_gap`'s clock. A person with no rotation counts as available, and the file
+says so where the next implementer will be standing.
+
+**11. THE RECOMMENDED `CalendarSurfaceIsManifestedTest` IS BUILT, AND THIS TASK IS WHY IT WAS DUE.**
+The Task 5/6 note proposed it *"for Task 22 or early P3, whichever touches `Calendar` first"*. This
+task touched it — three new public methods, which is exactly the drift shape the mirror's stated
+residual describes. Every public static is now classified MIRRORED or SERVER_SIDE_ONLY with the
+reason, compared in both directions so a stale entry fails as loudly as an unclassified method, and
+the MIRRORED half carries the name the package exports for it, checked against the package's own
+source — without that, *"this one is mirrored"* is a claim nobody verifies and the mirror could drop
+`weekOf` tomorrow with the list still asserting it. Planted twice: a new unclassified method → red;
+a counterpart renamed to one the package does not export → red. **Nine mirrored names against
+twenty-four server-side ones**, which is worth reading as a measurement rather than a gap: it is how
+small Decisions B and C succeeded in making the second implementation.
+
+*Two smaller things.* The no-rule guard's column needles had to be a `where`-family REGEX rather than
+substrings — `InstitutionProvenanceTest`'s idiom — because the loader legitimately writes an
+`external` projection key, and a bare literal would have fired on the file's own correct output. And
+the reader guard's needles are VERB-ONLY rather than model-qualified, which is affordable here in a
+way it is not in a single-writer guard: those must name a model because they scan the whole
+application, this one scans one namespace whose entire job is to read, so the widest needle costs
+nothing and reaches a writer of a table nobody has invented yet. Both known blind spots — ruling 66's
+`query()->create(` and ruling 50's `->update([` — are needled explicitly anyway, and both were named
+by the plant.
+
+### From Task 21 (2026-08-20) — the three presets, and one claim this file made that the plants refuted
+
+**Shipped as Decision H and owner decision AB specify.** `preset:acgme` is five soft, active rows at
+one rank; `preset:residency` is structure only, seven types with every parameter awaited and no
+number anywhere; `preset:scfhs` is present, empty and pending. `packages/engine/src/presets/` is data
+plus one lookup, and `evaluate()`, `Violation`, `Location` and `coverage()` are untouched — **a
+preset added configuration and no shape**, which is CG-10's *"new types are additive"* holding for a
+bundle as well as for a type.
+
+#### 1. The manifest fails in FOUR directions, and the two-direction claim in this file was too weak
+
+The task asks for two: a preset naming a type the catalog does not have, and a type silently dropped
+from a preset claiming it. Two more were free once the first two existed and each was planted: a row
+a bundle GREW without declaring, and a declared `state` that is not the state the contents produce.
+The last is what makes *"present and empty"* checkable — a bundle whose rows were all deleted
+declares `ready` and derives `empty`.
+
+**The direction-two case shipped with a wrong claim in its own docblock, and the plant is what
+caught it.** It said deleting a row leaves every other check green. It does not: deleting `min_gap`
+from the ACGME bundle reddens THREE cases (the manifest claim, the count, and the row's own figure
+case), and retyping the row so the count is unchanged reddens FIVE. **Corrected in place rather than
+quietly rewritten**, and what the case actually buys is now stated exactly: it is the only check
+anchored on a DECLARATION rather than on the bundle's own contents, so it is the only one that
+survives an author who deletes a row and then tidies the tests that named it. A manifest derived
+from the presets would fire in neither shape.
+
+#### 2. The five ACGME figures are PARSED out of CG-08's sentence, which cost nothing and buys a lot
+
+`catalog-parity.test.ts`'s device, applied to numbers instead of keys. Planted by editing SPEC.md's
+own CG-08 line — 80 → 90, 1-in-3 → 1-in-4, and a transition figure added — and three cases went red
+naming their own clause. **`transitionMinutes` is the one number in the bundle that no document in
+this repository states**: CG-08 drops the clause entirely, Appendix A names it in words only, so the
+preset carries ACGME's published four hours and the ABSENCE at the source is asserted too, because a
+figure appearing in CG-08 later would make the bundle's own limitation false and nothing else would
+notice.
+
+**A third limitation was found by parameterising rather than by reading**, and it is a property of
+how `consecutive_max` measures rather than of the platform: owner decision V's allowance is what
+JOINS two duties into one measured stretch, so the gap counts INSIDE the 24 h, where the standard
+permits four hours ON TOP of them. The preset over-reports rather than under-reports, which is the
+right direction for a soft warning and is one number to change for a department that disagrees. It
+sits in `limitations` beside Decision H's two, because a limitation recorded only in a plan is one
+the person reading the gate screen never sees.
+
+#### 3. `residency`'s awaited lists are DERIVED from each type's schema, and that decided its contents
+
+`awaiting` is compared against `PARAMS_SCHEMA.required` rather than restated, so a schema gaining a
+parameter fails the build instead of leaving the structure reading as complete. Planted by dropping
+`unit` from `min_gap`'s list; red, naming the type.
+
+**Which seven types are in it was the real question, since no document enumerates the bundle.** D14
+and D15 make the prototype's values unobtainable, and its type LIST is equally unobtainable —
+`grep -rn -i '\bnine\b' docs/` still returns twenty hits and none of them is a list. The seven come
+from **SPEC Appendix A's requirements line** (*"spacing, monthly caps, weekday/weekend distribution,
+vacations, unwanted days, clinic–post-call"* — six phrases, six catalog rows) plus `onboarding_grace`
+from Decision H's own sentence about it. Every draft carries the phrase it came from, so the mapping
+is checkable rather than trusted. Two of the seven publish EMPTY schemas and await nothing; they stay
+drafts because **a preset a department installs half of is a preset that looks finished on a gate
+screen** — and `clinic_conflict`'s `variant` is awaited even though this department answered it,
+because a preset ships to every customer and one department's answer is not a default for the others.
+
+#### 4. A preset is configuration, not code — asserted twice, and a plant split the two halves
+
+The runtime half is `JSON.parse(JSON.stringify(PRESETS))` deep-equalling `PRESETS`: no function, no
+`undefined`, no class instance survives that trip, so Decision H's *"a preset can physically be a
+JSON data file"* is a property of the VALUE rather than a claim about a file. The source half
+requires `import type` only and no `function`/`=>`, comments stripped.
+
+**Neither is redundant and reading the two lists would never have shown it.** A function PROPERTY
+reddens both; an arrow IIFE computing `describes` reddens only the SOURCE half, because the value it
+leaves behind is a plain string the round trip is happy with. That is Task 22's finding 2 one package
+along. **STATED RESIDUAL, measured:** a value assembled by a METHOD call (`['2026', '08',
+'20'].join('-')`) carries neither needle and passes both halves. Left unbought, and the import check
+is why it is harmless — no VALUE may be imported into a preset file, so such a computation can only
+assemble literals out of literals in the same file.
+
+The ONE deviation from Decision H is the file extension, on `contract/schema.ts`'s own precedent: a
+JSON import *"would resolve differently under the bundler, under plain Node and under `tsc`"*, and a
+preset has exactly those three consumers.
+
+#### 5. THE BUNDLE IS RUN, because parameters that merely validate are inert
+
+`windowDays: 7` with no averaging validates against `rolling_hours_max`'s schema and asks for a
+quarter of what CG-08 says. So the five rows go through `evaluate()` on two generated worlds — one
+person on call every day of a 35-day horizon, where all five fire, and a light month where none does.
+Planting `active: false` on all five (Decision H's own named hazard) reddens the evaluated case as
+well as the declaration; the quiet world was probed at a call every OTHER day and goes red, so it is
+near a boundary rather than trivially clean.
+
+#### 6. `eligibleDays` IS A FACT ABOUT THE EVALUABLE RANGE, AND THE QUIET WORLD IS WHAT FOUND IT
+
+Handed availability for the HORIZON alone, `call_frequency_max` reads every window reaching back past
+`horizon.from` as *"this person was available on one day of the 28"*, permits `floor(1/3) = 0` calls,
+and fires on a schedule that breaches nothing. `ContextBuilder::forHorizon()` builds `days` and
+`eligibleDays` over the single range it is given, so **its caller must pass the EVALUABLE range** and
+set `horizon.evaluableFrom`/`evaluableTo` to match. Absence of data and unavailability are
+indistinguishable in a list of dates and only the caller can tell them apart. **Task 24 is the first
+caller and owes this**; it is recorded in `docs/INVARIANTS.md` §Engine rather than only here.
+
+#### 7. Two smaller things
+
+`withoutComments` moved to `test/support/source.ts` rather than being copied into a second suite — a
+stripper written twice is two definitions of what counts as a comment, agreeing until the day one is
+taught something the other is not. It is not a `.test.ts`, so no runner collects it and importing it
+does not re-register another file's cases.
+
+And **rank**: all five ACGME rows sit at rank 1 rather than at 1..5. CG-02's drag rank is the
+department's own gesture over its own list, and five distinct ranks would be five importance
+judgements no document makes, arriving pre-made on the screen whose whole purpose is to make them.
+`comparePrecedence` returns 0 between them, which is the honest answer to *"which of these five
+matters more"*.
+
+### From Task 23 (2026-08-20) — the Node entrypoint, what CI actually gained, and forty CSS rules compiled out of documentation
+
+`packages/engine/bin/evaluate.mjs` ships, with `bin/corpus.mjs` as its CI harness, two steps in the
+`test` job, and **no new job**: the plan says *"added to CI's `test` job"* and a second job would
+re-run checkout, `setup-node` and `npm ci` to save nothing.
+
+**1. THE NAME IS ON THE STEP, AND IT SAYS WHAT THE STEP IS NOT.** `Engine corpus and CLI through the
+compiled Node entrypoint (one implementation, not cross-validation)`. The parenthesis is the whole
+point of the task's *"named honestly"*: the phase table's original *"the CI cross-validation job"* is
+what a later reader takes as a commitment already met, and Task 1 had to rewrite that row for the same
+reason. The step's comment names the three things separately — this corpus is NF-08/QA-01 regression
+coverage over ONE implementation; `golden.test.ts` under `npm test` is the repository's only genuine
+cross-implementation check and needs nothing from this step; §4.3's real job arrives in P4 with the
+solver that gives it a second side.
+
+**2. WHAT CI GENUINELY GAINED, ESTABLISHED BEFORE ANYTHING WAS ADDED.** The task's warning was right
+to insist: the plan's list is out of date, because `npx tsc --noEmit -p packages/engine` is already a
+step and `npm test` already collects `packages/*/test/**/*.test.ts`, so **all 90 fixtures' ANSWERS
+were already asserted in CI** and re-asserting them buys nothing. Three things were not covered:
+
+- **Plain Node.** Vitest transpiles per file through Vite and runs in jsdom. Neither it nor
+  `tsc --noEmit` answers whether the graph bundles or whether the result runs outside a bundler.
+- **The public surface.** Every test in `packages/engine/test` imports by deep path
+  (`../src/evaluate`). `smoke.test.ts` and `tests/js/EngineAlias.test.js` read exactly one export
+  between them — `version` — so `index.ts` re-exporting `evaluate` at all was asserted by NOTHING,
+  and `@engine` resolves to that file. This is the gap P3's workbench would have found while wiring
+  live hints.
+- **The CLI contract per case** — stdin, stdout, exit code — rather than described.
+
+A fourth candidate was considered and rejected: `npm run build` does not bundle the engine, because
+nothing imports `@engine` yet. The standing rule *"`npm run build` must actually bundle it"* is
+therefore not true today and is not made true here — adding a lib build to that script would put an
+artifact into the production image that nothing in the image calls (owner decision Y), and
+`npm run build` is exactly what the Dockerfile's asset stage runs.
+
+**3. THE PROOF THE STEP ADDS COVERAGE IS THE PLANT, NOT THE ARGUMENT.** `export * from './evaluate'`
+removed from `src/index.ts`: `tsc --noEmit` **rc=0**, `npm test` **773 passed, rc=0**, the new step
+**rc=1 with 95 named failures**. That is the second bullet above, demonstrated rather than asserted.
+Four more plants: a `cohort` location made unreportable (13 fixtures red); `EXIT_BAD_REQUEST` flipped
+to 0 (five refusal cases red, by name); and the three CSS plants in item 6.
+
+**4. THE HARNESS FAILED ITS OWN FIRST PLANT — BY CRASHING INSTEAD OF REPORTING.** Plant 3 collected
+ninety fixture failures and then printed ONE `TypeError` from the benchmark, because the report was
+the last statement in the file and a throw skipped it. A harness whose failure tells the reader less
+than its success did is not a gate. The run is now inside one try, a throw is one more entry in the
+failure list, and the refusal phase's final `JSON.parse` is guarded the same way. **This is only
+findable by planting** — the finished tree is green and the defect is invisible in it.
+
+**5. THE ENTRYPOINT HAS NO "VIOLATIONS WERE FOUND" EXIT CODE, AND THAT IS THE LOAD-BEARING ONE.**
+0 evaluated, 2 not the contract, 3 the engine refused a type key, 1 a bug. A CLI whose status means
+both *"I could not do this"* and *"I did it and the answer was non-empty"* is one every caller has to
+special-case, and the caller that forgets treats a malformed context as a clean schedule. 2 and 3 are
+separated for the reason `evaluate()` raises two distinguishable errors: *"your JSON is the wrong
+shape"* and *"your condition names a type this engine does not implement"* are repaired by different
+people. All eight cases are asserted by **exit code AND message** — rulings 41/49's pairing, one layer
+along, where a refusal nothing asserts is a control that appears to do nothing.
+
+Node cannot load the sources at all, and both reasons were measured on Node v24.15.0 rather than
+assumed: `moduleResolution: bundler` makes `import … from './calendar'` a directory import the ESM
+resolver refuses (`ERR_UNSUPPORTED_DIR_IMPORT`), and strip-only mode refuses `evaluate.ts`'s
+constructor parameter properties (`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`). The first fires first and
+would fire on a JavaScript tree. So the bundle is not a convenience; it is the only way this runtime
+exists. `dist/` is gitignored, `.dockerignore`d, and rebuilt by CI before every run, so it cannot
+drift in the tree and cannot vary with whether the building machine ran a script — which is Task 2's
+finding restated.
+
+**6. UNPLANNED AND NOT SMALL: TAILWIND WAS COMPILING PRODUCTION CSS OUT OF DOCUMENTATION, DOCKER
+CONFIGS AND TESTS.** Found by diffing the built bundle before and after adding `bin/corpus.mjs`,
+while checking the Dockerfile hazard the task named. One new rule appeared — `.block-10`, from a
+benchmark period key — and the diff also showed `.block-13` **already present on the clean tree**.
+Automatic source detection scans every tracked, non-gitignored file and extracts anything that spells
+a utility; it does not care that the file is a supervisord config or a Markdown plan. The shipped
+stylesheet was carrying, at minimum:
+
+- `.[program:nginx]`, `.[program:php-fpm]`, `.[program:scheduler]`, `.[no-new-privileges:true]` —
+  from `docker/supervisord.conf` and `docker-compose.production.yml`. Four rules whose declarations
+  are not CSS.
+- `.min-h-[34vh]`, `.rounded-2xl`, `.bg-blue-600`, `.text-gray-600` and the rest of a raw palette
+  this project forbids in markup — from a **superseded draft** inside
+  `docs/superpowers/specs/2026-07-26-login-redesign-design.md`. The layout that ships uses `34dvh`,
+  so the emitted rule was not even the one on screen.
+- `.block-3` and `.block-13` from `packages/engine`, and a dozen bare English words — `container`,
+  `static`, `shrink`, `blur`, `outline`, `uppercase`, `shadow` — picked out of prose.
+
+Fixed with `@import 'tailwindcss' source(none)` plus `@source "../js"` and `@source "../views"`.
+**Not** an exclusion list — the three offenders are in three different directories, so a list has to
+guess where the next one is — and **not** a rename, which moves the collision to the next slice
+nobody is diffing CSS in. Verified class by class over the whole diff: nothing removed traces to
+`resources/js` or `resources/views`, and a `find` for `.blade.php` outside `resources/views` or
+`.vue` outside `resources/js` returns nothing. 1719 PHPUnit, 773 Vitest, 24 Playwright green after it.
+`TemplateScanningIsNarrowTest` asserts four halves — detection off, both roots declared, each canary
+still present in its own file, and no rule from either in the bundle — with **two canaries from two
+directories**, since a narrowing that survived for `packages/` alone would otherwise pass. Planted
+three ways: `source(none)` removed and rebuilt (2 red), `@source "../js"` removed (2 red), the canary
+renamed in `messages.ts` (2 red).
+
+*A note on the comment that documents it:* the first version of that comment named the offending
+strings in prose and **re-emitted both rules**, because `resources/css/app.css` was itself being
+scanned. Under `source(none)` it no longer is, which is why the shipped comment can describe the
+defect at all.
+
+**7. THE DATE GUARD FIRED TWICE, THE SECOND TIME ON THE DOCBLOCK EXPLAINING THE FIRST.**
+`CalendarIsTheOnlyConverterTest` refused `bin/corpus.mjs`'s first draft, which walked the calendar
+with the UTC epoch helpers behind a docblock arguing that a benchmark harness is different. It is not
+different, and the fix was better than the excuse: the synthetic month is now built with the package's
+own `addDays`/`datesBetween`/`isoWeekday`, so the benchmark's dates come from the same civil-date
+arithmetic the evaluators consume. Then the guard refused the sentence *describing* the removed call,
+because the needles are substrings over whole files. **A docblock is scanned source.** Both written
+around; the allow-list stays empty in both directions.
+
+**8. NF-01 IS MISSED, AND THE NUMBER IS RECORDED RATHER THAN MASSAGED.** 93 duties (20 people ×
+3 slots × 31 days), all 22 implemented types active, 998 findings from 14 conditions. `evaluate()`
+median across six runs on this machine: **76, 94, 104, 112, 122, 123 ms** against the 100 ms budget.
+The last two are consecutive and taken with nothing else running, so ~120 ms is the stable reading and
+**76 ms was an early outlier, not the truth**. A single sample would have been a precision the
+measurement does not have, so the harness takes nine after a warm-up and prints median with best and
+worst — on the settled runs, best ~107 and worst ~149.
+
+Three things belong with the number rather than after it:
+
+- **The case is deliberately violation-DENSE.** Duties are dealt round-robin, so spacing and cap types
+  fire across most of the month and 998 findings are constructed, each with a generated sentence. A
+  schedule a department would actually publish produces a handful. This is an upper bound, and
+  whether the budget is missed on a REAL month is not answered here.
+- **`coverage()` is a second full traversal**, so `evaluate() + coverage()` — what the entrypoint does
+  per request — is roughly double at 181–231 ms. If the budget matters at request scale, the second
+  traversal is the first place to look, not the evaluators.
+- **The CI runner's figure is unknown**; this is one developer machine. The harness prints the number
+  on every run, so the first CI log answers it.
+
+Recorded, not fixed: a budget quietly missed is worse than a budget missed out loud, and the fix — one
+traversal feeding both projections at the caller, or cheaper finding construction — is a change to
+`runConditions()`'s callers that belongs to whoever needs the budget, with a measurement in front of
+it rather than behind.
+
+The measurement does not fail the build, per the plan. A step that cannot fail is worse than none, so
+it is gated on not being VACUOUS instead: the run must produce findings from more than one condition,
+because a benchmark of an engine that resolved nothing measures process startup and reports it as
+headroom.
+
+**9. TWO SMALLER THINGS.** `bin/*.mjs` is plain JavaScript and is **not type-checked** —
+`packages/engine/tsconfig.json` includes only `src/` and `test/`, and pointing `checkJs` at `bin/`
+would fail on the `../dist/engine.mjs` import that does not exist at check time. The compensation is
+stronger than types for this file: every fixture and every exit code goes through it in CI. And the
+entrypoint matches the engine's two deliberate errors **by `name`, not `instanceof`** — it imports a
+bundle, and identity across a module boundary is a promise a second copy of the graph would quietly
+break.
+
+### From Task 24 (2026-08-21) — the demo command, the widening closed structurally, and two things the first real run found
+
+`php artisan engine:evaluate <period-key> <document.json>` ships, with
+`App\Support\Engine\EvaluationRequest` as the one place CG-10's three arguments are assembled. It is
+the first real caller of the context builder and the Node entrypoint together, and it is the last
+task of P2.
+
+#### 1. THE WIDENING IS CLOSED STRUCTURALLY, AND THE CASE THAT FIRES IS A PAIR IN THE CORPUS
+
+The task's own warning was the whole design constraint. `ContextBuilder::forHorizon()` builds `days`
+and `eligibleDays` over the one range it is handed, so a caller that builds over the PERIOD and then
+widens `horizon.evaluableFrom` to reach the tail makes `call_frequency_max` read every window
+overlapping that tail as *"available on one day of the twenty-eight"*, permit `floor(1 / 3) = 0`
+calls, and fire on a month that breaches nothing.
+
+**Both options the task offers were considered and the second was taken**: the builder answers over
+the widened range. Making the widening impossible — pinning `evaluableFrom = from` — would have been
+sound and useless, because it discards the carry-in tail the eight window types are written around,
+and the demo would then have reported every window as partial on every run.
+
+The fix is not discipline. **The horizon's evaluable bounds are read OFF the day vector that was
+built** — `days[0]['date']` and the last entry's — rather than computed alongside it and passed in
+parallel. There is no expression in that file able to hand the horizon a date the context does not
+describe; a caller widening the horizon has to widen the read that answers it, because they are the
+same statement. The range itself is derived rather than configured: the smallest one containing the
+period and every date a supplied duty OCCUPIES, `date + spanDays - 1`, so a weekly slot anchored on
+a period's last date drags the right edge across the six dates it really covers.
+
+`historyAvailableFrom` is deliberately NOT folded into the range. It is the caller's claim about how
+far back it looked; the engine already declines a window the context cannot cover, so a claim
+reaching further back buys nothing there, and clamping it would be this file answering a question
+nobody asked.
+
+**The proof is a PAIR of corpus fixtures differing in exactly one field** —
+`call-frequency-max-availability-for-the-horizon-alone-fires-on-a-clean-month` and
+`…-for-the-whole-evaluable-range-is-clean`. Same world, same schedule, same rule, two calls sitting
+exactly at the allowance: six honest available days permit two and the month is clean; availability
+for the horizon alone reads as two available days, permits zero, and reports a breach. They are the
+only cases in that corpus asserting a CALLER's defect rather than a type's, they run under both
+runtimes with no PHP involved, and the honest half is green AT the boundary rather than with room to
+spare — a case passing comfortably would not show that the denominator is what moved.
+
+`EngineEvaluateCommandTest` performs the same comparison through the REAL compiled engine on the
+request the command actually builds, narrowing `eligibleDays` afterwards and watching the identical
+world come back with a breach in it.
+
+**PLANTED, and one half stayed green.** The wrong reading — context over the period, horizon widened
+afterwards — reddened three PHP cases: the structural one (`evaluableFrom` no longer being the day
+vector's first date), *"availability covers the whole evaluable range"*, and the leave case that
+depends on it. **`test_the_right_edge_reaches_the_last_date_a_duty_occupies` stayed GREEN**, because
+nothing in the base document reaches past the period and the two right-hand bounds happened to
+agree. It asserted the widening ARITHMETIC and not the BINDING. Corrected in place: it now also
+asserts that the day vector reaches the last date the duty occupies, and both edges are bound.
+
+#### 2. WHAT THE COMMAND PRINTS, AND THE THREE THINGS IT IS NOT
+
+Summary first (period, evaluable range with the number of days and where it came from, context
+sizes, schedule sizes, condition counts), then the findings grouped by class with the engine's own
+CG-04 sentence on each, then `coverage()` — what was measured and what was left unjudged, printed
+even when nothing was flagged and especially then. On the populated fixture department below,
+`call_frequency_max` measures ZERO windows and leaves forty-one unjudged, which is the demo's most
+useful line: a four-week rule over a two-week block with three days of tail cannot be answered at
+all, and without `coverage()` that reads as a clean schedule.
+
+Not a production path (refuses on `app()->environment('production')` — owner decision Y). Not a
+writer and it audits nothing (asserted over `audit_log` and over eight tables' row counts).
+Fixtures synthetic, permanently. **`EngineIsAReaderTest`'s scan gained this file BY NAME** rather
+than the command growing a copy of the writer-needle list — one definition of what a writer looks
+like, since a second list is two lists agreeing until one of them is taught a new shape.
+
+Exit codes are the entrypoint's, mirrored: 0 evaluated, 2 not something to evaluate, 3 a type key it
+cannot resolve, 1 a bug or `node` would not start — and no *"violations were found"* code, for the
+reason Task 23 recorded. The consequence that matters here is the opposite one: **a missing bundle
+must never read as a clean schedule.** Every non-zero child exit surfaces `stderr` verbatim, returns
+that code, and prints no verdict.
+
+#### 3. THE MISSING BUNDLE IS THE ENTRYPOINT'S SENTENCE, AND THE SKIP HAS A GUARD
+
+`dist/` is gitignored, so absent-bundle is the commonest failure a first-time reader will hit. The
+entrypoint already answers it in one sentence naming `npm run build:engine` and exits 2; the command
+prints that sentence rather than carrying a second copy of the check — one definition of *"is the
+engine built"*, on the side that knows. Verified by hand as well as by the faked case: with `dist/`
+absent, `engine:evaluate` returns 2 and prints
+`The compiled engine is missing at …\packages\engine\dist\engine.mjs. / Build it first: npm run build:engine`.
+
+The pass-through is asserted with a FAKED child, because the two states this suite can be in cannot
+both hold in one run, and the assertion pairs *"the code and the message came through"* with
+`doesntExpectOutputToContain('Nothing was flagged')`. The two cases that spawn real `node` SKIP
+without the bundle — `CompiledCssIsLightOnlyTest`'s shape for a build artifact this suite does not
+produce — and **`test_ci_builds_the_bundle_before_the_php_suite` is what stops that skip becoming
+permanent**: it fails if `.github/workflows/ci.yml` ever runs `php artisan test` before
+`npm run build:engine`. A test that is not collected is indistinguishable from a passing one, and a
+test that always skips is the same thing one step along.
+
+#### 4. ONE ALLOW-LIST ENTRY, AND IT CONTRADICTS ACCEPTANCE ITEM 7
+
+`RulesLiveOnlyInTheEngineTest` buys `violation` case-insensitively. CG-10's array is literally named
+`violations`, the entrypoint returns it under that key, and there is no honest spelling of
+`$answer['violations']` that avoids the needle — so the command carries **one entry, per file AND
+per needle**. **Acceptance item 7 says *"no allow-list entry on any existing guard"*, and it cannot
+hold together with Task 24's own requirement to print violations from PHP.** Recorded rather than
+worked around.
+
+`severity` was NOT bought, and that is the part worth reading. The report groups by
+`Condition.class` off the rows it supplied, which is the same answer by construction — Decision E
+makes `evaluate()` stamp severity FROM the row — and it additionally lets the report name the type
+key and the rank that a `Violation` deliberately does not carry. So the file is still scanned for
+`severity`, for all 23 catalog type keys and for the other three engine needles, which matters
+because this is exactly the file where a *"quick PHP pre-check so we do not have to spawn node"*
+would be born. Proved by planting `'severity' => 'hard'` and a `min_gap` literal in the command's
+code: red on both, naming the file and the needle.
+
+Order inside a group is `evaluate()`'s own — by condition, then by location — and the command does
+not re-sort. CG-02's precedence lives in `comparePrecedence()`; a second definition here would be
+one that drifts. The rank is printed, not applied.
+
+#### 5. `json_decode($raw, true)` DESTROYS THE ONE THING `Condition.params` NEEDS, AND THE FIRST REAL RUN FOUND IT
+
+`{}` and `[]` decode to the same PHP value and `json_encode` turns both into `[]`. So `"params": {}`
+— the correct spelling for `vacation_block`, `overlap_block` and `unwanted_day_block`, which is half
+of what a department switches on first — arrived at the entrypoint as an array and was refused by
+the contract. **Measured, not predicted:** the first run of this command against a populated
+department exited 2 with `conditions[0]/params: expected object, got an array` on two rows.
+
+`EngineEvaluate::withEmptyObjectsKept()` decodes objects as objects and converts them to arrays only
+when they hold something; a non-empty map re-encodes as an object anyway, and an empty one keeps the
+only evidence PHP has that it was ever one. STATED RESIDUAL: an object whose keys are all decimal
+integers becomes a list. No key in the CG-10 contract has that shape — person keys carry owner
+decision G's `p` prefix — and the alternative is a per-key allow-list that would silently miss the
+next object-valued field somebody adds.
+
+#### 6. NF-01 IS MADE VISIBLE, AND THE LINE SAYS WHAT THE NUMBER IS NOT
+
+Every run prints the round trip. On the fixture department below it is **~350 ms for a 14-duty,
+4-person, 5-condition block** — and the printed line states, in the same breath, that this is node
+start-up plus JSON both ways plus `evaluate()` AND `coverage()`, that NF-01's 100 ms budget is
+`evaluate()` alone, and that Task 23 already measured that budget MISSED at ~120 ms. Printing the
+number without those three clauses would read as a much worse miss than the measurement supports.
+Nothing here re-measures NF-01 and nothing here papers over it.
+
+#### 7. UNPLANNED: EVERY `$this->line()` IN THIS APPLICATION COLLAPSES RUNS OF SPACES
+
+The first draft of the report was built out of indentation and `→`. Measured on this machine:
+`$this->line('  x')` renders with ONE leading space, interior runs of spaces collapse the same way,
+`→` is dropped while `—` and `·` survive, and `...` arrives as `..` — while `fwrite(STDOUT, …)` on
+the same pipe preserves all of it. It is **pre-existing and application-wide, not this task's**:
+`InstanceShow`'s own two-space continuation lines have always rendered with one, and `php artisan
+list` (which writes through Symfony's own output rather than Laravel's) is unaffected. Bisected with
+three markers in one run — `$this->line()`, `$this->getOutput()->writeln()` and `fwrite` — the first
+two collapsed and the third did not.
+
+A report whose hierarchy is built out of leading spaces would therefore have arrived flat, and the
+demo would have looked broken for a reason that has nothing to do with the engine. Hierarchy is
+carried by blank lines, `[condition-id]` headers and `- ` items; ranges are `from..to`; there is no
+character outside ASCII in any line this command composes. The engine's OWN sentences pass through
+untouched and render their em dashes correctly. Recorded in `docs/INVARIANTS.md` §Engine so the next
+author does not "fix" the alignment without re-measuring. **Not chased further**: the cause is in
+the framework or the Windows console layer, it affects every command in this application equally,
+and it is not P2's to fix.
+
+#### 8. THE RUN — a populated department, `Block 2`, five condition rows
+
+Against the self-contained fixture department (four people, two blocks, four rotation spans, two
+leave rows, two clinics) with a synthetic duty document. **This machine holds no real department
+data**, so the acceptance item's *"this department's real period"* is the owner's to run against
+production; what is pasted is the same command on a populated instance.
+
+```
+engine:evaluate - local demo of packages/engine. Not a production path.
+
+period 2026-2027-02 | 2026-08-15..2026-08-28 | Block 2
+evaluable 2026-08-12..2026-08-28 | 17 days | the period plus every date a supplied duty occupies, which is also the range the day vector and availability were built over
+context people 4 | slots 1 | clinics 2 | tail history from 2026-08-01
+schedule duties in the period 14 | before it 3 | after it 0
+conditions rows 5 | active 4 | request 7 KB
+
+HARD - CG-05, these block a publish
+
+[no-call-on-leave] vacation_block - 3 found
+- p2 | 2026-08-15 | picu-night - On leave on 2026-08-15.
+- p4 | 2026-08-17 | picu-night - On leave on 2026-08-17.
+- p4 | 2026-08-21 | picu-night - On leave on 2026-08-21.
+
+[two-days-between-calls] min_gap - 1 found
+- p2 | 2026-08-15 | picu-night - 1 day between this duty and "picu-night" on 2026-08-14, counted between the dates they start on; at least 2 are required.
+
+SOFT - CG-06, ranked advice
+
+[not-on-a-day-they-asked-off] unwanted_day_block, rank 2 - 1 found
+- p3 | 2026-08-26 | picu-night - 2026-08-26 is registered as an unwanted day.
+
+COVERAGE - what was measured, and what could not be
+
+[no-call-on-leave] vacation_block - 14 measured, 0 left unjudged
+
+[two-days-between-calls] min_gap - 14 measured, 0 left unjudged
+
+[not-on-a-day-they-asked-off] unwanted_day_block - 14 measured, 0 left unjudged
+
+[one-in-three] call_frequency_max - 0 measured, 41 left unjudged
+- 2026-07-19..2026-08-15 - The window 2026-07-19 to 2026-08-15 is not wholly inside the evaluable range 2026-08-12 to 2026-08-28, so part of it could not be counted. A count that is short cannot exceed an authored cap, but it can fall below a floor, miss a target, or shrink a limit the window's own contents decide — so this window was left unjudged.
+- plus 21 more (--all prints them)
+
+[not-switched-on-yet] rolling_hours_max - 0 measured, 1 left unjudged
+- 2026-08-15..2026-08-28 - The condition is inactive (CG-01 on/off), so nothing was evaluated.
+
+engine round trip 353 ms | node start-up + JSON both ways + evaluate() + coverage()
+NF-01 budgets 100 ms for evaluate() ALONE and P2 measured it MISSED (~120 ms on a violation-dense month); coverage() is a second full traversal. See docs/INVARIANTS.md.
+```
+
+Three things in that output are worth reading rather than skimming. **A Hard rule fired on real
+leave** — `p2` and `p4` are booked off in the fixture department's own `vacations` rows, and nothing
+in the duty document says so; the context builder is what carried it. **`min_gap` fired across the
+seam**, on a duty in the period against one in the carry-in tail, which is the whole reason the tail
+is read at all. And **`call_frequency_max` measured nothing**: a 28-day rolling rule cannot be
+answered over a 17-day evaluable range, so all forty-one windows are reported through `coverage()`
+rather than judged. Under the defect this task closed, those same windows would have been judged
+against availability that stopped at the period start.
+
+#### 9. TWO SMALLER THINGS
+
+The command refuses a duty naming a slot the document does not supply, by name, before anything is
+spawned. That is document integrity rather than a rule: the engine throws on exactly that input and
+the entrypoint reports a throw as a BUG with a stack trace, so refusing here turns an exit code
+meaning *"the engine is broken"* into a sentence naming the slot.
+
+And an unknown period key lists the ones the instance actually has. No screen in this platform shows
+a period KEY, so the alternative is an operator guessing at the spelling of something they have
+never seen.
+
+---
+
+### From the P2-2 adversarial review, PHP half (2026-08-21) — one species, ten instances, and a required contract field with no reader
+
+Every finding fixed here is one defect wearing ten faces: **a claim asserted only where it MATCHES
+and never where it must not.** None was visible in review and none would have been found by reading
+the code — each was found, or confirmed, by planting the mutation the assertion claims to catch and
+watching what happened. **Eight of eight batched plants stayed GREEN on the tree as shipped**, which
+is the measurement the batch technique exists for.
+
+**The confirmed three.**
+
+1. **`days[].periodKey` was unasserted in every direction that could fail.** Replacing the whole
+   bounds comparison in `ContextBuilder::dayVector()` with `true` — every date carrying the FIRST
+   period's key regardless of bounds — left all 1738 PHP tests green. The only assertion on the value
+   anywhere was `assertNotNull` on a date that is the period's own first date, which is green under
+   that mutation and under both off-by-one readings besides. Closed by a case over a horizon spanning
+   two blocks **with an eight-day gap between them**, asserting the key on each block's first AND
+   last date and `null` in the gap; watched red against all three mutations. Both branches are live —
+   `EvaluationRequest::forPeriod()` widens the range over carry-in duties, so a horizon whose tail
+   lies outside the drafted period is routine, and a department whose blocks do not abut is ordinary.
+2. **A closed level span's end date was asserted nowhere.** Carrying every span open reads every
+   promoted person at their old level, on every level-scoped condition, for the rest of time —
+   `person_levels` is effective-dated precisely because promotion is normal. Closed by a promotion
+   case asserting the whole span set, the two spans meeting exactly at `from - 1`.
+3. **The range widening never saw a non-empty `followingDuties`.** Only the prior tail was ever
+   exercised and the right edge was only ever pushed through `duties`, so dropping the third stream
+   from the loop left the suite green. Closed with a following duty on a SEVEN-day slot, which pins
+   the stream being read and `date + spanDays - 1` being applied to it in one case.
+
+**The six triaged, five real.** `EngineIsAReaderTest`'s needles could not see a cache write — the
+one scenario its own docblock names as the change it exists to trip over; `Cache::put()` planted
+inside `ContextBuilder::forHorizon()` left the suite green, because a cache store is none of the
+nineteen row-writing verbs. `EngineHoldsNoRuleTest`'s two halves had a hole rather than a seam
+between them: seven of its eight fixture people held a rotation, so the stranded-span union rescued
+them and a PHP-side `->reject(fn ($p) => $p->external)` was invisible to both halves at once.
+`clinic_conflict`'s named-attendee list was fixtured only in `levels` mode, so deleting the branch
+that builds it changed nothing. `external` was asserted only where it is false. And nothing made
+`EvaluationRequest` the ONE assembler, so the `eligibleDays` widening defect could be reintroduced
+verbatim by a second caller with `EvaluationRequestTest` entirely green — a fix to one file is not a
+property of an application.
+
+**PARTLY REJECTED, recorded so it is not re-raised in the wrong form.** The payload disclosure
+test's value-scan omitting `email` is a real omission, but it is NOT reachable by the obvious shape:
+`->email` in the builder is caught at source by `ContactFieldsAreProjectedOnceTest`, and a leak under
+a RENAMED key is caught by the CG-10 schema's `additionalProperties: false`. The finding survives
+only through that source guard's own stated residual — a concatenated or variable spelling — and the
+plant that proves it is `$key = (string) $person->{'e'.'mail'}`, which evades every needle, ships no
+`email` key, and satisfies the schema because `key` is a string. The address and the short-name
+handle are now pinned in the fixture and scanned by VALUE.
+
+#### `days[].periodKey` — a required contract member with ZERO readers
+
+`tests/Feature/Build/CalendarSurfaceIsManifestedTest.php` traded away a whole `Calendar::periodFor`
+manifest entry on the stated ground *"The engine reads `days[].periodKey`"*. **That is false against
+this tree.** No module under `packages/engine/src/` reads the field — only `contract/schema.ts`,
+which marks it `required`, and `contract/types.ts`, which declares it. Every window-located type
+resolves period and week windows from `context.periods` through `support.ts::periodWindows()`.
+
+The exemption's reasoning is corrected in place: `periodFor` is server-side-only because it issues a
+QUERY, which is true on its own and needs no claim about a reader at all. **The field itself is a
+`packages/` decision and is left to whoever owns that half**, with the recommendation recorded here:
+**bind it rather than drop it.** It is not the same case as `days[].dayType`, which the engine cannot
+derive at all (holidays, Hijri) — `periodKey` IS derivable from `periods[]` sitting beside it, and an
+unread second expression of one fact is exactly where two answers drift silently, the way
+`AuditChain::canonical()` and `overlap_block`'s pruning already have in this codebase. Either
+`contract.test.ts` gains the invariant that ties the two together — `days[d].periodKey` is non-null
+exactly when `d` falls inside some `periods[i]`, and names that period — or the field comes out of
+the contract and `ContextBuilder` stops computing it. Binding is the better half of that choice
+because P3's workbench badges a CELL (WB-03) and will want a per-date period label, and re-deriving
+one in the browser is the second definition this phase keeps paying for. What is no longer acceptable
+is the third state the field was in: mandatory, unread, and justified by something untrue.
+
+### From the P2-2 ADVERSARIAL REVIEW (2026-08-21) — the TypeScript half: twenty-four green plants, one species
+
+*(The PHP half of the same review is a separate branch. Nothing below touches `app/`, `tests/` or
+`routes/`.)*
+
+**The species, stated once because every finding below is an instance of it:** *a claim asserted
+only where it MATCHES, and never where it must not.* It is Task 9's green plant, Tasks 15–17's
+finding 3 and Tasks 18–20's second green, and this review found it another twenty-four times in one
+package. The recipe is unchanged and is the only thing that finds it: **write the case, plant the
+mutation it exists to catch, watch it go red, revert.**
+
+**The measurement.** Twenty-eight mutations were planted as a BATCH before any fix was written —
+the method Tasks 15–17 recorded — and **twenty-three stayed green.** Six more were found while
+fixing those (four opened by the fixes themselves), and three of the five that went red were
+re-probed on a different axis, which turned one rejection back into a real finding. Final state:
+**every plant red except one, which is examined and rejected below with its measurement.**
+
+#### 1. THE SAME CLIP, TWO TERMS APART — and closing one said nothing about the other
+
+`fairness_distribution` clips BOTH the numerator and the denominator to the horizon.
+`conditions.test.ts` closed the numerator at Task 19 by prepending a tail DUTY. **A tail duty adds
+no tail ELIGIBLE DAY**, so `availableDaysIn`'s identical filter was never exercised: deleting it
+left 571/571 green and the corpus green.
+
+`ContextBuilder` builds `eligibleDays` over the whole range it is asked for, tail included, while
+this rule compares over the horizon alone — so the defect is live on every context with a carry-in
+tail, which is all of them. The defining fixture now carries a genuine tail: clipped, the expected
+shares are 3.3 and 0.7; unclipped they are 3.1 and 0.9.
+
+**Unlike the numerator's case, a fixture CAN express this one.** Task 19 recorded that a tail duty
+"is not something a fixture can express without becoming confusing corpus data". An eligible day in
+the already-published week is ordinary carry-in and confuses nothing.
+
+#### 2. WHEN a type reads CG-01's scope, which is one axis from WHETHER it reads it
+
+The standing first plant (`personInScope` → `true`) is habitual now and goes red on every type. It
+says nothing about the DATE handed in. Moving `window.from` to `window.to` at **all nine window- and
+cohort-located sites** left the suite green.
+
+The reason it survived review is worth keeping: the LEVEL-filter half of the same question is
+fixtured on two of those very sites (`count-max-the-level-filter-is-read-at-the-window-start`,
+`target-per-period-the-level-is-read-at-the-period-start`), so the sites look covered. They are
+covered for `params.levels` and were not for `condition.scope` — two filters, one call site, one
+case between them.
+
+**One matrix, and it needed TWO devices.** `bounded` clips every rotation to end on the latest date
+the type may read (byte-identical answer) and then to start the day after (no violation at all).
+That device was written for the three ROLLING types first **and stayed green on all three**, because
+its `readAt` there is `horizon.to` and no fixture carries a violation in a window running past the
+horizon — this review's own species reappearing inside the case written to close it. Those three now
+clip the rotation to ONE date that is a violating window's start and require every violation to be
+located there.
+
+#### 3. Five more filters and boundaries, each closed by the input it was never asked about
+
+- **`periodWindows`' `windowTouchesHorizon`, in BOTH branches.** No corpus case carried a block or a
+  week missing the horizon entirely. What goes when it goes is not a wrong violation — the emission
+  rule drops a window location that does not touch `[from, to]`, so `evaluate()` is identical either
+  way. It is `coverage()` that moves, toward MORE work apparently done: windows measured whose
+  results were thrown away. **The edge weeks in the new case RAW-overlap the horizon while their
+  clipped bounds do not**, which closes a third plant the first two could not — raw bounds are a
+  superset of clipped ones, so no world without a genuinely clipped edge week can tell the spellings
+  apart.
+- **`composition`'s level at the PERIOD START.** Owner decision M binds it and the sibling rule in
+  `target_per_period` is fixtured, which is exactly why it looked covered.
+- **`onRosterThroughout`'s inclusive boundary** — a join date ON the window's first day. No case put
+  one on a window bound. It bites in the expensive direction: a floor going quiet on somebody who
+  genuinely had the window, behind a coverage row that reads like a considered decision.
+- **Owner decision N's CLIPPED vacation-week bounds.** The raw pair was green because every block in
+  the corpus starts on the department's own week start. That is fixture convenience, not a calendar —
+  block 13 is five weeks and a year does not divide evenly.
+- **`max_gap`'s trailing open gap at the LAST horizon date, and `measuredGap`'s strictly-between
+  filter.** The first was asserted everywhere except at itself; the second only bites when the
+  closing duty's own date is a stopped day.
+
+#### 4. A COVERAGE ROW THAT WAS FALSE ABOUT SOMEBODY THE RULE WAS NEVER ABOUT
+
+`max_gap`'s corpus expected *"the gap for p-zaid … has only one end, so it was not measured"*. Both
+halves are false: p-zaid's two duties are ten days apart, so the gap has two ends, and the reason it
+was not measured is that the scope names PICU and p-zaid rotates on NICU. `exposure()` applies the
+scope per duty date, so an excluded person arrives at the loop with the SAME empty list as somebody
+who genuinely holds nothing, and the open-gap row was written for the second.
+
+Rulings 41/49 pointing the other way — not a control that appears to do nothing, but one that
+appears to have looked at somebody it never considered. `everInScope` is the gate, asked over the
+horizon rather than at one date because this type reads the scope per duty date and a mid-month
+rotation is real.
+
+**The fix opened two plants of its own, and one fourth person closes both.** With only p-zaid to
+distinguish them, reading the scope at a single date and deleting the per-duty filter were both
+green: p-zaid is out of scope on every date, so one date is as good as thirty-one, and the per-duty
+filter has nothing left to do once the gate has removed them. `p-rotates-off` is on PICU to the 7th
+and NICU from the 8th with a duty each side.
+
+#### 5. A THIRD LEFT-EDGE SHAPE THAT WAS DROPPED RATHER THAN REPORTED
+
+`wholeWindowVerdict` answered `{measure: false, skip: null}` for every window reaching back before
+the horizon without history behind it, on the ground that `carryInLeftEdge`'s single row speaks for
+all of them. That is true of the TWO shapes that function owns — no history at all, and history
+beginning at or after `horizon.from` — and **false of a third**: history that reaches back PAST the
+horizon but not as far as this window.
+
+There, `carryInLeftEdge` is silent (it saw real history before the 1st) and the verdict was silent
+(it believed `carryInLeftEdge` was speaking). The window was measured by nobody and reported by
+nobody; `evaluatedWindows` simply fell. **That is the state `coverage()` exists to prevent**, one
+branch from the state already reported correctly. Block 13 opening 26 July, a horizon opening 1
+August, history from 28 July is the whole of it.
+
+`historyShortOfWindowSkip` names the window individually, for the reason the clipped shape is named
+individually: which window went, and how much further back the history must reach, are the window's
+own answer.
+
+#### 6. `composition` THREW ON A CONTEXT THAT IS EXACTLY WHAT THE CONTRACT PROMISES
+
+`Day` is documented as *"one date of the horizon"*. This type's window is the PERIOD, which
+routinely opens before the horizon — the corpus has a seam case for precisely that — and every duty
+in the window went through `dayIndex().get()`, which THROWS on an undescribed date. So the
+commonest shape this type meets produced a `RangeError`. The corpus never saw it because its own
+seam case supplies day rows across the whole tail, which is generous rather than required.
+
+There is no honest local answer (`dayType` is never re-derived — AR-08, holiday beats weekend
+deliberately), so the window goes to `coverage()`: the device `clinic_conflict` already uses for the
+one question that legitimately reaches past the vector, and `find()` versus `get()` is the line
+between them. **Per person, because the buckets are** — a colleague every one of whose duties the
+vector describes still gets judged.
+
+#### 7. THE NF-01 BENCHMARK WAS PARTLY MEASURING A DEGENERATE INPUT, AND IT IS NOW MET
+
+**The finding.** Every synthetic person carried `eligibleDays: []`.
+`fairness_distribution` divides by the cohort's total available days, so a zero denominator is its
+early exit: it reported `evaluatedWindows: 0`, did no work, and was timed as free — for the whole of
+P2. `call_frequency_max`'s allowance is `floor(availableDays / n)` (owner decision J), so zero
+available days permits zero calls and **706 of the 998 headline violations were that artefact**. The
+honest figure is **299 violations from 14 conditions**.
+
+**A SECOND vacuity gate catches the shape the first could not.** The existing one asks whether the
+world produced findings, which twenty-one neighbours satisfied on fairness's behalf. The new one
+asks whether every type WORKED and fails on any active condition reporting `evaluatedWindows: 0`.
+Planted by restoring the empty list: red, naming `nf01-fairness_distribution`.
+
+**And the number itself: 121 ms MISSED → 56 ms MET.** Two causes, both reuse rather than pruning —
+the distinction Task 10's defect turns on.
+
+- `orderedDutiesFor` scans all three streams and SORTS, and `rolling_hours_max`, `free_day_min` and
+  `call_frequency_max` each called it inside `for window { for person { … } }`. `orderedByPerson`
+  memoizes per evaluation, **lazily**, so the set of resolutions is unchanged — an eager version
+  would throw on the unsupplied slot of a person the scope was about to exclude, which is a
+  different answer for the same input.
+- `onDutyMinutesOn` re-ran `dutyInterval`, and therefore `assertSlot`, on every one of ~41k calls,
+  discarding the interval `PositionedDuty` already carries. `minutesOfIntervalOn` is the one
+  definition now and `onDutyMinutesOn` delegates to it.
+
+Warm per-type medians: `rolling_hours_max` 34.6 → 7.1 ms, `free_day_min` 13.6 → 9.4,
+`call_frequency_max` 6.4 → 0.9. **The corpus is byte-identical throughout, which is what says the
+hoists changed no answer.**
+
+#### 8. Six smaller ones, and the two that a first probe wrongly rejected
+
+Closed: `carryInLeftEdge`'s empty-window guard (a horizon with no tail otherwise reports a row
+running from the 1st back to the 31st — asserted as a property over the whole corpus AND on the
+no-tail world, since the corpus cannot reach that state); `holiday_equity`'s credit key carrying the
+YEAR (a month-long horizon cannot hold two occurrences of one holiday, so only the multi-day half
+was fixtured); `we_pairing`'s holder de-duplication (a duplicated duty row otherwise reports a
+weekend split between a person and themselves); a GAP not being a SPLIT in EITHER direction;
+`target_per_period` calling owner decision L's per-person half (`count_min` had the fixture, two
+types shared one case); and `rosterFor` resolving strangers in all THREE streams, where only the
+middle one was asserted although the tail is where a departed colleague is likeliest to appear.
+
+**Two rejections were re-probed on a different axis and one came back.**
+`holiday_equity`'s *"never reached"* check answering `false` or `true` unconditionally is caught by
+the corpus; **which days it looks at is not.** Pointing it at the unfiltered day vector stayed green,
+and that shape fails silently in both halves at once: credits are counted over the horizon alone, so
+a holiday in the tail credits nobody, and an unfiltered check would also conclude it was reached and
+print no row. The rule would do nothing and say nothing. **A finding rejected on one probe is not a
+finding rejected.**
+
+#### 9. THE ONE PLANT KEPT GREEN, WITH ITS MEASUREMENT
+
+`we_pairing`'s slot union. Narrowing `slotKeys` from both days to the first alone stays green, and
+that is a true observation with a false conclusion: the scan carries a symmetric PAIR — the union,
+and the `first.length === 0` half of the gap guard — and either alone can go while both together
+change nothing. **Dropping each guard half goes RED.** Deleting the union would move the dead branch
+rather than remove one.
+
+It is kept because the answer must not depend on which of a pair's two days the enumeration starts
+from, and the symmetry is now asserted on both sides. Recorded here so the next reader does not
+re-derive the deletion.
+
+#### 10. Gates
+
+`npm test` **811 → 843**; `npx tsc --noEmit -p packages/engine` green; `npm run build` green;
+`npm run engine:corpus` green, **92 fixtures**, NF-01 **MET**; `php artisan test` **1738**,
+unchanged — no file under `app/`, `tests/` or `routes/` was touched.

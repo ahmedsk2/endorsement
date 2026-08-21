@@ -1,4 +1,4 @@
-@import 'tailwindcss';
+@import 'tailwindcss' source(none);
 
 /* Self-hosted UI + data faces (no CDN — hospital networks may be restricted or offline).
    IBM Plex Sans carries dense clinical forms; IBM Plex Mono is used for every clinical
@@ -11,20 +11,49 @@
 @import '@fontsource/ibm-plex-mono/500.css';
 @import '@fontsource/ibm-plex-mono/600.css';
 
-/* Template scanning is deliberately NARROW.
-   Tailwind's automatic source detection already covers every tracked template in this repo
-   — the Vue pages under resources/js and the Blade views under resources/views — so nothing
-   app-owned needs an explicit @source.
+/* Template scanning is NARROW, and as of P2 Task 23 it is narrow in the config rather than only
+   in the comment. `source(none)` above turns Tailwind's automatic detection OFF; the two @source
+   lines below are the whole of it. Templates live in exactly two places and nowhere else — a
+   `find` for .blade.php outside resources/views and .vue outside resources/js returns nothing.
+
+   WHY, measured rather than reasoned about. Automatic detection scans EVERY tracked, non-ignored
+   file in the repository: app/, tests/, docs/, packages/, this stylesheet. It looks for anything
+   that spells a utility, and it does not care that the file is a TypeScript module, a PHP test or
+   a Markdown plan. A domain string only has to look like a class once.
+
+   The proof was in the shipped bundle, and it was worse than one rule. Narrowing removed about
+   forty, from three unrelated directories: a process supervisor's section headers, compiled from
+   docker/; a raw palette and an arbitrary viewport height from a SUPERSEDED draft inside a design
+   document under docs/, whose value is not even the one the shipping layout uses; academic-year
+   period keys from packages/, one of which spells a block-size utility; and a dozen bare English
+   words — container, static, shrink, blur, outline, uppercase, shadow — picked out of prose.
+
+   Nothing removed traces to resources/js or resources/views. That was checked class by class over
+   the whole diff rather than assumed, which is the only way to make this change safely: the same
+   diff would look identical if it had deleted a class a page needs.
+
+   Deliberately NOT fixed by renaming the key, and not by excluding one directory. Renaming moves
+   the collision to the next slice nobody is diffing CSS in, and an exclusion list has to guess
+   which directory the next one is in. `source(none)` answers it for every directory at once,
+   including docs/ and tests/ — this comment can therefore name none of the strings involved,
+   because a file that is not scanned cannot leak one.
 
    What must NEVER be scanned is `storage/framework/views` — Laravel's Blade *compile cache*.
-   It is gitignored (so auto-detection skips it), and it holds compiled copies of FRAMEWORK
-   views we never render: the exception page, the bundled pagination components, and the
-   starter-kit welcome page. Their markup is littered with `dark:` variants, and scanning
-   that directory compiles `@media (prefers-color-scheme: dark)` blocks into a theme that
-   docs/DESIGN-TOKENS.md defines as LIGHT-ONLY.
+   It holds compiled copies of FRAMEWORK views we never render: the exception page, the bundled
+   pagination components, and the starter-kit welcome page. Their markup is littered with `dark:`
+   variants, and scanning that directory compiles `@media (prefers-color-scheme: dark)` blocks
+   into a theme that docs/DESIGN-TOKENS.md defines as LIGHT-ONLY. It was gitignored, which was the
+   only thing keeping it out; under source(none) it is out because it is not listed, which is a
+   reason rather than a coincidence.
 
-   Guard: tests/Feature/Build/CompiledCssIsLightOnlyTest.php asserts the emitted bundle
-   contains no dark-scheme rules. If you re-add an @source here, that test will tell you. */
+   Guards: tests/Feature/Build/CompiledCssIsLightOnlyTest.php asserts the emitted bundle carries
+   no dark-scheme rules, and tests/Feature/Build/TemplateScanningIsNarrowTest.php asserts all four
+   halves of the narrowing — detection off, both roots declared, each canary string still present
+   in its own file, and no rule from either in the bundle. Two canaries from two directories,
+   because a narrowing that survived for one alone would otherwise pass. Either half of a pair
+   stays green while the other rots. */
+@source "../js";
+@source "../views";
 
 /* ============================================================================
    Paediatric Endorsement design tokens — "Monitor, in daylight".

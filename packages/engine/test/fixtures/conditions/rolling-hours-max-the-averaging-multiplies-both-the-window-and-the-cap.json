@@ -1,0 +1,230 @@
+{
+    "name": "rolling-hours-max-the-averaging-multiplies-both-the-window-and-the-cap",
+    "why": "THE PLAN'S OWN 100/100/60/60 CASE, SCALED. Two conditions over one world, and they disagree by a multiplication nobody performs while looking at a gate screen. p-ali holds four twelve-hour duties in two adjacent pairs: 48 h. The averaged rule (12 h in 2 days, averaged over 4 windows) is 48 h in any 8 consecutive days and is clean at exactly the limit; the unaveraged rule with the same 12 h figure is breached twice, once per pair. A reading of averaging as \"the mean of the windows\" or as \"each window separately\" gives a different answer here, which is the whole reason the preview prints both scales.",
+    "context": {
+        "timezone": "Asia/Riyadh",
+        "weekStartIsoDay": 7,
+        "weekendDays": [
+            5,
+            6
+        ],
+        "today": "2026-08-01",
+        "days": [
+            {
+                "date": "2026-08-01",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-02",
+                "isoWeekday": 7,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-03",
+                "isoWeekday": 1,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-04",
+                "isoWeekday": 2,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-05",
+                "isoWeekday": 3,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-06",
+                "isoWeekday": 4,
+                "dayType": "WD",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-07",
+                "isoWeekday": 5,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            },
+            {
+                "date": "2026-08-08",
+                "isoWeekday": 6,
+                "dayType": "WE",
+                "periodKey": "block-01",
+                "holidays": []
+            }
+        ],
+        "periods": [],
+        "people": [
+            {
+                "key": "p-ali",
+                "levelSpans": [
+                    {
+                        "key": "R1",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "unitSpans": [
+                    {
+                        "key": "PICU",
+                        "from": "2026-01-01",
+                        "to": "2026-12-31"
+                    }
+                ],
+                "leaveDays": [],
+                "unwantedDays": [],
+                "eligibleDays": [],
+                "external": false
+            }
+        ],
+        "slots": [
+            {
+                "key": "day",
+                "kind": "call",
+                "unitKey": "PICU",
+                "cadence": "daily",
+                "spanDays": 1,
+                "startMinute": 480,
+                "endMinute": 1200,
+                "crossesMidnight": false,
+                "countsHours": true,
+                "tallyKey": "days"
+            }
+        ],
+        "clinics": [],
+        "historyAvailableFrom": "2026-07-01",
+        "priorDuties": [],
+        "followingDuties": []
+    },
+    "schedule": {
+        "horizon": {
+            "from": "2026-08-01",
+            "to": "2026-08-08",
+            "evaluableFrom": "2026-07-20",
+            "evaluableTo": "2026-08-20"
+        },
+        "duties": [
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-01",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-02",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-05",
+                "slotKey": "day"
+            },
+            {
+                "personKey": "p-ali",
+                "date": "2026-08-06",
+                "slotKey": "day"
+            }
+        ]
+    },
+    "conditions": [
+        {
+            "id": "c-averaged",
+            "typeKey": "rolling_hours_max",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "hours": 12,
+                "windowDays": 2,
+                "averagingWeeks": 4
+            },
+            "rank": 3
+        },
+        {
+            "id": "c-unaveraged",
+            "typeKey": "rolling_hours_max",
+            "class": "soft",
+            "active": true,
+            "params": {
+                "hours": 12,
+                "windowDays": 2
+            },
+            "rank": 3
+        }
+    ],
+    "expected": [
+        {
+            "conditionId": "c-unaveraged",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-ali",
+                "from": "2026-08-01",
+                "to": "2026-08-02",
+                "contributing": [
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-01",
+                        "slotKey": "day"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-02",
+                        "slotKey": "day"
+                    }
+                ]
+            },
+            "explanation": "24 h of duty in the 2 days from 2026-08-01 to 2026-08-02; at most 12 h are allowed. Hours are split at midnight, so a duty running overnight counts on both of the dates it occupies, and slots that do not count toward duty hours are left out.",
+            "rank": 3
+        },
+        {
+            "conditionId": "c-unaveraged",
+            "severity": "soft",
+            "location": {
+                "kind": "window",
+                "personKey": "p-ali",
+                "from": "2026-08-05",
+                "to": "2026-08-06",
+                "contributing": [
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-05",
+                        "slotKey": "day"
+                    },
+                    {
+                        "personKey": "p-ali",
+                        "date": "2026-08-06",
+                        "slotKey": "day"
+                    }
+                ]
+            },
+            "explanation": "24 h of duty in the 2 days from 2026-08-05 to 2026-08-06; at most 12 h are allowed. Hours are split at midnight, so a duty running overnight counts on both of the dates it occupies, and slots that do not count toward duty hours are left out.",
+            "rank": 3
+        }
+    ],
+    "expectedCoverage": [
+        {
+            "conditionId": "c-averaged",
+            "evaluatedWindows": 15,
+            "skipped": []
+        },
+        {
+            "conditionId": "c-unaveraged",
+            "evaluatedWindows": 9,
+            "skipped": []
+        }
+    ]
+}

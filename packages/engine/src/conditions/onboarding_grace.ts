@@ -47,6 +47,7 @@ import type {
     ConditionPreview,
     Finding,
     SkippedWindow,
+    ViolationMessages,
 } from '../contract/types';
 import { assertValidAgainst } from '../contract/validate';
 import { personInScope, personIndex, placementsCovered } from './support';
@@ -88,7 +89,7 @@ export const preview: ConditionPreview = (condition, _context, messages) =>
     messages.onboardingGrace(readParams(condition));
 
 /** The predicate. See the module docblock for every decision in it. */
-export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
+export const evaluate: ConditionEvaluator = (condition, schedule, context, messages) => {
     const { days } = readParams(condition);
     const people = personIndex(context);
     const findings: Finding[] = [];
@@ -121,7 +122,10 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
         };
 
         if (compareYmd(duty.date, joinedAt) < 0) {
-            findings.push({ location, explanation: `Before the join date ${joinedAt}.` });
+            findings.push({
+                location,
+                explanation: messages.onboardingGraceBeforeJoinViolation({ joinedAt }),
+            });
 
             continue;
         }
@@ -129,27 +133,32 @@ export const evaluate: ConditionEvaluator = (condition, schedule, context) => {
         if (compareYmd(duty.date, addDays(joinedAt, days - 1)) <= 0) {
             findings.push({
                 location,
-                explanation:
-                    `Day ${diffDays(joinedAt, duty.date) + 1} of the ${days}-day onboarding grace, ` +
-                    `counting the join date ${joinedAt} as day 1.`,
+                explanation: messages.onboardingGraceViolation({
+                    day: diffDays(joinedAt, duty.date) + 1,
+                    days,
+                    joinedAt,
+                }),
             });
         }
     }
 
-    return { findings, coverage: placementsCovered(evaluated, unknownJoinDates(unjudged, schedule)) };
+    return {
+        findings,
+        coverage: placementsCovered(evaluated, unknownJoinDates(unjudged, schedule, messages)),
+    };
 };
 
 /** One coverage row per person whose join date the context does not carry. See the docblock. */
-function unknownJoinDates(unjudged: Map<string, number>, schedule: Parameters<ConditionEvaluator>[1]): SkippedWindow[] {
+function unknownJoinDates(
+    unjudged: Map<string, number>,
+    schedule: Parameters<ConditionEvaluator>[1],
+    messages: ViolationMessages,
+): SkippedWindow[] {
     return [...unjudged.entries()]
         .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
         .map(([personKey, count]) => ({
             from: schedule.horizon.from,
             to: schedule.horizon.to,
-            reason:
-                `No join date is recorded for "${personKey}", so ${count} ` +
-                `${count === 1 ? 'placement was' : 'placements were'} not evaluated. An unknown join ` +
-                'date is no violation (owner decision T), and this row is what distinguishes that from ' +
-                'a rule that ran and found nothing.',
+            reason: messages.unknownJoinDateSkip({ personKey, placements: count }),
         }));
 }

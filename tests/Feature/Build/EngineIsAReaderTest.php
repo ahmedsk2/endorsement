@@ -43,6 +43,30 @@ use Tests\TestCase;
  * qualify by model — recorded explicitly because "the bare needle happens to cover it" is exactly
  * the reasoning that left five sibling guards blind.
  *
+ * ## A THIRD BLIND SPOT, AND IT WAS THE SCENARIO THIS DOCBLOCK ITSELF NAMES (P2-2 review, 2026-08-21)
+ *
+ * Everything above watches for a write to a ROW, and the change this guard says it exists to trip
+ * over — *"just store the assembled context so the workbench does not rebuild it per keystroke"* —
+ * does not write one. `Cache::put('engine.context.'.$fromYmd, …)` was planted inside
+ * `ContextBuilder::forHorizon()` and the whole suite stayed GREEN: the cache store is not `create(`,
+ * `insert(`, `save(` or any of the nineteen verbs, so the guard was watching for the one shape the
+ * defect it names does not take. A guard asserted only where the claim MATCHES is this phase's
+ * recurring species, and here it had gone one step further — asserted only where the claim was
+ * never going to be tested.
+ *
+ * The cache needles below close it, plus the file-write spelling of the same convenience
+ * (`Storage::` / `file_put_contents(`), because "store the assembled context" reaches for a disk
+ * exactly as readily as for a cache and `CACHE_STORE=database` makes the two one table apart.
+ * MEASURED (ruling 42): every one matches ZERO of the scanned files today, so the allow-list stays
+ * empty. `->put(` is the widest of them and is bought on the same argument as the bare verbs above
+ * — this scan is four hundred lines of one namespace whose entire job is to read, so a needle that
+ * would be unaffordable application-wide costs nothing here, and it is the only reach available
+ * over a cache repository or a filesystem disk resolved into a variable first.
+ *
+ * The cache family gets its OWN vacuity twin. A needle list healthy for row writers and blind for
+ * cache writers passes a pooled check and is half a guard — the per-control-file discipline ruling
+ * 66 records, applied to the two families that fail differently.
+ *
  * ## COMMENTS ARE STRIPPED, AND THE REASON IS THE PHASE'S MOST-REPEATED FINDING
  *
  * This is an ABSENCE guard whose vocabulary is the vocabulary of the rule it enforces:
@@ -133,6 +157,35 @@ class EngineIsAReaderTest extends TestCase
         '->update([',
     ];
 
+    /**
+     * The STORE family — a write that touches no row, which is the shape the change this guard
+     * exists to trip over actually takes. Kept as its own list so it can have its own vacuity twin:
+     * pooled with the nineteen above, a list blind to every one of these would still pass on
+     * `ClinicWriter`.
+     *
+     * `Cache::` and `cache(` reach the facade and the helper; `->remember(`, `->forever(` and
+     * `->put(` reach a repository or a disk that was resolved into a variable first. `Storage::`
+     * and `file_put_contents(` are the same convenience spelled at the filesystem — and with
+     * `CACHE_STORE=database` they are one table apart in consequence, not two ideas.
+     *
+     * @var list<string>
+     */
+    private const STORE_NEEDLES = [
+        'Cache::',
+        'cache(',
+        '->remember(',
+        '->forever(',
+        '->put(',
+        'Storage::',
+        'file_put_contents(',
+    ];
+
+    /** @return list<string> */
+    private function allNeedles(): array
+    {
+        return array_merge(self::WRITER_NEEDLES, self::STORE_NEEDLES);
+    }
+
     /** @return list<string> absolute paths */
     private function engineFiles(): array
     {
@@ -163,7 +216,7 @@ class EngineIsAReaderTest extends TestCase
             $exempt = self::ALLOW_LIST[$relative] ?? [];
             $code = SourceScanner::withoutComments($path);
 
-            foreach (self::WRITER_NEEDLES as $needle) {
+            foreach ($this->allNeedles() as $needle) {
                 if (in_array($needle, $exempt, true)) {
                     continue;
                 }
@@ -234,6 +287,35 @@ class EngineIsAReaderTest extends TestCase
             'ClinicWriter — a file whose whole purpose is to write two tables — matches none of '
             .'these needles, so this guard is watching for a shape nothing in the tree uses and '
             .'would stay green against a writer spelled the way the real ones are.'
+        );
+    }
+
+    /**
+     * THE SECOND VACUITY TWIN, for the family the first one cannot speak for.
+     *
+     * `ClinicWriter` writes two tables and touches no cache, so it satisfies the twin above while
+     * saying nothing at all about {@see self::STORE_NEEDLES} — which is precisely how the cache
+     * blind spot survived: a pooled check over both lists is green on a list that has lost every
+     * store needle. `AccessControl` is the tree's own control for this half, the one place a
+     * capability answer is memoised (`Cache::remember`, `Cache::forget`, `Cache::add`,
+     * `Cache::increment`), and it is scanned here for no other purpose.
+     */
+    public function test_the_store_needles_can_actually_see_a_cache_write(): void
+    {
+        $code = SourceScanner::withoutComments(base_path('app/Support/AccessControl.php'));
+
+        $matched = array_values(array_filter(
+            self::STORE_NEEDLES,
+            static fn (string $needle): bool => str_contains($code, $needle),
+        ));
+
+        $this->assertNotSame(
+            [],
+            $matched,
+            'AccessControl — the one place in this application that memoises an answer in the '
+            .'cache — matches none of the store needles, so this guard would stay green against '
+            .'the exact change its own docblock says it exists to trip over: a cached evaluation '
+            .'context.'
         );
     }
 

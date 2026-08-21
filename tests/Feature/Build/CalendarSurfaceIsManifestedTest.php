@@ -94,7 +94,15 @@ class CalendarSurfaceIsManifestedTest extends TestCase
         'periodType' => 'Reads the institution row. Periods arrive in the context.',
         'blockWeeks' => 'As `periodType` — and block 13 being five weeks is exactly the kind of per-department fact the context carries rather than the package deriving.',
         'academicYearStart' => 'As `periodType`.',
-        'periodFor' => 'Queries the periods table. The engine reads `days[].periodKey`, resolved once by the context builder.',
+        // CORRECTED 2026-08-21 (P2-2 review). This entry read "the engine reads `days[].periodKey`,
+        // resolved once by the context builder", and that is FALSE against this tree: no module
+        // under `packages/engine/src/conditions/` reads that field, and every window-located type
+        // resolves period and week windows from `context.periods` through `support.ts`'s
+        // `periodWindows()`. The exemption is sound on its first sentence alone — this method
+        // issues a QUERY, which the engine cannot do — and it is stated on that ground now. Whether
+        // `days[].periodKey` should remain a required contract member with no reader is a separate
+        // question, and it belongs to the package rather than to this manifest.
+        'periodFor' => 'Queries the periods table — a database read the engine cannot perform at all. The periods the horizon touches arrive precomputed as `EvaluationContext.periods`, each with its clipped week windows (owner decision O), and `support.ts::periodWindows()` resolves every window-located type against them.',
         'periodsForYear' => 'As `periodFor`.',
     ];
 

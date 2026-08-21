@@ -1,5 +1,14 @@
 # What is outstanding — snapshot, 19 August 2026
 
+> **⚠ SUPERSEDED IN ITS HEADLINE, 2026-08-19 (later the same day).** Section 1 — "the release is
+> built, tested and unshipped" — **was acted on and is DONE.** P1 deployed: 44 of 44 migrations,
+> audit chain intact before and after, every screen 200/302. The table below still reads
+> 22-of-44 and an image from 30 July; that was true when this was written and is not now.
+>
+> Sections 2 through 7 were NOT all acted on — the owner checklist was corrected, but alerting
+> still has no destination, the Coolify deploy token is revoked-not-replaced in the ledger, and
+> the PDPL items stand. **Read those as live; read section 1 as history.**
+
 A dated work list, not a living document. Produced by sweeping the plans, the owner/compliance
 docs, the code, the test suite and the operational surface, then verifying the load-bearing
 claims against production directly. Delete it when it is worked through.

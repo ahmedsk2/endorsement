@@ -865,19 +865,39 @@ place a scheduling rule is allowed to exist.*
   last statement in the file. The run is now inside one try and a throw is one more entry in the
   list. Found by planting; unreachable by reading.
 
-- **NF-01 IS MISSED on this machine, and the measurement does not fail the build.** 93 duties
-  (20 people × 3 slots × 31 days), all 22 implemented types active, 998 findings from 14 conditions:
-  `evaluate()` median **~120 ms against a 100 ms budget** (76/94/104/112/122/123 across six runs; the
-  two consecutive quiet-machine runs both read ~122, so 76 was an early outlier and not the truth).
-  The number is printed on every run either way — a budget quietly missed is worse than a budget
-  missed out loud. Three things belong with it: the case is deliberately violation-DENSE (round-robin
-  duties), so it is an UPPER BOUND and a publishable schedule produces a handful of findings;
-  `coverage()` is a second full traversal, so `evaluate() + coverage()` — what the entrypoint does per
-  request — is roughly double at 181–231 ms, which is the first place to look if the budget matters at
-  request scale; and the CI runner's own figure is unknown, which the first CI log answers.
-  **The measurement is gated on not being VACUOUS** — the run must produce findings from more than
-  one condition — because a step that cannot fail is worse than none, and a benchmark of an engine
-  that resolved nothing measures process startup and reports it as headroom.
+- **NF-01 IS MET on this machine — and it was MISSED at ~120 ms until the P2-2 review found that the
+  benchmark was partly measuring a degenerate input.** 93 duties (20 people × 3 slots × 31 days), all
+  22 implemented types active, **299 findings from 14 conditions**, `evaluate()` median **~56 ms
+  against a 100 ms budget**. The number is printed on every run either way — a budget quietly missed
+  is worse than a budget missed out loud. Two things still belong with it: the case is deliberately
+  violation-DENSE (round-robin duties), so it is an UPPER BOUND and a publishable schedule produces a
+  handful of findings; and `coverage()` is a second full traversal, so `evaluate() + coverage()` —
+  what the entrypoint does per request — is roughly double, which is the first place to look if the
+  budget matters at request scale.
+
+  **The old headline was 998 findings and 71% of them were an artefact.** Every synthetic person
+  carried `eligibleDays: []`. `fairness_distribution` divides by the cohort's available days, so a
+  zero denominator is its early exit: it reported `evaluatedWindows: 0`, did no work, and was timed as
+  free for the whole of P2. `call_frequency_max`'s allowance is `floor(availableDays / n)` (owner
+  decision J), so zero available days permits zero calls and every call breached. The people now
+  carry the denominator `ContextBuilder` would build.
+
+  **TWO vacuity gates, and the second is not the first restated.** The original asks whether the run
+  produced findings from more than one condition — which twenty-one neighbours satisfied on
+  fairness's behalf, which is exactly how the defect survived. The second fails on **any active
+  condition reporting `evaluatedWindows: 0`**: a rule can be active, reach its own guard clause,
+  measure nothing and be timed as free. Planted by restoring the empty list; red, naming
+  `nf01-fairness_distribution`.
+
+  **The 121 → 56 ms came from reuse, never from pruning** — the distinction Task 10's defect turns on.
+  `orderedByPerson` memoizes one person's duty line per evaluation instead of per window (three
+  rolling types were re-sorting the same list thirty-seven times each), and it is LAZY on purpose: an
+  eager version would resolve a person the scope was about to exclude and throw on their unsupplied
+  slot, which is a different answer for the same input. `minutesOfIntervalOn` is now the one
+  definition of *"minutes of this span on this date"* and `onDutyMinutesOn` delegates to it, because
+  the latter re-ran `dutyInterval` — and `assertSlot` — on every one of ~41k calls while discarding
+  the interval `PositionedDuty` already carries. **The corpus is byte-identical throughout, which is
+  what says the hoists changed no answer.**
 
 - **The benchmark builds its synthetic month with the engine's own `Ymd` core**, not with epoch
   helpers. `CalendarIsTheOnlyConverterTest` refused the first draft, and then refused the DOCBLOCK
@@ -1332,3 +1352,102 @@ place a scheduling rule is allowed to exist.*
   Task 24's, and a report whose hierarchy is built out of leading spaces would arrive flat. Hierarchy
   is therefore carried by blank lines, `[condition-id]` headers and `- ` items, and ranges are
   `from..to`. Do not "fix" the alignment without re-measuring.
+
+- **A FILTER, A CLIP OR A BOUNDARY IS ASSERTED WHERE IT MUST NOT MATCH, NEVER ONLY WHERE IT DOES**
+  (P2-2 adversarial review, 2026-08-21). Twenty-eight mutations were planted as a batch before any fix
+  was written and **twenty-three stayed green**. Every one of them is the same species — Task 9's
+  green plant, Tasks 15–17's finding 3, Tasks 18–20's second green — and it is now this package's
+  most frequent defect by a wide margin. The recipe is the only thing that finds it: **write the case,
+  plant the mutation it exists to catch, watch it go red, revert.** Three habits fall out of the
+  sweep and are worth keeping:
+  - **Closing one clip says nothing about the identical clip one term along.**
+    `fairness_distribution` clips both the numerator and the denominator to the horizon; Task 19
+    closed the numerator with a tail DUTY, and **a tail duty adds no tail ELIGIBLE DAY**, so
+    `availableDaysIn`'s filter was never exercised. `ContextBuilder` builds `eligibleDays` over the
+    whole range it is asked for, so the defect was live on every context with a tail.
+  - **WHETHER a filter is read and WHEN it is read are two claims.** The standing `personInScope` →
+    `true` plant is habitual and red everywhere; moving `window.from` to `window.to` at **all nine**
+    window- and cohort-located sites was green. The level-FILTER half of that question is fixtured on
+    two of those very sites, which is precisely why they looked covered.
+  - **A rejection on one probe is not a rejection.** `holiday_equity`'s *"never reached"* check
+    answering `false` or `true` unconditionally is caught by the corpus; **which days it looks at**
+    was not, and that axis fails silently in BOTH halves — a holiday in the carry-in tail credits
+    nobody, and an unfiltered check would also report it as reached. Two findings first rejected on
+    the wrong probe were re-probed; one came back real.
+
+- **The scope-date matrix needed TWO devices, and the first one was green on the three types it was
+  written for.** `bounded` clips every rotation to end on the latest date a type may read (the answer
+  must be byte-identical) and then to start the day after (there must be no violation at all) — sharp
+  for the period-windowed and cohort types. For the three ROLLING types its `readAt` is `horizon.to`,
+  so the mutation's only surviving windows are those running past the horizon, and no fixture carries
+  a violation in one: **the case written to close the species contained it.** Those three now clip the
+  rotation to ONE date that is a violating window's start and require every violation to be located
+  there. `conditions.test.ts` carries a named floor under the nine sites, so a tenth fails the build
+  until it is listed.
+
+- **`max_gap` reports an open gap only for people the condition is ABOUT.** `exposure()` applies
+  CG-01's scope per duty date, so an excluded person reaches the loop with the same empty list as
+  somebody who genuinely holds nothing — and the corpus expected the row that produces: *"the gap for
+  p-zaid … has only one end, so it was not measured"*, about a colleague whose two duties are ten days
+  apart and whom the rule never considered. Both halves of that sentence are false. Rulings 41/49
+  pointing the other way — not a control that appears to do nothing, but one that appears to have
+  looked at somebody it never did. `everInScope` is the gate and it asks over the HORIZON rather than
+  at one date, because this type reads the scope per duty date and a mid-month rotation is real.
+  **The fix opened two plants of its own** — with only an always-excluded person to distinguish them,
+  a single-date reading and the per-duty filter are both unfalsifiable — and one person on PICU to the
+  7th and NICU from the 8th, holding a duty each side, closes both. STATED RESIDUAL: the rows still
+  carry the whole horizon's bounds rather than the part of it the scope selected them for.
+
+- **There are THREE left-edge shapes, not two, and the third was DROPPED rather than reported.**
+  `carryInLeftEdge` speaks for two — no duty history at all, and history beginning at or after
+  `horizon.from` — with one row for every window they affect. The third is history that reaches back
+  PAST the horizon but not as far as a particular window: block 13 opening 26 July, a horizon opening
+  1 August, history from 28 July. There `carryInLeftEdge` is silent (it saw real history before the
+  1st) and `wholeWindowVerdict` returned `skip: null` believing `carryInLeftEdge` was speaking. The
+  window was measured by nobody and reported by nobody; `evaluatedWindows` simply fell. **That is the
+  state `coverage()` exists to prevent**, one branch from the state already reported correctly.
+  `historyShortOfWindowSkip` names it per window, for the same reason the clipped shape is named per
+  window: which window went, and how much further back the history must reach, are its own answer.
+
+- **`composition` must not require more of the day vector than `Day` promises.** `Day` is *"one date
+  of the horizon"*; this type's window is the PERIOD, which routinely opens before the horizon —
+  that is what the seam case exists for. Bucketing every duty through `dayIndex().get()` therefore
+  threw a `RangeError` on a context carrying exactly what the contract states, on the commonest shape
+  this type meets. The corpus never saw it because its own seam case supplies day rows across the
+  whole tail, which is generous rather than required. There is no honest local answer (`dayType` is
+  never re-derived — AR-08, holiday beats weekend deliberately), so the window goes to `coverage()`:
+  `clinic_conflict`'s device for the one question that legitimately reaches past the vector, and
+  `find()` versus `get()` is the line between them. **Per person, because the buckets are** — a
+  colleague every one of whose duties the vector describes still gets judged.
+
+- **A COVERAGE WINDOW NEVER ENDS BEFORE IT STARTS**, asserted as a property over the whole corpus and
+  on a horizon with no tail, because the corpus cannot reach that state and the property alone would
+  be vacuous for it. `carryInLeftEdge`'s guard against it was unasserted: with `evaluableFrom` equal
+  to `horizon.from` — a first draft, and what `ContextBuilder` returns when asked for exactly one
+  month — the reported window otherwise runs from the 1st back to the 31st.
+
+- **`rosterFor` resolves strangers in ALL THREE streams and only the middle one was asserted.** The
+  tail is where a departed colleague is likeliest to appear, since `ContextBuilder` reads the
+  published months either side of the horizon and unions in anybody still holding a rotation. A
+  window type iterates PEOPLE, so `personIndex().get()` is never reached by the ordinary path and the
+  stranger check every placement type gets for free would simply not happen.
+
+- **A performance change in this package is a REUSE or it is not made.** Task 10's pruning defect is
+  the line: an optimisation that DECIDES anything — whether two windows overlap, whether a duty
+  touches a range — is a second definition of a rule, invisible and eventually divergent. A memo is
+  not. `orderedByPerson` resolves one person's duty line at most once per evaluation instead of once
+  per window, and is **LAZY on purpose**: an eager version would resolve a person the scope was about
+  to exclude and throw on their unsupplied slot, which is a different answer for the same input and
+  the one thing a pure function may not do. `positionedWithin` is the anchor-date filter split out so
+  there is still exactly ONE definition of it, and `minutesOfIntervalOn` is now the one definition of
+  *"minutes of this span on this date"* with `onDutyMinutesOn` delegating to it. **The corpus staying
+  byte-identical is what says a hoist changed no answer** — that is the acceptance test for this kind
+  of change, not the timing.
+
+- **`we_pairing`'s slot union is SYMMETRIC, not dead, and the deletion has already been measured.**
+  Narrowing `slotKeys` from both days of a pair to the first alone stays green, which is a true
+  observation with a false conclusion: the scan carries a symmetric PAIR — the union, and the
+  `first.length === 0` half of the gap guard — and either alone can go while both together change
+  nothing. Dropping each guard half goes RED. Deleting the union moves the dead branch rather than
+  removing one, and the answer must not depend on which of a pair's two days the enumeration starts
+  from. A gap is now asserted on BOTH sides. Do not re-derive the deletion.

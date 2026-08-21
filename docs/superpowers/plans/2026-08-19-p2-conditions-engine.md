@@ -3434,3 +3434,197 @@ meaning *"the engine is broken"* into a sentence naming the slot.
 And an unknown period key lists the ones the instance actually has. No screen in this platform shows
 a period KEY, so the alternative is an operator guessing at the spelling of something they have
 never seen.
+
+### From the P2-2 ADVERSARIAL REVIEW (2026-08-21) — the TypeScript half: twenty-four green plants, one species
+
+*(The PHP half of the same review is a separate branch. Nothing below touches `app/`, `tests/` or
+`routes/`.)*
+
+**The species, stated once because every finding below is an instance of it:** *a claim asserted
+only where it MATCHES, and never where it must not.* It is Task 9's green plant, Tasks 15–17's
+finding 3 and Tasks 18–20's second green, and this review found it another twenty-four times in one
+package. The recipe is unchanged and is the only thing that finds it: **write the case, plant the
+mutation it exists to catch, watch it go red, revert.**
+
+**The measurement.** Twenty-eight mutations were planted as a BATCH before any fix was written —
+the method Tasks 15–17 recorded — and **twenty-three stayed green.** Six more were found while
+fixing those (four opened by the fixes themselves), and three of the five that went red were
+re-probed on a different axis, which turned one rejection back into a real finding. Final state:
+**every plant red except one, which is examined and rejected below with its measurement.**
+
+#### 1. THE SAME CLIP, TWO TERMS APART — and closing one said nothing about the other
+
+`fairness_distribution` clips BOTH the numerator and the denominator to the horizon.
+`conditions.test.ts` closed the numerator at Task 19 by prepending a tail DUTY. **A tail duty adds
+no tail ELIGIBLE DAY**, so `availableDaysIn`'s identical filter was never exercised: deleting it
+left 571/571 green and the corpus green.
+
+`ContextBuilder` builds `eligibleDays` over the whole range it is asked for, tail included, while
+this rule compares over the horizon alone — so the defect is live on every context with a carry-in
+tail, which is all of them. The defining fixture now carries a genuine tail: clipped, the expected
+shares are 3.3 and 0.7; unclipped they are 3.1 and 0.9.
+
+**Unlike the numerator's case, a fixture CAN express this one.** Task 19 recorded that a tail duty
+"is not something a fixture can express without becoming confusing corpus data". An eligible day in
+the already-published week is ordinary carry-in and confuses nothing.
+
+#### 2. WHEN a type reads CG-01's scope, which is one axis from WHETHER it reads it
+
+The standing first plant (`personInScope` → `true`) is habitual now and goes red on every type. It
+says nothing about the DATE handed in. Moving `window.from` to `window.to` at **all nine window- and
+cohort-located sites** left the suite green.
+
+The reason it survived review is worth keeping: the LEVEL-filter half of the same question is
+fixtured on two of those very sites (`count-max-the-level-filter-is-read-at-the-window-start`,
+`target-per-period-the-level-is-read-at-the-period-start`), so the sites look covered. They are
+covered for `params.levels` and were not for `condition.scope` — two filters, one call site, one
+case between them.
+
+**One matrix, and it needed TWO devices.** `bounded` clips every rotation to end on the latest date
+the type may read (byte-identical answer) and then to start the day after (no violation at all).
+That device was written for the three ROLLING types first **and stayed green on all three**, because
+its `readAt` there is `horizon.to` and no fixture carries a violation in a window running past the
+horizon — this review's own species reappearing inside the case written to close it. Those three now
+clip the rotation to ONE date that is a violating window's start and require every violation to be
+located there.
+
+#### 3. Five more filters and boundaries, each closed by the input it was never asked about
+
+- **`periodWindows`' `windowTouchesHorizon`, in BOTH branches.** No corpus case carried a block or a
+  week missing the horizon entirely. What goes when it goes is not a wrong violation — the emission
+  rule drops a window location that does not touch `[from, to]`, so `evaluate()` is identical either
+  way. It is `coverage()` that moves, toward MORE work apparently done: windows measured whose
+  results were thrown away. **The edge weeks in the new case RAW-overlap the horizon while their
+  clipped bounds do not**, which closes a third plant the first two could not — raw bounds are a
+  superset of clipped ones, so no world without a genuinely clipped edge week can tell the spellings
+  apart.
+- **`composition`'s level at the PERIOD START.** Owner decision M binds it and the sibling rule in
+  `target_per_period` is fixtured, which is exactly why it looked covered.
+- **`onRosterThroughout`'s inclusive boundary** — a join date ON the window's first day. No case put
+  one on a window bound. It bites in the expensive direction: a floor going quiet on somebody who
+  genuinely had the window, behind a coverage row that reads like a considered decision.
+- **Owner decision N's CLIPPED vacation-week bounds.** The raw pair was green because every block in
+  the corpus starts on the department's own week start. That is fixture convenience, not a calendar —
+  block 13 is five weeks and a year does not divide evenly.
+- **`max_gap`'s trailing open gap at the LAST horizon date, and `measuredGap`'s strictly-between
+  filter.** The first was asserted everywhere except at itself; the second only bites when the
+  closing duty's own date is a stopped day.
+
+#### 4. A COVERAGE ROW THAT WAS FALSE ABOUT SOMEBODY THE RULE WAS NEVER ABOUT
+
+`max_gap`'s corpus expected *"the gap for p-zaid … has only one end, so it was not measured"*. Both
+halves are false: p-zaid's two duties are ten days apart, so the gap has two ends, and the reason it
+was not measured is that the scope names PICU and p-zaid rotates on NICU. `exposure()` applies the
+scope per duty date, so an excluded person arrives at the loop with the SAME empty list as somebody
+who genuinely holds nothing, and the open-gap row was written for the second.
+
+Rulings 41/49 pointing the other way — not a control that appears to do nothing, but one that
+appears to have looked at somebody it never considered. `everInScope` is the gate, asked over the
+horizon rather than at one date because this type reads the scope per duty date and a mid-month
+rotation is real.
+
+**The fix opened two plants of its own, and one fourth person closes both.** With only p-zaid to
+distinguish them, reading the scope at a single date and deleting the per-duty filter were both
+green: p-zaid is out of scope on every date, so one date is as good as thirty-one, and the per-duty
+filter has nothing left to do once the gate has removed them. `p-rotates-off` is on PICU to the 7th
+and NICU from the 8th with a duty each side.
+
+#### 5. A THIRD LEFT-EDGE SHAPE THAT WAS DROPPED RATHER THAN REPORTED
+
+`wholeWindowVerdict` answered `{measure: false, skip: null}` for every window reaching back before
+the horizon without history behind it, on the ground that `carryInLeftEdge`'s single row speaks for
+all of them. That is true of the TWO shapes that function owns — no history at all, and history
+beginning at or after `horizon.from` — and **false of a third**: history that reaches back PAST the
+horizon but not as far as this window.
+
+There, `carryInLeftEdge` is silent (it saw real history before the 1st) and the verdict was silent
+(it believed `carryInLeftEdge` was speaking). The window was measured by nobody and reported by
+nobody; `evaluatedWindows` simply fell. **That is the state `coverage()` exists to prevent**, one
+branch from the state already reported correctly. Block 13 opening 26 July, a horizon opening 1
+August, history from 28 July is the whole of it.
+
+`historyShortOfWindowSkip` names the window individually, for the reason the clipped shape is named
+individually: which window went, and how much further back the history must reach, are the window's
+own answer.
+
+#### 6. `composition` THREW ON A CONTEXT THAT IS EXACTLY WHAT THE CONTRACT PROMISES
+
+`Day` is documented as *"one date of the horizon"*. This type's window is the PERIOD, which
+routinely opens before the horizon — the corpus has a seam case for precisely that — and every duty
+in the window went through `dayIndex().get()`, which THROWS on an undescribed date. So the
+commonest shape this type meets produced a `RangeError`. The corpus never saw it because its own
+seam case supplies day rows across the whole tail, which is generous rather than required.
+
+There is no honest local answer (`dayType` is never re-derived — AR-08, holiday beats weekend
+deliberately), so the window goes to `coverage()`: the device `clinic_conflict` already uses for the
+one question that legitimately reaches past the vector, and `find()` versus `get()` is the line
+between them. **Per person, because the buckets are** — a colleague every one of whose duties the
+vector describes still gets judged.
+
+#### 7. THE NF-01 BENCHMARK WAS PARTLY MEASURING A DEGENERATE INPUT, AND IT IS NOW MET
+
+**The finding.** Every synthetic person carried `eligibleDays: []`.
+`fairness_distribution` divides by the cohort's total available days, so a zero denominator is its
+early exit: it reported `evaluatedWindows: 0`, did no work, and was timed as free — for the whole of
+P2. `call_frequency_max`'s allowance is `floor(availableDays / n)` (owner decision J), so zero
+available days permits zero calls and **706 of the 998 headline violations were that artefact**. The
+honest figure is **299 violations from 14 conditions**.
+
+**A SECOND vacuity gate catches the shape the first could not.** The existing one asks whether the
+world produced findings, which twenty-one neighbours satisfied on fairness's behalf. The new one
+asks whether every type WORKED and fails on any active condition reporting `evaluatedWindows: 0`.
+Planted by restoring the empty list: red, naming `nf01-fairness_distribution`.
+
+**And the number itself: 121 ms MISSED → 56 ms MET.** Two causes, both reuse rather than pruning —
+the distinction Task 10's defect turns on.
+
+- `orderedDutiesFor` scans all three streams and SORTS, and `rolling_hours_max`, `free_day_min` and
+  `call_frequency_max` each called it inside `for window { for person { … } }`. `orderedByPerson`
+  memoizes per evaluation, **lazily**, so the set of resolutions is unchanged — an eager version
+  would throw on the unsupplied slot of a person the scope was about to exclude, which is a
+  different answer for the same input.
+- `onDutyMinutesOn` re-ran `dutyInterval`, and therefore `assertSlot`, on every one of ~41k calls,
+  discarding the interval `PositionedDuty` already carries. `minutesOfIntervalOn` is the one
+  definition now and `onDutyMinutesOn` delegates to it.
+
+Warm per-type medians: `rolling_hours_max` 34.6 → 7.1 ms, `free_day_min` 13.6 → 9.4,
+`call_frequency_max` 6.4 → 0.9. **The corpus is byte-identical throughout, which is what says the
+hoists changed no answer.**
+
+#### 8. Six smaller ones, and the two that a first probe wrongly rejected
+
+Closed: `carryInLeftEdge`'s empty-window guard (a horizon with no tail otherwise reports a row
+running from the 1st back to the 31st — asserted as a property over the whole corpus AND on the
+no-tail world, since the corpus cannot reach that state); `holiday_equity`'s credit key carrying the
+YEAR (a month-long horizon cannot hold two occurrences of one holiday, so only the multi-day half
+was fixtured); `we_pairing`'s holder de-duplication (a duplicated duty row otherwise reports a
+weekend split between a person and themselves); a GAP not being a SPLIT in EITHER direction;
+`target_per_period` calling owner decision L's per-person half (`count_min` had the fixture, two
+types shared one case); and `rosterFor` resolving strangers in all THREE streams, where only the
+middle one was asserted although the tail is where a departed colleague is likeliest to appear.
+
+**Two rejections were re-probed on a different axis and one came back.**
+`holiday_equity`'s *"never reached"* check answering `false` or `true` unconditionally is caught by
+the corpus; **which days it looks at is not.** Pointing it at the unfiltered day vector stayed green,
+and that shape fails silently in both halves at once: credits are counted over the horizon alone, so
+a holiday in the tail credits nobody, and an unfiltered check would also conclude it was reached and
+print no row. The rule would do nothing and say nothing. **A finding rejected on one probe is not a
+finding rejected.**
+
+#### 9. THE ONE PLANT KEPT GREEN, WITH ITS MEASUREMENT
+
+`we_pairing`'s slot union. Narrowing `slotKeys` from both days to the first alone stays green, and
+that is a true observation with a false conclusion: the scan carries a symmetric PAIR — the union,
+and the `first.length === 0` half of the gap guard — and either alone can go while both together
+change nothing. **Dropping each guard half goes RED.** Deleting the union would move the dead branch
+rather than remove one.
+
+It is kept because the answer must not depend on which of a pair's two days the enumeration starts
+from, and the symmetry is now asserted on both sides. Recorded here so the next reader does not
+re-derive the deletion.
+
+#### 10. Gates
+
+`npm test` **811 → 843**; `npx tsc --noEmit -p packages/engine` green; `npm run build` green;
+`npm run engine:corpus` green, **92 fixtures**, NF-01 **MET**; `php artisan test` **1738**,
+unchanged — no file under `app/`, `tests/` or `routes/` was touched.
